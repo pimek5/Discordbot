@@ -222,4 +222,4 @@ async def on_voice_state_update(member, before, after):
                 if log_channel:
                     await log_channel.send(f"🕙 Auto usunięto pusty kanał {name} po 10s.")
 
-bot.run(os.getenv("TOKEN"))
+bot.run(os.getenv("BOT_TOKEN"))
