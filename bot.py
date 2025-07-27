@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord.ui import View, Button
 from discord import PermissionOverwrite, app_commands
-from discord.app_commands import Greedy
+from typing import List  # zamiast Greedy importujemy List
 import re
 import os
 import asyncio
@@ -165,15 +165,15 @@ class CreateChannelView(View):
         view = CustomSubMenu(user=interaction.user)
         await interaction.response.send_message("🔧 Choose Custom option:", view=view, ephemeral=True)
 
-@discord.app_commands.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
+@bot.tree.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
 async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
     await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
 
 # NOWA KOMENDA /invite
-@discord.app_commands.command(name="invite", description="Dodaj użytkowników do aktualnego kanału tekstowego (max 16 osób)")
+@bot.tree.command(name="invite", description="Dodaj użytkowników do aktualnego kanału tekstowego (max 16 osób)")
 @app_commands.describe(users="Użytkownicy do dodania")
-async def invite(interaction: discord.Interaction, users: Greedy[discord.Member]):
+async def invite(interaction: discord.Interaction, users: List[discord.Member]):
     channel = interaction.channel
     guild = interaction.guild
 
@@ -228,46 +228,50 @@ async def on_voice_state_update(member, before, after):
         text_name = f"{prefix}-{number}-{owner}".lower().replace(" ", "-")
         return discord.utils.get(guild.text_channels, name=text_name)
 
-    if name.startswith("Custom") or name.startswith("Team1") or name.startswith("Team2"):
+    if voice_channel.user_limit == 2:
+        # SoloQ
         number = extract_number(name)
-        if number is None:
-            return
-
-        owner = name.split(" ", 2)[-1] if " " in name and name.startswith("Custom") else None
-        names = [f"Custom {number} {owner}", f"Team1 {number}", f"Team2 {number}"]
-        channels = [discord.utils.get(guild.voice_channels, name=n) for n in names]
-
-        if all(c and len(c.members) == 0 for c in channels):
-            for c in channels:
-                if c:
-                    await c.delete()
-            if owner:
-                txt = get_text_channel("custom", number, owner)
-                if txt:
-                    await txt.delete()
-        return
-
-    if name.startswith("Arena"):
-        number = extract_number(name)
-        owner = name.split(" ", 2)[-1]
-        if len(voice_channel.members) == 0:
+        owner = name.split()[-1]
+        text_channel = get_text_channel("soloq", number, owner)
+        if voice_channel.id and text_channel and len(voice_channel.members) == 0:
             await voice_channel.delete()
-            txt = get_text_channel("arena", number, owner)
-            if txt:
-                await txt.delete()
-        return
+            await text_channel.delete()
 
-    if name.startswith("ARAM"):
+    elif voice_channel.user_limit == 5:
+        # FlexQ or ARAM
+        if name.startswith("FlexQ"):
+            number = extract_number(name)
+            owner = name.split()[-1]
+            text_channel = get_text_channel("flexq", number, owner)
+            if voice_channel.id and text_channel and len(voice_channel.members) == 0:
+                await voice_channel.delete()
+                await text_channel.delete()
+
+        elif name.startswith("ARAM"):
+            number = extract_number(name)
+            owner = name.split()[-1]
+            text_channel = get_text_channel("aram", number, owner)
+            if voice_channel.id and text_channel and len(voice_channel.members) == 0:
+                await voice_channel.delete()
+                await text_channel.delete()
+
+    elif voice_channel.user_limit == 10 and "Custom" in name:
+        # Custom channels, kilka kanałów
         number = extract_number(name)
-        owner = name.split(" ", 2)[-1]
-        if len(voice_channel.members) == 0:
+        owner = name.split()[-1]
+
+        text_channel = get_text_channel("custom", number, owner)
+
+        if voice_channel.id and text_channel and len(voice_channel.members) == 0:
             await voice_channel.delete()
-            txt = get_text_channel("aram", number, owner)
-            if txt:
-                await txt.delete()
-        return
+            await text_channel.delete()
 
-    if len(voice_channel.members) == 0:
-        await voice_channel.delete()
+    elif voice_channel.user_limit == 16 and "Arena" in name:
+        number = extract_number(name)
+        owner = name.split()[-1]
+        text_channel = get_text_channel("arena", number, owner)
+        if voice_channel.id and text_channel and len(voice_channel.members) == 0:
+            await voice_channel.delete()
+            await text_channel.delete()
 
-bot.run(os.getenv("BOT_TOKEN"))
+bot.run(os.getenv("TOKEN"))
