@@ -15,12 +15,12 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # Tu możesz synchronizować globalnie lub na konkretnym guildzie
-        # await self.tree.sync()  # globalnie
-        # Dla testów szybciej na serwerze podaj ID i odkomentuj poniżej
-        # guild = discord.Object(id=123456789012345678)
-        # await self.tree.sync(guild=guild)
-        pass
+        # Zarejestruj slash command na guildzie testowym
+        # Zamień na ID swojego serwera (lub usuń 'guild=...' dla globalnych komend)
+        guild = discord.Object(id=1153027935553454191)  # <-- podmień na int id twojego serwera
+        self.tree.add_command(setup_create_panel, guild=guild)
+        await self.tree.sync(guild=guild)
+        print("Slash commands synced in setup_hook.")
 
 bot = MyBot()
 
@@ -144,7 +144,7 @@ class CreateChannelView(View):
         view = CustomSubMenu(user=interaction.user)
         await interaction.response.send_message("🔧 Choose Custom option:", view=view, ephemeral=True)
 
-@bot.tree.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
+@discord.app_commands.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
 async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
     await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
@@ -153,11 +153,6 @@ async def setup_create_panel(interaction: discord.Interaction):
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     print('------')
-    try:
-        await bot.tree.sync()
-        print("Slash commands synced.")
-    except Exception as e:
-        print(f"Error syncing commands: {e}")
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -221,7 +216,5 @@ async def on_voice_state_update(member, before, after):
     # Normal cases
     if len(voice_channel.members) == 0:
         await voice_channel.delete()
-
-import os
 
 bot.run(os.getenv("BOT_TOKEN"))
