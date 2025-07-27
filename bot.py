@@ -169,42 +169,43 @@ async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
     await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
 
-@bot.tree.command(name="invite", description="Add users to this temporary text channel (max 16 users)")
-@app_commands.describe(users="Users to add")
+@bot.tree.command(name="invite", description="Invite users to a temporary voice channel")
+@discord.app_commands.describe(users="Users to invite (max 16)")
 async def invite(interaction: Interaction, users: List[Member]):
-    channel = interaction.channel
+    if len(users) > MAX_INVITE_USERS:
+        await interaction.response.send_message(f"Możesz zaprosić maksymalnie {MAX_INVITE_USERS} osób.", ephemeral=True)
+        return
+
     guild = interaction.guild
-
-    if not isinstance(channel, discord.TextChannel):
-        await interaction.response.send_message("Ta komenda działa tylko na kanałach tekstowych.", ephemeral=True)
+    if not guild:
+        await interaction.response.send_message("Ta komenda działa tylko na serwerze.", ephemeral=True)
         return
 
-    if not channel.category or channel.category.name != TEMP_CHANNEL_CATEGORY_NAME:
-        await interaction.response.send_message("Ta komenda działa tylko na kanałach tymczasowych.", ephemeral=True)
+    category = discord.utils.get(guild.categories, name=TEMP_CHANNEL_CATEGORY_NAME)
+    if not category:
+        await interaction.response.send_message("Brak kategorii tymczasowych kanałów.", ephemeral=True)
         return
 
-    overwrites = channel.overwrites
-    current_allowed_users = [user for user, perms in overwrites.items()
-                             if isinstance(user, Member) and perms.read_messages]
+    voice_channel = None
+    for ch in category.voice_channels:
+        if ch.name.lower().startswith("aram") and interaction.user in ch.members:
+            voice_channel = ch
+            break
 
-    if len(current_allowed_users) >= MAX_INVITE_USERS:
-        await interaction.response.send_message(f"Ten kanał ma już maksymalną liczbę użytkowników ({MAX_INVITE_USERS}).", ephemeral=True)
+    if not voice_channel:
+        await interaction.response.send_message("Musisz być na kanale głosowym Aram, aby zaprosić innych.", ephemeral=True)
         return
 
-    to_add = [u for u in users if u not in current_allowed_users]
+    text_name = voice_channel.name.lower().replace(" ", "-")
+    text_channel = discord.utils.get(guild.text_channels, name=text_name)
 
-    if len(current_allowed_users) + len(to_add) > MAX_INVITE_USERS:
-        await interaction.response.send_message(f"Nie można dodać tylu użytkowników, limit to {MAX_INVITE_USERS}.", ephemeral=True)
-        return
+    for user in users:
+        await voice_channel.set_permissions(user, connect=True)
+        if text_channel:
+            await text_channel.set_permissions(user, read_messages=True, send_messages=True)
 
-    for member in to_add:
-        await channel.set_permissions(member, read_messages=True, send_messages=True)
-
-    if to_add:
-        mentions = ", ".join(m.mention for m in to_add)
-        await interaction.response.send_message(f"{mentions} został(a) dodany(a) do {channel.mention}.", ephemeral=True)
-    else:
-        await interaction.response.send_message("Nie dodano nowych użytkowników (wszyscy już mają dostęp).", ephemeral=True)
+    mentions = ", ".join(user.mention for user in users)
+    await interaction.response.send_message(f"{mentions} zostało dodanych do kanału {voice_channel.mention}", ephemeral=False)
 
 @bot.event
 async def on_ready():
