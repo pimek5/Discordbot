@@ -2,7 +2,6 @@ import discord
 from discord.ext import commands
 from discord.ui import View, Button
 from discord import PermissionOverwrite
-from discord import app_commands
 import re
 import os
 
@@ -11,6 +10,8 @@ intents.guilds = True
 intents.members = True
 intents.voice_states = True
 
+LOG_CHANNEL_ID = 1398986567988674704
+
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
@@ -18,7 +19,8 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
-        self.tree.add_command(inviteall, guild=guild)
+        self.tree.add_command(invite, guild=guild)
+        self.tree.add_command(invite_all, guild=guild)
         await self.tree.sync(guild=guild)
         print("Slash commands synced in setup_hook.")
 
@@ -33,6 +35,11 @@ channel_counter = {
 }
 
 TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
+
+async def log_to_channel(guild, message):
+    log_channel = guild.get_channel(LOG_CHANNEL_ID)
+    if log_channel:
+        await log_channel.send(message)
 
 def extract_number(name):
     match = re.search(r"\b(\d+)\b", name)
@@ -75,6 +82,7 @@ class CustomSubMenu(View):
         await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
 
         await interaction.response.send_message(f"✅ Created voice + text: **{voice_name}** / #{text_name}", ephemeral=True)
+        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created Arena: **{voice_name}**")
 
     @discord.ui.button(label="Custom (max 10)", style=discord.ButtonStyle.blurple)
     async def custom_button(self, interaction: discord.Interaction, button: Button):
@@ -97,6 +105,7 @@ class CustomSubMenu(View):
             f"✅ Created custom setup:\n- **{name_main}** (10)\n- **{name_team1}**, **{name_team2}** (5)\n- **#{text_name}**",
             ephemeral=True
         )
+        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created Custom: **{name_main}**")
 
 class CreateChannelView(View):
     def __init__(self):
@@ -112,6 +121,7 @@ class CreateChannelView(View):
 
         await guild.create_voice_channel(name, category=category, user_limit=2)
         await interaction.response.send_message(f"✅ Created voice channel: **{name}**", ephemeral=True)
+        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created SoloQ: **{name}**")
 
     @discord.ui.button(label="FlexQ", style=discord.ButtonStyle.green)
     async def flexq_button(self, interaction: discord.Interaction, button: Button):
@@ -123,6 +133,7 @@ class CreateChannelView(View):
 
         await guild.create_voice_channel(name, category=category, user_limit=5)
         await interaction.response.send_message(f"✅ Created voice channel: **{name}**", ephemeral=True)
+        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created FlexQ: **{name}**")
 
     @discord.ui.button(label="ARAMs", style=discord.ButtonStyle.green)
     async def aram_button(self, interaction: discord.Interaction, button: Button):
@@ -138,56 +149,17 @@ class CreateChannelView(View):
         await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
 
         await interaction.response.send_message(f"✅ Created voice + text: **{voice_name}** / #{text_name}", ephemeral=True)
+        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created ARAM: **{voice_name}**")
 
     @discord.ui.button(label="Custom", style=discord.ButtonStyle.blurple)
     async def custom_button(self, interaction: discord.Interaction, button: Button):
         view = CustomSubMenu(user=interaction.user)
         await interaction.response.send_message("🔧 Choose Custom option:", view=view, ephemeral=True)
 
-@app_commands.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
+@discord.app_commands.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
 async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
     await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
-
-@app_commands.command(name="inviteall", description="Zaproś do 16 użytkowników do tego kanału tekstowego.")
-@app_commands.describe(
-    user1="Użytkownik 1", user2="Użytkownik 2", user3="Użytkownik 3", user4="Użytkownik 4",
-    user5="Użytkownik 5", user6="Użytkownik 6", user7="Użytkownik 7", user8="Użytkownik 8",
-    user9="Użytkownik 9", user10="Użytkownik 10", user11="Użytkownik 11", user12="Użytkownik 12",
-    user13="Użytkownik 13", user14="Użytkownik 14", user15="Użytkownik 15", user16="Użytkownik 16"
-)
-async def inviteall(
-    interaction: discord.Interaction,
-    user1: discord.Member = None, user2: discord.Member = None, user3: discord.Member = None,
-    user4: discord.Member = None, user5: discord.Member = None, user6: discord.Member = None,
-    user7: discord.Member = None, user8: discord.Member = None, user9: discord.Member = None,
-    user10: discord.Member = None, user11: discord.Member = None, user12: discord.Member = None,
-    user13: discord.Member = None, user14: discord.Member = None, user15: discord.Member = None,
-    user16: discord.Member = None
-):
-    channel = interaction.channel
-
-    if not isinstance(channel, discord.TextChannel):
-        await interaction.response.send_message("❌ Ta komenda działa tylko na kanałach tekstowych.", ephemeral=True)
-        return
-
-    if not channel.name.startswith(("arena-", "aram-", "custom-")):
-        await interaction.response.send_message("❌ Nie możesz użyć tej komendy na tym kanale.", ephemeral=True)
-        return
-
-    users = [u for u in [user1, user2, user3, user4, user5, user6, user7, user8, user9,
-                         user10, user11, user12, user13, user14, user15, user16] if u is not None]
-
-    if not users:
-        await interaction.response.send_message("❌ Musisz wskazać przynajmniej jednego użytkownika.", ephemeral=True)
-        return
-
-    for user in users:
-        await channel.set_permissions(user, read_messages=True, send_messages=True)
-
-    mentions = ", ".join(user.mention for user in users)
-    emoji = "<:plus:1175070212240978028>"
-    await interaction.response.send_message(f"{mentions} has been added to {channel.mention} {emoji}")
 
 @bot.event
 async def on_ready():
@@ -224,10 +196,12 @@ async def on_voice_state_update(member, before, after):
             for c in channels:
                 if c:
                     await c.delete()
+                    await log_to_channel(guild, f"🗑️ Deleted voice channel: **{c.name}**")
             if owner:
                 txt = get_text_channel("custom", number, owner)
                 if txt:
                     await txt.delete()
+                    await log_to_channel(guild, f"🗑️ Deleted text channel: **{txt.name}**")
         return
 
     if name.startswith("Arena"):
@@ -235,9 +209,11 @@ async def on_voice_state_update(member, before, after):
         owner = name.split(" ", 2)[-1]
         if len(voice_channel.members) == 0:
             await voice_channel.delete()
+            await log_to_channel(guild, f"🗑️ Deleted voice channel: **{voice_channel.name}**")
             txt = get_text_channel("arena", number, owner)
             if txt:
                 await txt.delete()
+                await log_to_channel(guild, f"🗑️ Deleted text channel: **{txt.name}**")
         return
 
     if name.startswith("ARAM"):
@@ -245,12 +221,15 @@ async def on_voice_state_update(member, before, after):
         owner = name.split(" ", 2)[-1]
         if len(voice_channel.members) == 0:
             await voice_channel.delete()
+            await log_to_channel(guild, f"🗑️ Deleted voice channel: **{voice_channel.name}**")
             txt = get_text_channel("aram", number, owner)
             if txt:
                 await txt.delete()
+                await log_to_channel(guild, f"🗑️ Deleted text channel: **{txt.name}**")
         return
 
     if len(voice_channel.members) == 0:
         await voice_channel.delete()
+        await log_to_channel(guild, f"🗑️ Deleted voice channel: **{voice_channel.name}**")
 
 bot.run(os.getenv("BOT_TOKEN"))
