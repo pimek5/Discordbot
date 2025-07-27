@@ -1,7 +1,8 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button
-from discord import PermissionOverwrite
+from discord import PermissionOverwrite, app_commands
+from discord.app_commands import Greedy
 import re
 import os
 import asyncio
@@ -11,6 +12,9 @@ intents.guilds = True
 intents.members = True
 intents.voice_states = True
 
+MAX_INVITE_USERS = 16
+TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
+
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
@@ -18,6 +22,7 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
+        self.tree.add_command(invite, guild=guild)  # Dodajemy komendę invite
         await self.tree.sync(guild=guild)
         print("Slash commands synced in setup_hook.")
 
@@ -30,8 +35,6 @@ channel_counter = {
     "arena": 1,
     "custom": 1
 }
-
-TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
 
 def extract_number(name):
     match = re.search(r"\b(\d+)\b", name)
@@ -166,6 +169,42 @@ class CreateChannelView(View):
 async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
     await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
+
+# NOWA KOMENDA /invite
+@discord.app_commands.command(name="invite", description="Dodaj użytkowników do aktualnego kanału tekstowego (max 16 osób)")
+@app_commands.describe(users="Użytkownicy do dodania")
+async def invite(interaction: discord.Interaction, users: Greedy[discord.Member]):
+    channel = interaction.channel
+    guild = interaction.guild
+
+    if not isinstance(channel, discord.TextChannel):
+        await interaction.response.send_message("Ta komenda działa tylko w kanałach tekstowych.", ephemeral=True)
+        return
+
+    # Sprawdź kategorię
+    if not channel.category or channel.category.name != TEMP_CHANNEL_CATEGORY_NAME:
+        await interaction.response.send_message("Ta komenda działa tylko w kanałach tymczasowych.", ephemeral=True)
+        return
+
+    # Pobierz obecnie mających dostęp użytkowników
+    overwrites = channel.overwrites
+    current_allowed_users = [user for user, perms in overwrites.items()
+                             if isinstance(user, discord.Member) and perms.read_messages]
+
+    if len(current_allowed_users) >= MAX_INVITE_USERS:
+        await interaction.response.send_message(f"Limit {MAX_INVITE_USERS} osób już został osiągnięty.", ephemeral=True)
+        return
+
+    to_add = [u for u in users if u not in current_allowed_users]
+
+    if len(current_allowed_users) + len(to_add) > MAX_INVITE_USERS:
+        await interaction.response.send_message(f"Nie można dodać tylu użytkowników, limit to {MAX_INVITE_USERS}.", ephemeral=True)
+        return
+
+    for member in to_add:
+        await channel.set_permissions(member, read_messages=True, send_messages=True)
+
+    await interaction.response.send_message(f"Dodano {len(to_add)} użytkowników do kanału.", ephemeral=True)
 
 @bot.event
 async def on_ready():
