@@ -15,8 +15,6 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # Zarejestruj slash command na guildzie testowym
-        # Zamień na ID swojego serwera (lub usuń 'guild=...' dla globalnych komend)
         guild = discord.Object(id=1153027935553454191)  # <-- podmień na int id twojego serwera
         self.tree.add_command(setup_create_panel, guild=guild)
         await self.tree.sync(guild=guild)
@@ -171,27 +169,30 @@ async def on_voice_state_update(member, before, after):
         text_name = f"{prefix}-{number}-{owner}".lower().replace(" ", "-")
         return discord.utils.get(guild.text_channels, name=text_name)
 
-    # Handle Custom + Team1 + Team2 set
     if name.startswith("Custom") or name.startswith("Team1") or name.startswith("Team2"):
         number = extract_number(name)
         if number is None:
             return
 
-        owner = name.split(" ", 2)[-1] if " " in name and name.startswith("Custom") else None
+        owner = None
+        if name.startswith("Custom"):
+            parts = name.split(" ", 2)
+            if len(parts) == 3:
+                owner = parts[2]
+
         names = [f"Custom {number} {owner}", f"Team1 {number}", f"Team2 {number}"]
         channels = [discord.utils.get(guild.voice_channels, name=n) for n in names]
 
+        # Usuwaj tylko jeśli wszystkie 3 kanały istnieją i są puste
         if all(c and len(c.members) == 0 for c in channels):
             for c in channels:
-                if c:
-                    await c.delete()
+                await c.delete()
             if owner:
                 txt = get_text_channel("custom", number, owner)
                 if txt:
                     await txt.delete()
         return
 
-    # Arena
     if name.startswith("Arena"):
         number = extract_number(name)
         owner = name.split(" ", 2)[-1]
@@ -202,7 +203,6 @@ async def on_voice_state_update(member, before, after):
                 await txt.delete()
         return
 
-    # ARAM
     if name.startswith("ARAM"):
         number = extract_number(name)
         owner = name.split(" ", 2)[-1]
@@ -213,7 +213,6 @@ async def on_voice_state_update(member, before, after):
                 await txt.delete()
         return
 
-    # Normal cases
     if len(voice_channel.members) == 0:
         await voice_channel.delete()
 
