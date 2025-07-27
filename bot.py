@@ -3,13 +3,27 @@ from discord.ext import commands
 from discord.ui import View, Button
 from discord import PermissionOverwrite
 import re
+import os
 
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.voice_states = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+class MyBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents)
+        self.tree = discord.app_commands.CommandTree(self)
+
+    async def setup_hook(self):
+        # Tu możesz synchronizować globalnie lub na konkretnym guildzie
+        # await self.tree.sync()  # globalnie
+        # Dla testów szybciej na serwerze podaj ID i odkomentuj poniżej
+        # guild = discord.Object(id=123456789012345678)
+        # await self.tree.sync(guild=guild)
+        pass
+
+bot = MyBot()
 
 channel_counter = {
     "soloq": 1,
@@ -21,7 +35,6 @@ channel_counter = {
 
 TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
 
-# Utility functions
 def extract_number(name):
     match = re.search(r"\b(\d+)\b", name)
     return match.group(1) if match else None
@@ -41,7 +54,6 @@ async def create_temp_text_channel(guild, name, category, allowed_users=None):
             overwrites[user] = PermissionOverwrite(read_messages=True, send_messages=True)
     return await guild.create_text_channel(name, category=category, overwrites=overwrites)
 
-# View for Custom submenu
 class CustomSubMenu(View):
     def __init__(self, user):
         super().__init__(timeout=60)
@@ -87,7 +99,6 @@ class CustomSubMenu(View):
             ephemeral=True
         )
 
-# Main panel view
 class CreateChannelView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -134,13 +145,21 @@ class CreateChannelView(View):
         view = CustomSubMenu(user=interaction.user)
         await interaction.response.send_message("🔧 Choose Custom option:", view=view, ephemeral=True)
 
-# Command to send the panel
-@bot.command()
-async def setup_create_panel(ctx):
+@bot.tree.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
+async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
-    await ctx.send("🎮 **Create Voice Channel**", view=view)
+    await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
 
-# Auto-delete logic
+@bot.event
+async def on_ready():
+    print(f'Logged in as {bot.user} (ID: {bot.user.id})')
+    print('------')
+    try:
+        await bot.tree.sync()
+        print("Slash commands synced.")
+    except Exception as e:
+        print(f"Error syncing commands: {e}")
+
 @bot.event
 async def on_voice_state_update(member, before, after):
     if before.channel is None:
@@ -207,4 +226,3 @@ async def on_voice_state_update(member, before, after):
 import os
 
 bot.run(os.getenv("BOT_TOKEN"))
-
