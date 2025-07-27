@@ -1,12 +1,11 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button
-from discord import PermissionOverwrite, app_commands
+from discord import PermissionOverwrite, app_commands, Interaction, Member
 import re
 import os
 import asyncio
-from discord.app_commands import describe, command, Greedy
-from discord import Interaction, Member, TextChannel
+from typing import List
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -25,7 +24,6 @@ class MyBot(commands.Bot):
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
         await self.tree.sync(guild=guild)
-        print("Slash commands synced in setup_hook.")
 
 bot = MyBot()
 
@@ -166,18 +164,18 @@ class CreateChannelView(View):
         view = CustomSubMenu(user=interaction.user)
         await interaction.response.send_message("🔧 Choose Custom option:", view=view, ephemeral=True)
 
-@bot.tree.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
+@discord.app_commands.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
 async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
     await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
 
 @bot.tree.command(name="invite", description="Add users to this temporary text channel (max 16 users)")
 @app_commands.describe(users="Users to add")
-async def invite(interaction: Interaction, users: Greedy[Member]):
+async def invite(interaction: Interaction, users: List[Member]):
     channel = interaction.channel
     guild = interaction.guild
 
-    if not isinstance(channel, TextChannel):
+    if not isinstance(channel, discord.TextChannel):
         await interaction.response.send_message("Ta komenda działa tylko na kanałach tekstowych.", ephemeral=True)
         return
 
