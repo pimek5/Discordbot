@@ -204,5 +204,6 @@ async def on_voice_state_update(member, before, after):
     if len(voice_channel.members) == 0:
         await voice_channel.delete()
 
-# Start the bot
-bot.run("MTI3NDI3NjExMzY2MDY0NTM4OQ.G2sDqW.X1vAPGYzNpdk3KtBDyRnNonHutFVXsedr0aC-c")
+import os
+
+bot.run(os.getenv("MTI3NDI3NjExMzY2MDY0NTM4OQ.G2sDqW.X1vAPGYzNpdk3KtBDyRnNonHutFVXsedr0aC-c"))
