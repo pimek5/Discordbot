@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button
-from discord import PermissionOverwrite
+from discord import PermissionOverwrite, app_commands
 import re
 import os
 import asyncio
@@ -21,6 +21,7 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
+        self.tree.add_command(invite, guild=guild)  # Dodajemy komendę invite
         await self.tree.sync(guild=guild)
         print("Slash commands synced in setup_hook.")
 
@@ -168,6 +169,22 @@ async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
     await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
 
+# Nowa komenda /invite (prosta wersja, zgodna z discord.py)
+@bot.tree.command(name="invite", description="Generate an invite link for this server")
+async def invite(interaction: discord.Interaction):
+    guild = interaction.guild
+    if not guild:
+        await interaction.response.send_message("Ta komenda działa tylko na serwerze.", ephemeral=True)
+        return
+    
+    channel = discord.utils.get(guild.text_channels, permissions__create_instant_invite=True)
+    if not channel:
+        await interaction.response.send_message("Brak kanału do stworzenia zaproszenia.", ephemeral=True)
+        return
+    
+    invite = await channel.create_invite(max_age=3600, max_uses=5, unique=True)
+    await interaction.response.send_message(f"Oto zaproszenie (ważne 1h, max 5 użyć): {invite.url}", ephemeral=True)
+
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
@@ -190,46 +207,19 @@ async def on_voice_state_update(member, before, after):
         text_name = f"{prefix}-{number}-{owner}".lower().replace(" ", "-")
         return discord.utils.get(guild.text_channels, name=text_name)
 
-    if name.startswith("Custom") or name.startswith("Team1") or name.startswith("Team2"):
+    if name.startswith("Custom") or name.startswith("Arena") or name.startswith("ARAM"):
         number = extract_number(name)
-        if number is None:
+        if not number:
             return
+        owner = name.split()[-1]
+        text_channel = get_text_channel(name.split()[0].lower(), number, owner)
+        if len(voice_channel.members) == 0 and text_channel:
+            await asyncio.sleep(10)
+            if len(voice_channel.members) == 0:
+                await voice_channel.delete()
+                await text_channel.delete()
+                log_channel = guild.get_channel(1398986567988674704)
+                if log_channel:
+                    await log_channel.send(f"🕙 Auto usunięto pusty kanał {name} po 10s.")
 
-        owner = name.split(" ", 2)[-1] if " " in name and name.startswith("Custom") else None
-        names = [f"Custom {number} {owner}", f"Team1 {number}", f"Team2 {number}"]
-        channels = [discord.utils.get(guild.voice_channels, name=n) for n in names]
-
-        if all(c and len(c.members) == 0 for c in channels):
-            for c in channels:
-                if c:
-                    await c.delete()
-            if owner:
-                txt = get_text_channel("custom", number, owner)
-                if txt:
-                    await txt.delete()
-        return
-
-    if name.startswith("Arena"):
-        number = extract_number(name)
-        owner = name.split(" ", 2)[-1]
-        if len(voice_channel.members) == 0:
-            await voice_channel.delete()
-            txt = get_text_channel("arena", number, owner)
-            if txt:
-                await txt.delete()
-        return
-
-    if name.startswith("ARAM"):
-        number = extract_number(name)
-        owner = name.split(" ", 2)[-1]
-        if len(voice_channel.members) == 0:
-            await voice_channel.delete()
-            txt = get_text_channel("aram", number, owner)
-            if txt:
-                await txt.delete()
-        return
-
-    if len(voice_channel.members) == 0:
-        await voice_channel.delete()
-
-bot.run(os.getenv("BOT_TOKEN"))
+bot.run(os.getenv("TOKEN"))
