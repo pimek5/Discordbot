@@ -1,1 +1,1 @@
-py-cord discord.py
+py-cord==2.5.1
