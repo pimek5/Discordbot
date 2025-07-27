@@ -4,13 +4,12 @@ from discord.ui import View, Button
 from discord import PermissionOverwrite
 import re
 import os
+import asyncio
 
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.voice_states = True
-
-LOG_CHANNEL_ID = 1398986567988674704
 
 class MyBot(commands.Bot):
     def __init__(self):
@@ -19,8 +18,6 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
-        self.tree.add_command(invite, guild=guild)
-        self.tree.add_command(invite_all, guild=guild)
         await self.tree.sync(guild=guild)
         print("Slash commands synced in setup_hook.")
 
@@ -35,11 +32,6 @@ channel_counter = {
 }
 
 TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
-
-async def log_to_channel(guild, message):
-    log_channel = guild.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        await log_channel.send(message)
 
 def extract_number(name):
     match = re.search(r"\b(\d+)\b", name)
@@ -60,6 +52,16 @@ async def create_temp_text_channel(guild, name, category, allowed_users=None):
             overwrites[user] = PermissionOverwrite(read_messages=True, send_messages=True)
     return await guild.create_text_channel(name, category=category, overwrites=overwrites)
 
+async def schedule_auto_delete_if_empty(voice_channel: discord.VoiceChannel, text_channel: discord.TextChannel = None):
+    await asyncio.sleep(10)
+    if len(voice_channel.members) == 0:
+        await voice_channel.delete()
+        if text_channel:
+            await text_channel.delete()
+        log_channel = voice_channel.guild.get_channel(1398986567988674704)
+        if log_channel:
+            await log_channel.send(f"🕙 Auto-deleted empty channel `{voice_channel.name}` after 10s.")
+
 class CustomSubMenu(View):
     def __init__(self, user):
         super().__init__(timeout=60)
@@ -78,11 +80,12 @@ class CustomSubMenu(View):
         voice_name = f"Arena {number} {interaction.user.name}"
         text_name = f"arena-{number}-{interaction.user.name}".lower().replace(" ", "-")
 
-        await guild.create_voice_channel(voice_name, category=category, user_limit=16)
-        await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
+        vc = await guild.create_voice_channel(voice_name, category=category, user_limit=16)
+        tc = await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
+
+        asyncio.create_task(schedule_auto_delete_if_empty(vc, tc))
 
         await interaction.response.send_message(f"✅ Created voice + text: **{voice_name}** / #{text_name}", ephemeral=True)
-        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created Arena: **{voice_name}**")
 
     @discord.ui.button(label="Custom (max 10)", style=discord.ButtonStyle.blurple)
     async def custom_button(self, interaction: discord.Interaction, button: Button):
@@ -96,16 +99,19 @@ class CustomSubMenu(View):
         name_team2 = f"Team2 {number}"
         text_name = f"custom-{number}-{interaction.user.name}".lower().replace(" ", "-")
 
-        await guild.create_voice_channel(name_main, category=category, user_limit=10)
-        await guild.create_voice_channel(name_team1, category=category, user_limit=5)
-        await guild.create_voice_channel(name_team2, category=category, user_limit=5)
-        await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
+        vc_main = await guild.create_voice_channel(name_main, category=category, user_limit=10)
+        vc_team1 = await guild.create_voice_channel(name_team1, category=category, user_limit=5)
+        vc_team2 = await guild.create_voice_channel(name_team2, category=category, user_limit=5)
+        tc = await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
+
+        asyncio.create_task(schedule_auto_delete_if_empty(vc_main, tc))
+        asyncio.create_task(schedule_auto_delete_if_empty(vc_team1))
+        asyncio.create_task(schedule_auto_delete_if_empty(vc_team2))
 
         await interaction.response.send_message(
             f"✅ Created custom setup:\n- **{name_main}** (10)\n- **{name_team1}**, **{name_team2}** (5)\n- **#{text_name}**",
             ephemeral=True
         )
-        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created Custom: **{name_main}**")
 
 class CreateChannelView(View):
     def __init__(self):
@@ -119,9 +125,9 @@ class CreateChannelView(View):
         channel_counter["soloq"] += 1
         name = f"SoloQ {number} {interaction.user.name}"
 
-        await guild.create_voice_channel(name, category=category, user_limit=2)
+        vc = await guild.create_voice_channel(name, category=category, user_limit=2)
+        asyncio.create_task(schedule_auto_delete_if_empty(vc))
         await interaction.response.send_message(f"✅ Created voice channel: **{name}**", ephemeral=True)
-        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created SoloQ: **{name}**")
 
     @discord.ui.button(label="FlexQ", style=discord.ButtonStyle.green)
     async def flexq_button(self, interaction: discord.Interaction, button: Button):
@@ -131,9 +137,9 @@ class CreateChannelView(View):
         channel_counter["flexq"] += 1
         name = f"FlexQ {number} {interaction.user.name}"
 
-        await guild.create_voice_channel(name, category=category, user_limit=5)
+        vc = await guild.create_voice_channel(name, category=category, user_limit=5)
+        asyncio.create_task(schedule_auto_delete_if_empty(vc))
         await interaction.response.send_message(f"✅ Created voice channel: **{name}**", ephemeral=True)
-        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created FlexQ: **{name}**")
 
     @discord.ui.button(label="ARAMs", style=discord.ButtonStyle.green)
     async def aram_button(self, interaction: discord.Interaction, button: Button):
@@ -145,11 +151,11 @@ class CreateChannelView(View):
         voice_name = f"ARAM {number} {interaction.user.name}"
         text_name = f"aram-{number}-{interaction.user.name}".lower().replace(" ", "-")
 
-        await guild.create_voice_channel(voice_name, category=category, user_limit=5)
-        await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
+        vc = await guild.create_voice_channel(voice_name, category=category, user_limit=5)
+        tc = await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
+        asyncio.create_task(schedule_auto_delete_if_empty(vc, tc))
 
         await interaction.response.send_message(f"✅ Created voice + text: **{voice_name}** / #{text_name}", ephemeral=True)
-        await log_to_channel(guild, f"🎙️ {interaction.user.mention} created ARAM: **{voice_name}**")
 
     @discord.ui.button(label="Custom", style=discord.ButtonStyle.blurple)
     async def custom_button(self, interaction: discord.Interaction, button: Button):
@@ -196,12 +202,10 @@ async def on_voice_state_update(member, before, after):
             for c in channels:
                 if c:
                     await c.delete()
-                    await log_to_channel(guild, f"🗑️ Deleted voice channel: **{c.name}**")
             if owner:
                 txt = get_text_channel("custom", number, owner)
                 if txt:
                     await txt.delete()
-                    await log_to_channel(guild, f"🗑️ Deleted text channel: **{txt.name}**")
         return
 
     if name.startswith("Arena"):
@@ -209,11 +213,9 @@ async def on_voice_state_update(member, before, after):
         owner = name.split(" ", 2)[-1]
         if len(voice_channel.members) == 0:
             await voice_channel.delete()
-            await log_to_channel(guild, f"🗑️ Deleted voice channel: **{voice_channel.name}**")
             txt = get_text_channel("arena", number, owner)
             if txt:
                 await txt.delete()
-                await log_to_channel(guild, f"🗑️ Deleted text channel: **{txt.name}**")
         return
 
     if name.startswith("ARAM"):
@@ -221,15 +223,12 @@ async def on_voice_state_update(member, before, after):
         owner = name.split(" ", 2)[-1]
         if len(voice_channel.members) == 0:
             await voice_channel.delete()
-            await log_to_channel(guild, f"🗑️ Deleted voice channel: **{voice_channel.name}**")
             txt = get_text_channel("aram", number, owner)
             if txt:
                 await txt.delete()
-                await log_to_channel(guild, f"🗑️ Deleted text channel: **{txt.name}**")
         return
 
     if len(voice_channel.members) == 0:
         await voice_channel.delete()
-        await log_to_channel(guild, f"🗑️ Deleted voice channel: **{voice_channel.name}**")
 
 bot.run(os.getenv("BOT_TOKEN"))
