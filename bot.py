@@ -1,8 +1,7 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button
-from discord import PermissionOverwrite, app_commands
-from typing import List  # zamiast Greedy importujemy List
+from discord import PermissionOverwrite
 import re
 import os
 import asyncio
@@ -22,7 +21,6 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
-        self.tree.add_command(invite, guild=guild)  # Dodajemy komendę invite
         await self.tree.sync(guild=guild)
         print("Slash commands synced in setup_hook.")
 
@@ -165,46 +163,10 @@ class CreateChannelView(View):
         view = CustomSubMenu(user=interaction.user)
         await interaction.response.send_message("🔧 Choose Custom option:", view=view, ephemeral=True)
 
-@bot.tree.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
+@discord.app_commands.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
 async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
     await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
-
-# NOWA KOMENDA /invite
-@bot.tree.command(name="invite", description="Dodaj użytkowników do aktualnego kanału tekstowego (max 16 osób)")
-@app_commands.describe(users="Użytkownicy do dodania")
-async def invite(interaction: discord.Interaction, users: List[discord.Member]):
-    channel = interaction.channel
-    guild = interaction.guild
-
-    if not isinstance(channel, discord.TextChannel):
-        await interaction.response.send_message("Ta komenda działa tylko w kanałach tekstowych.", ephemeral=True)
-        return
-
-    # Sprawdź kategorię
-    if not channel.category or channel.category.name != TEMP_CHANNEL_CATEGORY_NAME:
-        await interaction.response.send_message("Ta komenda działa tylko w kanałach tymczasowych.", ephemeral=True)
-        return
-
-    # Pobierz obecnie mających dostęp użytkowników
-    overwrites = channel.overwrites
-    current_allowed_users = [user for user, perms in overwrites.items()
-                             if isinstance(user, discord.Member) and perms.read_messages]
-
-    if len(current_allowed_users) >= MAX_INVITE_USERS:
-        await interaction.response.send_message(f"Limit {MAX_INVITE_USERS} osób już został osiągnięty.", ephemeral=True)
-        return
-
-    to_add = [u for u in users if u not in current_allowed_users]
-
-    if len(current_allowed_users) + len(to_add) > MAX_INVITE_USERS:
-        await interaction.response.send_message(f"Nie można dodać tylu użytkowników, limit to {MAX_INVITE_USERS}.", ephemeral=True)
-        return
-
-    for member in to_add:
-        await channel.set_permissions(member, read_messages=True, send_messages=True)
-
-    await interaction.response.send_message(f"Dodano {len(to_add)} użytkowników do kanału.", ephemeral=True)
 
 @bot.event
 async def on_ready():
@@ -228,50 +190,46 @@ async def on_voice_state_update(member, before, after):
         text_name = f"{prefix}-{number}-{owner}".lower().replace(" ", "-")
         return discord.utils.get(guild.text_channels, name=text_name)
 
-    if voice_channel.user_limit == 2:
-        # SoloQ
+    if name.startswith("Custom") or name.startswith("Team1") or name.startswith("Team2"):
         number = extract_number(name)
-        owner = name.split()[-1]
-        text_channel = get_text_channel("soloq", number, owner)
-        if voice_channel.id and text_channel and len(voice_channel.members) == 0:
-            await voice_channel.delete()
-            await text_channel.delete()
+        if number is None:
+            return
 
-    elif voice_channel.user_limit == 5:
-        # FlexQ or ARAM
-        if name.startswith("FlexQ"):
-            number = extract_number(name)
-            owner = name.split()[-1]
-            text_channel = get_text_channel("flexq", number, owner)
-            if voice_channel.id and text_channel and len(voice_channel.members) == 0:
-                await voice_channel.delete()
-                await text_channel.delete()
+        owner = name.split(" ", 2)[-1] if " " in name and name.startswith("Custom") else None
+        names = [f"Custom {number} {owner}", f"Team1 {number}", f"Team2 {number}"]
+        channels = [discord.utils.get(guild.voice_channels, name=n) for n in names]
 
-        elif name.startswith("ARAM"):
-            number = extract_number(name)
-            owner = name.split()[-1]
-            text_channel = get_text_channel("aram", number, owner)
-            if voice_channel.id and text_channel and len(voice_channel.members) == 0:
-                await voice_channel.delete()
-                await text_channel.delete()
+        if all(c and len(c.members) == 0 for c in channels):
+            for c in channels:
+                if c:
+                    await c.delete()
+            if owner:
+                txt = get_text_channel("custom", number, owner)
+                if txt:
+                    await txt.delete()
+        return
 
-    elif voice_channel.user_limit == 10 and "Custom" in name:
-        # Custom channels, kilka kanałów
+    if name.startswith("Arena"):
         number = extract_number(name)
-        owner = name.split()[-1]
-
-        text_channel = get_text_channel("custom", number, owner)
-
-        if voice_channel.id and text_channel and len(voice_channel.members) == 0:
+        owner = name.split(" ", 2)[-1]
+        if len(voice_channel.members) == 0:
             await voice_channel.delete()
-            await text_channel.delete()
+            txt = get_text_channel("arena", number, owner)
+            if txt:
+                await txt.delete()
+        return
 
-    elif voice_channel.user_limit == 16 and "Arena" in name:
+    if name.startswith("ARAM"):
         number = extract_number(name)
-        owner = name.split()[-1]
-        text_channel = get_text_channel("arena", number, owner)
-        if voice_channel.id and text_channel and len(voice_channel.members) == 0:
+        owner = name.split(" ", 2)[-1]
+        if len(voice_channel.members) == 0:
             await voice_channel.delete()
-            await text_channel.delete()
+            txt = get_text_channel("aram", number, owner)
+            if txt:
+                await txt.delete()
+        return
 
-bot.run(os.getenv("TOKEN"))
+    if len(voice_channel.members) == 0:
+        await voice_channel.delete()
+
+bot.run(os.getenv("BOT_TOKEN"))
