@@ -5,7 +5,7 @@ from discord import PermissionOverwrite, app_commands
 import re
 import os
 import asyncio
-import requests  # Import requests for API calls
+import requests 
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -22,14 +22,13 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        guild = discord.Object(id=1153027935553454191)  # Use your guild ID
+        guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
 
-# Channel counter for creating channels
 channel_counter = {
     "soloq": 1,
     "flexq": 1,
@@ -239,12 +238,10 @@ async def on_voice_state_update(member, before, after):
 async def dpm(interaction: discord.Interaction, summoner: str):
     await interaction.response.defer()
 
-    # Set the region and API URLs
-    REGION = 'euw1'  # Change region as necessary
+    REGION = 'euw1'
     BASE_URL = f"https://{REGION}.api.riotgames.com/lol"
 
     try:
-        # Fetch summoner details
         summoner_response = requests.get(
             f"{BASE_URL}/summoner/v4/summoners/by-name/{summoner}",
             headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
@@ -252,14 +249,12 @@ async def dpm(interaction: discord.Interaction, summoner: str):
         summoner_data = summoner_response.json()
         puuid = summoner_data['puuid']
 
-        # Fetch match IDs
         match_response = requests.get(
             f"{BASE_URL}/match/v5/matches/by-puuid/{puuid}/ids?count=1",
             headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
         )
         match_id = match_response.json()[0]
 
-        # Fetch match details
         match_details_response = requests.get(
             f"{BASE_URL}/match/v5/matches/{match_id}",
             headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
@@ -267,7 +262,6 @@ async def dpm(interaction: discord.Interaction, summoner: str):
         match_details = match_details_response.json()
         participant = next(p for p in match_details['info']['participants'] if p['puuid'] == puuid)
 
-        # Calculate DPM
         dpm = participant['totalDamageDealtToChampions'] / (match_details['info']['gameDuration'] / 60)
         dpm = round(dpm, 1)
         duration_min = match_details['info']['gameDuration'] // 60
@@ -287,6 +281,6 @@ async def dpm(interaction: discord.Interaction, summoner: str):
         print(f"Error fetching DPM: {e}")
         await interaction.edit_original_response(content="❌ Could not fetch DPM stats. Please check the summoner name or try again later.")
 
-# Start the bot with the token
 bot.run(os.getenv("BOT_TOKEN"))
+
 
