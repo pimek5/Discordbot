@@ -6,6 +6,8 @@ import re
 import os
 import asyncio
 import requests  # Import requests for API calls
+from dotenv import load_dotenv
+load_dotenv()
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -287,3 +289,4 @@ async def dpm(interaction: discord.Interaction, summoner: str):
 
 # Start the bot with the token
 bot.run(os.getenv("BOT_TOKEN"))
+
