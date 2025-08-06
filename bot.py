@@ -112,7 +112,7 @@ class CustomSubMenu(View):
         asyncio.create_task(schedule_auto_delete_if_empty(vc_team2))
 
         await interaction.response.send_message(
-            f"✅ Created custom setup:\n- **{name_main}** (10)\n- **{name_team1}**, **{name_team2** (5)\n- **#{text_name}**",
+            f"✅ Created custom setup:\n- **{name_main}** (10)\n- **{name_team1}**, **{name_team2}** (5)\n- **#{text_name}**",
             ephemeral=True
         )
 
