@@ -5,6 +5,7 @@ from discord import PermissionOverwrite, app_commands
 import re
 import os
 import asyncio
+import requests  # Import requests for API calls
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -19,13 +20,14 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        guild = discord.Object(id=1153027935553454191)
+        guild = discord.Object(id=1153027935553454191)  # Use your guild ID
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
 
+# Channel counter for creating channels
 channel_counter = {
     "soloq": 1,
     "flexq": 1,
@@ -110,7 +112,7 @@ class CustomSubMenu(View):
         asyncio.create_task(schedule_auto_delete_if_empty(vc_team2))
 
         await interaction.response.send_message(
-            f"✅ Created custom setup:\n- **{name_main}** (10)\n- **{name_team1}**, **{name_team2}** (5)\n- **#{text_name}**",
+            f"✅ Created custom setup:\n- **{name_main}** (10)\n- **{name_team1}**, **{name_team2** (5)\n- **#{text_name}**",
             ephemeral=True
         )
 
@@ -230,4 +232,58 @@ async def on_voice_state_update(member, before, after):
                 if log_channel:
                     await log_channel.send(f"🕙 Auto usunięto pusty kanał {name} po 10s.")
 
+@bot.tree.command(name="dpm", description="Get DPM stats for a League of Legends summoner.")
+@app_commands.describe(summoner="Summoner name")
+async def dpm(interaction: discord.Interaction, summoner: str):
+    await interaction.response.defer()
+
+    # Set the region and API URLs
+    REGION = 'euw1'  # Change region as necessary
+    BASE_URL = f"https://{REGION}.api.riotgames.com/lol"
+
+    try:
+        # Fetch summoner details
+        summoner_response = requests.get(
+            f"{BASE_URL}/summoner/v4/summoners/by-name/{summoner}",
+            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
+        )
+        summoner_data = summoner_response.json()
+        puuid = summoner_data['puuid']
+
+        # Fetch match IDs
+        match_response = requests.get(
+            f"{BASE_URL}/match/v5/matches/by-puuid/{puuid}/ids?count=1",
+            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
+        )
+        match_id = match_response.json()[0]
+
+        # Fetch match details
+        match_details_response = requests.get(
+            f"{BASE_URL}/match/v5/matches/{match_id}",
+            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
+        )
+        match_details = match_details_response.json()
+        participant = next(p for p in match_details['info']['participants'] if p['puuid'] == puuid)
+
+        # Calculate DPM
+        dpm = participant['totalDamageDealtToChampions'] / (match_details['info']['gameDuration'] / 60)
+        dpm = round(dpm, 1)
+        duration_min = match_details['info']['gameDuration'] // 60
+        duration_sec = match_details['info']['gameDuration'] % 60
+
+        embed = discord.Embed(title=f"{participant['summonerName']}'s DPM Stats", color=0x1F8B4C)
+        embed.add_field(name="Champion", value=participant['championName'], inline=True)
+        embed.add_field(name="Role", value=participant.get('teamPosition', 'Unknown'), inline=True)
+        embed.add_field(name="KDA", value=f"{participant['kills']}/{participant['deaths']}/{participant['assists']}", inline=True)
+        embed.add_field(name="DPM", value=dpm, inline=True)
+        embed.add_field(name="Game Duration", value=f"{duration_min}:{str(duration_sec).zfill(2)}", inline=True)
+        embed.add_field(name="Result", value="Victory" if participant['win'] else "Defeat", inline=True)
+
+        await interaction.edit_original_response(embed=embed)
+
+    except Exception as e:
+        print(f"Error fetching DPM: {e}")
+        await interaction.edit_original_response(content="❌ Could not fetch DPM stats. Please check the summoner name or try again later.")
+
+# Start the bot with the token
 bot.run(os.getenv("BOT_TOKEN"))
