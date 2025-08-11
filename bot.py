@@ -5,8 +5,9 @@ from discord import PermissionOverwrite, app_commands
 import re
 import os
 import asyncio
-import requests 
+import aiohttp
 from dotenv import load_dotenv
+
 load_dotenv()
 
 intents = discord.Intents.default()
@@ -25,6 +26,7 @@ class MyBot(commands.Bot):
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
+        self.tree.add_command(dpm, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -224,63 +226,93 @@ async def on_voice_state_update(member, before, after):
             return
         owner = name.split()[-1]
         text_channel = get_text_channel(name.split()[0].lower(), number, owner)
-        if len(voice_channel.members) == 0 and text_channel:
-            await asyncio.sleep(10)
-            if len(voice_channel.members) == 0:
-                await voice_channel.delete()
-                await text_channel.delete()
-                log_channel = guild.get_channel(1398986567988674704)
-                if log_channel:
-                    await log_channel.send(f"🕙 Auto usunięto pusty kanał {name} po 10s.")
+        if len(voice_channel.members) == 0 and text_channel is not None:
+            await voice_channel.delete()
+            await text_channel.delete()
+            log_channel = guild.get_channel(1398986567988674704)
+            if log_channel:
+                await log_channel.send(f"🕙 Auto-delete voice + text channel {voice_channel.name} due to empty voice channel.")
+
+async def fetch_json(url):
+    headers = {"X-Riot-Token": os.getenv("RIOT_API_KEY")}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                return None
+            return await resp.json()
 
 @bot.tree.command(name="dpm", description="Get DPM stats for a League of Legends summoner.")
 @app_commands.describe(summoner="Summoner name")
 async def dpm(interaction: discord.Interaction, summoner: str):
     await interaction.response.defer()
 
-    REGION = 'euw1'
-    BASE_URL = f"https://{REGION}.api.riotgames.com/lol"
+    REGION_ROUTING = "europe"
+    PLATFORM_ROUTING = "eun1"
 
-    try:
-        summoner_response = requests.get(
-            f"{BASE_URL}/summoner/v4/summoners/by-name/{summoner}",
-            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
-        )
-        summoner_data = summoner_response.json()
-        puuid = summoner_data['puuid']
+    summoner_data = await fetch_json(f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/summoner/v4/summoners/by-name/{summoner}")
+    if not summoner_data:
+        return await interaction.followup.send("❌ Nie znaleziono summoner'a.")
 
-        match_response = requests.get(
-            f"{BASE_URL}/match/v5/matches/by-puuid/{puuid}/ids?count=1",
-            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
-        )
-        match_id = match_response.json()[0]
+    puuid = summoner_data["puuid"]
 
-        match_details_response = requests.get(
-            f"{BASE_URL}/match/v5/matches/{match_id}",
-            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
-        )
-        match_details = match_details_response.json()
-        participant = next(p for p in match_details['info']['participants'] if p['puuid'] == puuid)
+    match_ids = await fetch_json(f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?count=10")
+    if not match_ids:
+        return await interaction.followup.send("❌ Brak gier do analizy.")
 
-        dpm = participant['totalDamageDealtToChampions'] / (match_details['info']['gameDuration'] / 60)
-        dpm = round(dpm, 1)
-        duration_min = match_details['info']['gameDuration'] // 60
-        duration_sec = match_details['info']['gameDuration'] % 60
+    total_dpm = 0
+    last_match_data = None
 
-        embed = discord.Embed(title=f"{participant['summonerName']}'s DPM Stats", color=0x1F8B4C)
-        embed.add_field(name="Champion", value=participant['championName'], inline=True)
-        embed.add_field(name="Role", value=participant.get('teamPosition', 'Unknown'), inline=True)
-        embed.add_field(name="KDA", value=f"{participant['kills']}/{participant['deaths']}/{participant['assists']}", inline=True)
-        embed.add_field(name="DPM", value=dpm, inline=True)
-        embed.add_field(name="Game Duration", value=f"{duration_min}:{str(duration_sec).zfill(2)}", inline=True)
-        embed.add_field(name="Result", value="Victory" if participant['win'] else "Defeat", inline=True)
+    for idx, match_id in enumerate(match_ids):
+        match_data = await fetch_json(f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}")
+        if not match_data:
+            continue
 
-        await interaction.edit_original_response(embed=embed)
+        player = next((p for p in match_data["info"]["participants"] if p["puuid"] == puuid), None)
+        if not player:
+            continue
 
-    except Exception as e:
-        print(f"Error fetching DPM: {e}")
-        await interaction.edit_original_response(content="❌ Could not fetch DPM stats. Please check the summoner name or try again later.")
+        game_duration_min = match_data["info"]["gameDuration"] / 60
+        dpm_value = player["totalDamageDealtToChampions"] / game_duration_min
+        total_dpm += dpm_value
 
-bot.run(os.getenv("BOT_TOKEN"))
+        if idx == 0:
+            last_match_data = (match_id, match_data, player, dpm_value)
 
+    avg_dpm = total_dpm / len(match_ids)
 
+    role = last_match_data[2].get("teamPosition", "UNKNOWN")
+    median_dpm_by_role = {
+        "TOP": 500,
+        "JUNGLE": 400,
+        "MIDDLE": 550,
+        "BOTTOM": 600,
+        "UTILITY": 300,
+        "UNKNOWN": 500
+    }
+    median_dpm = median_dpm_by_role.get(role.upper(), 500)
+
+    dpm_score = (avg_dpm / median_dpm) * 100
+
+    match_id, match_data, player, dpm_value = last_match_data
+    team_kills = sum(t["kills"] for t in match_data["info"]["participants"] if t["teamId"] == player["teamId"])
+    kp = ((player["kills"] + player["assists"]) / team_kills) * 100 if team_kills > 0 else 0
+    vision_score = player.get("visionScore", 0)
+
+    player_obj_participation = player.get("challenges", {}).get("teamObjectiveParticipation", 0) * 100
+
+    embed = discord.Embed(
+        title=f"DPM Stats — {summoner}",
+        description=f"Ostatnia gra: **{match_id}**\nRola: **{role}**",
+        color=discord.Color.blurple()
+    )
+    embed.add_field(name="DPM (ostatnia gra)", value=f"{dpm_value:.1f}", inline=True)
+    embed.add_field(name="Średni DPM (10 gier)", value=f"{avg_dpm:.1f}", inline=True)
+    embed.add_field(name="DPM Score", value=f"{dpm_score:.1f}%", inline=True)
+    embed.add_field(name="Kill Participation", value=f"{kp:.1f}%", inline=True)
+    embed.add_field(name="Vision Score", value=str(vision_score), inline=True)
+    embed.add_field(name="Objective Participation", value=f"{player_obj_participation:.1f}%", inline=True)
+    embed.set_footer(text="Dane z Riot API - przetwarzane lokalnie")
+
+    await interaction.followup.send(embed=embed)
+
+bot.run(os.getenv("DISCORD_TOKEN"))
