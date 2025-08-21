@@ -5,9 +5,8 @@ from discord import PermissionOverwrite, app_commands
 import re
 import os
 import asyncio
-import requests
+import requests 
 from dotenv import load_dotenv
-
 load_dotenv()
 
 intents = discord.Intents.default()
@@ -20,9 +19,6 @@ intents.message_content = True
 MAX_INVITE_USERS = 16
 TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
 
-# =========================
-#         BOT
-# =========================
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
@@ -31,13 +27,11 @@ class MyBot(commands.Bot):
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
+        self.tree.add_command(dpm, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
 
-# =========================
-#    CHANNEL CREATION LOGIC
-# =========================
 channel_counter = {
     "soloq": 1,
     "flexq": 1,
@@ -57,7 +51,9 @@ async def get_or_create_temp_category(guild):
     return category
 
 async def create_temp_text_channel(guild, name, category, allowed_users=None):
-    overwrites = {guild.default_role: PermissionOverwrite(read_messages=False)}
+    overwrites = {
+        guild.default_role: PermissionOverwrite(read_messages=False)
+    }
     if allowed_users:
         for user in allowed_users:
             overwrites[user] = PermissionOverwrite(read_messages=True, send_messages=True)
@@ -73,9 +69,9 @@ async def schedule_auto_delete_if_empty(voice_channel: discord.VoiceChannel, tex
         if log_channel:
             await log_channel.send(f"🕙 Auto-deleted empty channel `{voice_channel.name}` after 10s.")
 
-# =========================
-#      CREATE CHANNEL UI
-# =========================
+# ================================
+#        CREATE CHANNEL VIEWS
+# ================================
 class CustomSubMenu(View):
     def __init__(self, user):
         super().__init__(timeout=60)
@@ -96,6 +92,7 @@ class CustomSubMenu(View):
 
         vc = await guild.create_voice_channel(voice_name, category=category, user_limit=16)
         tc = await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
+
         asyncio.create_task(schedule_auto_delete_if_empty(vc, tc))
 
         await interaction.response.send_message(f"✅ Created voice + text: **{voice_name}** / #{text_name}", ephemeral=True)
@@ -175,14 +172,14 @@ class CreateChannelView(View):
         view = CustomSubMenu(user=interaction.user)
         await interaction.response.send_message("🔧 Choose Custom option:", view=view, ephemeral=True)
 
-# =========================
-#      APP COMMANDS
-# =========================
 @discord.app_commands.command(name="setup_create_panel", description="Wyświetl panel do tworzenia kanałów głosowych")
 async def setup_create_panel(interaction: discord.Interaction):
     view = CreateChannelView()
     await interaction.response.send_message("🎮 **Create Voice Channel**", view=view, ephemeral=True)
 
+# ================================
+#        INVITE COMMAND
+# ================================
 @bot.tree.command(name="invite", description="Invite a user to a temporary voice or text channel")
 @app_commands.describe(user="User to invite")
 async def invite(interaction: discord.Interaction, user: discord.Member):
@@ -208,13 +205,63 @@ async def invite(interaction: discord.Interaction, user: discord.Member):
 
     await interaction.response.send_message(f"{user.mention} has been added to {channel.mention}", ephemeral=False)
 
-# =========================
-#      FIXED MESSAGES
-# =========================
-FIXES_CHANNEL_ID = 123456789012345678   # 🔹 ID kanału z fixami
+# ================================
+#        DPM COMMAND
+# ================================
+@bot.tree.command(name="dpm", description="Get DPM stats for a League of Legends summoner.")
+@app_commands.describe(summoner="Summoner name")
+async def dpm(interaction: discord.Interaction, summoner: str):
+    await interaction.response.defer()
+    REGION = 'euw1'
+    BASE_URL = f"https://{REGION}.api.riotgames.com/lol"
+
+    try:
+        summoner_response = requests.get(
+            f"{BASE_URL}/summoner/v4/summoners/by-name/{summoner}",
+            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
+        )
+        summoner_data = summoner_response.json()
+        puuid = summoner_data['puuid']
+
+        match_response = requests.get(
+            f"{BASE_URL}/match/v5/matches/by-puuid/{puuid}/ids?count=1",
+            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
+        )
+        match_id = match_response.json()[0]
+
+        match_details_response = requests.get(
+            f"{BASE_URL}/match/v5/matches/{match_id}",
+            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
+        )
+        match_details = match_details_response.json()
+        participant = next(p for p in match_details['info']['participants'] if p['puuid'] == puuid)
+
+        dpm = participant['totalDamageDealtToChampions'] / (match_details['info']['gameDuration'] / 60)
+        dpm = round(dpm, 1)
+        duration_min = match_details['info']['gameDuration'] // 60
+        duration_sec = match_details['info']['gameDuration'] % 60
+
+        embed = discord.Embed(title=f"{participant['summonerName']}'s DPM Stats", color=0x1F8B4C)
+        embed.add_field(name="Champion", value=participant['championName'], inline=True)
+        embed.add_field(name="Role", value=participant.get('teamPosition', 'Unknown'), inline=True)
+        embed.add_field(name="KDA", value=f"{participant['kills']}/{participant['deaths']}/{participant['assists']}", inline=True)
+        embed.add_field(name="DPM", value=dpm, inline=True)
+        embed.add_field(name="Game Duration", value=f"{duration_min}:{str(duration_sec).zfill(2)}", inline=True)
+        embed.add_field(name="Result", value="Victory" if participant['win'] else "Defeat", inline=True)
+
+        await interaction.edit_original_response(embed=embed)
+
+    except Exception as e:
+        print(f"Error fetching DPM: {e}")
+        await interaction.edit_original_response(content="❌ Could not fetch DPM stats. Please check the summoner name or try again later.")
+
+# ================================
+#        FIXED MESSAGES
+# ================================
+FIXES_CHANNEL_ID = 123456789012345678   # 🔹 Ustaw ID kanału z fixami
 NOTIFY_ROLE_ID = 1173564965152637018
 ISSUE_CHANNEL_ID = 1264484659765448804
-LOG_CHANNEL_ID = 1398986567988674704
+LOG_CHANNEL_ID = 1398986567988674704   # Kanał do logowania kliknięć przycisków
 
 class FixedMessageView(View):
     def __init__(self):
@@ -230,54 +277,65 @@ class FixedMessageView(View):
         if role in interaction.user.roles:
             await interaction.user.remove_roles(role)
             await interaction.response.send_message("❌ Removed notification role.", ephemeral=True)
+            action = "removed"
         else:
             await interaction.user.add_roles(role)
             await interaction.response.send_message("✅ You will now receive notifications.", ephemeral=True)
+            action = "added"
+
+        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            await log_channel.send(f"🔔 {interaction.user.mention} {action} Notify Me role via button.")
 
     @discord.ui.button(label="🔧 Issue?", style=discord.ButtonStyle.blurple)
     async def issue_button(self, interaction: discord.Interaction, button: Button):
         channel = interaction.guild.get_channel(ISSUE_CHANNEL_ID)
         if channel:
-            await interaction.response.send_message(f"🔧 Please report the issue here: {channel.mention}", ephemeral=True)
+            await interaction.response.send_message(
+                f"🔧 Please report the issue here: {channel.mention}", ephemeral=True
+            )
         else:
             await interaction.response.send_message("⚠️ Issue channel not found.", ephemeral=True)
 
+        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            await log_channel.send(f"🔧 {interaction.user.mention} clicked Issue? button.")
+
 @bot.event
 async def on_message(message: discord.Message):
-    if message.author.bot or message.channel.id != FIXES_CHANNEL_ID:
+    if message.author.bot:
         return
 
-    if "fixed" in message.content.lower():
+    if message.channel.id == FIXES_CHANNEL_ID and "fixed" in message.content.lower():
         try:
             await message.add_reaction("✅")
             await message.add_reaction("❎")
-            await message.channel.send(view=FixedMessageView(), reference=message)
+            await message.reply(view=FixedMessageView())
         except Exception as e:
             print(f"Error handling Fixed message: {e}")
+
+    await bot.process_commands(message)
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     if payload.channel_id != FIXES_CHANNEL_ID:
         return
     if str(payload.emoji) not in ["✅", "❎"]:
-        # Usuń niepożądane reakcje
         channel = bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
-        user = bot.get_user(payload.user_id)
-        await message.remove_reaction(payload.emoji, user)
+        await message.remove_reaction(payload.emoji, await bot.fetch_user(payload.user_id))
         return
 
-    # Logowanie reakcji
     log_channel = bot.get_channel(LOG_CHANNEL_ID)
     if log_channel:
-        user = bot.get_user(payload.user_id)
+        user = await bot.fetch_user(payload.user_id)
         channel = bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
         await log_channel.send(f"📝 {user.mention} reacted with {payload.emoji} on [this message]({message.jump_url})")
 
-# =========================
-#      BOT READY
-# =========================
+# ================================
+#        OTHER EVENTS
+# ================================
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
