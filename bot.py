@@ -281,5 +281,64 @@ async def dpm(interaction: discord.Interaction, summoner: str):
         print(f"Error fetching DPM: {e}")
         await interaction.edit_original_response(content="❌ Could not fetch DPM stats. Please check the summoner name or try again later.")
 
-bot.run(os.getenv("BOT_TOKEN"))
 
+# ================================
+#        FIXED MESSAGES
+# ================================
+FIXES_CHANNEL_ID = 123456789012345678   # 🔹 Ustaw ID kanału z fixami
+NOTIFY_ROLE_ID = 1173564965152637018
+ISSUE_CHANNEL_ID = 1264484659765448804
+
+class FixedMessageView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🔔 Notify Me", style=discord.ButtonStyle.green)
+    async def notify_button(self, interaction: discord.Interaction, button: Button):
+        role = interaction.guild.get_role(NOTIFY_ROLE_ID)
+        if not role:
+            await interaction.response.send_message("⚠️ Role not found.", ephemeral=True)
+            return
+
+        if role in interaction.user.roles:
+            await interaction.user.remove_roles(role)
+            await interaction.response.send_message("❌ Removed notification role.", ephemeral=True)
+        else:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message("✅ You will now receive notifications.", ephemeral=True)
+
+    @discord.ui.button(label="🔧 Issue?", style=discord.ButtonStyle.blurple)
+    async def issue_button(self, interaction: discord.Interaction, button: Button):
+        channel = interaction.guild.get_channel(ISSUE_CHANNEL_ID)
+        if channel:
+            await interaction.response.send_message(
+                f"🔧 Please report the issue here: {channel.mention}", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message("⚠️ Issue channel not found.", ephemeral=True)
+
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot or message.channel.id != FIXES_CHANNEL_ID:
+        return
+
+    if "fixed" in message.content.lower():
+        try:
+            await message.add_reaction("✅")
+            await message.add_reaction("❎")
+            await message.channel.send(view=FixedMessageView(), reference=message)
+        except Exception as e:
+            print(f"Error handling Fixed message: {e}")
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    if payload.channel_id != FIXES_CHANNEL_ID:
+        return
+    if str(payload.emoji) not in ["✅", "❎"]:
+        channel = bot.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        await message.remove_reaction(payload.emoji, payload.member)
+
+# ================================
+
+bot.run(os.getenv("BOT_TOKEN"))
