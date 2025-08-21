@@ -227,17 +227,35 @@ async def invite(interaction: discord.Interaction, user: discord.Member):
 # ================================
 #        DPM COMMAND (INTERAKTYWNY)
 # ================================
+from urllib.parse import quote
+
+def region_mapping(region: str) -> str:
+    mapping = {
+        'euw1': 'europe',
+        'eun1': 'europe',
+        'na1': 'americas',
+        'br1': 'americas',
+        'la1': 'americas',
+        'la2': 'americas',
+        'kr': 'asia',
+        'jp1': 'asia',
+        'oc1': 'sea',
+        'ru': 'europe'
+    }
+    return mapping.get(region.lower(), 'europe')
+
 @bot.tree.command(name="dpm_history_full", description="Show last 20 matches with full interactive DPM stats")
-@app_commands.describe(summoner="Summoner name")
-async def dpm_history_full(interaction: discord.Interaction, summoner: str):
+@app_commands.describe(summoner="Summoner name", region="Region of the account (e.g. EUW1, NA1)")
+async def dpm_history_full(interaction: discord.Interaction, summoner: str, region: str = "euw1"):
     await interaction.response.defer()
-    REGION = 'euw1'
-    BASE_URL = f"https://{REGION}.api.riotgames.com/lol"
+    BASE_URL = f"https://{region.lower()}.api.riotgames.com/lol"
+    MATCH_BASE_URL = f"https://{region_mapping(region)}.api.riotgames.com/lol/match/v5/matches"
     HEADERS = {"X-Riot-Token": os.getenv("RIOT_API_KEY")}
 
     try:
-        # 1. Pobierz dane summonera
-        summoner_resp = requests.get(f"{BASE_URL}/summoner/v4/summoners/by-name/{summoner}", headers=HEADERS)
+        # 1. Pobierz dane summonera z zakodowaną nazwą
+        summoner_safe = quote(summoner)
+        summoner_resp = requests.get(f"{BASE_URL}/summoner/v4/summoners/by-name/{summoner_safe}", headers=HEADERS)
         if summoner_resp.status_code != 200:
             await interaction.edit_original_response(content="❌ Summoner not found.")
             return
@@ -245,12 +263,12 @@ async def dpm_history_full(interaction: discord.Interaction, summoner: str):
         puuid = summoner_data['puuid']
 
         # 2. Pobierz ostatnie 20 meczów
-        matches_resp = requests.get(f"https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?count=20", headers=HEADERS)
+        matches_resp = requests.get(f"{MATCH_BASE_URL}/by-puuid/{puuid}/ids?count=20", headers=HEADERS)
         match_ids = matches_resp.json()
         matches_data = []
 
         for mid in match_ids:
-            match_json = requests.get(f"https://europe.api.riotgames.com/lol/match/v5/matches/{mid}", headers=HEADERS).json()
+            match_json = requests.get(f"{MATCH_BASE_URL}/{mid}", headers=HEADERS).json()
             participant = next((p for p in match_json['info']['participants'] if p['puuid'] == puuid), None)
             if participant:
                 matches_data.append({
@@ -361,77 +379,6 @@ async def dpm_history_full(interaction: discord.Interaction, summoner: str):
         await interaction.edit_original_response(content="❌ Error fetching match history.")
 
 # ================================
-#        FIXED MESSAGES
-# ================================
-class FixedMessageView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="🔔 Notify Me", style=discord.ButtonStyle.green)
-    async def notify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        role = interaction.guild.get_role(NOTIFY_ROLE_ID)
-        if not role:
-            await interaction.response.send_message("⚠️ Role not found.", ephemeral=True)
-            return
-
-        if role in interaction.user.roles:
-            await interaction.user.remove_roles(role)
-            await interaction.response.send_message("❌ Removed notification role.", ephemeral=True)
-            action = "removed"
-        else:
-            await interaction.user.add_roles(role)
-            await interaction.response.send_message("✅ You will now receive notifications.", ephemeral=True)
-            action = "added"
-
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            await log_channel.send(f"🔔 {interaction.user.mention} {action} Notify Me role via button.")
-
-    @discord.ui.button(label="🔧 Issue?", style=discord.ButtonStyle.blurple)
-    async def issue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        channel = interaction.guild.get_channel(ISSUE_CHANNEL_ID)
-        if channel:
-            await interaction.response.send_message(f"🔧 Please report the issue here: {channel.mention}", ephemeral=True)
-        else:
-            await interaction.response.send_message("⚠️ Issue channel not found.", ephemeral=True)
-
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            await log_channel.send(f"🔧 {interaction.user.mention} clicked Issue? button.")
-
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
-
-    if message.channel.id == FIXES_CHANNEL_ID and re.search(r'\bfixed\b', message.content, re.IGNORECASE):
-        try:
-            await message.add_reaction("✅")
-            await message.add_reaction("❎")
-            await message.reply("🎯 Fixed detected!", view=FixedMessageView())
-        except Exception as e:
-            print(f"Error handling Fixed message: {e}")
-
-    await bot.process_commands(message)
-
-@bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    if payload.channel_id != FIXES_CHANNEL_ID:
-        return
-    if str(payload.emoji) not in ["✅", "❎"]:
-        channel = bot.get_channel(payload.channel_id)
-        message = await channel.fetch_message(payload.message_id)
-        await message.remove_reaction(payload.emoji, await bot.fetch_user(payload.user_id))
-        return
-
-    log_channel = bot.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        user = await bot.fetch_user(payload.user_id)
-        channel = bot.get_channel(payload.channel_id)
-        message = await channel.fetch_message(payload.message_id)
-        await log_channel.send(f"📝 {user.mention} reacted with {payload.emoji} on [this message]({message.jump_url})")
-
-# ================================
 #        OTHER EVENTS
 # ================================
 @bot.event
@@ -440,5 +387,6 @@ async def on_ready():
     print('------')
 
 bot.run(os.getenv("BOT_TOKEN"))
+
 
 
