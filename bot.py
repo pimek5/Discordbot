@@ -240,29 +240,42 @@ def region_mapping(region: str) -> str:
         'kr': 'asia',
         'jp1': 'asia',
         'oc1': 'sea',
-        'ru': 'europe'
+        'ru': 'europe',
+        'tr1': 'europe'
     }
     return mapping.get(region.lower(), 'europe')
 
 @bot.tree.command(name="dpm_history_full", description="Show last 20 matches with full interactive DPM stats")
-@app_commands.describe(summoner="Summoner name", region="Region of the account (e.g. EUW1, NA1)")
+@app_commands.describe(summoner="Riot ID (Nick#Tagline)", region="Region of the account (e.g. EUW1, EUN1, NA1)")
 async def dpm_history_full(interaction: discord.Interaction, summoner: str, region: str = "euw1"):
     await interaction.response.defer()
-    BASE_URL = f"https://{region.lower()}.api.riotgames.com/lol"
-    MATCH_BASE_URL = f"https://{region_mapping(region)}.api.riotgames.com/lol/match/v5/matches"
+    ROUTING = region_mapping(region)
+    MATCH_BASE_URL = f"https://{ROUTING}.api.riotgames.com/lol/match/v5/matches"
     HEADERS = {"X-Riot-Token": os.getenv("RIOT_API_KEY")}
 
     try:
-        # 1. Pobierz dane summonera z zakodowaną nazwą
-        summoner_safe = quote(summoner)
-        summoner_resp = requests.get(f"{BASE_URL}/summoner/v4/summoners/by-name/{summoner_safe}", headers=HEADERS)
-        if summoner_resp.status_code != 200:
-            await interaction.edit_original_response(content="❌ Summoner not found.")
+        # 1. Riot ID musi być w formacie Nick#Tagline
+        if "#" not in summoner:
+            await interaction.edit_original_response(content="❌ Podaj Riot ID w formacie Nick#Tagline (np. 16 9 13 5 11#pimek).")
             return
-        summoner_data = summoner_resp.json()
-        puuid = summoner_data['puuid']
 
-        # 2. Pobierz ostatnie 20 meczów
+        gameName, tagLine = summoner.split("#", 1)
+        gameName_safe = quote(gameName)
+        tagLine_safe = quote(tagLine)
+
+        # 2. Pobierz konto po Riot ID
+        account_resp = requests.get(
+            f"https://{ROUTING}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{gameName_safe}/{tagLine_safe}",
+            headers=HEADERS
+        )
+        if account_resp.status_code != 200:
+            await interaction.edit_original_response(content="❌ Riot ID not found.")
+            return
+
+        account_data = account_resp.json()
+        puuid = account_data['puuid']
+
+        # 3. Pobierz ostatnie 20 meczów
         matches_resp = requests.get(f"{MATCH_BASE_URL}/by-puuid/{puuid}/ids?count=20", headers=HEADERS)
         match_ids = matches_resp.json()
         matches_data = []
@@ -280,7 +293,7 @@ async def dpm_history_full(interaction: discord.Interaction, summoner: str, regi
                     'duration': match_json['info']['gameDuration'],
                     'win': participant['win'],
                     'queue': match_json['info'].get('gameMode','Unknown'),
-                    'summonerName': participant['summonerName'],
+                    'summonerName': f"{gameName}#{tagLine}",
                     'participantData': participant,
                     'matchId': match_json['metadata']['matchId']
                 })
@@ -289,7 +302,7 @@ async def dpm_history_full(interaction: discord.Interaction, summoner: str, regi
             await interaction.edit_original_response(content="❌ No valid matches found.")
             return
 
-        # 3. Stwórz view i wyświetl embed
+        # 4. Interaktywny widok z przyciskami
         class PageButton(Button):
             def __init__(self, label, view, direction):
                 super().__init__(label=label, style=discord.ButtonStyle.blurple)
@@ -319,7 +332,7 @@ async def dpm_history_full(interaction: discord.Interaction, summoner: str, regi
                 spell2 = participant.get("summoner2Id","Unknown")
                 keystone = participant.get("perks", {}).get("styles",[{}])[0].get("selections",[{}])[0].get("perk","Unknown")
 
-                embed = discord.Embed(title=f"{participant['summonerName']} Full DPM", color=0x1F8B4C)
+                embed = discord.Embed(title=f"{self.match_data['summonerName']} Full DPM", color=0x1F8B4C)
                 embed.add_field(name="Champion", value=participant['championName'])
                 embed.add_field(name="KDA", value=f"{participant['kills']}/{participant['deaths']}/{participant['assists']}")
                 embed.add_field(name="DPM Total", value=round(dpm_total,1))
@@ -387,6 +400,7 @@ async def on_ready():
     print('------')
 
 bot.run(os.getenv("BOT_TOKEN"))
+
 
 
 
