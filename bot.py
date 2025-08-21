@@ -41,7 +41,7 @@ class MyBot(commands.Bot):
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
-        self.tree.add_command(dpm, guild=guild)
+        self.tree.add_command(dpm_history_full, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -440,4 +440,5 @@ async def on_ready():
     print('------')
 
 bot.run(os.getenv("BOT_TOKEN"))
+
 
