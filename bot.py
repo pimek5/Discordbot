@@ -9,6 +9,9 @@ import requests
 from dotenv import load_dotenv
 load_dotenv()
 
+# ================================
+#        INTENTS
+# ================================
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
@@ -16,9 +19,20 @@ intents.voice_states = True
 intents.messages = True
 intents.message_content = True
 
+# ================================
+#        CONFIG
+# ================================
 MAX_INVITE_USERS = 16
 TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
 
+FIXES_CHANNEL_ID = 1372734313594093638
+NOTIFY_ROLE_ID = 1173564965152637018
+ISSUE_CHANNEL_ID = 1264484659765448804
+LOG_CHANNEL_ID = 1408036991454417039
+
+# ================================
+#        BOT INIT
+# ================================
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
@@ -32,6 +46,9 @@ class MyBot(commands.Bot):
 
 bot = MyBot()
 
+# ================================
+#        CHANNEL COUNTER
+# ================================
 channel_counter = {
     "soloq": 1,
     "flexq": 1,
@@ -44,6 +61,9 @@ def extract_number(name):
     match = re.search(r"\b(\d+)\b", name)
     return match.group(1) if match else None
 
+# ================================
+#        TEMP CHANNEL HELPERS
+# ================================
 async def get_or_create_temp_category(guild):
     category = discord.utils.get(guild.categories, name=TEMP_CHANNEL_CATEGORY_NAME)
     if not category:
@@ -65,7 +85,7 @@ async def schedule_auto_delete_if_empty(voice_channel: discord.VoiceChannel, tex
         await voice_channel.delete()
         if text_channel:
             await text_channel.delete()
-        log_channel = voice_channel.guild.get_channel(1398986567988674704)
+        log_channel = voice_channel.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
             await log_channel.send(f"🕙 Auto-deleted empty channel `{voice_channel.name}` after 10s.")
 
@@ -92,7 +112,6 @@ class CustomSubMenu(View):
 
         vc = await guild.create_voice_channel(voice_name, category=category, user_limit=16)
         tc = await create_temp_text_channel(guild, text_name, category, allowed_users=[interaction.user])
-
         asyncio.create_task(schedule_auto_delete_if_empty(vc, tc))
 
         await interaction.response.send_message(f"✅ Created voice + text: **{voice_name}** / #{text_name}", ephemeral=True)
@@ -258,17 +277,12 @@ async def dpm(interaction: discord.Interaction, summoner: str):
 # ================================
 #        FIXED MESSAGES
 # ================================
-FIXES_CHANNEL_ID = 123456789012345678   # 🔹 Ustaw ID kanału z fixami
-NOTIFY_ROLE_ID = 1173564965152637018
-ISSUE_CHANNEL_ID = 1264484659765448804
-LOG_CHANNEL_ID = 1398986567988674704   # Kanał do logowania kliknięć przycisków
-
-class FixedMessageView(View):
+class FixedMessageView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="🔔 Notify Me", style=discord.ButtonStyle.green)
-    async def notify_button(self, interaction: discord.Interaction, button: Button):
+    async def notify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         role = interaction.guild.get_role(NOTIFY_ROLE_ID)
         if not role:
             await interaction.response.send_message("⚠️ Role not found.", ephemeral=True)
@@ -288,12 +302,10 @@ class FixedMessageView(View):
             await log_channel.send(f"🔔 {interaction.user.mention} {action} Notify Me role via button.")
 
     @discord.ui.button(label="🔧 Issue?", style=discord.ButtonStyle.blurple)
-    async def issue_button(self, interaction: discord.Interaction, button: Button):
+    async def issue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = interaction.guild.get_channel(ISSUE_CHANNEL_ID)
         if channel:
-            await interaction.response.send_message(
-                f"🔧 Please report the issue here: {channel.mention}", ephemeral=True
-            )
+            await interaction.response.send_message(f"🔧 Please report the issue here: {channel.mention}", ephemeral=True)
         else:
             await interaction.response.send_message("⚠️ Issue channel not found.", ephemeral=True)
 
@@ -306,11 +318,11 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    if message.channel.id == FIXES_CHANNEL_ID and "fixed" in message.content.lower():
+    if message.channel.id == FIXES_CHANNEL_ID and re.search(r'\bfixed\b', message.content, re.IGNORECASE):
         try:
             await message.add_reaction("✅")
             await message.add_reaction("❎")
-            await message.reply(view=FixedMessageView())
+            await message.reply("🎯 Fixed detected!", view=FixedMessageView())
         except Exception as e:
             print(f"Error handling Fixed message: {e}")
 
