@@ -13,6 +13,8 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.voice_states = True
+intents.messages = True  # <-- tego brakuje
+intents.message_content = True  # <-- bez tego bot nie zobaczy treści wiadomości
 
 MAX_INVITE_USERS = 16
 TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
@@ -319,6 +321,19 @@ class FixedMessageView(View):
 
 @bot.event
 async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    if message.channel.id == FIXES_CHANNEL_ID and "fixed" in message.content.lower():
+        try:
+            await message.add_reaction("✅")
+            await message.add_reaction("❎")
+            await message.channel.send(view=FixedMessageView(), reference=message)
+        except Exception as e:
+            print(f"Error handling Fixed message: {e}")
+
+@bot.event
+async def on_message(message: discord.Message):
     if message.author.bot or message.channel.id != FIXES_CHANNEL_ID:
         return
 
@@ -342,3 +357,4 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 # ================================
 
 bot.run(os.getenv("BOT_TOKEN"))
+
