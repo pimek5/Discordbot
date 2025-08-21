@@ -225,54 +225,140 @@ async def invite(interaction: discord.Interaction, user: discord.Member):
     await interaction.response.send_message(f"{user.mention} has been added to {channel.mention}", ephemeral=False)
 
 # ================================
-#        DPM COMMAND
+#        DPM COMMAND (INTERAKTYWNY)
 # ================================
-@bot.tree.command(name="dpm", description="Get DPM stats for a League of Legends summoner.")
+@bot.tree.command(name="dpm_history_full", description="Show last 20 matches with full interactive DPM stats")
 @app_commands.describe(summoner="Summoner name")
-async def dpm(interaction: discord.Interaction, summoner: str):
+async def dpm_history_full(interaction: discord.Interaction, summoner: str):
     await interaction.response.defer()
     REGION = 'euw1'
     BASE_URL = f"https://{REGION}.api.riotgames.com/lol"
+    HEADERS = {"X-Riot-Token": os.getenv("RIOT_API_KEY")}
 
     try:
-        summoner_response = requests.get(
-            f"{BASE_URL}/summoner/v4/summoners/by-name/{summoner}",
-            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
-        )
-        summoner_data = summoner_response.json()
+        # 1. Pobierz dane summonera
+        summoner_resp = requests.get(f"{BASE_URL}/summoner/v4/summoners/by-name/{summoner}", headers=HEADERS)
+        if summoner_resp.status_code != 200:
+            await interaction.edit_original_response(content="❌ Summoner not found.")
+            return
+        summoner_data = summoner_resp.json()
         puuid = summoner_data['puuid']
 
-        match_response = requests.get(
-            f"{BASE_URL}/match/v5/matches/by-puuid/{puuid}/ids?count=1",
-            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
-        )
-        match_id = match_response.json()[0]
+        # 2. Pobierz ostatnie 20 meczów
+        matches_resp = requests.get(f"https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?count=20", headers=HEADERS)
+        match_ids = matches_resp.json()
+        matches_data = []
 
-        match_details_response = requests.get(
-            f"{BASE_URL}/match/v5/matches/{match_id}",
-            headers={"X-Riot-Token": os.getenv("RIOT_API_KEY")}
-        )
-        match_details = match_details_response.json()
-        participant = next(p for p in match_details['info']['participants'] if p['puuid'] == puuid)
+        for mid in match_ids:
+            match_json = requests.get(f"https://europe.api.riotgames.com/lol/match/v5/matches/{mid}", headers=HEADERS).json()
+            participant = next((p for p in match_json['info']['participants'] if p['puuid'] == puuid), None)
+            if participant:
+                matches_data.append({
+                    'champion': participant['championName'],
+                    'kills': participant['kills'],
+                    'deaths': participant['deaths'],
+                    'assists': participant['assists'],
+                    'totalDamage': participant['totalDamageDealtToChampions'],
+                    'duration': match_json['info']['gameDuration'],
+                    'win': participant['win'],
+                    'queue': match_json['info'].get('gameMode','Unknown'),
+                    'summonerName': participant['summonerName'],
+                    'participantData': participant,
+                    'matchId': match_json['metadata']['matchId']
+                })
 
-        dpm = participant['totalDamageDealtToChampions'] / (match_details['info']['gameDuration'] / 60)
-        dpm = round(dpm, 1)
-        duration_min = match_details['info']['gameDuration'] // 60
-        duration_sec = match_details['info']['gameDuration'] % 60
+        if not matches_data:
+            await interaction.edit_original_response(content="❌ No valid matches found.")
+            return
 
-        embed = discord.Embed(title=f"{participant['summonerName']}'s DPM Stats", color=0x1F8B4C)
-        embed.add_field(name="Champion", value=participant['championName'], inline=True)
-        embed.add_field(name="Role", value=participant.get('teamPosition', 'Unknown'), inline=True)
-        embed.add_field(name="KDA", value=f"{participant['kills']}/{participant['deaths']}/{participant['assists']}", inline=True)
-        embed.add_field(name="DPM", value=dpm, inline=True)
-        embed.add_field(name="Game Duration", value=f"{duration_min}:{str(duration_sec).zfill(2)}", inline=True)
-        embed.add_field(name="Result", value="Victory" if participant['win'] else "Defeat", inline=True)
+        # 3. Stwórz view i wyświetl embed
+        class PageButton(Button):
+            def __init__(self, label, view, direction):
+                super().__init__(label=label, style=discord.ButtonStyle.blurple)
+                self.view_ref = view
+                self.direction = direction
 
-        await interaction.edit_original_response(embed=embed)
+            async def callback(self, interaction: discord.Interaction):
+                self.view_ref.page += self.direction
+                await self.view_ref.update_embed()
+
+        class MatchDetailButton(Button):
+            def __init__(self, label, match_data):
+                super().__init__(label=label, style=discord.ButtonStyle.green)
+                self.match_data = match_data
+
+            async def callback(self, interaction: discord.Interaction):
+                participant = self.match_data['participantData']
+                duration_min = self.match_data['duration']/60
+                dpm_total = participant['totalDamageDealtToChampions']/duration_min
+                dpm_physical = participant.get('physicalDamageDealtToChampions',0)/duration_min
+                dpm_magic = participant.get('magicDamageDealtToChampions',0)/duration_min
+                dpm_true = participant.get('trueDamageDealtToChampions',0)/duration_min
+
+                items = [participant.get(f'item{i}',0) for i in range(7)]
+                items_text = ", ".join(str(i) for i in items if i!=0) if any(items) else "None"
+                spell1 = participant.get("summoner1Id","Unknown")
+                spell2 = participant.get("summoner2Id","Unknown")
+                keystone = participant.get("perks", {}).get("styles",[{}])[0].get("selections",[{}])[0].get("perk","Unknown")
+
+                embed = discord.Embed(title=f"{participant['summonerName']} Full DPM", color=0x1F8B4C)
+                embed.add_field(name="Champion", value=participant['championName'])
+                embed.add_field(name="KDA", value=f"{participant['kills']}/{participant['deaths']}/{participant['assists']}")
+                embed.add_field(name="DPM Total", value=round(dpm_total,1))
+                embed.add_field(name="DPM Physical", value=round(dpm_physical,1))
+                embed.add_field(name="DPM Magic", value=round(dpm_magic,1))
+                embed.add_field(name="DPM True", value=round(dpm_true,1))
+                embed.add_field(name="Items", value=items_text)
+                embed.add_field(name="Summoner Spells", value=f"{spell1}, {spell2}")
+                embed.add_field(name="Keystone Rune", value=keystone)
+                embed.add_field(name="Result", value="Victory" if participant['win'] else "Defeat")
+                embed.set_footer(text=f"Match ID: {self.match_data['matchId']}")
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        class MatchHistoryView(View):
+            def __init__(self, interaction, matches_data):
+                super().__init__(timeout=180)
+                self.interaction = interaction
+                self.matches_data = matches_data
+                self.page = 0
+                self.per_page = 5
+
+            async def update_embed(self):
+                start = self.page * self.per_page
+                end = start + self.per_page
+                page_matches = self.matches_data[start:end]
+
+                description = ""
+                self.clear_items()
+                for idx, match in enumerate(page_matches, start=start+1):
+                    champion = match['champion']
+                    kda = f"{match['kills']}/{match['deaths']}/{match['assists']}"
+                    result = "Victory" if match['win'] else "Defeat"
+                    dpm = round(match['totalDamage']/ (match['duration']/60),1)
+                    game_type = match.get('queue','Unknown')
+                    description += f"**{idx}. {champion}** | KDA: {kda} | {result} | DPM: {dpm} | {game_type}\n"
+                    self.add_item(MatchDetailButton(label=str(idx), match_data=match))
+
+                if self.page > 0:
+                    self.add_item(PageButton(label="Previous", view=self, direction=-1))
+                if end < len(self.matches_data):
+                    self.add_item(PageButton(label="Next", view=self, direction=1))
+
+                embed = discord.Embed(
+                    title=f"{self.matches_data[0]['summonerName']} - Last {len(self.matches_data)} Matches",
+                    description=description,
+                    color=0x1F8B4C
+                )
+                embed.set_footer(text=f"Page {self.page+1}/{(len(self.matches_data)-1)//self.per_page + 1}")
+                await self.interaction.edit_original_response(embed=embed, view=self)
+
+        view = MatchHistoryView(interaction, matches_data)
+        await view.update_embed()
 
     except Exception as e:
-        print(f"Error fetching DPM: {e}")
-        await interaction.edit_original_response(content="❌ Could not fetch DPM stats. Please check the summoner name or try again later.")
+        print(f"Error fetching DPM history: {e}")
+        await interaction.edit_original_response(content="❌ Error fetching match history.")
 
 # ================================
 #        FIXED MESSAGES
@@ -354,3 +440,4 @@ async def on_ready():
     print('------')
 
 bot.run(os.getenv("BOT_TOKEN"))
+
