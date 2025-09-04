@@ -2,3 +2,5 @@ discord.py
 aiohttp
 python-dotenv
 requests
+py-cord>=2.5.0
+
