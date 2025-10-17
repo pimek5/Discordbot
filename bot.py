@@ -57,6 +57,8 @@ class MyBot(commands.Bot):
         self.tree.add_command(start_tweet_monitoring, guild=guild)
         self.tree.add_command(tweet_status, guild=guild)
         self.tree.add_command(test_twitter_connection, guild=guild)
+        self.tree.add_command(reset_tweet_tracking, guild=guild)
+        self.tree.add_command(check_specific_tweet, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -652,21 +654,30 @@ async def check_for_new_tweets():
     global last_tweet_id
     
     try:
+        print(f"🔄 Checking for new tweets from @{TWITTER_USERNAME}...")
         tweets = await get_twitter_user_tweets(TWITTER_USERNAME)
+        
         if not tweets:
             print("⚠️ No tweets fetched, monitoring will continue...")
             return
             
         latest_tweet = tweets[0]
+        current_tweet_id = latest_tweet['id']
+        
+        print(f"📊 Current tweet ID: {current_tweet_id}")
+        print(f"📊 Last known ID: {last_tweet_id}")
+        print(f"📝 Tweet text: {latest_tweet['text'][:100]}...")
         
         # Check if this is a new tweet
         if last_tweet_id is None:
-            last_tweet_id = latest_tweet['id']
-            print(f"Initialized tweet tracking with ID: {last_tweet_id}")
+            last_tweet_id = current_tweet_id
+            print(f"🔧 Initialized tweet tracking with ID: {last_tweet_id}")
+            print("🔧 Next check will look for newer tweets")
             return
             
-        if latest_tweet['id'] != last_tweet_id:
+        if current_tweet_id != last_tweet_id:
             # New tweet found!
+            print(f"🆕 NEW TWEET DETECTED! ID: {current_tweet_id}")
             channel = bot.get_channel(TWEETS_CHANNEL_ID)
             if channel:
                 embed = await create_tweet_embed(latest_tweet)
@@ -677,12 +688,17 @@ async def check_for_new_tweets():
                 if log_channel and log_channel != channel:
                     await log_channel.send(f"🐦 Posted new tweet from @{TWITTER_USERNAME}: {latest_tweet['url']}")
                 
-                print(f"Posted new tweet: {latest_tweet['id']}")
-            
-            last_tweet_id = latest_tweet['id']
+                print(f"✅ Posted new tweet: {current_tweet_id}")
+                last_tweet_id = current_tweet_id
+            else:
+                print(f"❌ Channel {TWEETS_CHANNEL_ID} not found!")
+        else:
+            print("📋 No new tweets - same ID as before")
             
     except Exception as e:
-        print(f"Error in tweet checking task: {e}")
+        print(f"❌ Error in tweet checking task: {e}")
+        import traceback
+        traceback.print_exc()
         # Don't stop the monitoring, just log and continue
 
 @check_for_new_tweets.before_loop
@@ -809,6 +825,76 @@ async def test_twitter_connection(interaction: discord.Interaction):
         
         print(f"Error in Twitter connection test: {e}")
         await interaction.edit_original_response(content="💥 Twitter connection test error:", embed=embed)
+
+# Command to reset tweet tracking
+@bot.tree.command(name="reset_tweet_tracking", description="Reset tweet tracking to detect current tweet as new")
+async def reset_tweet_tracking(interaction: discord.Interaction):
+    """Reset tweet tracking to force detection of current tweets"""
+    global last_tweet_id
+    
+    await interaction.response.defer()
+    
+    try:
+        # Get current tweets first
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME)
+        
+        if tweets:
+            old_id = last_tweet_id
+            last_tweet_id = None  # Reset tracking
+            
+            embed = discord.Embed(
+                title="🔄 Tweet Tracking Reset",
+                color=0x1DA1F2
+            )
+            embed.add_field(name="Previous ID", value=old_id or "None", inline=True)
+            embed.add_field(name="Current Latest Tweet", value=tweets[0]['id'], inline=True)
+            embed.add_field(name="Status", value="Tracking reset - next check will re-initialize", inline=False)
+            embed.add_field(name="Next Action", value="Bot will now treat the latest tweet as baseline for future monitoring", inline=False)
+            
+            await interaction.edit_original_response(content="✅ Tweet tracking has been reset:", embed=embed)
+            print(f"🔄 Tweet tracking reset by {interaction.user.name}. Old ID: {old_id}, will reinitialize on next check.")
+        else:
+            await interaction.edit_original_response(content="❌ Could not fetch tweets to reset tracking.")
+            
+    except Exception as e:
+        print(f"Error in reset tweet tracking: {e}")
+        await interaction.edit_original_response(content="❌ Error resetting tweet tracking.")
+
+# Command to check specific tweet
+@bot.tree.command(name="check_specific_tweet", description="Check if a specific tweet ID is being detected")
+@app_commands.describe(tweet_id="Tweet ID to check (e.g. 1978993084693102705)")
+async def check_specific_tweet(interaction: discord.Interaction, tweet_id: str):
+    """Check if a specific tweet ID matches current latest tweet"""
+    await interaction.response.defer()
+    
+    try:
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME)
+        
+        if tweets:
+            latest_tweet = tweets[0]
+            
+            embed = discord.Embed(
+                title="🔍 Tweet ID Check",
+                color=0x1DA1F2
+            )
+            embed.add_field(name="Requested Tweet ID", value=tweet_id, inline=False)
+            embed.add_field(name="Current Latest Tweet ID", value=latest_tweet['id'], inline=False)
+            embed.add_field(name="Match?", value="✅ YES" if latest_tweet['id'] == tweet_id else "❌ NO", inline=False)
+            embed.add_field(name="Latest Tweet Text", value=latest_tweet['text'][:200] + "..." if len(latest_tweet['text']) > 200 else latest_tweet['text'], inline=False)
+            embed.add_field(name="Current Tracking ID", value=last_tweet_id or "None (not initialized)", inline=False)
+            
+            if latest_tweet['id'] == tweet_id:
+                embed.add_field(name="Status", value="✅ This tweet is the current latest tweet", inline=False)
+            else:
+                embed.add_field(name="Status", value="❌ This tweet is NOT the current latest tweet. Either:\n• It's older than the latest\n• It wasn't fetched\n• There's a newer tweet", inline=False)
+            
+            await interaction.edit_original_response(embed=embed)
+        else:
+            await interaction.edit_original_response(content="❌ Could not fetch tweets to check.")
+            
+    except Exception as e:
+        print(f"Error in check specific tweet: {e}")
+        await interaction.edit_original_response(content="❌ Error checking specific tweet.")
 
 # ================================
 #        OTHER EVENTS
