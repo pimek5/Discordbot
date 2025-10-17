@@ -458,6 +458,12 @@ async def get_twitter_user_tweets(username):
     """
     Fetch the latest tweets from a Twitter user using Twitter API v2
     """
+    print(f"🔍 DEBUG: Starting tweet fetch for @{username}")
+    print(f"🔍 DEBUG: TWITTER_BEARER_TOKEN exists: {bool(TWITTER_BEARER_TOKEN)}")
+    if TWITTER_BEARER_TOKEN:
+        print(f"🔍 DEBUG: Bearer token: {TWITTER_BEARER_TOKEN[:10]}...{TWITTER_BEARER_TOKEN[-4:]}")
+    else:
+        print("🔍 DEBUG: No Bearer token - will use Nitter")
     # Method 1: Try Twitter API v2 (official)
     if TWITTER_BEARER_TOKEN:
         try:
@@ -471,6 +477,7 @@ async def get_twitter_user_tweets(username):
             }
             
             user_response = requests.get(user_url, headers=headers, timeout=10)
+            print(f"🔍 DEBUG: User API response: {user_response.status_code}")
             
             if user_response.status_code == 200:
                 user_data = user_response.json()
@@ -486,6 +493,7 @@ async def get_twitter_user_tweets(username):
                 }
                 
                 tweets_response = requests.get(tweets_url, headers=headers, params=tweet_params, timeout=10)
+                print(f"🔍 DEBUG: Tweets API response: {tweets_response.status_code}")
                 
                 if tweets_response.status_code == 200:
                     tweets_data = tweets_response.json()
@@ -503,18 +511,24 @@ async def get_twitter_user_tweets(username):
                             })
                         
                         print(f"✅ Twitter API v2: Found {len(tweets)} tweets")
+                        print(f"🔍 DEBUG: Latest tweet ID: {tweets[0]['id']}")
                         return tweets
                         
                 else:
                     print(f"❌ Twitter API v2 tweets error: {tweets_response.status_code}")
+                    print(f"🔍 DEBUG: Error response: {tweets_response.text}")
                     
             else:
                 print(f"❌ Twitter API v2 user error: {user_response.status_code}")
+                print(f"🔍 DEBUG: Error response: {user_response.text}")
                 
         except Exception as e:
             print(f"❌ Twitter API v2 error: {e}")
+            import traceback
+            traceback.print_exc()
     
     # Method 2: Fallback to Nitter instances
+    print("🔍 DEBUG: Twitter API failed, trying Nitter instances...")
     nitter_instances = [
         "nitter.poast.org",
         "nitter.privacydev.net", 
@@ -568,6 +582,7 @@ async def get_twitter_user_tweets(username):
                     
                     if tweets:
                         print(f"✅ Nitter: Found {len(tweets)} tweets from {instance}")
+                        print(f"🔍 DEBUG: Latest tweet ID from Nitter: {tweets[0]['id']}")
                         return tweets[:5]
                         
                 except ET.ParseError as e:
@@ -579,7 +594,8 @@ async def get_twitter_user_tweets(username):
             continue
     
     # Method 3: Create test tweet as last resort
-    print("🔄 Creating test tweet...")
+    print("� DEBUG: All methods failed, creating test tweet...")
+    print("�🔄 Creating test tweet...")
     try:
         test_url = f"https://twitter.com/{username}"
         headers = {'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)'}
