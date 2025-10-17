@@ -487,7 +487,7 @@ async def get_twitter_user_tweets(username):
                 tweets_url = f"https://api.twitter.com/2/users/{user_id}/tweets"
                 tweet_params = {
                     'max_results': 5,
-                    'tweet.fields': 'created_at,public_metrics,text',
+                    'tweet.fields': 'created_at,public_metrics,text,non_public_metrics',
                     'expansions': 'author_id',
                     'user.fields': 'name,username,profile_image_url'
                 }
@@ -500,15 +500,30 @@ async def get_twitter_user_tweets(username):
                     
                     if 'data' in tweets_data:
                         tweets = []
+                        
+                        # Get user profile image from includes
+                        profile_image_url = None
+                        if 'includes' in tweets_data and 'users' in tweets_data['includes']:
+                            for user in tweets_data['includes']['users']:
+                                if user['username'].lower() == username.lower():
+                                    profile_image_url = user.get('profile_image_url', '').replace('_normal', '_400x400')
+                                    break
+                        
                         for tweet in tweets_data['data']:
-                            tweets.append({
+                            tweet_obj = {
                                 'id': tweet['id'],
                                 'text': tweet['text'],
                                 'url': f'https://twitter.com/{username}/status/{tweet["id"]}',
                                 'created_at': tweet.get('created_at', ''),
                                 'metrics': tweet.get('public_metrics', {}),
                                 'description': tweet['text']  # Full text as description
-                            })
+                            }
+                            
+                            # Add profile image if available
+                            if profile_image_url:
+                                tweet_obj['profile_image_url'] = profile_image_url
+                                
+                            tweets.append(tweet_obj)
                         
                         print(f"✅ Twitter API v2: Found {len(tweets)} tweets")
                         print(f"🔍 DEBUG: Latest tweet ID: {tweets[0]['id']}")
@@ -649,18 +664,20 @@ async def create_tweet_embed(tweet_data):
             metrics_text += f"🔄 {metrics['retweet_count']} "
         if 'reply_count' in metrics:
             metrics_text += f"💬 {metrics['reply_count']} "
+        if 'impression_count' in metrics:
+            metrics_text += f"👁️ {metrics['impression_count']} "
             
         if metrics_text:
             embed.add_field(name="Engagement", value=metrics_text.strip(), inline=False)
     
-    # Add footer with Twitter branding
-    embed.set_footer(
-        text="Twitter",
-        icon_url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png"
-    )
+    # Add footer without Twitter icon
+    embed.set_footer(text="Twitter • Today at 3:44 AM")
     
-    # Add thumbnail with Twitter logo for visual appeal
-    embed.set_thumbnail(url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png")
+    # Add user profile picture as thumbnail (if available from API)
+    if 'author_profile_image' in tweet_data:
+        embed.set_thumbnail(url=tweet_data['author_profile_image'])
+    elif 'profile_image_url' in tweet_data:
+        embed.set_thumbnail(url=tweet_data['profile_image_url'])
     
     return embed
 
