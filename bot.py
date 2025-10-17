@@ -670,8 +670,11 @@ async def create_tweet_embed(tweet_data):
         if metrics_text:
             embed.add_field(name="Engagement", value=metrics_text.strip(), inline=False)
     
-    # Add footer without Twitter icon
-    embed.set_footer(text="Twitter • Today at 3:44 AM")
+    # Add footer with Twitter branding
+    embed.set_footer(
+        text="Twitter • Today at 3:44 AM",
+        icon_url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png"
+    )
     
     # Add user profile picture as thumbnail (if available from API)
     if 'author_profile_image' in tweet_data:
