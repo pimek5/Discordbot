@@ -1,6 +1,5 @@
-discord.py
+﻿discord.py
 aiohttp
 python-dotenv
 requests
-py-cord>=2.5.0
-
+py-cord==2.6.1
