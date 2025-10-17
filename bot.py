@@ -53,6 +53,7 @@ class MyBot(commands.Bot):
         self.tree.add_command(toggle_tweet_monitoring, guild=guild)
         self.tree.add_command(start_tweet_monitoring, guild=guild)
         self.tree.add_command(tweet_status, guild=guild)
+        self.tree.add_command(test_twitter_connection, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -450,44 +451,90 @@ last_tweet_id = None
 
 async def get_twitter_user_tweets(username):
     """
-    Fetch the latest tweets from a Twitter user using web scraping approach
-    Since Twitter API requires authentication, we'll use a simple RSS-like approach
+    Fetch the latest tweets from a Twitter user using multiple methods
     """
+    # List of nitter instances to try
+    nitter_instances = [
+        "nitter.net",
+        "nitter.poast.org",
+        "nitter.privacydev.net",
+        "nitter.1d4.us",
+        "nitter.domain.glass"
+    ]
+    
+    for instance in nitter_instances:
+        try:
+            print(f"Trying {instance} for @{username}...")
+            
+            # Try RSS first
+            url = f"https://{instance}/{username}/rss"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            response = requests.get(url, headers=headers, timeout=15)
+            
+            if response.status_code == 200:
+                print(f"✅ Successfully connected to {instance}")
+                
+                # Parse RSS feed for tweets
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(response.content)
+                
+                tweets = []
+                for item in root.findall('.//item'):
+                    title = item.find('title')
+                    link = item.find('link') 
+                    pub_date = item.find('pubDate')
+                    description = item.find('description')
+                    
+                    if title is not None and link is not None:
+                        tweet_id = link.text.split('/')[-1].split('#')[0]
+                        tweets.append({
+                            'id': tweet_id,
+                            'text': title.text if title.text else '',
+                            'url': link.text.replace(instance, 'twitter.com').replace('nitter', 'twitter'),
+                            'created_at': pub_date.text if pub_date is not None else '',
+                            'description': description.text if description is not None else ''
+                        })
+                
+                if tweets:
+                    print(f"✅ Found {len(tweets)} tweets from {instance}")
+                    return tweets[:5]  # Return latest 5 tweets
+                else:
+                    print(f"⚠️ No tweets found in RSS from {instance}")
+                    
+        except requests.exceptions.Timeout:
+            print(f"⏰ Timeout connecting to {instance}")
+            continue
+        except requests.exceptions.ConnectionError:
+            print(f"🔌 Connection error to {instance}")
+            continue
+        except Exception as e:
+            print(f"❌ Error with {instance}: {e}")
+            continue
+    
+    # If all nitter instances fail, try a different approach
     try:
-        # Using nitter.net as a proxy to get tweet data without API keys
-        url = f"https://nitter.net/{username}/rss"
+        print("🔄 Trying alternative method...")
+        # Alternative: Try to scrape directly (basic approach)
+        url = f"https://twitter.com/{username}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
-            # Parse RSS feed for tweets
-            import xml.etree.ElementTree as ET
-            root = ET.fromstring(response.content)
-            
-            tweets = []
-            for item in root.findall('.//item'):
-                title = item.find('title')
-                link = item.find('link') 
-                pub_date = item.find('pubDate')
-                description = item.find('description')
-                
-                if title is not None and link is not None:
-                    tweet_id = link.text.split('/')[-1].split('#')[0]
-                    tweets.append({
-                        'id': tweet_id,
-                        'text': title.text if title.text else '',
-                        'url': link.text,
-                        'created_at': pub_date.text if pub_date is not None else '',
-                        'description': description.text if description is not None else ''
-                    })
-            
-            return tweets[:5]  # Return latest 5 tweets
+            # This is a very basic fallback - just return empty for now
+            # In production, you might want to implement HTML parsing
+            print("⚠️ Twitter.com accessible but HTML parsing not implemented")
+            return []
             
     except Exception as e:
-        print(f"Error fetching tweets: {e}")
-        return []
+        print(f"❌ Alternative method failed: {e}")
+    
+    print("❌ All methods failed to fetch tweets")
+    return []
 
 async def create_tweet_embed(tweet_data):
     """Create a Discord embed from tweet data"""
@@ -619,6 +666,50 @@ async def tweet_status(interaction: discord.Interaction):
         embed.add_field(name="Last Tweet ID", value=last_tweet_id or "Not initialized", inline=False)
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# Command to test Twitter connection
+@bot.tree.command(name="test_twitter_connection", description="Test if Twitter data fetching is working")
+async def test_twitter_connection(interaction: discord.Interaction):
+    """Test command to verify Twitter connection"""
+    await interaction.response.defer()
+    
+    try:
+        print(f"Testing Twitter connection for @{TWITTER_USERNAME}...")
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME)
+        
+        if tweets:
+            embed = discord.Embed(
+                title="✅ Twitter Connection Test - SUCCESS",
+                color=0x00FF00
+            )
+            embed.add_field(name="Status", value="Successfully fetched tweets", inline=False)
+            embed.add_field(name="Tweets Found", value=len(tweets), inline=True)
+            embed.add_field(name="Latest Tweet ID", value=tweets[0]['id'], inline=True)
+            embed.add_field(name="Latest Tweet", value=tweets[0]['text'][:100] + "..." if len(tweets[0]['text']) > 100 else tweets[0]['text'], inline=False)
+            embed.add_field(name="URL", value=tweets[0]['url'], inline=False)
+            
+            await interaction.edit_original_response(content="🐦 Twitter connection test completed:", embed=embed)
+        else:
+            embed = discord.Embed(
+                title="❌ Twitter Connection Test - FAILED",
+                color=0xFF0000
+            )
+            embed.add_field(name="Status", value="No tweets found", inline=False)
+            embed.add_field(name="Possible Issues", value="• Nitter instances down\n• Username not found\n• Network issues\n• Rate limiting", inline=False)
+            embed.add_field(name="Username", value=f"@{TWITTER_USERNAME}", inline=True)
+            
+            await interaction.edit_original_response(content="⚠️ Twitter connection test failed:", embed=embed)
+            
+    except Exception as e:
+        embed = discord.Embed(
+            title="💥 Twitter Connection Test - ERROR",
+            color=0xFF0000
+        )
+        embed.add_field(name="Error", value=str(e), inline=False)
+        embed.add_field(name="Username", value=f"@{TWITTER_USERNAME}", inline=True)
+        
+        print(f"Error in Twitter connection test: {e}")
+        await interaction.edit_original_response(content="💥 Twitter connection test error:", embed=embed)
 
 # ================================
 #        OTHER EVENTS
