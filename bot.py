@@ -487,9 +487,10 @@ async def get_twitter_user_tweets(username):
                 tweets_url = f"https://api.twitter.com/2/users/{user_id}/tweets"
                 tweet_params = {
                     'max_results': 5,
-                    'tweet.fields': 'created_at,public_metrics,text,non_public_metrics',
-                    'expansions': 'author_id',
-                    'user.fields': 'name,username,profile_image_url'
+                    'tweet.fields': 'created_at,public_metrics,text,non_public_metrics,attachments',
+                    'expansions': 'author_id,attachments.media_keys',
+                    'user.fields': 'name,username,profile_image_url',
+                    'media.fields': 'type,url,preview_image_url,width,height'
                 }
                 
                 tweets_response = requests.get(tweets_url, headers=headers, params=tweet_params, timeout=10)
@@ -509,6 +510,12 @@ async def get_twitter_user_tweets(username):
                                     profile_image_url = user.get('profile_image_url', '').replace('_normal', '_400x400')
                                     break
                         
+                        # Get media data from includes
+                        media_dict = {}
+                        if 'includes' in tweets_data and 'media' in tweets_data['includes']:
+                            for media in tweets_data['includes']['media']:
+                                media_dict[media['media_key']] = media
+                        
                         for tweet in tweets_data['data']:
                             tweet_obj = {
                                 'id': tweet['id'],
@@ -522,6 +529,31 @@ async def get_twitter_user_tweets(username):
                             # Add profile image if available
                             if profile_image_url:
                                 tweet_obj['profile_image_url'] = profile_image_url
+                            
+                            # Add media if available
+                            if 'attachments' in tweet and 'media_keys' in tweet['attachments']:
+                                media_list = []
+                                for media_key in tweet['attachments']['media_keys']:
+                                    if media_key in media_dict:
+                                        media_info = media_dict[media_key]
+                                        if media_info['type'] == 'photo':
+                                            media_list.append({
+                                                'type': 'photo',
+                                                'url': media_info.get('url', ''),
+                                                'preview_url': media_info.get('preview_image_url', ''),
+                                                'width': media_info.get('width', 0),
+                                                'height': media_info.get('height', 0)
+                                            })
+                                        elif media_info['type'] in ['video', 'animated_gif']:
+                                            media_list.append({
+                                                'type': media_info['type'],
+                                                'preview_url': media_info.get('preview_image_url', ''),
+                                                'width': media_info.get('width', 0),
+                                                'height': media_info.get('height', 0)
+                                            })
+                                
+                                if media_list:
+                                    tweet_obj['media'] = media_list
                                 
                             tweets.append(tweet_obj)
                         
@@ -681,6 +713,24 @@ async def create_tweet_embed(tweet_data):
         embed.set_thumbnail(url=tweet_data['author_profile_image'])
     elif 'profile_image_url' in tweet_data:
         embed.set_thumbnail(url=tweet_data['profile_image_url'])
+    
+    # Add media images if available
+    if 'media' in tweet_data and tweet_data['media']:
+        for media in tweet_data['media']:
+            if media['type'] == 'photo' and media.get('url'):
+                # Use the first photo as main image
+                embed.set_image(url=media['url'])
+                break
+            elif media['type'] in ['video', 'animated_gif'] and media.get('preview_url'):
+                # Use video preview as main image
+                embed.set_image(url=media['preview_url'])
+                embed.add_field(name="📹 Media", value=f"Video/GIF - [View on Twitter]({tweet_data['url']})", inline=False)
+                break
+        
+        # If multiple photos, add info about them
+        photo_count = sum(1 for media in tweet_data['media'] if media['type'] == 'photo')
+        if photo_count > 1:
+            embed.add_field(name="📸 Photos", value=f"{photo_count} photos - [View all on Twitter]({tweet_data['url']})", inline=False)
     
     return embed
 
