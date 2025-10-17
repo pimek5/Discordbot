@@ -1,11 +1,13 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord.ui import View, Button
 from discord import PermissionOverwrite, app_commands
 import re
 import os
 import asyncio
 import requests 
+import json
+import datetime
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -30,6 +32,11 @@ NOTIFY_ROLE_ID = 1173564965152637018
 ISSUE_CHANNEL_ID = 1264484659765448804
 LOG_CHANNEL_ID = 1408036991454417039
 
+# Twitter Configuration
+TWITTER_USERNAME = "p1mek"
+TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
+TWITTER_CHECK_INTERVAL = 60  # Check every 60 seconds
+
 # ================================
 #        BOT INIT
 # ================================
@@ -42,6 +49,8 @@ class MyBot(commands.Bot):
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
         self.tree.add_command(dpm_history_full, guild=guild)
+        self.tree.add_command(post_latest_tweet, guild=guild)
+        self.tree.add_command(toggle_tweet_monitoring, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -430,6 +439,154 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         channel = bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
         await log_channel.send(f"📝 {user.mention} reacted with {payload.emoji} on [this message]({message.jump_url})")
+# ================================
+#       Tweet Poster
+# ================================
+
+# Store the last tweet ID to avoid duplicates
+last_tweet_id = None
+
+async def get_twitter_user_tweets(username):
+    """
+    Fetch the latest tweets from a Twitter user using web scraping approach
+    Since Twitter API requires authentication, we'll use a simple RSS-like approach
+    """
+    try:
+        # Using nitter.net as a proxy to get tweet data without API keys
+        url = f"https://nitter.net/{username}/rss"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            # Parse RSS feed for tweets
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(response.content)
+            
+            tweets = []
+            for item in root.findall('.//item'):
+                title = item.find('title')
+                link = item.find('link') 
+                pub_date = item.find('pubDate')
+                description = item.find('description')
+                
+                if title is not None and link is not None:
+                    tweet_id = link.text.split('/')[-1].split('#')[0]
+                    tweets.append({
+                        'id': tweet_id,
+                        'text': title.text if title.text else '',
+                        'url': link.text,
+                        'created_at': pub_date.text if pub_date is not None else '',
+                        'description': description.text if description is not None else ''
+                    })
+            
+            return tweets[:5]  # Return latest 5 tweets
+            
+    except Exception as e:
+        print(f"Error fetching tweets: {e}")
+        return []
+
+async def create_tweet_embed(tweet_data):
+    """Create a Discord embed from tweet data"""
+    embed = discord.Embed(
+        title="🐦 New Tweet from @p1mek",
+        description=tweet_data['text'],
+        url=tweet_data['url'],
+        color=0x1DA1F2,  # Twitter blue
+        timestamp=datetime.datetime.now()
+    )
+    
+    embed.set_author(
+        name=f"@{TWITTER_USERNAME}",
+        icon_url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png",
+        url=f"https://twitter.com/{TWITTER_USERNAME}"
+    )
+    
+    embed.set_footer(
+        text="Twitter",
+        icon_url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png"
+    )
+    
+    # Add tweet ID for reference
+    embed.add_field(name="Tweet ID", value=tweet_data['id'], inline=True)
+    
+    return embed
+
+@tasks.loop(seconds=TWITTER_CHECK_INTERVAL)
+async def check_for_new_tweets():
+    """Background task to check for new tweets"""
+    global last_tweet_id
+    
+    try:
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME)
+        if not tweets:
+            return
+            
+        latest_tweet = tweets[0]
+        
+        # Check if this is a new tweet
+        if last_tweet_id is None:
+            last_tweet_id = latest_tweet['id']
+            print(f"Initialized tweet tracking with ID: {last_tweet_id}")
+            return
+            
+        if latest_tweet['id'] != last_tweet_id:
+            # New tweet found!
+            channel = bot.get_channel(TWEETS_CHANNEL_ID)
+            if channel:
+                embed = await create_tweet_embed(latest_tweet)
+                await channel.send(embed=embed)
+                
+                # Log the action
+                log_channel = bot.get_channel(LOG_CHANNEL_ID)
+                if log_channel and log_channel != channel:
+                    await log_channel.send(f"🐦 Posted new tweet from @{TWITTER_USERNAME}: {latest_tweet['url']}")
+                
+                print(f"Posted new tweet: {latest_tweet['id']}")
+            
+            last_tweet_id = latest_tweet['id']
+            
+    except Exception as e:
+        print(f"Error in tweet checking task: {e}")
+
+@check_for_new_tweets.before_loop
+async def before_tweet_check():
+    """Wait for bot to be ready before starting the tweet check loop"""
+    await bot.wait_until_ready()
+    print("Tweet monitoring started!")
+
+# Manual tweet posting command (for testing)
+@bot.tree.command(name="post_latest_tweet", description="Manually post the latest tweet from @p1mek")
+async def post_latest_tweet(interaction: discord.Interaction):
+    """Manual command to post the latest tweet"""
+    await interaction.response.defer()
+    
+    try:
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME)
+        if not tweets:
+            await interaction.edit_original_response(content="❌ No tweets found.")
+            return
+            
+        latest_tweet = tweets[0]
+        embed = await create_tweet_embed(latest_tweet)
+        
+        await interaction.edit_original_response(content="✅ Latest tweet:", embed=embed)
+        
+    except Exception as e:
+        print(f"Error posting latest tweet: {e}")
+        await interaction.edit_original_response(content="❌ Error fetching tweet.")
+
+# Command to toggle tweet monitoring
+@bot.tree.command(name="toggle_tweet_monitoring", description="Start or stop automatic tweet monitoring")
+async def toggle_tweet_monitoring(interaction: discord.Interaction):
+    """Toggle the tweet monitoring task"""
+    if check_for_new_tweets.is_running():
+        check_for_new_tweets.stop()
+        await interaction.response.send_message("🛑 Tweet monitoring stopped.", ephemeral=True)
+    else:
+        check_for_new_tweets.start()
+        await interaction.response.send_message("▶️ Tweet monitoring started.", ephemeral=True)
 
 # ================================
 #        OTHER EVENTS
@@ -438,6 +595,11 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     print('------')
+    
+    # Start tweet monitoring
+    if not check_for_new_tweets.is_running():
+        check_for_new_tweets.start()
+        print(f"🐦 Started monitoring @{TWITTER_USERNAME} for new tweets")
 
 bot.run(os.getenv("BOT_TOKEN"))
 
