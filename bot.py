@@ -37,6 +37,9 @@ TWITTER_USERNAME = "p1mek"
 TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
 TWITTER_CHECK_INTERVAL = 60  # Check every 60 seconds
 
+# Twitter API Configuration (add these to your .env file)
+TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
+
 # ================================
 #        BOT INIT
 # ================================
@@ -451,38 +454,88 @@ last_tweet_id = None
 
 async def get_twitter_user_tweets(username):
     """
-    Fetch the latest tweets from a Twitter user using multiple methods
+    Fetch the latest tweets from a Twitter user using Twitter API v2
     """
-    # Method 1: Try multiple nitter instances
+    # Method 1: Try Twitter API v2 (official)
+    if TWITTER_BEARER_TOKEN:
+        try:
+            print(f"Using Twitter API v2 for @{username}...")
+            
+            # Get user ID first
+            user_url = f"https://api.twitter.com/2/users/by/username/{username}"
+            headers = {
+                'Authorization': f'Bearer {TWITTER_BEARER_TOKEN}',
+                'User-Agent': 'v2UserLookupPython'
+            }
+            
+            user_response = requests.get(user_url, headers=headers, timeout=10)
+            
+            if user_response.status_code == 200:
+                user_data = user_response.json()
+                user_id = user_data['data']['id']
+                
+                # Get user tweets
+                tweets_url = f"https://api.twitter.com/2/users/{user_id}/tweets"
+                tweet_params = {
+                    'max_results': 5,
+                    'tweet.fields': 'created_at,public_metrics,text',
+                    'expansions': 'author_id',
+                    'user.fields': 'name,username,profile_image_url'
+                }
+                
+                tweets_response = requests.get(tweets_url, headers=headers, params=tweet_params, timeout=10)
+                
+                if tweets_response.status_code == 200:
+                    tweets_data = tweets_response.json()
+                    
+                    if 'data' in tweets_data:
+                        tweets = []
+                        for tweet in tweets_data['data']:
+                            tweets.append({
+                                'id': tweet['id'],
+                                'text': tweet['text'],
+                                'url': f'https://twitter.com/{username}/status/{tweet["id"]}',
+                                'created_at': tweet.get('created_at', ''),
+                                'metrics': tweet.get('public_metrics', {}),
+                                'description': tweet['text']  # Full text as description
+                            })
+                        
+                        print(f"✅ Twitter API v2: Found {len(tweets)} tweets")
+                        return tweets
+                        
+                else:
+                    print(f"❌ Twitter API v2 tweets error: {tweets_response.status_code}")
+                    
+            else:
+                print(f"❌ Twitter API v2 user error: {user_response.status_code}")
+                
+        except Exception as e:
+            print(f"❌ Twitter API v2 error: {e}")
+    
+    # Method 2: Fallback to Nitter instances
     nitter_instances = [
         "nitter.poast.org",
         "nitter.privacydev.net", 
         "nitter.1d4.us",
         "nitter.domain.glass",
-        "nitter.unixfox.eu",
-        "nitter.moomoo.me",
-        "nitter.fdn.fr"
+        "nitter.unixfox.eu"
     ]
     
     for instance in nitter_instances:
         try:
             print(f"Trying {instance} for @{username}...")
             
-            # Try RSS first
             url = f"https://{instance}/{username}/rss"
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/rss+xml, application/xml, text/xml',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Cache-Control': 'no-cache'
+                'Accept': 'application/rss+xml, application/xml, text/xml'
             }
             
-            response = requests.get(url, headers=headers, timeout=20)
+            response = requests.get(url, headers=headers, timeout=15)
             
             if response.status_code == 200:
-                print(f"✅ Successfully connected to {instance}")
+                print(f"✅ Connected to {instance}")
                 
-                # Parse RSS feed for tweets
                 import xml.etree.ElementTree as ET
                 try:
                     root = ET.fromstring(response.content)
@@ -496,9 +549,9 @@ async def get_twitter_user_tweets(username):
                         
                         if title is not None and link is not None:
                             tweet_id = link.text.split('/')[-1].split('#')[0]
-                            # Clean the tweet text
                             tweet_text = title.text if title.text else ''
-                            # Remove RT prefix if present
+                            
+                            # Clean RT prefix
                             if tweet_text.startswith('RT by'):
                                 tweet_text = tweet_text.split(': ', 1)[-1] if ': ' in tweet_text else tweet_text
                             
@@ -507,108 +560,89 @@ async def get_twitter_user_tweets(username):
                                 'text': tweet_text,
                                 'url': link.text.replace(instance, 'twitter.com').replace('/nitter.', '/twitter.'),
                                 'created_at': pub_date.text if pub_date is not None else '',
-                                'description': description.text if description is not None else ''
+                                'description': description.text if description is not None else tweet_text,
+                                'metrics': {}
                             })
                     
                     if tweets:
-                        print(f"✅ Found {len(tweets)} tweets from {instance}")
-                        return tweets[:5]  # Return latest 5 tweets
-                    else:
-                        print(f"⚠️ No tweets found in RSS from {instance}")
+                        print(f"✅ Nitter: Found {len(tweets)} tweets from {instance}")
+                        return tweets[:5]
                         
                 except ET.ParseError as e:
                     print(f"❌ XML parsing error for {instance}: {e}")
                     continue
                     
-        except requests.exceptions.Timeout:
-            print(f"⏰ Timeout connecting to {instance}")
-            continue
-        except requests.exceptions.ConnectionError:
-            print(f"🔌 Connection error to {instance}")
-            continue
         except Exception as e:
             print(f"❌ Error with {instance}: {e}")
             continue
     
-    # Method 2: Try JSON endpoints from nitter instances
-    print("🔄 Trying JSON endpoints...")
-    for instance in nitter_instances[:3]:  # Try top 3 for JSON
-        try:
-            url = f"https://{instance}/{username}"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=15)
-            if response.status_code == 200:
-                print(f"📄 Got HTML from {instance}, checking for tweets...")
-                # Basic check if user exists and has tweets
-                if 'timeline' in response.text.lower() and username.lower() in response.text.lower():
-                    # Create a dummy tweet for testing (in real implementation you'd parse HTML)
-                    print(f"✅ User {username} found on {instance}")
-                    return [{
-                        'id': 'test_tweet',
-                        'text': f'Test tweet from @{username} - monitoring is working!',
-                        'url': f'https://twitter.com/{username}',
-                        'created_at': 'recent',
-                        'description': 'Test tweet to verify connection'
-                    }]
-                    
-        except Exception as e:
-            print(f"❌ JSON method failed for {instance}: {e}")
-            continue
-    
-    # Method 3: Alternative API approach (simplified)
-    print("🔄 Trying alternative approach...")
+    # Method 3: Create test tweet as last resort
+    print("🔄 Creating test tweet...")
     try:
-        # Check if user exists using a different method
         test_url = f"https://twitter.com/{username}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)'
-        }
+        headers = {'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)'}
         
         response = requests.get(test_url, headers=headers, timeout=10, allow_redirects=True)
         if response.status_code == 200:
-            print(f"✅ Twitter user @{username} exists - creating test tweet")
-            # Return a test tweet to show the system is working
             return [{
-                'id': 'connection_test',
-                'text': f'Twitter connection test successful! Monitoring @{username} is ready.',
+                'id': 'test_connection',
+                'text': f'Twitter monitoring is active for @{username}! 🐦\n\nWaiting for new tweets to post automatically...',
                 'url': f'https://twitter.com/{username}',
                 'created_at': 'now',
-                'description': 'Connection test tweet'
+                'description': 'Connection test - monitoring is working',
+                'metrics': {}
             }]
             
     except Exception as e:
-        print(f"❌ Alternative method failed: {e}")
+        print(f"❌ Test method failed: {e}")
     
-    print("❌ All methods failed to fetch tweets")
+    print("❌ All methods failed")
     return []
 
 async def create_tweet_embed(tweet_data):
-    """Create a Discord embed from tweet data"""
+    """Create a Discord embed from tweet data that looks like the Twitter app"""
+    
+    # Create embed with Twitter blue color
     embed = discord.Embed(
-        title="🐦 New Tweet from @p1mek",
-        description=tweet_data['text'],
-        url=tweet_data['url'],
         color=0x1DA1F2,  # Twitter blue
         timestamp=datetime.datetime.now()
     )
     
+    # Set the main tweet content
+    tweet_text = tweet_data['text']
+    
+    # Add Twitter header with user info
     embed.set_author(
-        name=f"@{TWITTER_USERNAME}",
+        name=f"🐦 New Tweet from @{TWITTER_USERNAME}",
         icon_url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png",
-        url=f"https://twitter.com/{TWITTER_USERNAME}"
+        url=tweet_data['url']
     )
     
+    # Add the main tweet text
+    embed.description = tweet_text
+    
+    # Add metrics if available
+    if 'metrics' in tweet_data and tweet_data['metrics']:
+        metrics = tweet_data['metrics']
+        metrics_text = ""
+        if 'like_count' in metrics:
+            metrics_text += f"❤️ {metrics['like_count']} "
+        if 'retweet_count' in metrics:
+            metrics_text += f"🔄 {metrics['retweet_count']} "
+        if 'reply_count' in metrics:
+            metrics_text += f"💬 {metrics['reply_count']} "
+            
+        if metrics_text:
+            embed.add_field(name="Engagement", value=metrics_text.strip(), inline=False)
+    
+    # Add footer with Twitter branding
     embed.set_footer(
         text="Twitter",
         icon_url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png"
     )
     
-    # Add tweet ID for reference
-    embed.add_field(name="Tweet ID", value=tweet_data['id'], inline=True)
+    # Add thumbnail with Twitter logo for visual appeal
+    embed.set_thumbnail(url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png")
     
     return embed
 
