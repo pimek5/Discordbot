@@ -59,6 +59,7 @@ class MyBot(commands.Bot):
         self.tree.add_command(test_twitter_connection, guild=guild)
         self.tree.add_command(reset_tweet_tracking, guild=guild)
         self.tree.add_command(check_specific_tweet, guild=guild)
+        self.tree.add_command(add_tweet_by_id, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -453,6 +454,109 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
 
 # Store the last tweet ID to avoid duplicates
 last_tweet_id = None
+
+async def get_specific_tweet(tweet_id):
+    """
+    Fetch a specific tweet by ID using Twitter API v2
+    """
+    print(f"🔍 DEBUG: Fetching specific tweet ID: {tweet_id}")
+    
+    # Method 1: Try Twitter API v2 (official)
+    if TWITTER_BEARER_TOKEN:
+        try:
+            print(f"Using Twitter API v2 for tweet ID: {tweet_id}...")
+            
+            # Get specific tweet
+            tweet_url = f"https://api.twitter.com/2/tweets/{tweet_id}"
+            headers = {
+                'Authorization': f'Bearer {TWITTER_BEARER_TOKEN}',
+                'User-Agent': 'v2UserLookupPython'
+            }
+            
+            tweet_params = {
+                'tweet.fields': 'created_at,public_metrics,text,non_public_metrics,attachments,author_id',
+                'expansions': 'author_id,attachments.media_keys',
+                'user.fields': 'name,username,profile_image_url',
+                'media.fields': 'type,url,preview_image_url,width,height'
+            }
+            
+            tweets_response = requests.get(tweet_url, headers=headers, params=tweet_params, timeout=10)
+            print(f"🔍 DEBUG: Tweet API response: {tweets_response.status_code}")
+            
+            if tweets_response.status_code == 200:
+                tweets_data = tweets_response.json()
+                
+                if 'data' in tweets_data:
+                    tweet = tweets_data['data']
+                    
+                    # Get user profile image from includes
+                    profile_image_url = None
+                    username = "Unknown"
+                    if 'includes' in tweets_data and 'users' in tweets_data['includes']:
+                        for user in tweets_data['includes']['users']:
+                            if user['id'] == tweet['author_id']:
+                                username = user['username']
+                                profile_image_url = user.get('profile_image_url', '').replace('_normal', '_400x400')
+                                break
+                    
+                    # Get media data from includes
+                    media_dict = {}
+                    if 'includes' in tweets_data and 'media' in tweets_data['includes']:
+                        for media in tweets_data['includes']['media']:
+                            media_dict[media['media_key']] = media
+                    
+                    tweet_obj = {
+                        'id': tweet['id'],
+                        'text': tweet['text'],
+                        'url': f'https://twitter.com/{username}/status/{tweet["id"]}',
+                        'created_at': tweet.get('created_at', ''),
+                        'metrics': tweet.get('public_metrics', {}),
+                        'description': tweet['text']  # Full text as description
+                    }
+                    
+                    # Add profile image if available
+                    if profile_image_url:
+                        tweet_obj['profile_image_url'] = profile_image_url
+                    
+                    # Add media if available
+                    if 'attachments' in tweet and 'media_keys' in tweet['attachments']:
+                        media_list = []
+                        for media_key in tweet['attachments']['media_keys']:
+                            if media_key in media_dict:
+                                media_info = media_dict[media_key]
+                                if media_info['type'] == 'photo':
+                                    media_list.append({
+                                        'type': 'photo',
+                                        'url': media_info.get('url', ''),
+                                        'preview_url': media_info.get('preview_image_url', ''),
+                                        'width': media_info.get('width', 0),
+                                        'height': media_info.get('height', 0)
+                                    })
+                                elif media_info['type'] in ['video', 'animated_gif']:
+                                    media_list.append({
+                                        'type': media_info['type'],
+                                        'preview_url': media_info.get('preview_image_url', ''),
+                                        'width': media_info.get('width', 0),
+                                        'height': media_info.get('height', 0)
+                                    })
+                        
+                        if media_list:
+                            tweet_obj['media'] = media_list
+                    
+                    print(f"✅ Twitter API v2: Found tweet {tweet_id}")
+                    return tweet_obj
+                        
+            else:
+                print(f"❌ Twitter API v2 tweet error: {tweets_response.status_code}")
+                print(f"🔍 DEBUG: Error response: {tweets_response.text}")
+                
+        except Exception as e:
+            print(f"❌ Twitter API v2 error: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    print(f"❌ Failed to fetch tweet {tweet_id}")
+    return None
 
 async def get_twitter_user_tweets(username):
     """
@@ -981,6 +1085,74 @@ async def check_specific_tweet(interaction: discord.Interaction, tweet_id: str):
     except Exception as e:
         print(f"Error in check specific tweet: {e}")
         await interaction.edit_original_response(content="❌ Error checking specific tweet.")
+
+# Command to add specific tweet by ID
+@bot.tree.command(name="add_tweet_by_id", description="Manually add a tweet by ID to the channel")
+@app_commands.describe(tweet_id="Tweet ID to post (e.g. 1979003059117207752)")
+async def add_tweet_by_id(interaction: discord.Interaction, tweet_id: str):
+    """Manually add a specific tweet by ID"""
+    await interaction.response.defer()
+    
+    try:
+        # Clean tweet ID (remove URL parts if user pasted full URL)
+        clean_tweet_id = tweet_id.split('/')[-1].split('?')[0]
+        
+        print(f"🔧 Manual tweet add requested by {interaction.user.name}: {clean_tweet_id}")
+        
+        # Fetch the specific tweet
+        tweet_data = await get_specific_tweet(clean_tweet_id)
+        
+        if tweet_data:
+            # Create embed
+            embed = await create_tweet_embed(tweet_data)
+            
+            # Post to tweets channel
+            channel = bot.get_channel(TWEETS_CHANNEL_ID)
+            if channel:
+                await channel.send(embed=embed)
+                
+                # Log the manual action
+                log_channel = bot.get_channel(LOG_CHANNEL_ID)
+                if log_channel and log_channel != channel:
+                    await log_channel.send(f"🔧 {interaction.user.mention} manually added tweet: {tweet_data['url']}")
+                
+                # Success response
+                success_embed = discord.Embed(
+                    title="✅ Tweet Added Successfully",
+                    color=0x00FF00
+                )
+                success_embed.add_field(name="Tweet ID", value=clean_tweet_id, inline=True)
+                success_embed.add_field(name="Posted to", value=f"<#{TWEETS_CHANNEL_ID}>", inline=True)
+                success_embed.add_field(name="Tweet Text", value=tweet_data['text'][:200] + "..." if len(tweet_data['text']) > 200 else tweet_data['text'], inline=False)
+                success_embed.add_field(name="URL", value=tweet_data['url'], inline=False)
+                
+                await interaction.edit_original_response(content="🐦 Tweet posted manually:", embed=success_embed)
+                print(f"✅ Manually posted tweet: {clean_tweet_id}")
+                
+            else:
+                await interaction.edit_original_response(content=f"❌ Channel <#{TWEETS_CHANNEL_ID}> not found!")
+        else:
+            error_embed = discord.Embed(
+                title="❌ Tweet Not Found",
+                color=0xFF0000
+            )
+            error_embed.add_field(name="Tweet ID", value=clean_tweet_id, inline=False)
+            error_embed.add_field(name="Possible Issues", value="• Tweet doesn't exist\n• Tweet is private/protected\n• Invalid Tweet ID\n• API access issue", inline=False)
+            error_embed.add_field(name="How to get Tweet ID", value="From URL: `https://x.com/username/status/1234567890`\nTweet ID is: `1234567890`", inline=False)
+            
+            await interaction.edit_original_response(content="⚠️ Could not fetch tweet:", embed=error_embed)
+            
+    except Exception as e:
+        error_embed = discord.Embed(
+            title="💥 Error Adding Tweet",
+            color=0xFF0000
+        )
+        error_embed.add_field(name="Error", value=str(e)[:1000], inline=False)
+        error_embed.add_field(name="Tweet ID", value=tweet_id, inline=True)
+        error_embed.add_field(name="Suggestion", value="Check the Tweet ID and try again", inline=False)
+        
+        print(f"Error in add tweet by ID: {e}")
+        await interaction.edit_original_response(content="💥 Error adding tweet:", embed=error_embed)
 
 # ================================
 #        OTHER EVENTS
