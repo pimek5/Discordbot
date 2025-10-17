@@ -51,6 +51,8 @@ class MyBot(commands.Bot):
         self.tree.add_command(dpm_history_full, guild=guild)
         self.tree.add_command(post_latest_tweet, guild=guild)
         self.tree.add_command(toggle_tweet_monitoring, guild=guild)
+        self.tree.add_command(start_tweet_monitoring, guild=guild)
+        self.tree.add_command(tweet_status, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -587,6 +589,36 @@ async def toggle_tweet_monitoring(interaction: discord.Interaction):
     else:
         check_for_new_tweets.start()
         await interaction.response.send_message("▶️ Tweet monitoring started.", ephemeral=True)
+
+# Command to start tweet monitoring
+@bot.tree.command(name="start_tweet_monitoring", description="Start automatic tweet monitoring")
+async def start_tweet_monitoring(interaction: discord.Interaction):
+    """Start the tweet monitoring task"""
+    if check_for_new_tweets.is_running():
+        await interaction.response.send_message("ℹ️ Tweet monitoring is already running.", ephemeral=True)
+    else:
+        check_for_new_tweets.start()
+        await interaction.response.send_message("▶️ Tweet monitoring started successfully!", ephemeral=True)
+
+# Command to check tweet monitoring status
+@bot.tree.command(name="tweet_status", description="Check if tweet monitoring is currently active")
+async def tweet_status(interaction: discord.Interaction):
+    """Check the status of tweet monitoring"""
+    status = "🟢 **ACTIVE**" if check_for_new_tweets.is_running() else "🔴 **STOPPED**"
+    
+    embed = discord.Embed(
+        title="🐦 Tweet Monitoring Status",
+        color=0x1DA1F2
+    )
+    embed.add_field(name="Status", value=status, inline=False)
+    embed.add_field(name="Username", value=f"@{TWITTER_USERNAME}", inline=True)
+    embed.add_field(name="Check Interval", value=f"{TWITTER_CHECK_INTERVAL} seconds", inline=True)
+    embed.add_field(name="Target Channel", value=f"<#{TWEETS_CHANNEL_ID}>", inline=True)
+    
+    if check_for_new_tweets.is_running():
+        embed.add_field(name="Last Tweet ID", value=last_tweet_id or "Not initialized", inline=False)
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ================================
 #        OTHER EVENTS
