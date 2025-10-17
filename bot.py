@@ -646,7 +646,7 @@ async def create_tweet_embed(tweet_data):
     
     # Add Twitter header with user info
     embed.set_author(
-        name=f"🐦 New Tweet from @{TWITTER_USERNAME}",
+        name=f"New post from @{TWITTER_USERNAME}",
         icon_url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png",
         url=tweet_data['url']
     )
