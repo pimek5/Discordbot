@@ -588,12 +588,18 @@ class ModReviewView(discord.ui.View):
         # Add ✅ reaction to original idea embed
         try:
             ideas_channel = bot.get_channel(YOUR_IDEAS_CHANNEL_ID)
-            if ideas_channel:
-                idea_message = await ideas_channel.fetch_message(self.idea_embed_message_id)
-                await idea_message.add_reaction("✅")
-                print(f"✅ Added approval reaction to message {self.idea_embed_message_id}")
-            else:
+            if not ideas_channel:
                 print(f"❌ Could not find ideas channel: {YOUR_IDEAS_CHANNEL_ID}")
+            else:
+                print(f"🔍 Looking for message {self.idea_embed_message_id} in channel {ideas_channel.name}")
+                try:
+                    idea_message = await ideas_channel.fetch_message(self.idea_embed_message_id)
+                    await idea_message.add_reaction("✅")
+                    print(f"✅ Added approval reaction to message {self.idea_embed_message_id}")
+                except discord.errors.NotFound:
+                    print(f"❌ Message {self.idea_embed_message_id} not found in {ideas_channel.name} - it may have been deleted")
+                except Exception as msg_error:
+                    print(f"❌ Error fetching message: {msg_error}")
         except Exception as e:
             print(f"❌ Error adding approval reaction: {e}")
             import traceback
@@ -630,12 +636,18 @@ class ModReviewView(discord.ui.View):
         # Add ❎ reaction to original idea embed
         try:
             ideas_channel = bot.get_channel(YOUR_IDEAS_CHANNEL_ID)
-            if ideas_channel:
-                idea_message = await ideas_channel.fetch_message(self.idea_embed_message_id)
-                await idea_message.add_reaction("❎")
-                print(f"❎ Added rejection reaction to message {self.idea_embed_message_id}")
-            else:
+            if not ideas_channel:
                 print(f"❌ Could not find ideas channel: {YOUR_IDEAS_CHANNEL_ID}")
+            else:
+                print(f"🔍 Looking for message {self.idea_embed_message_id} in channel {ideas_channel.name}")
+                try:
+                    idea_message = await ideas_channel.fetch_message(self.idea_embed_message_id)
+                    await idea_message.add_reaction("❎")
+                    print(f"❎ Added rejection reaction to message {self.idea_embed_message_id}")
+                except discord.errors.NotFound:
+                    print(f"❌ Message {self.idea_embed_message_id} not found in {ideas_channel.name} - it may have been deleted")
+                except Exception as msg_error:
+                    print(f"❌ Error fetching message: {msg_error}")
         except Exception as e:
             print(f"❌ Error adding rejection reaction: {e}")
             import traceback
