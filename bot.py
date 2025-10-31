@@ -487,18 +487,18 @@ class VotingView(discord.ui.View):
             # Remove upvote
             voting_data[message_id]['upvotes'] -= 1
             del voting_data[message_id]['voters'][user_id]
-            await interaction.response.send_message("⬆️ Usunięto głos w górę", ephemeral=True)
+            await interaction.response.send_message("⬆️ Upvote removed", ephemeral=True)
         elif current_vote == 'down':
             # Change from downvote to upvote
             voting_data[message_id]['downvotes'] -= 1
             voting_data[message_id]['upvotes'] += 1
             voting_data[message_id]['voters'][user_id] = 'up'
-            await interaction.response.send_message("⬆️ Zmieniono głos na górę", ephemeral=True)
+            await interaction.response.send_message("⬆️ Changed vote to upvote", ephemeral=True)
         else:
             # Add upvote
             voting_data[message_id]['upvotes'] += 1
             voting_data[message_id]['voters'][user_id] = 'up'
-            await interaction.response.send_message("⬆️ Zagłosowano w górę", ephemeral=True)
+            await interaction.response.send_message("⬆️ Upvoted!", ephemeral=True)
         
         # Update button labels
         await self.update_buttons(interaction.message)
@@ -518,18 +518,18 @@ class VotingView(discord.ui.View):
             # Remove downvote
             voting_data[message_id]['downvotes'] -= 1
             del voting_data[message_id]['voters'][user_id]
-            await interaction.response.send_message("⬇️ Usunięto głos w dół", ephemeral=True)
+            await interaction.response.send_message("⬇️ Downvote removed", ephemeral=True)
         elif current_vote == 'up':
             # Change from upvote to downvote
             voting_data[message_id]['upvotes'] -= 1
             voting_data[message_id]['downvotes'] += 1
             voting_data[message_id]['voters'][user_id] = 'down'
-            await interaction.response.send_message("⬇️ Zmieniono głos na dół", ephemeral=True)
+            await interaction.response.send_message("⬇️ Changed vote to downvote", ephemeral=True)
         else:
             # Add downvote
             voting_data[message_id]['downvotes'] += 1
             voting_data[message_id]['voters'][user_id] = 'down'
-            await interaction.response.send_message("⬇️ Zagłosowano w dół", ephemeral=True)
+            await interaction.response.send_message("⬇️ Downvoted!", ephemeral=True)
         
         # Update button labels
         await self.update_buttons(interaction.message)
@@ -574,11 +574,11 @@ class ModReviewView(discord.ui.View):
         
         # Check if user already voted
         if user_id in mod_review_data[message_id]['approved']:
-            await interaction.response.send_message("✅ Już zaakceptowałeś ten pomysł", ephemeral=True)
+            await interaction.response.send_message("✅ You already approved this idea", ephemeral=True)
             return
         
         if user_id in mod_review_data[message_id]['rejected']:
-            await interaction.response.send_message("❌ Nie możesz zaakceptować po odrzuceniu", ephemeral=True)
+            await interaction.response.send_message("❌ Cannot approve after rejecting", ephemeral=True)
             return
         
         # Add approval
@@ -593,7 +593,7 @@ class ModReviewView(discord.ui.View):
         except:
             pass
         
-        await interaction.response.send_message("✅ Pomysł zaakceptowany!", ephemeral=True)
+        await interaction.response.send_message("✅ Idea approved!", ephemeral=True)
     
     @discord.ui.button(label="Reject", emoji="❎", style=discord.ButtonStyle.danger, custom_id="reject")
     async def reject_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -611,11 +611,11 @@ class ModReviewView(discord.ui.View):
         
         # Check if user already voted
         if user_id in mod_review_data[message_id]['rejected']:
-            await interaction.response.send_message("❎ Już odrzuciłeś ten pomysł", ephemeral=True)
+            await interaction.response.send_message("❎ You already rejected this idea", ephemeral=True)
             return
         
         if user_id in mod_review_data[message_id]['approved']:
-            await interaction.response.send_message("❌ Nie możesz odrzucić po zaakceptowaniu", ephemeral=True)
+            await interaction.response.send_message("❌ Cannot reject after approving", ephemeral=True)
             return
         
         # Add rejection
@@ -630,7 +630,7 @@ class ModReviewView(discord.ui.View):
         except:
             pass
         
-        await interaction.response.send_message("❎ Pomysł odrzucony!", ephemeral=True)
+        await interaction.response.send_message("❎ Idea rejected!", ephemeral=True)
 
 @bot.event
 async def on_thread_create(thread: discord.Thread):
@@ -645,86 +645,151 @@ async def on_thread_create(thread: discord.Thread):
         # Wait a moment for the first message to be posted
         await asyncio.sleep(2)
         
-        # Get the starter message (first message in thread)
-        try:
-            starter_message = await thread.fetch_message(thread.id)
-        except:
-            # If starter message doesn't exist, get first message
-            messages = [msg async for msg in thread.history(limit=1, oldest_first=True)]
-            if not messages:
-                print("❌ No messages found in thread")
-                return
-            starter_message = messages[0]
-        
-        # Extract thread information
-        thread_title = thread.name
-        thread_description = starter_message.content or "No description provided"
-        thread_image = None
-        
-        # Get first image from attachments
-        if starter_message.attachments:
-            for attachment in starter_message.attachments:
-                if attachment.content_type and attachment.content_type.startswith('image/'):
-                    thread_image = attachment.url
-                    break
-        
-        # Create embed for Your Ideas channel
-        embed = discord.Embed(
-            title=thread_title,
-            description=thread_description,
-            color=0x5865F2,
-            timestamp=datetime.datetime.now()
-        )
-        
-        embed.set_footer(text=f"Pomysł od {starter_message.author.name}", icon_url=starter_message.author.display_avatar.url)
-        
-        if thread_image:
-            embed.set_image(url=thread_image)
-        
-        # Add link to original thread
-        embed.add_field(name="🔗 Link do threadu", value=f"[Kliknij tutaj]({thread.jump_url})", inline=False)
-        
-        # Post to Your Ideas channel with voting buttons
-        ideas_channel = bot.get_channel(YOUR_IDEAS_CHANNEL_ID)
-        if not ideas_channel:
-            print(f"❌ Your Ideas channel not found: {YOUR_IDEAS_CHANNEL_ID}")
-            return
-        
-        voting_view = VotingView(0)  # Temporary, will update after posting
-        idea_message = await ideas_channel.send(embed=embed, view=voting_view)
-        
-        # Update view with correct message ID
-        voting_data[str(idea_message.id)] = {'upvotes': 0, 'downvotes': 0, 'voters': {}}
-        voting_view = VotingView(idea_message.id)
-        await idea_message.edit(view=voting_view)
-        
-        print(f"✅ Posted idea to Your Ideas channel: {idea_message.jump_url}")
-        
-        # Post to Mod Review channel
-        mod_channel = bot.get_channel(MOD_REVIEW_CHANNEL_ID)
-        if not mod_channel:
-            print(f"❌ Mod Review channel not found: {MOD_REVIEW_CHANNEL_ID}")
-            return
-        
-        mod_embed = discord.Embed(
-            title="🔍 New Skin Idea for Review",
-            description=f"**{thread_title}**\n\n[View Idea Embed]({idea_message.jump_url})\n[View Original Thread]({thread.jump_url})",
-            color=0xFFA500,
-            timestamp=datetime.datetime.now()
-        )
-        
-        mod_review_view = ModReviewView(thread.id, idea_message.id)
-        mod_message = await mod_channel.send(embed=mod_embed, view=mod_review_view)
-        
-        print(f"✅ Posted to Mod Review channel: {mod_message.jump_url}")
-        
-        # Log the action
-        log_channel = bot.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            await log_channel.send(f"🧵 New skin idea thread processed: {thread.name}\n📬 Idea: {idea_message.jump_url}\n🔍 Review: {mod_message.jump_url}")
+        # Process the thread using helper function
+        await process_skin_idea_thread(thread)
         
     except Exception as e:
         print(f"❌ Error processing thread: {e}")
+        import traceback
+        traceback.print_exc()
+
+async def process_skin_idea_thread(thread: discord.Thread):
+    """Helper function to process a skin idea thread"""
+    print(f"🧵 Processing skin idea thread: {thread.name} (ID: {thread.id})")
+    
+    # Get starter message
+    try:
+        starter_message = await thread.fetch_message(thread.id)
+    except:
+        # If starter message doesn't exist, get first message
+        messages = [msg async for msg in thread.history(limit=1, oldest_first=True)]
+        if not messages:
+            raise Exception("No messages found in thread")
+        starter_message = messages[0]
+    
+    # Extract thread information
+    thread_title = thread.name
+    thread_description = starter_message.content or "No description provided"
+    thread_image = None
+    
+    # Get first image from attachments
+    if starter_message.attachments:
+        for attachment in starter_message.attachments:
+            if attachment.content_type and attachment.content_type.startswith('image/'):
+                thread_image = attachment.url
+                break
+    
+    # Create embed for Your Ideas channel
+    embed = discord.Embed(
+        title=thread_title,
+        description=thread_description,
+        color=0x5865F2,
+        timestamp=datetime.datetime.now()
+    )
+    
+    embed.set_footer(text=f"Idea by {starter_message.author.name}", icon_url=starter_message.author.display_avatar.url)
+    
+    if thread_image:
+        embed.set_image(url=thread_image)
+    
+    # Add link to original thread
+    embed.add_field(name="🔗 Thread Link", value=f"[Click here]({thread.jump_url})", inline=False)
+    
+    # Post to Your Ideas channel with voting buttons
+    ideas_channel = bot.get_channel(YOUR_IDEAS_CHANNEL_ID)
+    if not ideas_channel:
+        raise Exception(f"Your Ideas channel not found: {YOUR_IDEAS_CHANNEL_ID}")
+    
+    voting_view = VotingView(0)  # Temporary, will update after posting
+    idea_message = await ideas_channel.send(embed=embed, view=voting_view)
+    
+    # Update view with correct message ID
+    voting_data[str(idea_message.id)] = {'upvotes': 0, 'downvotes': 0, 'voters': {}}
+    voting_view = VotingView(idea_message.id)
+    await idea_message.edit(view=voting_view)
+    
+    print(f"✅ Posted idea to Your Ideas channel: {idea_message.jump_url}")
+    
+    # Post to Mod Review channel
+    mod_channel = bot.get_channel(MOD_REVIEW_CHANNEL_ID)
+    if not mod_channel:
+        raise Exception(f"Mod Review channel not found: {MOD_REVIEW_CHANNEL_ID}")
+    
+    mod_embed = discord.Embed(
+        title="🔍 New Skin Idea for Review",
+        description=f"**{thread_title}**\n\n[View Idea Embed]({idea_message.jump_url})\n[View Original Thread]({thread.jump_url})",
+        color=0xFFA500,
+        timestamp=datetime.datetime.now()
+    )
+    
+    mod_review_view = ModReviewView(thread.id, idea_message.id)
+    mod_message = await mod_channel.send(embed=mod_embed, view=mod_review_view)
+    
+    print(f"✅ Posted to Mod Review channel: {mod_message.jump_url}")
+    
+    # Log the action
+    log_channel = bot.get_channel(LOG_CHANNEL_ID)
+    if log_channel:
+        await log_channel.send(f"🧵 New skin idea thread processed: {thread.name}\n📬 Idea: {idea_message.jump_url}\n🔍 Review: {mod_message.jump_url}")
+    
+    return idea_message, mod_message
+
+@bot.tree.command(name="add_skin_idea_by_link", description="Manually process a skin idea thread by providing its link")
+@app_commands.describe(thread_link="Discord thread URL (e.g. https://discord.com/channels/...)")
+async def add_skin_idea_by_link(interaction: discord.Interaction, thread_link: str):
+    """Manually process a skin idea thread by link"""
+    await interaction.response.defer()
+    
+    try:
+        # Extract thread ID from URL
+        # URL format: https://discord.com/channels/server_id/channel_id/thread_id
+        parts = thread_link.rstrip('/').split('/')
+        
+        if len(parts) < 3:
+            await interaction.edit_original_response(content="❌ Invalid thread link format. Please provide a valid Discord thread URL.")
+            return
+        
+        thread_id = int(parts[-1])
+        
+        print(f"🔧 Manual skin idea add requested by {interaction.user.name}: Thread ID {thread_id}")
+        
+        # Try to get the thread
+        thread = bot.get_channel(thread_id)
+        if not thread or not isinstance(thread, discord.Thread):
+            # Try fetching it
+            for guild in bot.guilds:
+                try:
+                    thread = await guild.fetch_channel(thread_id)
+                    if isinstance(thread, discord.Thread):
+                        break
+                except:
+                    continue
+        
+        if not thread or not isinstance(thread, discord.Thread):
+            await interaction.edit_original_response(content=f"❌ Could not find thread with ID: {thread_id}")
+            return
+        
+        # Process the thread
+        idea_message, mod_message = await process_skin_idea_thread(thread)
+        
+        # Success response
+        success_embed = discord.Embed(
+            title="✅ Skin Idea Thread Processed Successfully",
+            color=0x00FF00
+        )
+        success_embed.add_field(name="Thread", value=f"[{thread.name}]({thread.jump_url})", inline=False)
+        success_embed.add_field(name="Idea Post", value=f"[View in Your Ideas]({idea_message.jump_url})", inline=True)
+        success_embed.add_field(name="Review Post", value=f"[View in Mod Review]({mod_message.jump_url})", inline=True)
+        
+        await interaction.edit_original_response(content="🧵 Skin idea thread processed manually:", embed=success_embed)
+        print(f"✅ Manually processed skin idea thread: {thread.name}")
+        
+    except ValueError:
+        await interaction.edit_original_response(content="❌ Invalid thread link. Could not extract thread ID.")
+        print(f"❌ Invalid thread link provided")
+    except Exception as e:
+        await interaction.edit_original_response(content=f"❌ Error processing thread: {str(e)}")
+        print(f"❌ Error processing manual thread: {e}")
         import traceback
         traceback.print_exc()
 
