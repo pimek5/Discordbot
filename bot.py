@@ -40,6 +40,17 @@ TWITTER_CHECK_INTERVAL = 60  # Check every 60 seconds
 # Twitter API Configuration (add these to your .env file)
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
 
+# Thread Manager Configuration
+SKIN_IDEAS_CHANNEL_ID = 1329671504941682750  # Channel where threads are created
+YOUR_IDEAS_CHANNEL_ID = 1433892799862018109  # Channel where embeds are posted
+MOD_REVIEW_CHANNEL_ID = 1433893934265925682  # Channel for mod review
+
+# Store voting data: {message_id: {user_id: 'up' or 'down', 'upvotes': int, 'downvotes': int}}
+voting_data = {}
+
+# Store mod review data: {message_id: {'approved': set(), 'rejected': set(), 'original_message_id': int}}
+mod_review_data = {}
+
 # ================================
 #        BOT INIT
 # ================================
@@ -48,6 +59,10 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
+        # Add persistent views for Thread Manager
+        self.add_view(VotingView(0))  # Dummy view for persistent buttons
+        self.add_view(ModReviewView(0, 0))  # Dummy view for persistent buttons
+        
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
@@ -448,6 +463,271 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         channel = bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
         await log_channel.send(f"📝 {user.mention} reacted with {payload.emoji} on [this message]({message.jump_url})")
+# ================================
+#       Thread manager
+# ================================
+
+class VotingView(discord.ui.View):
+    def __init__(self, message_id):
+        super().__init__(timeout=None)
+        self.message_id = str(message_id)
+        
+    @discord.ui.button(label="0", emoji="⬆️", style=discord.ButtonStyle.secondary, custom_id="upvote")
+    async def upvote_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        message_id = self.message_id
+        user_id = interaction.user.id
+        
+        # Initialize voting data if not exists
+        if message_id not in voting_data:
+            voting_data[message_id] = {'upvotes': 0, 'downvotes': 0, 'voters': {}}
+        
+        current_vote = voting_data[message_id]['voters'].get(user_id)
+        
+        if current_vote == 'up':
+            # Remove upvote
+            voting_data[message_id]['upvotes'] -= 1
+            del voting_data[message_id]['voters'][user_id]
+            await interaction.response.send_message("⬆️ Usunięto głos w górę", ephemeral=True)
+        elif current_vote == 'down':
+            # Change from downvote to upvote
+            voting_data[message_id]['downvotes'] -= 1
+            voting_data[message_id]['upvotes'] += 1
+            voting_data[message_id]['voters'][user_id] = 'up'
+            await interaction.response.send_message("⬆️ Zmieniono głos na górę", ephemeral=True)
+        else:
+            # Add upvote
+            voting_data[message_id]['upvotes'] += 1
+            voting_data[message_id]['voters'][user_id] = 'up'
+            await interaction.response.send_message("⬆️ Zagłosowano w górę", ephemeral=True)
+        
+        # Update button labels
+        await self.update_buttons(interaction.message)
+    
+    @discord.ui.button(label="0", emoji="⬇️", style=discord.ButtonStyle.secondary, custom_id="downvote")
+    async def downvote_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        message_id = self.message_id
+        user_id = interaction.user.id
+        
+        # Initialize voting data if not exists
+        if message_id not in voting_data:
+            voting_data[message_id] = {'upvotes': 0, 'downvotes': 0, 'voters': {}}
+        
+        current_vote = voting_data[message_id]['voters'].get(user_id)
+        
+        if current_vote == 'down':
+            # Remove downvote
+            voting_data[message_id]['downvotes'] -= 1
+            del voting_data[message_id]['voters'][user_id]
+            await interaction.response.send_message("⬇️ Usunięto głos w dół", ephemeral=True)
+        elif current_vote == 'up':
+            # Change from upvote to downvote
+            voting_data[message_id]['upvotes'] -= 1
+            voting_data[message_id]['downvotes'] += 1
+            voting_data[message_id]['voters'][user_id] = 'down'
+            await interaction.response.send_message("⬇️ Zmieniono głos na dół", ephemeral=True)
+        else:
+            # Add downvote
+            voting_data[message_id]['downvotes'] += 1
+            voting_data[message_id]['voters'][user_id] = 'down'
+            await interaction.response.send_message("⬇️ Zagłosowano w dół", ephemeral=True)
+        
+        # Update button labels
+        await self.update_buttons(interaction.message)
+    
+    async def update_buttons(self, message):
+        """Update button labels with current vote counts"""
+        message_id = str(message.id)
+        
+        if message_id in voting_data:
+            upvotes = voting_data[message_id]['upvotes']
+            downvotes = voting_data[message_id]['downvotes']
+            
+            # Create new view with updated counts
+            new_view = VotingView(message_id)
+            new_view.children[0].label = str(upvotes)  # Upvote button
+            new_view.children[1].label = str(downvotes)  # Downvote button
+            
+            try:
+                await message.edit(view=new_view)
+            except:
+                pass
+
+class ModReviewView(discord.ui.View):
+    def __init__(self, original_message_id, idea_embed_message_id):
+        super().__init__(timeout=None)
+        self.original_message_id = original_message_id
+        self.idea_embed_message_id = idea_embed_message_id
+        
+    @discord.ui.button(label="Approve", emoji="✅", style=discord.ButtonStyle.success, custom_id="approve")
+    async def approve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        message_id = str(interaction.message.id)
+        user_id = interaction.user.id
+        
+        # Initialize mod review data if not exists
+        if message_id not in mod_review_data:
+            mod_review_data[message_id] = {
+                'approved': set(),
+                'rejected': set(),
+                'original_message_id': self.original_message_id,
+                'idea_embed_message_id': self.idea_embed_message_id
+            }
+        
+        # Check if user already voted
+        if user_id in mod_review_data[message_id]['approved']:
+            await interaction.response.send_message("✅ Już zaakceptowałeś ten pomysł", ephemeral=True)
+            return
+        
+        if user_id in mod_review_data[message_id]['rejected']:
+            await interaction.response.send_message("❌ Nie możesz zaakceptować po odrzuceniu", ephemeral=True)
+            return
+        
+        # Add approval
+        mod_review_data[message_id]['approved'].add(user_id)
+        
+        # Add ✅ reaction to original idea embed
+        try:
+            ideas_channel = bot.get_channel(YOUR_IDEAS_CHANNEL_ID)
+            if ideas_channel:
+                idea_message = await ideas_channel.fetch_message(self.idea_embed_message_id)
+                await idea_message.add_reaction("✅")
+        except:
+            pass
+        
+        await interaction.response.send_message("✅ Pomysł zaakceptowany!", ephemeral=True)
+    
+    @discord.ui.button(label="Reject", emoji="❎", style=discord.ButtonStyle.danger, custom_id="reject")
+    async def reject_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        message_id = str(interaction.message.id)
+        user_id = interaction.user.id
+        
+        # Initialize mod review data if not exists
+        if message_id not in mod_review_data:
+            mod_review_data[message_id] = {
+                'approved': set(),
+                'rejected': set(),
+                'original_message_id': self.original_message_id,
+                'idea_embed_message_id': self.idea_embed_message_id
+            }
+        
+        # Check if user already voted
+        if user_id in mod_review_data[message_id]['rejected']:
+            await interaction.response.send_message("❎ Już odrzuciłeś ten pomysł", ephemeral=True)
+            return
+        
+        if user_id in mod_review_data[message_id]['approved']:
+            await interaction.response.send_message("❌ Nie możesz odrzucić po zaakceptowaniu", ephemeral=True)
+            return
+        
+        # Add rejection
+        mod_review_data[message_id]['rejected'].add(user_id)
+        
+        # Add ❎ reaction to original idea embed
+        try:
+            ideas_channel = bot.get_channel(YOUR_IDEAS_CHANNEL_ID)
+            if ideas_channel:
+                idea_message = await ideas_channel.fetch_message(self.idea_embed_message_id)
+                await idea_message.add_reaction("❎")
+        except:
+            pass
+        
+        await interaction.response.send_message("❎ Pomysł odrzucony!", ephemeral=True)
+
+@bot.event
+async def on_thread_create(thread: discord.Thread):
+    """Handle new threads in Skin Ideas channel"""
+    try:
+        # Check if thread is in Skin Ideas channel
+        if thread.parent_id != SKIN_IDEAS_CHANNEL_ID:
+            return
+        
+        print(f"🧵 New thread detected: {thread.name}")
+        
+        # Wait a moment for the first message to be posted
+        await asyncio.sleep(2)
+        
+        # Get the starter message (first message in thread)
+        try:
+            starter_message = await thread.fetch_message(thread.id)
+        except:
+            # If starter message doesn't exist, get first message
+            messages = [msg async for msg in thread.history(limit=1, oldest_first=True)]
+            if not messages:
+                print("❌ No messages found in thread")
+                return
+            starter_message = messages[0]
+        
+        # Extract thread information
+        thread_title = thread.name
+        thread_description = starter_message.content or "No description provided"
+        thread_image = None
+        
+        # Get first image from attachments
+        if starter_message.attachments:
+            for attachment in starter_message.attachments:
+                if attachment.content_type and attachment.content_type.startswith('image/'):
+                    thread_image = attachment.url
+                    break
+        
+        # Create embed for Your Ideas channel
+        embed = discord.Embed(
+            title=thread_title,
+            description=thread_description,
+            color=0x5865F2,
+            timestamp=datetime.datetime.now()
+        )
+        
+        embed.set_footer(text=f"Pomysł od {starter_message.author.name}", icon_url=starter_message.author.display_avatar.url)
+        
+        if thread_image:
+            embed.set_image(url=thread_image)
+        
+        # Add link to original thread
+        embed.add_field(name="🔗 Link do threadu", value=f"[Kliknij tutaj]({thread.jump_url})", inline=False)
+        
+        # Post to Your Ideas channel with voting buttons
+        ideas_channel = bot.get_channel(YOUR_IDEAS_CHANNEL_ID)
+        if not ideas_channel:
+            print(f"❌ Your Ideas channel not found: {YOUR_IDEAS_CHANNEL_ID}")
+            return
+        
+        voting_view = VotingView(0)  # Temporary, will update after posting
+        idea_message = await ideas_channel.send(embed=embed, view=voting_view)
+        
+        # Update view with correct message ID
+        voting_data[str(idea_message.id)] = {'upvotes': 0, 'downvotes': 0, 'voters': {}}
+        voting_view = VotingView(idea_message.id)
+        await idea_message.edit(view=voting_view)
+        
+        print(f"✅ Posted idea to Your Ideas channel: {idea_message.jump_url}")
+        
+        # Post to Mod Review channel
+        mod_channel = bot.get_channel(MOD_REVIEW_CHANNEL_ID)
+        if not mod_channel:
+            print(f"❌ Mod Review channel not found: {MOD_REVIEW_CHANNEL_ID}")
+            return
+        
+        mod_embed = discord.Embed(
+            title="🔍 New Skin Idea for Review",
+            description=f"**{thread_title}**\n\n[View Idea Embed]({idea_message.jump_url})\n[View Original Thread]({thread.jump_url})",
+            color=0xFFA500,
+            timestamp=datetime.datetime.now()
+        )
+        
+        mod_review_view = ModReviewView(thread.id, idea_message.id)
+        mod_message = await mod_channel.send(embed=mod_embed, view=mod_review_view)
+        
+        print(f"✅ Posted to Mod Review channel: {mod_message.jump_url}")
+        
+        # Log the action
+        log_channel = bot.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            await log_channel.send(f"🧵 New skin idea thread processed: {thread.name}\n📬 Idea: {idea_message.jump_url}\n🔍 Review: {mod_message.jump_url}")
+        
+    except Exception as e:
+        print(f"❌ Error processing thread: {e}")
+        import traceback
+        traceback.print_exc()
+
 # ================================
 #       Tweet Poster
 # ================================
