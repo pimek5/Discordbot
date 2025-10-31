@@ -591,8 +591,13 @@ class ModReviewView(discord.ui.View):
             if ideas_channel:
                 idea_message = await ideas_channel.fetch_message(self.idea_embed_message_id)
                 await idea_message.add_reaction("✅")
-        except:
-            pass
+                print(f"✅ Added approval reaction to message {self.idea_embed_message_id}")
+            else:
+                print(f"❌ Could not find ideas channel: {YOUR_IDEAS_CHANNEL_ID}")
+        except Exception as e:
+            print(f"❌ Error adding approval reaction: {e}")
+            import traceback
+            traceback.print_exc()
         
         await interaction.response.send_message("✅ Idea approved!", ephemeral=True)
     
@@ -628,8 +633,13 @@ class ModReviewView(discord.ui.View):
             if ideas_channel:
                 idea_message = await ideas_channel.fetch_message(self.idea_embed_message_id)
                 await idea_message.add_reaction("❎")
-        except:
-            pass
+                print(f"❎ Added rejection reaction to message {self.idea_embed_message_id}")
+            else:
+                print(f"❌ Could not find ideas channel: {YOUR_IDEAS_CHANNEL_ID}")
+        except Exception as e:
+            print(f"❌ Error adding rejection reaction: {e}")
+            import traceback
+            traceback.print_exc()
         
         await interaction.response.send_message("❎ Idea rejected!", ephemeral=True)
 
