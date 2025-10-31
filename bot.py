@@ -66,15 +66,15 @@ class MyBot(commands.Bot):
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
-        self.tree.add_command(dpm_history_full, guild=guild)
-        self.tree.add_command(post_latest_tweet, guild=guild)
-        self.tree.add_command(toggle_tweet_monitoring, guild=guild)
-        self.tree.add_command(start_tweet_monitoring, guild=guild)
-        self.tree.add_command(tweet_status, guild=guild)
-        self.tree.add_command(test_twitter_connection, guild=guild)
-        self.tree.add_command(reset_tweet_tracking, guild=guild)
-        self.tree.add_command(check_specific_tweet, guild=guild)
-        self.tree.add_command(add_tweet_by_id, guild=guild)
+        self.tree.add_command(dpmhistory, guild=guild)
+        self.tree.add_command(posttweet, guild=guild)
+        self.tree.add_command(toggletweets, guild=guild)
+        self.tree.add_command(starttweets, guild=guild)
+        self.tree.add_command(tweetstatus, guild=guild)
+        self.tree.add_command(testtwitter, guild=guild)
+        self.tree.add_command(resettweets, guild=guild)
+        self.tree.add_command(checktweet, guild=guild)
+        self.tree.add_command(addtweet, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -260,9 +260,9 @@ async def invite(interaction: discord.Interaction, user: discord.Member):
 # ================================
 #        DPM COMMAND (INTERAKTYWNY)
 # ================================
-@bot.tree.command(name="dpm_history_full", description="Show last 20 matches with full interactive DPM stats")
+@bot.tree.command(name="dpmhistory", description="Show last 20 matches with full interactive DPM stats")
 @app_commands.describe(summoner="Summoner name")
-async def dpm_history_full(interaction: discord.Interaction, summoner: str):
+async def dpmhistory(interaction: discord.Interaction, summoner: str):
     await interaction.response.defer()
     REGION = 'euw1'
     BASE_URL = f"https://{REGION}.api.riotgames.com/lol"
@@ -734,9 +734,9 @@ async def process_skin_idea_thread(thread: discord.Thread):
     
     return idea_message, mod_message
 
-@bot.tree.command(name="add_skin_idea_by_link", description="Manually process a skin idea thread by providing its link")
+@bot.tree.command(name="addthread", description="Manually process a skin idea thread by providing its link")
 @app_commands.describe(thread_link="Discord thread URL (e.g. https://discord.com/channels/...)")
-async def add_skin_idea_by_link(interaction: discord.Interaction, thread_link: str):
+async def addthread(interaction: discord.Interaction, thread_link: str):
     """Manually process a skin idea thread by link"""
     await interaction.response.defer()
     
@@ -1243,8 +1243,8 @@ async def before_tweet_check():
     print("Tweet monitoring started!")
 
 # Manual tweet posting command (for testing)
-@bot.tree.command(name="post_latest_tweet", description="Manually post the latest tweet from @p1mek")
-async def post_latest_tweet(interaction: discord.Interaction):
+@bot.tree.command(name="posttweet", description="Manually post the latest tweet from @p1mek")
+async def posttweet(interaction: discord.Interaction):
     """Manual command to post the latest tweet"""
     await interaction.response.defer()
     
@@ -1264,8 +1264,8 @@ async def post_latest_tweet(interaction: discord.Interaction):
         await interaction.edit_original_response(content="❌ Error fetching tweet.")
 
 # Command to toggle tweet monitoring
-@bot.tree.command(name="toggle_tweet_monitoring", description="Start or stop automatic tweet monitoring")
-async def toggle_tweet_monitoring(interaction: discord.Interaction):
+@bot.tree.command(name="toggletweets", description="Start or stop automatic tweet monitoring")
+async def toggletweets(interaction: discord.Interaction):
     """Toggle the tweet monitoring task"""
     if check_for_new_tweets.is_running():
         check_for_new_tweets.stop()
@@ -1275,8 +1275,8 @@ async def toggle_tweet_monitoring(interaction: discord.Interaction):
         await interaction.response.send_message("▶️ Tweet monitoring started.", ephemeral=True)
 
 # Command to start tweet monitoring
-@bot.tree.command(name="start_tweet_monitoring", description="Start automatic tweet monitoring")
-async def start_tweet_monitoring(interaction: discord.Interaction):
+@bot.tree.command(name="starttweets", description="Start automatic tweet monitoring")
+async def starttweets(interaction: discord.Interaction):
     """Start the tweet monitoring task"""
     if check_for_new_tweets.is_running():
         await interaction.response.send_message("ℹ️ Tweet monitoring is already running.", ephemeral=True)
@@ -1285,8 +1285,8 @@ async def start_tweet_monitoring(interaction: discord.Interaction):
         await interaction.response.send_message("▶️ Tweet monitoring started successfully!", ephemeral=True)
 
 # Command to check tweet monitoring status
-@bot.tree.command(name="tweet_status", description="Check if tweet monitoring is currently active")
-async def tweet_status(interaction: discord.Interaction):
+@bot.tree.command(name="tweetstatus", description="Check if tweet monitoring is currently active")
+async def tweetstatus(interaction: discord.Interaction):
     """Check the status of tweet monitoring"""
     status = "🟢 **ACTIVE**" if check_for_new_tweets.is_running() else "🔴 **STOPPED**"
     
@@ -1305,8 +1305,8 @@ async def tweet_status(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # Command to test Twitter connection
-@bot.tree.command(name="test_twitter_connection", description="Test if Twitter data fetching is working")
-async def test_twitter_connection(interaction: discord.Interaction):
+@bot.tree.command(name="testtwitter", description="Test if Twitter data fetching is working")
+async def testtwitter(interaction: discord.Interaction):
     """Test command to verify Twitter connection"""
     await interaction.response.defer()
     
@@ -1362,8 +1362,8 @@ async def test_twitter_connection(interaction: discord.Interaction):
         await interaction.edit_original_response(content="💥 Twitter connection test error:", embed=embed)
 
 # Command to reset tweet tracking
-@bot.tree.command(name="reset_tweet_tracking", description="Reset tweet tracking to detect current tweet as new")
-async def reset_tweet_tracking(interaction: discord.Interaction):
+@bot.tree.command(name="resettweets", description="Reset tweet tracking to detect current tweet as new")
+async def resettweets(interaction: discord.Interaction):
     """Reset tweet tracking to force detection of current tweets"""
     global last_tweet_id
     
@@ -1396,9 +1396,9 @@ async def reset_tweet_tracking(interaction: discord.Interaction):
         await interaction.edit_original_response(content="❌ Error resetting tweet tracking.")
 
 # Command to check specific tweet
-@bot.tree.command(name="check_specific_tweet", description="Check if a specific tweet ID is being detected")
+@bot.tree.command(name="checktweet", description="Check if a specific tweet ID is being detected")
 @app_commands.describe(tweet_id="Tweet ID to check (e.g. 1978993084693102705)")
-async def check_specific_tweet(interaction: discord.Interaction, tweet_id: str):
+async def checktweet(interaction: discord.Interaction, tweet_id: str):
     """Check if a specific tweet ID matches current latest tweet"""
     await interaction.response.defer()
     
@@ -1432,9 +1432,9 @@ async def check_specific_tweet(interaction: discord.Interaction, tweet_id: str):
         await interaction.edit_original_response(content="❌ Error checking specific tweet.")
 
 # Command to add specific tweet by ID
-@bot.tree.command(name="add_tweet_by_id", description="Manually add a tweet by ID to the channel")
+@bot.tree.command(name="addtweet", description="Manually add a tweet by ID to the channel")
 @app_commands.describe(tweet_id="Tweet ID to post (e.g. 1979003059117207752)")
-async def add_tweet_by_id(interaction: discord.Interaction, tweet_id: str):
+async def addtweet(interaction: discord.Interaction, tweet_id: str):
     """Manually add a specific tweet by ID"""
     await interaction.response.defer()
     
