@@ -702,7 +702,7 @@ async def process_skin_idea_thread(thread: discord.Thread):
         raise Exception(f"Your Ideas channel not found: {YOUR_IDEAS_CHANNEL_ID}")
     
     voting_view = VotingView(0)  # Temporary, will update after posting
-    idea_message = await ideas_channel.send(embed=embed, view=voting_view)
+    idea_message = await ideas_channel.send(content="<@&1173564965152637018>", embed=embed, view=voting_view)
     
     # Update view with correct message ID
     voting_data[str(idea_message.id)] = {'upvotes': 0, 'downvotes': 0, 'voters': {}}
