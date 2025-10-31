@@ -67,6 +67,7 @@ class MyBot(commands.Bot):
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
         self.tree.add_command(dpmhistory, guild=guild)
+        self.tree.add_command(addthread, guild=guild)
         self.tree.add_command(posttweet, guild=guild)
         self.tree.add_command(toggletweets, guild=guild)
         self.tree.add_command(starttweets, guild=guild)
