@@ -35,7 +35,7 @@ LOG_CHANNEL_ID = 1408036991454417039
 # Twitter Configuration
 TWITTER_USERNAME = "p1mek"
 TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
-TWITTER_CHECK_INTERVAL = 60  # Check every 60 seconds
+TWITTER_CHECK_INTERVAL = 300  # Check every 5 minutes (300 seconds) to avoid rate limits
 
 # Twitter API Configuration (add these to your .env file)
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
@@ -851,6 +851,11 @@ async def get_specific_tweet(tweet_id):
             tweets_response = requests.get(tweet_url, headers=headers, params=tweet_params, timeout=10)
             print(f"🔍 DEBUG: Tweet API response: {tweets_response.status_code}")
             
+            # Handle rate limiting
+            if tweets_response.status_code == 429:
+                print(f"⚠️ Twitter API rate limit reached (429). Cannot fetch tweet.")
+                return None
+            
             if tweets_response.status_code == 200:
                 tweets_data = tweets_response.json()
                 
@@ -950,6 +955,12 @@ async def get_twitter_user_tweets(username):
             
             user_response = requests.get(user_url, headers=headers, timeout=10)
             print(f"🔍 DEBUG: User API response: {user_response.status_code}")
+            
+            # Handle rate limiting
+            if user_response.status_code == 429:
+                print(f"⚠️ Twitter API rate limit reached (429). Will retry on next check.")
+                print(f"🔍 Rate limit will reset in ~15 minutes")
+                return []  # Return empty to skip this check
             
             if user_response.status_code == 200:
                 user_data = user_response.json()
