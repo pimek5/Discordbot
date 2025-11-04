@@ -857,6 +857,10 @@ async def add_runeforge_tag(thread: discord.Thread):
     try:
         print(f"🏷️ Attempting to add tag to thread: {thread.name} (ID: {thread.id})")
         
+        # Remember if thread was archived so we can restore it
+        was_archived = thread.archived
+        was_locked = thread.locked
+        
         # Check if tag already exists
         current_tag_names = [tag.name for tag in thread.applied_tags]
         print(f"  Current tags: {current_tag_names}")
@@ -864,6 +868,17 @@ async def add_runeforge_tag(thread: discord.Thread):
         if any(tag.name == "onRuneforge" for tag in thread.applied_tags):
             print(f"  ✅ Thread already has onRuneforge tag")
             return False
+        
+        # If thread is archived or locked, unarchive/unlock it first
+        if was_archived or was_locked:
+            print(f"  📂 Thread is archived={was_archived}, locked={was_locked} - opening it...")
+            try:
+                await thread.edit(archived=False, locked=False)
+                print(f"  ✅ Thread opened successfully")
+                await asyncio.sleep(0.5)  # Small delay to ensure Discord processes the change
+            except Exception as e:
+                print(f"  ❌ Failed to open thread: {e}")
+                return False
         
         # Get the parent channel (ForumChannel)
         parent = thread.parent
@@ -933,6 +948,17 @@ async def add_runeforge_tag(thread: discord.Thread):
             try:
                 await thread.edit(applied_tags=current_tags)
                 print(f"  ✅ Successfully added 'onRuneforge' tag to thread: {thread.name}")
+                
+                # Restore archived/locked state if needed
+                if was_archived or was_locked:
+                    print(f"  📂 Restoring thread state: archived={was_archived}, locked={was_locked}...")
+                    try:
+                        await asyncio.sleep(0.5)  # Small delay before re-archiving
+                        await thread.edit(archived=was_archived, locked=was_locked)
+                        print(f"  ✅ Thread state restored")
+                    except Exception as e:
+                        print(f"  ⚠️ Failed to restore thread state: {e}")
+                
                 return True
             except discord.errors.Forbidden as e:
                 print(f"  ❌ Permission denied to edit thread: {e}")
