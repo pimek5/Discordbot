@@ -2467,12 +2467,49 @@ def get_daily_champion():
     
     return loldle_data['daily_champion']
 
-def get_hint_emoji(guess_value, correct_value):
-    """Get emoji hint for guess"""
+def get_hint_emoji(guess_value, correct_value, attribute_name=""):
+    """Get emoji hint for guess with partial match support"""
     if guess_value == correct_value:
         return "🟩"  # Correct
-    else:
-        return "🟥"  # Wrong
+    
+    # Check for partial match in positions (e.g., "Middle Top" vs "Top")
+    if attribute_name == "position":
+        guess_positions = set(guess_value.split())
+        correct_positions = set(correct_value.split())
+        
+        # If any position matches, it's partially correct
+        if guess_positions & correct_positions:  # Set intersection
+            return "🟨"  # Partially correct
+    
+    return "🟥"  # Wrong
+
+class LoldleButtonsView(discord.ui.View):
+    """View with Guess and Report Issues buttons"""
+    def __init__(self):
+        super().__init__(timeout=None)  # Buttons never expire
+    
+    @discord.ui.button(label="Guess", style=discord.ButtonStyle.primary, emoji="🎮")
+    async def guess_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Sends /guess command prompt to user"""
+        await interaction.response.send_message(
+            "💬 Type `/guess <champion_name>` in the chat to make your guess!\n"
+            "Example: `/guess Yasuo`",
+            ephemeral=True
+        )
+    
+    @discord.ui.button(label="Report Issues", style=discord.ButtonStyle.danger, emoji="⚠️")
+    async def report_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Report issues with Loldle game"""
+        await interaction.response.send_message(
+            "🐛 **Report an Issue**\n\n"
+            "Found a bug or error in the Loldle game?\n"
+            "Please describe the issue:\n"
+            "• What champion were you guessing?\n"
+            "• What went wrong?\n"
+            "• Any error messages?\n\n"
+            "Contact a moderator or admin with this information!",
+            ephemeral=True
+        )
 
 @bot.tree.command(name="guess", description="Play daily LoL champion guessing game!")
 @app_commands.describe(champion="Guess the champion name")
@@ -2573,10 +2610,14 @@ async def guess(interaction: discord.Interaction, champion: str):
             color=0x1DA1F2
         )
         new_embed.add_field(name="How to Play", value="Guess the champion and get hints about gender, position, species, resource, range, and region!", inline=False)
+        new_embed.add_field(name="Legend", value="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong", inline=False)
         new_embed.set_footer(text=f"New Champion: {loldle_data['daily_champion']}")
         
+        # Create buttons view for new game
+        view = LoldleButtonsView()
+        
         try:
-            new_message = await interaction.channel.send(embed=new_embed)
+            new_message = await interaction.channel.send(embed=new_embed, view=view)
             loldle_data['embed_message_id'] = new_message.id
             print(f"🎮 New LoLdle champion: {loldle_data['daily_champion']}")
         except:
@@ -2592,15 +2633,15 @@ async def guess(interaction: discord.Interaction, champion: str):
         
         # Compare attributes with emojis
         hints = []
-        hints.append(f"**Gender:** {guess_data['gender']} {get_hint_emoji(guess_data['gender'], correct_data['gender'])}")
-        hints.append(f"**Position:** {guess_data['position']} {get_hint_emoji(guess_data['position'], correct_data['position'])}")
-        hints.append(f"**Species:** {guess_data['species']} {get_hint_emoji(guess_data['species'], correct_data['species'])}")
-        hints.append(f"**Resource:** {guess_data['resource']} {get_hint_emoji(guess_data['resource'], correct_data['resource'])}")
-        hints.append(f"**Range:** {guess_data['range']} {get_hint_emoji(guess_data['range'], correct_data['range'])}")
-        hints.append(f"**Region:** {guess_data['region']} {get_hint_emoji(guess_data['region'], correct_data['region'])}")
+        hints.append(f"**Gender:** {guess_data['gender']} {get_hint_emoji(guess_data['gender'], correct_data['gender'], 'gender')}")
+        hints.append(f"**Position:** {guess_data['position']} {get_hint_emoji(guess_data['position'], correct_data['position'], 'position')}")
+        hints.append(f"**Species:** {guess_data['species']} {get_hint_emoji(guess_data['species'], correct_data['species'], 'species')}")
+        hints.append(f"**Resource:** {guess_data['resource']} {get_hint_emoji(guess_data['resource'], correct_data['resource'], 'resource')}")
+        hints.append(f"**Range:** {guess_data['range']} {get_hint_emoji(guess_data['range'], correct_data['range'], 'range')}")
+        hints.append(f"**Region:** {guess_data['region']} {get_hint_emoji(guess_data['region'], correct_data['region'], 'region')}")
         
         embed.add_field(name="Comparison", value="\n".join(hints), inline=False)
-        embed.add_field(name="Legend", value="🟩 = Correct | 🟥 = Wrong", inline=False)
+        embed.add_field(name="Legend", value="🟩 = Correct | 🟨 = Partial | 🟥 = Wrong", inline=False)
         
         # Show recent guesses (last 5)
         if len(loldle_data['recent_guesses']) > 0:
@@ -2614,19 +2655,22 @@ async def guess(interaction: discord.Interaction, champion: str):
         embed.add_field(name="Total Guesses", value=str(len(player_data['guesses'])), inline=True)
         embed.set_footer(text="Keep guessing! Use /guess <champion> to try again.")
         
+        # Create buttons view
+        view = LoldleButtonsView()
+        
         # Edit existing embed or create new one
         if loldle_data['embed_message_id']:
             try:
                 channel = interaction.channel
                 message = await channel.fetch_message(loldle_data['embed_message_id'])
-                await message.edit(embed=embed)
+                await message.edit(embed=embed, view=view)
                 await interaction.response.send_message(f"❌ {champion} is not the champion!", ephemeral=True)
             except:
-                await interaction.response.send_message(embed=embed)
+                await interaction.response.send_message(embed=embed, view=view)
                 if hasattr(interaction, 'message'):
                     loldle_data['embed_message_id'] = interaction.message.id
         else:
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, view=view)
             # Get the message object to store its ID
             try:
                 msg = await interaction.original_response()
