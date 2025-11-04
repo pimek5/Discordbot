@@ -1575,13 +1575,17 @@ async def create_tweet_embed(tweet_data):
     
     # Add media images if available
     if 'media' in tweet_data and tweet_data['media']:
-        for media in tweet_data['media']:
+        print(f"🖼️ Processing {len(tweet_data['media'])} media items for embed")
+        for i, media in enumerate(tweet_data['media']):
+            print(f"  Media {i+1}: type={media['type']}, url={media.get('url', 'N/A')}")
             if media['type'] == 'photo' and media.get('url'):
                 # Use the first photo as main image
+                print(f"  ✅ Setting image URL: {media['url']}")
                 embed.set_image(url=media['url'])
                 break
             elif media['type'] in ['video', 'animated_gif'] and media.get('preview_url'):
                 # Use video preview as main image
+                print(f"  ✅ Setting video preview URL: {media['preview_url']}")
                 embed.set_image(url=media['preview_url'])
                 embed.add_field(name="📹 Media", value=f"Video/GIF - [View on Twitter]({tweet_data['url']})", inline=False)
                 break
@@ -1590,6 +1594,8 @@ async def create_tweet_embed(tweet_data):
         photo_count = sum(1 for media in tweet_data['media'] if media['type'] == 'photo')
         if photo_count > 1:
             embed.add_field(name="📸 Photos", value=f"{photo_count} photos - [View all on Twitter]({tweet_data['url']})", inline=False)
+    else:
+        print(f"ℹ️ No media found in tweet data")
     
     return embed
 
