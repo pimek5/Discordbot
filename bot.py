@@ -1191,6 +1191,28 @@ async def checkruneforge(interaction: discord.Interaction):
 
 # Store the last tweet ID to avoid duplicates
 last_tweet_id = None
+TWEET_ID_FILE = "last_tweet_id.txt"
+
+def load_last_tweet_id():
+    """Load the last tweet ID from file"""
+    global last_tweet_id
+    try:
+        if os.path.exists(TWEET_ID_FILE):
+            with open(TWEET_ID_FILE, 'r') as f:
+                last_tweet_id = f.read().strip()
+                if last_tweet_id:
+                    print(f"📂 Loaded last tweet ID from file: {last_tweet_id}")
+    except Exception as e:
+        print(f"⚠️ Error loading last tweet ID: {e}")
+
+def save_last_tweet_id(tweet_id):
+    """Save the last tweet ID to file"""
+    try:
+        with open(TWEET_ID_FILE, 'w') as f:
+            f.write(str(tweet_id))
+        print(f"💾 Saved last tweet ID to file: {tweet_id}")
+    except Exception as e:
+        print(f"⚠️ Error saving last tweet ID: {e}")
 
 async def get_specific_tweet(tweet_id):
     """
@@ -1674,6 +1696,7 @@ async def check_for_new_tweets():
         # Check if this is a new tweet
         if last_tweet_id is None:
             last_tweet_id = current_tweet_id
+            save_last_tweet_id(current_tweet_id)
             print(f"🔧 Initialized tweet tracking with ID: {last_tweet_id}")
             print("🔧 Next check will look for newer tweets")
             return
@@ -1693,6 +1716,7 @@ async def check_for_new_tweets():
                 
                 print(f"✅ Posted new tweet: {current_tweet_id}")
                 last_tweet_id = current_tweet_id
+                save_last_tweet_id(current_tweet_id)
             else:
                 print(f"❌ Channel {TWEETS_CHANNEL_ID} not found!")
         else:
@@ -1708,6 +1732,7 @@ async def check_for_new_tweets():
 async def before_tweet_check():
     """Wait for bot to be ready before starting the tweet check loop"""
     await bot.wait_until_ready()
+    load_last_tweet_id()  # Load saved tweet ID from file
     print("Tweet monitoring started!")
 
 # Manual tweet posting command (for testing)
@@ -1872,6 +1897,7 @@ async def resettweets(interaction: discord.Interaction):
         if tweets:
             old_id = last_tweet_id
             last_tweet_id = None  # Reset tracking
+            save_last_tweet_id("")  # Clear the file
             
             embed = discord.Embed(
                 title="🔄 Tweet Tracking Reset",
