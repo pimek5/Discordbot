@@ -70,6 +70,35 @@ loldle_data = {
     'recent_guesses': []  # Track recent guesses for display
 }
 
+# Additional Loldle game modes
+loldle_quote_data = {
+    'daily_champion': None,
+    'daily_date': None,
+    'players': {},
+    'embed_message_id': None
+}
+
+loldle_ability_data = {
+    'daily_champion': None,
+    'daily_date': None,
+    'players': {},
+    'embed_message_id': None
+}
+
+loldle_emoji_data = {
+    'daily_champion': None,
+    'daily_date': None,
+    'players': {},
+    'embed_message_id': None
+}
+
+loldle_splash_data = {
+    'daily_champion': None,
+    'daily_date': None,
+    'players': {},
+    'embed_message_id': None
+}
+
 # Champion database - All LoL Champions (updated 2024)
 CHAMPIONS = {
     'Aatrox': {'gender': 'Male', 'position': 'Top', 'species': 'Darkin', 'resource': 'Manaless', 'range': 'Melee', 'region': 'Runeterra'},
@@ -245,6 +274,50 @@ CHAMPIONS = {
     'Zyra': {'gender': 'Female', 'position': 'Support', 'species': 'Human Plant', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Ixtal'},
 }
 
+# Extended Loldle Data (Quotes & Emojis)
+LOLDLE_EXTENDED = {
+    'Aatrox': {
+        'quote': 'I am not your enemy. I am THE enemy.',
+        'emoji': '⚔️👹'
+    },
+    'Ahri': {
+        'quote': 'The heart is the strongest muscle.',
+        'emoji': '🦊💕'
+    },
+    'Akali': {
+        'quote': 'So many noobs... Will matchmaking ever find true balance?',
+        'emoji': '🥷💨'
+    },
+    'Yasuo': {
+        'quote': 'Death is like the wind; always by my side.',
+        'emoji': '🌪️⚔️'
+    },
+    'Yone': {
+        'quote': 'One to cut the other to seal.',
+        'emoji': '👺⚔️'
+    },
+    'Zed': {
+        'quote': 'The unseen blade is the deadliest.',
+        'emoji': '🥷🌑'
+    },
+    'Jinx': {
+        'quote': 'Rules are made to be broken... like buildings! Or people!',
+        'emoji': '🔫💥'
+    },
+    'Lux': {
+        'quote': 'Double rainbow? What does it mean?',
+        'emoji': '✨💫'
+    },
+    'Ezreal': {
+        'quote': 'You belong in a museum!',
+        'emoji': '🏹✨'
+    },
+    'Riven': {
+        'quote': 'What is broken can be reforged.',
+        'emoji': '⚔️💔'
+    }
+}
+
 # Rich Presence Configuration
 RICH_PRESENCE_CONFIG = {
     'name': 'Creating League of Legends mods',  # Main activity name (shows as "Streaming X")
@@ -291,6 +364,8 @@ class MyBot(commands.Bot):
         self.tree.add_command(guess, guild=guild)
         self.tree.add_command(loldlestats, guild=guild)
         self.tree.add_command(loldlestart, guild=guild)
+        self.tree.add_command(quote, guild=guild)
+        self.tree.add_command(emoji, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -2616,6 +2691,175 @@ async def loldlestart(interaction: discord.Interaction):
         print(f"🎮 New LoLdle champion started manually: {loldle_data['daily_champion']}")
     except:
         pass
+
+# ================================
+#        LoLdle Quote Mode
+# ================================
+
+def get_daily_quote_champion():
+    """Get or set the daily quote champion"""
+    today = datetime.date.today().isoformat()
+    
+    if loldle_quote_data['daily_date'] != today:
+        import random
+        # Only pick champions that have quotes
+        available = [c for c in LOLDLE_EXTENDED.keys()]
+        loldle_quote_data['daily_champion'] = random.choice(available)
+        loldle_quote_data['daily_date'] = today
+        loldle_quote_data['players'] = {}
+        loldle_quote_data['embed_message_id'] = None
+    
+    return loldle_quote_data['daily_champion']
+
+@bot.tree.command(name="quote", description="Guess the champion by their quote!")
+@app_commands.describe(champion="Guess the champion name")
+async def quote(interaction: discord.Interaction, champion: str):
+    """LoLdle Quote Mode - Guess by quote"""
+    
+    if interaction.channel_id != LOLDLE_CHANNEL_ID:
+        await interaction.response.send_message(
+            f"❌ This command can only be used in <#{LOLDLE_CHANNEL_ID}>!",
+            ephemeral=True
+        )
+        return
+    
+    correct_champion = get_daily_quote_champion()
+    user_id = interaction.user.id
+    
+    if user_id not in loldle_quote_data['players']:
+        loldle_quote_data['players'][user_id] = {'guesses': [], 'solved': False}
+    
+    player_data = loldle_quote_data['players'][user_id]
+    
+    if player_data['solved']:
+        await interaction.response.send_message(
+            f"✅ You already solved today's Quote! The champion is **{correct_champion}**.",
+            ephemeral=True
+        )
+        return
+    
+    champion = champion.strip().title()
+    if champion not in CHAMPIONS:
+        await interaction.response.send_message(
+            f"❌ '{champion}' is not a valid champion name.",
+            ephemeral=True
+        )
+        return
+    
+    if champion in player_data['guesses']:
+        await interaction.response.send_message(
+            f"⚠️ You already guessed **{champion}**!",
+            ephemeral=True
+        )
+        return
+    
+    player_data['guesses'].append(champion)
+    
+    if champion == correct_champion:
+        player_data['solved'] = True
+        
+        embed = discord.Embed(
+            title="🎉 Quote Mode - Correct!",
+            description=f"**{interaction.user.mention} Guessed! 👑**\n\n**{correct_champion}**: \"{LOLDLE_EXTENDED[correct_champion]['quote']}\"",
+            color=0x00FF00
+        )
+        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+    else:
+        quote_text = LOLDLE_EXTENDED[correct_champion]['quote']
+        embed = discord.Embed(
+            title="💬 Quote Mode",
+            description=f"**Quote:** \"{quote_text}\"\n\n**{interaction.user.name}** guessed **{champion}** ❌",
+            color=0xFF6B6B
+        )
+        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+
+# ================================
+#        LoLdle Emoji Mode
+# ================================
+
+def get_daily_emoji_champion():
+    """Get or set the daily emoji champion"""
+    today = datetime.date.today().isoformat()
+    
+    if loldle_emoji_data['daily_date'] != today:
+        import random
+        available = [c for c in LOLDLE_EXTENDED.keys()]
+        loldle_emoji_data['daily_champion'] = random.choice(available)
+        loldle_emoji_data['daily_date'] = today
+        loldle_emoji_data['players'] = {}
+        loldle_emoji_data['embed_message_id'] = None
+    
+    return loldle_emoji_data['daily_champion']
+
+@bot.tree.command(name="emoji", description="Guess the champion by emojis!")
+@app_commands.describe(champion="Guess the champion name")
+async def emoji(interaction: discord.Interaction, champion: str):
+    """LoLdle Emoji Mode - Guess by emoji"""
+    
+    if interaction.channel_id != LOLDLE_CHANNEL_ID:
+        await interaction.response.send_message(
+            f"❌ This command can only be used in <#{LOLDLE_CHANNEL_ID}>!",
+            ephemeral=True
+        )
+        return
+    
+    correct_champion = get_daily_emoji_champion()
+    user_id = interaction.user.id
+    
+    if user_id not in loldle_emoji_data['players']:
+        loldle_emoji_data['players'][user_id] = {'guesses': [], 'solved': False}
+    
+    player_data = loldle_emoji_data['players'][user_id]
+    
+    if player_data['solved']:
+        await interaction.response.send_message(
+            f"✅ You already solved today's Emoji! The champion is **{correct_champion}**.",
+            ephemeral=True
+        )
+        return
+    
+    champion = champion.strip().title()
+    if champion not in CHAMPIONS:
+        await interaction.response.send_message(
+            f"❌ '{champion}' is not a valid champion name.",
+            ephemeral=True
+        )
+        return
+    
+    if champion in player_data['guesses']:
+        await interaction.response.send_message(
+            f"⚠️ You already guessed **{champion}**!",
+            ephemeral=True
+        )
+        return
+    
+    player_data['guesses'].append(champion)
+    
+    if champion == correct_champion:
+        player_data['solved'] = True
+        
+        embed = discord.Embed(
+            title="🎉 Emoji Mode - Correct!",
+            description=f"**{interaction.user.mention} Guessed! 👑**\n\n{LOLDLE_EXTENDED[correct_champion]['emoji']} = **{correct_champion}**",
+            color=0x00FF00
+        )
+        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+    else:
+        emoji_text = LOLDLE_EXTENDED[correct_champion]['emoji']
+        embed = discord.Embed(
+            title="😃 Emoji Mode",
+            description=f"**Emojis:** {emoji_text}\n\n**{interaction.user.name}** guessed **{champion}** ❌",
+            color=0xFF6B6B
+        )
+        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
 
 # ================================
 #        AUTO-SLOWMODE SYSTEM
