@@ -60,6 +60,28 @@ AUTO_SLOWMODE_DELAY = 3  # Slowmode delay in seconds when triggered
 AUTO_SLOWMODE_COOLDOWN = 300  # How long slowmode stays active (5 minutes)
 message_tracker = {}  # {channel_id: [timestamps]}
 
+# LoLdle Configuration
+LOLDLE_CHANNEL_ID = None  # Set this to post daily challenges
+loldle_data = {
+    'daily_champion': None,
+    'daily_date': None,
+    'players': {}  # {user_id: {'guesses': [], 'solved': False}}
+}
+
+# Champion database (simplified - you can expand this)
+CHAMPIONS = {
+    'Katarina': {'gender': 'Female', 'position': 'Middle', 'species': 'Human', 'resource': 'Manaless', 'range': 'Melee', 'region': 'Noxus'},
+    'Yasuo': {'gender': 'Male', 'position': 'Middle', 'species': 'Human', 'resource': 'Manaless', 'range': 'Melee', 'region': 'Ionia'},
+    'Ahri': {'gender': 'Female', 'position': 'Middle', 'species': 'Vastaya', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Ionia'},
+    'Jinx': {'gender': 'Female', 'position': 'Bottom', 'species': 'Human', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Zaun'},
+    'Darius': {'gender': 'Male', 'position': 'Top', 'species': 'Human', 'resource': 'Manaless', 'range': 'Melee', 'region': 'Noxus'},
+    'Lux': {'gender': 'Female', 'position': 'Middle', 'species': 'Human', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Demacia'},
+    'Zed': {'gender': 'Male', 'position': 'Middle', 'species': 'Human', 'resource': 'Energy', 'range': 'Melee', 'region': 'Ionia'},
+    'Thresh': {'gender': 'Male', 'position': 'Support', 'species': 'Undead', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Shadow Isles'},
+    'Vayne': {'gender': 'Female', 'position': 'Bottom', 'species': 'Human', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Demacia'},
+    'Lee Sin': {'gender': 'Male', 'position': 'Jungle', 'species': 'Human', 'resource': 'Energy', 'range': 'Melee', 'region': 'Ionia'},
+}
+
 # Rich Presence Configuration
 RICH_PRESENCE_CONFIG = {
     'name': 'Creating League of Legends mods',  # Main activity name (shows as "Streaming X")
@@ -103,6 +125,8 @@ class MyBot(commands.Bot):
         self.tree.add_command(autoslowmode, guild=guild)
         self.tree.add_command(slowmode, guild=guild)
         self.tree.add_command(slowmodeinfo, guild=guild)
+        self.tree.add_command(loldle, guild=guild)
+        self.tree.add_command(loldlestats, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -2060,6 +2084,9 @@ async def update_presence():
         print(f"❌ Error updating rich presence: {e}")
         import traceback
         traceback.print_exc()
+# ================================
+#        LoLdle
+# ================================
 
 # ================================
 #        AUTO-SLOWMODE SYSTEM
@@ -2258,6 +2285,153 @@ async def slowmodeinfo(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+# ================================
+#        LOLDLE GAME SYSTEM
+# ================================
+def get_daily_champion():
+    """Get or set the daily champion"""
+    today = datetime.date.today().isoformat()
+    
+    if loldle_data['daily_date'] != today:
+        # New day - pick random champion
+        import random
+        loldle_data['daily_champion'] = random.choice(list(CHAMPIONS.keys()))
+        loldle_data['daily_date'] = today
+        loldle_data['players'] = {}
+        print(f"🎮 New LoLdle champion: {loldle_data['daily_champion']}")
+    
+    return loldle_data['daily_champion']
+
+def get_hint_emoji(guess_value, correct_value):
+    """Get emoji hint for guess"""
+    if guess_value == correct_value:
+        return "🟩"  # Correct
+    else:
+        return "🟥"  # Wrong
+
+@bot.tree.command(name="loldle", description="Play daily LoL champion guessing game!")
+@app_commands.describe(champion="Guess the champion name")
+async def loldle(interaction: discord.Interaction, champion: str):
+    """LoLdle - Guess the daily champion!"""
+    
+    # Get daily champion
+    correct_champion = get_daily_champion()
+    user_id = interaction.user.id
+    
+    # Initialize player data
+    if user_id not in loldle_data['players']:
+        loldle_data['players'][user_id] = {'guesses': [], 'solved': False}
+    
+    player_data = loldle_data['players'][user_id]
+    
+    # Check if already solved
+    if player_data['solved']:
+        await interaction.response.send_message(
+            f"✅ You already solved today's LoLdle! The champion is **{correct_champion}**.\nCome back tomorrow for a new challenge!",
+            ephemeral=True
+        )
+        return
+    
+    # Validate champion name
+    champion = champion.strip().title()
+    if champion not in CHAMPIONS:
+        await interaction.response.send_message(
+            f"❌ '{champion}' is not a valid champion name. Try again!",
+            ephemeral=True
+        )
+        return
+    
+    # Check if already guessed
+    if champion in player_data['guesses']:
+        await interaction.response.send_message(
+            f"⚠️ You already guessed **{champion}**! Try a different champion.",
+            ephemeral=True
+        )
+        return
+    
+    # Add guess
+    player_data['guesses'].append(champion)
+    
+    # Get champion data
+    guess_data = CHAMPIONS[champion]
+    correct_data = CHAMPIONS[correct_champion]
+    
+    # Check if correct
+    if champion == correct_champion:
+        player_data['solved'] = True
+        
+        embed = discord.Embed(
+            title="🎉 CORRECT! You Won!",
+            description=f"You guessed **{correct_champion}** correctly!",
+            color=0x00FF00
+        )
+        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])} guess{'es' if len(player_data['guesses']) > 1 else ''}", inline=True)
+        embed.set_footer(text="Come back tomorrow for a new LoLdle!")
+        
+        await interaction.response.send_message(embed=embed)
+        print(f"🎮 {interaction.user.name} solved LoLdle in {len(player_data['guesses'])} attempts")
+    else:
+        # Show hints
+        embed = discord.Embed(
+            title=f"❌ Wrong Guess: {champion}",
+            description=f"Attempt {len(player_data['guesses'])}/∞",
+            color=0xFF0000
+        )
+        
+        # Compare attributes
+        hints = []
+        hints.append(f"**Gender:** {guess_data['gender']} {get_hint_emoji(guess_data['gender'], correct_data['gender'])}")
+        hints.append(f"**Position:** {guess_data['position']} {get_hint_emoji(guess_data['position'], correct_data['position'])}")
+        hints.append(f"**Species:** {guess_data['species']} {get_hint_emoji(guess_data['species'], correct_data['species'])}")
+        hints.append(f"**Resource:** {guess_data['resource']} {get_hint_emoji(guess_data['resource'], correct_data['resource'])}")
+        hints.append(f"**Range:** {guess_data['range']} {get_hint_emoji(guess_data['range'], correct_data['range'])}")
+        hints.append(f"**Region:** {guess_data['region']} {get_hint_emoji(guess_data['region'], correct_data['region'])}")
+        
+        embed.add_field(name="Hints", value="\n".join(hints), inline=False)
+        embed.add_field(name="Legend", value="🟩 = Correct | 🟥 = Wrong", inline=False)
+        
+        # Show previous guesses
+        if len(player_data['guesses']) > 1:
+            embed.add_field(name="Previous Guesses", value=", ".join(player_data['guesses'][:-1]), inline=False)
+        
+        embed.set_footer(text="Keep guessing! Use /loldle to try again.")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="loldlestats", description="Check your LoLdle stats for today")
+async def loldlestats(interaction: discord.Interaction):
+    """Check your LoLdle progress"""
+    
+    user_id = interaction.user.id
+    
+    if user_id not in loldle_data['players']:
+        await interaction.response.send_message(
+            "📊 You haven't played LoLdle today yet! Use `/loldle` to start guessing.",
+            ephemeral=True
+        )
+        return
+    
+    player_data = loldle_data['players'][user_id]
+    
+    embed = discord.Embed(
+        title="📊 Your LoLdle Stats",
+        color=0x1DA1F2
+    )
+    
+    if player_data['solved']:
+        embed.description = f"✅ **Solved!** You guessed the champion in **{len(player_data['guesses'])}** attempts."
+        embed.color = 0x00FF00
+    else:
+        embed.description = f"🎮 **In Progress** - {len(player_data['guesses'])} guess{'es' if len(player_data['guesses']) != 1 else ''} so far"
+        embed.color = 0xFFA500
+    
+    if player_data['guesses']:
+        embed.add_field(name="Guesses", value=", ".join(player_data['guesses']), inline=False)
+    
+    embed.set_footer(text=f"Daily Challenge • {loldle_data['daily_date']}")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
@@ -2265,6 +2439,9 @@ async def on_ready():
     
     # Set rich presence
     await update_presence()
+    
+    # Initialize daily LoLdle
+    get_daily_champion()
     
     # Commands are already synced in setup_hook()
     print(f"✅ Bot is ready with synced commands")
