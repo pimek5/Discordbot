@@ -1301,12 +1301,16 @@ async def get_twitter_user_tweets(username):
     
     # Method 1: Try Nitter instances (primary method - no API key needed!)
     nitter_instances = [
-        "nitter.poast.org",
         "nitter.privacydev.net",
+        "nitter.poast.org",
         "nitter.net",
-        "nitter.1d4.us",
-        "nitter.unixfox.eu",
-        "nitter.domain.glass"
+        "nitter.woodland.cafe",
+        "nitter.lucabased.xyz",
+        "nitter.fdn.fr",
+        "nitter.nojam.io",
+        "nitter.cz",
+        "nitter.in.projectsegfau.lt",
+        "xcancel.com"  # Twitter frontend alternative
     ]
     
     for instance in nitter_instances:
@@ -1314,12 +1318,22 @@ async def get_twitter_user_tweets(username):
             print(f"� Trying {instance} for @{username}...")
             
             url = f"https://{instance}/{username}/rss"
+            
+            # Rotate user agents to avoid blocks
+            import random
+            user_agents = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            ]
+            
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/rss+xml, application/xml, text/xml'
+                'User-Agent': random.choice(user_agents),
+                'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+                'Accept-Language': 'en-US,en;q=0.9'
             }
             
-            response = requests.get(url, headers=headers, timeout=15)
+            response = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
             
             if response.status_code == 200:
                 print(f"✅ Connected to {instance}")
