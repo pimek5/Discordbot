@@ -1962,7 +1962,7 @@ async def update_presence():
     try:
         config = RICH_PRESENCE_CONFIG
         
-        # Create Streaming activity (shows purple "Streaming" status with Watch button)
+        # Create Streaming activity (purple status with Twitch link)
         activity = discord.Streaming(
             name=config.get('name', 'Creating League of Legends mods'),
             url=config.get('url', 'https://www.twitch.tv/pimek532')
@@ -1975,9 +1975,8 @@ async def update_presence():
         )
         
         print(f"✅ Rich presence updated:")
-        print(f"   Streaming: {config.get('name')}")
-        print(f"   URL: {config.get('url')}")
-        print(f"   State: {config.get('state')}")
+        print(f"   🟣 Streaming: {config.get('name')}")
+        print(f"   🔗 URL: {config.get('url')}")
         
     except Exception as e:
         print(f"❌ Error updating rich presence: {e}")
