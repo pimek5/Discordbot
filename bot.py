@@ -1360,14 +1360,53 @@ async def get_twitter_user_tweets(username):
                             # Convert Nitter URL to Twitter URL
                             twitter_url = f'https://twitter.com/{username}/status/{tweet_id}'
                             
-                            tweets.append({
+                            # Extract images from description HTML
+                            media_list = []
+                            if description is not None and description.text:
+                                try:
+                                    from html.parser import HTMLParser
+                                    
+                                    class ImageExtractor(HTMLParser):
+                                        def __init__(self):
+                                            super().__init__()
+                                            self.images = []
+                                        
+                                        def handle_starttag(self, tag, attrs):
+                                            if tag == 'img':
+                                                attrs_dict = dict(attrs)
+                                                if 'src' in attrs_dict:
+                                                    img_url = attrs_dict['src']
+                                                    # Convert Nitter image URLs to full URLs
+                                                    if img_url.startswith('/pic/'):
+                                                        img_url = f"https://{instance}{img_url}"
+                                                    self.images.append(img_url)
+                                    
+                                    parser = ImageExtractor()
+                                    parser.feed(description.text)
+                                    
+                                    if parser.images:
+                                        for img_url in parser.images:
+                                            media_list.append({
+                                                'type': 'photo',
+                                                'url': img_url
+                                            })
+                                        print(f"🖼️ Found {len(parser.images)} images in tweet {tweet_id}")
+                                except Exception as e:
+                                    print(f"⚠️ Error parsing images from description: {e}")
+                            
+                            tweet_obj = {
                                 'id': tweet_id,
                                 'text': tweet_text,
                                 'url': twitter_url,
                                 'created_at': pub_date.text if pub_date is not None else '',
                                 'description': description.text if description is not None else tweet_text,
                                 'metrics': {}
-                            })
+                            }
+                            
+                            if media_list:
+                                tweet_obj['media'] = media_list
+                            
+                            tweets.append(tweet_obj)
                     
                     if tweets:
                         print(f"✅ Nitter: Found {len(tweets)} tweets from {instance}")
