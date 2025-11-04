@@ -55,16 +55,10 @@ RUNEFORGE_TAG_ID = 1435096925144748062  # ID of the onRuneforge tag
 
 # Rich Presence Configuration
 RICH_PRESENCE_CONFIG = {
-    'state': 'discord.gg/hexrtbrxenchromas',
-    'details': 'Creating League of Legends mods',
-    'large_image': 'https://i.imgur.com/sjVSWi5.gif',
-    'large_text': 'HEXRTBRXEN CHROMAS',
-    'small_image': 'https://i.imgur.com/o3MkB9q.gif',
-    'small_text': 'Online',
-    'buttons': [
-        {'label': 'Join Discord Server', 'url': 'https://discord.gg/hexrtbrxenchromas'},
-        {'label': 'Follow my Twitter', 'url': 'https://x.com/p1mek'}
-    ]
+    'name': 'Creating League of Legends mods',  # Main activity name (shows as "Streaming X")
+    'details': 'HEXRTBRXEN CHROMAS',  # Detail line
+    'state': 'discord.gg/hexrtbrxenchromas',  # State line (shows below details)
+    'url': 'https://www.twitch.tv/p1mek'  # Streaming URL (required for Streaming type)
 }
 
 # Store voting data: {message_id: {user_id: 'up' or 'down', 'upvotes': int, 'downvotes': int}}
@@ -1968,23 +1962,30 @@ async def update_presence():
     try:
         config = RICH_PRESENCE_CONFIG
         
-        # Create activity with streaming type to show buttons
+        # Create Streaming activity (shows purple "Streaming" status)
         activity = discord.Streaming(
-            name=config.get('details', 'League of Legends'),
-            url="https://www.twitch.tv/directory"  # Required for Streaming type
+            name=config.get('name', 'Creating League of Legends mods'),
+            url=config.get('url', 'https://www.twitch.tv/p1mek'),
+            details=config.get('details'),
+            state=config.get('state')
         )
         
-        # Set the activity
+        # Set the activity with online status
         await bot.change_presence(
             activity=activity,
             status=discord.Status.online
         )
         
-        print(f"✅ Rich presence updated: {config.get('details')}")
+        print(f"✅ Rich presence updated:")
+        print(f"   Streaming: {config.get('name')}")
+        print(f"   Details: {config.get('details')}")
         print(f"   State: {config.get('state')}")
+        print(f"   URL: {config.get('url')}")
         
     except Exception as e:
         print(f"❌ Error updating rich presence: {e}")
+        import traceback
+        traceback.print_exc()
 
 @bot.event
 async def on_ready():
