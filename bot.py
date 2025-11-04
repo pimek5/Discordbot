@@ -2371,25 +2371,25 @@ async def guess(interaction: discord.Interaction, champion: str):
     if champion == correct_champion:
         player_data['solved'] = True
         
-        embed = discord.Embed(
+        # Delete the old game embed
+        if loldle_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                old_message = await channel.fetch_message(loldle_data['embed_message_id'])
+                await old_message.delete()
+            except:
+                pass
+        
+        # Send winner announcement embed
+        winner_embed = discord.Embed(
             title="🎉 CORRECT! Champion Guessed!",
             description=f"**{interaction.user.mention} Guessed! 👑**\n\nThe champion was **{correct_champion}**!",
             color=0x00FF00
         )
-        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])} guess{'es' if len(player_data['guesses']) > 1 else ''}", inline=True)
-        embed.set_footer(text="New champion will be selected in 5 seconds...")
+        winner_embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])} guess{'es' if len(player_data['guesses']) > 1 else ''}", inline=True)
+        winner_embed.set_footer(text="New champion will be selected in 5 seconds...")
         
-        # Edit existing embed if it exists
-        if loldle_data['embed_message_id']:
-            try:
-                channel = interaction.channel
-                message = await channel.fetch_message(loldle_data['embed_message_id'])
-                await message.edit(embed=embed)
-                await interaction.response.send_message("🎉 Correct guess!", ephemeral=True)
-            except:
-                await interaction.response.send_message(embed=embed)
-        else:
-            await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=winner_embed)
         
         print(f"🎮 {interaction.user.name} solved LoLdle in {len(player_data['guesses'])} attempts")
         
@@ -2411,7 +2411,6 @@ async def guess(interaction: discord.Interaction, champion: str):
         )
         new_embed.add_field(name="How to Play", value="Guess the champion and get hints about gender, position, species, resource, range, and region!", inline=False)
         new_embed.add_field(name="Legend", value="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong", inline=False)
-        new_embed.set_footer(text=f"New Champion: {loldle_data['daily_champion']}")
         
         # Create buttons view for new game
         view = LoldleButtonsView()
