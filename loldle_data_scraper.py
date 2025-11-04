@@ -3,7 +3,7 @@ LoLdle Data Scraper
 Collects champion data from official League of Legends sources
 - Quotes from Universe/Wiki
 - Splash arts from Data Dragon
-- Emojis (custom mappings)
+- Emojis (custom mappings or from Loldle)
 - Ability descriptions from Data Dragon
 """
 
@@ -11,6 +11,7 @@ import requests
 import json
 import time
 from bs4 import BeautifulSoup
+import re
 
 # Data Dragon API endpoints
 DDRAGON_VERSION = "14.23.1"  # Update to latest version
@@ -18,8 +19,51 @@ DDRAGON_BASE = f"https://ddragon.leagueoflegends.com/cdn/{DDRAGON_VERSION}"
 DDRAGON_DATA = f"{DDRAGON_BASE}/data/en_US/champion"
 DDRAGON_IMG = f"{DDRAGON_BASE}/img"
 
+# Loldle data endpoints
+LOLDLE_BASE = "https://loldle.net"
+
 # Champion data storage
 champion_extended_data = {}
+
+def fetch_loldle_emojis():
+    """Try to fetch emoji data from Loldle"""
+    try:
+        print("  Trying to fetch from Loldle API...")
+        
+        # Try direct API endpoints
+        api_endpoints = [
+            "https://loldle.net/api/emojis",
+            "https://loldle.net/api/champions", 
+            "https://loldle.net/data/emojis.json",
+            "https://loldle.net/data/champions.json",
+            "https://loldle.net/js/app.js",
+            "https://loldle.net/static/emojis.json"
+        ]
+        
+        for endpoint in api_endpoints:
+            try:
+                response = requests.get(endpoint, timeout=5, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                })
+                if response.status_code == 200:
+                    # Try to parse as JSON
+                    try:
+                        data = response.json()
+                        print(f"  ✅ Found JSON data at: {endpoint}")
+                        return data
+                    except:
+                        # Look for JSON in JavaScript code
+                        if 'emoji' in response.text.lower():
+                            print(f"  ⚠️  Found potential data at {endpoint} but needs parsing")
+            except:
+                pass
+        
+        print("  ⚠️  Could not fetch Loldle emoji data, using custom generation")
+        return None
+        
+    except Exception as e:
+        print(f"  ⚠️  Error fetching Loldle emojis: {e}")
+        return None
 
 def get_all_champions():
     """Get list of all champions from Data Dragon"""
@@ -78,8 +122,9 @@ def scrape_champion_quote_from_wiki(champion_name):
 
 def generate_emoji_for_champion(champion_data):
     """Generate emoji representation based on champion characteristics"""
-    # This is a simplified version - you can expand with more logic
-    emoji_map = {
+    
+    # Extended emoji mappings based on champion traits
+    role_emojis = {
         'Assassin': '🗡️',
         'Fighter': '⚔️',
         'Mage': '🔮',
@@ -88,25 +133,49 @@ def generate_emoji_for_champion(champion_data):
         'Tank': '🛡️'
     }
     
-    # Additional emojis based on champion name/theme
-    extra_emojis = ['⭐', '💫', '✨', '🌟', '💥', '🔥', '❄️', '⚡', '🌊', '🍃']
+    # Theme-based emojis (can be matched by champion name/theme)
+    theme_emojis = {
+        'fire': '🔥', 'ice': '❄️', 'lightning': '⚡', 'water': '🌊',
+        'wind': '🌪️', 'earth': '�', 'nature': '🍃', 'dark': '🌑',
+        'light': '✨', 'shadow': '👤', 'void': '�', 'star': '⭐',
+        'moon': '🌙', 'sun': '☀️', 'blood': '🩸', 'poison': '☠️',
+        'metal': '⚙️', 'magic': '�', 'demon': '�', 'angel': '👼',
+        'beast': '🐺', 'dragon': '🐉', 'spider': '🕷️', 'cat': '🐱',
+        'bird': '🦅', 'fish': '🐟', 'plant': '�', 'crystal': '💎',
+        'sword': '⚔️', 'shield': '🛡️', 'bow': '🏹', 'staff': '🪄',
+        'hammer': '🔨', 'axe': '🪓', 'gun': '🔫', 'blade': '🗡️',
+        'music': '�', 'book': '📖', 'crown': '👑', 'skull': '💀',
+        'heart': '💚', 'rage': '💢', 'speed': '💨', 'strength': '💪'
+    }
     
     tags = champion_data.get('tags', [])
+    name = champion_data.get('name', '').lower()
+    title = champion_data.get('title', '').lower()
+    
     emojis = []
     
     # Add role-based emojis (up to 2 from tags)
     for tag in tags[:2]:
-        if tag in emoji_map:
-            emojis.append(emoji_map[tag])
+        if tag in role_emojis:
+            emojis.append(role_emojis[tag])
     
-    # Fill up to 4 emojis with extra themed emojis
+    # Add theme-based emojis by matching keywords
+    combined_text = f"{name} {title}"
+    for keyword, emoji in theme_emojis.items():
+        if keyword in combined_text and emoji not in emojis:
+            emojis.append(emoji)
+            if len(emojis) >= 4:
+                break
+    
+    # Fill remaining slots with semi-random but themed emojis
+    extra_pool = ['⭐', '💫', '✨', '🌟', '💥', '🔥', '❄️', '⚡', '🌊', '🍃', '💎', '👑']
     import random
     while len(emojis) < 4:
-        emoji = random.choice(extra_emojis)
+        emoji = random.choice(extra_pool)
         if emoji not in emojis:
             emojis.append(emoji)
     
-    return ''.join(emojis[:4]) if emojis else '❓'
+    return ''.join(emojis[:4]) if emojis else '❓⭐✨💫'
 
 def extract_ability_description(champion_data):
     """Extract a random ability description and clean it"""
@@ -141,6 +210,10 @@ def scrape_all_data():
     """Main function to scrape all champion data"""
     print("🔍 Starting data collection...")
     
+    # Try to fetch Loldle emoji data first
+    print("🎭 Attempting to fetch emoji data from Loldle...")
+    loldle_emojis = fetch_loldle_emojis()
+    
     champions = get_all_champions()
     print(f"📊 Found {len(champions)} champions")
     
@@ -153,13 +226,23 @@ def scrape_all_data():
         if not champ_details:
             continue
         
+        # Try to get emoji from Loldle data first, fallback to generation
+        emoji = None
+        if loldle_emojis and champ_details['name'] in loldle_emojis:
+            emoji = loldle_emojis[champ_details['name']].get('emoji')
+            if emoji:
+                print(f"  ✅ Using Loldle emoji: {emoji}")
+        
+        if not emoji:
+            emoji = generate_emoji_for_champion(champ_details)
+        
         # Collect data
         data = {
             'id': champ_name,
             'name': champ_details['name'],
             'title': champ_details['title'],
             'splash_art': get_splash_art_url(champ_name),
-            'emoji': generate_emoji_for_champion(champ_details),
+            'emoji': emoji,
             'tags': champ_details.get('tags', [])
         }
         
