@@ -2552,6 +2552,56 @@ async def loldlestats(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@bot.tree.command(name="loldlestart", description="Start a new LoLdle game")
+async def loldlestart(interaction: discord.Interaction):
+    """Start a new LoLdle game"""
+    
+    # Channel restriction check
+    if interaction.channel_id != LOLDLE_CHANNEL_ID:
+        await interaction.response.send_message(
+            f"❌ This command can only be used in <#{LOLDLE_CHANNEL_ID}>!",
+            ephemeral=True
+        )
+        return
+    
+    # Delete old game embed if exists
+    if loldle_data['embed_message_id']:
+        try:
+            channel = interaction.channel
+            old_message = await channel.fetch_message(loldle_data['embed_message_id'])
+            await old_message.delete()
+        except:
+            pass
+    
+    # Clear game state and pick new champion
+    import random
+    loldle_data['daily_champion'] = random.choice(list(CHAMPIONS.keys()))
+    loldle_data['players'] = {}
+    loldle_data['recent_guesses'] = []
+    loldle_data['embed_message_id'] = None
+    
+    # Send new game starting embed
+    new_embed = discord.Embed(
+        title="🎮 New LoLdle Challenge Started!",
+        description=f"A new champion has been selected!\nUse `/guess <champion>` to start guessing.",
+        color=0x1DA1F2
+    )
+    new_embed.add_field(name="How to Play", value="Guess the champion and get hints about gender, position, species, resource, range, and region!", inline=False)
+    new_embed.add_field(name="Legend", value="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong", inline=False)
+    
+    # Create buttons view for new game
+    view = LoldleButtonsView()
+    
+    await interaction.response.send_message(embed=new_embed, view=view)
+    
+    # Get the message to store its ID
+    try:
+        msg = await interaction.original_response()
+        loldle_data['embed_message_id'] = msg.id
+        print(f"🎮 New LoLdle champion started manually: {loldle_data['daily_champion']}")
+    except:
+        pass
+
 # ================================
 #        AUTO-SLOWMODE SYSTEM
 # ================================
