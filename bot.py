@@ -1375,8 +1375,6 @@ async def get_twitter_user_tweets(username):
     
     # Method 2: Try Twitter API v2 (fallback - only if bearer token exists)
     if TWITTER_BEARER_TOKEN:
-    # Method 2: Try Twitter API v2 (fallback - only if bearer token exists)
-    if TWITTER_BEARER_TOKEN:
         try:
             print(f"📡 Trying Twitter API v2 for @{username}...")
             
