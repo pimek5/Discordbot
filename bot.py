@@ -61,11 +61,13 @@ AUTO_SLOWMODE_COOLDOWN = 300  # How long slowmode stays active (5 minutes)
 message_tracker = {}  # {channel_id: [timestamps]}
 
 # LoLdle Configuration
-LOLDLE_CHANNEL_ID = None  # Set this to post daily challenges
+LOLDLE_CHANNEL_ID = 1435357204374093824  # Channel restriction for /guess command
 loldle_data = {
     'daily_champion': None,
     'daily_date': None,
-    'players': {}  # {user_id: {'guesses': [], 'solved': False}}
+    'players': {},  # {user_id: {'guesses': [], 'solved': False}}
+    'embed_message_id': None,  # Stores message ID for persistent embed
+    'recent_guesses': []  # Track recent guesses for display
 }
 
 # Champion database - All LoL Champions (updated 2024)
@@ -286,7 +288,7 @@ class MyBot(commands.Bot):
         self.tree.add_command(autoslowmode, guild=guild)
         self.tree.add_command(slowmode, guild=guild)
         self.tree.add_command(slowmodeinfo, guild=guild)
-        self.tree.add_command(loldle, guild=guild)
+        self.tree.add_command(guess, guild=guild)
         self.tree.add_command(loldlestats, guild=guild)
         await self.tree.sync(guild=guild)
 
@@ -2459,6 +2461,8 @@ def get_daily_champion():
         loldle_data['daily_champion'] = random.choice(list(CHAMPIONS.keys()))
         loldle_data['daily_date'] = today
         loldle_data['players'] = {}
+        loldle_data['embed_message_id'] = None
+        loldle_data['recent_guesses'] = []
         print(f"🎮 New LoLdle champion: {loldle_data['daily_champion']}")
     
     return loldle_data['daily_champion']
@@ -2470,10 +2474,18 @@ def get_hint_emoji(guess_value, correct_value):
     else:
         return "🟥"  # Wrong
 
-@bot.tree.command(name="loldle", description="Play daily LoL champion guessing game!")
+@bot.tree.command(name="guess", description="Play daily LoL champion guessing game!")
 @app_commands.describe(champion="Guess the champion name")
-async def loldle(interaction: discord.Interaction, champion: str):
-    """LoLdle - Guess the daily champion!"""
+async def guess(interaction: discord.Interaction, champion: str):
+    """LoLdle - Guess the daily champion with persistent embed!"""
+    
+    # Channel restriction check
+    if interaction.channel_id != LOLDLE_CHANNEL_ID:
+        await interaction.response.send_message(
+            f"❌ This command can only be used in <#{LOLDLE_CHANNEL_ID}>!",
+            ephemeral=True
+        )
+        return
     
     # Get daily champion
     correct_champion = get_daily_champion()
@@ -2512,6 +2524,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
     
     # Add guess
     player_data['guesses'].append(champion)
+    loldle_data['recent_guesses'].append(champion)
     
     # Get champion data
     guess_data = CHAMPIONS[champion]
@@ -2523,23 +2536,61 @@ async def loldle(interaction: discord.Interaction, champion: str):
         
         embed = discord.Embed(
             title="🎉 CORRECT! You Won!",
-            description=f"You guessed **{correct_champion}** correctly!",
+            description=f"**{interaction.user.name}** guessed **{correct_champion}** correctly!",
             color=0x00FF00
         )
         embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])} guess{'es' if len(player_data['guesses']) > 1 else ''}", inline=True)
-        embed.set_footer(text="Come back tomorrow for a new LoLdle!")
+        embed.set_footer(text="New champion will be selected in 5 seconds...")
         
-        await interaction.response.send_message(embed=embed)
+        # Edit existing embed if it exists
+        if loldle_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                message = await channel.fetch_message(loldle_data['embed_message_id'])
+                await message.edit(embed=embed)
+                await interaction.response.send_message("🎉 Correct guess!", ephemeral=True)
+            except:
+                await interaction.response.send_message(embed=embed)
+        else:
+            await interaction.response.send_message(embed=embed)
+        
         print(f"🎮 {interaction.user.name} solved LoLdle in {len(player_data['guesses'])} attempts")
+        
+        # Auto-reset after 5 seconds
+        await asyncio.sleep(5)
+        
+        # Clear game state and pick new champion
+        import random
+        loldle_data['daily_champion'] = random.choice(list(CHAMPIONS.keys()))
+        loldle_data['players'] = {}
+        loldle_data['recent_guesses'] = []
+        loldle_data['embed_message_id'] = None
+        
+        # Send new game starting embed
+        new_embed = discord.Embed(
+            title="🎮 New LoLdle Challenge Started!",
+            description=f"A new champion has been selected!\nUse `/guess <champion>` to start guessing.",
+            color=0x1DA1F2
+        )
+        new_embed.add_field(name="How to Play", value="Guess the champion and get hints about gender, position, species, resource, range, and region!", inline=False)
+        new_embed.set_footer(text=f"New Champion: {loldle_data['daily_champion']}")
+        
+        try:
+            new_message = await interaction.channel.send(embed=new_embed)
+            loldle_data['embed_message_id'] = new_message.id
+            print(f"🎮 New LoLdle champion: {loldle_data['daily_champion']}")
+        except:
+            pass
+            
     else:
-        # Show hints
+        # Build comparison table
         embed = discord.Embed(
-            title=f"❌ Wrong Guess: {champion}",
-            description=f"Attempt {len(player_data['guesses'])}/∞",
-            color=0xFF0000
+            title=f"🎮 LoLdle - Guess the Champion!",
+            description=f"**{interaction.user.name}** guessed **{champion}**",
+            color=0xFF6B6B
         )
         
-        # Compare attributes
+        # Compare attributes with emojis
         hints = []
         hints.append(f"**Gender:** {guess_data['gender']} {get_hint_emoji(guess_data['gender'], correct_data['gender'])}")
         hints.append(f"**Position:** {guess_data['position']} {get_hint_emoji(guess_data['position'], correct_data['position'])}")
@@ -2548,16 +2599,40 @@ async def loldle(interaction: discord.Interaction, champion: str):
         hints.append(f"**Range:** {guess_data['range']} {get_hint_emoji(guess_data['range'], correct_data['range'])}")
         hints.append(f"**Region:** {guess_data['region']} {get_hint_emoji(guess_data['region'], correct_data['region'])}")
         
-        embed.add_field(name="Hints", value="\n".join(hints), inline=False)
+        embed.add_field(name="Comparison", value="\n".join(hints), inline=False)
         embed.add_field(name="Legend", value="🟩 = Correct | 🟥 = Wrong", inline=False)
         
-        # Show previous guesses
-        if len(player_data['guesses']) > 1:
-            embed.add_field(name="Previous Guesses", value=", ".join(player_data['guesses'][:-1]), inline=False)
+        # Show recent guesses (last 5)
+        if len(loldle_data['recent_guesses']) > 0:
+            recent = loldle_data['recent_guesses'][-5:]
+            embed.add_field(
+                name="Recent Guesses", 
+                value=" → ".join(recent), 
+                inline=False
+            )
         
-        embed.set_footer(text="Keep guessing! Use /loldle to try again.")
+        embed.add_field(name="Total Guesses", value=str(len(player_data['guesses'])), inline=True)
+        embed.set_footer(text="Keep guessing! Use /guess <champion> to try again.")
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # Edit existing embed or create new one
+        if loldle_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                message = await channel.fetch_message(loldle_data['embed_message_id'])
+                await message.edit(embed=embed)
+                await interaction.response.send_message(f"❌ {champion} is not the champion!", ephemeral=True)
+            except:
+                await interaction.response.send_message(embed=embed)
+                if hasattr(interaction, 'message'):
+                    loldle_data['embed_message_id'] = interaction.message.id
+        else:
+            await interaction.response.send_message(embed=embed)
+            # Get the message object to store its ID
+            try:
+                msg = await interaction.original_response()
+                loldle_data['embed_message_id'] = msg.id
+            except:
+                pass
 
 @bot.tree.command(name="loldlestats", description="Check your LoLdle stats for today")
 async def loldlestats(interaction: discord.Interaction):
