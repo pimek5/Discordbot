@@ -93,6 +93,8 @@ class MyBot(commands.Bot):
         self.tree.add_command(resettweets, guild=guild)
         self.tree.add_command(checktweet, guild=guild)
         self.tree.add_command(addtweet, guild=guild)
+        self.tree.add_command(slowmode, guild=guild)
+        self.tree.add_command(slowmodeinfo, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -2050,6 +2052,94 @@ async def update_presence():
         print(f"❌ Error updating rich presence: {e}")
         import traceback
         traceback.print_exc()
+
+# ================================
+#        SLOWMODE COMMANDS
+# ================================
+@bot.tree.command(name="slowmode", description="Set slowmode delay for current channel")
+@app_commands.describe(seconds="Slowmode delay in seconds (0 to disable, max 21600)")
+async def slowmode(interaction: discord.Interaction, seconds: int):
+    """Set slowmode for the current channel"""
+    
+    # Check permissions
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("❌ You need 'Manage Channels' permission to use this command.", ephemeral=True)
+        return
+    
+    # Validate input
+    if seconds < 0 or seconds > 21600:
+        await interaction.response.send_message("❌ Slowmode must be between 0 and 21600 seconds (6 hours).", ephemeral=True)
+        return
+    
+    try:
+        await interaction.response.defer()
+        
+        channel = interaction.channel
+        await channel.edit(slowmode_delay=seconds)
+        
+        if seconds == 0:
+            embed = discord.Embed(
+                title="⚡ Slowmode Disabled",
+                description=f"Slowmode has been disabled in {channel.mention}",
+                color=0x00FF00
+            )
+        else:
+            # Format time nicely
+            if seconds < 60:
+                time_str = f"{seconds} second{'s' if seconds != 1 else ''}"
+            elif seconds < 3600:
+                minutes = seconds // 60
+                time_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+            else:
+                hours = seconds // 3600
+                time_str = f"{hours} hour{'s' if hours != 1 else ''}"
+            
+            embed = discord.Embed(
+                title="🐌 Slowmode Enabled",
+                description=f"Slowmode set to **{time_str}** in {channel.mention}",
+                color=0xFFA500
+            )
+        
+        embed.set_footer(text=f"Set by {interaction.user.name}")
+        await interaction.edit_original_response(embed=embed)
+        
+        print(f"⚙️ Slowmode set to {seconds}s in #{channel.name} by {interaction.user.name}")
+        
+    except discord.Forbidden:
+        await interaction.edit_original_response(content="❌ I don't have permission to edit this channel.")
+    except Exception as e:
+        await interaction.edit_original_response(content=f"❌ Error setting slowmode: {e}")
+
+@bot.tree.command(name="slowmodeinfo", description="Check current slowmode settings")
+async def slowmodeinfo(interaction: discord.Interaction):
+    """Check slowmode status of current channel"""
+    
+    channel = interaction.channel
+    delay = channel.slowmode_delay
+    
+    embed = discord.Embed(
+        title=f"⏱️ Slowmode Info: #{channel.name}",
+        color=0x1DA1F2
+    )
+    
+    if delay == 0:
+        embed.description = "✅ Slowmode is **disabled** in this channel"
+        embed.color = 0x00FF00
+    else:
+        # Format time nicely
+        if delay < 60:
+            time_str = f"{delay} second{'s' if delay != 1 else ''}"
+        elif delay < 3600:
+            minutes = delay // 60
+            time_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+        else:
+            hours = delay // 3600
+            time_str = f"{hours} hour{'s' if hours != 1 else ''}"
+        
+        embed.description = f"🐌 Slowmode is **enabled**\nDelay: **{time_str}** ({delay}s)"
+        embed.color = 0xFFA500
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.event
 async def on_ready():
