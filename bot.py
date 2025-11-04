@@ -1962,11 +1962,10 @@ async def update_presence():
     try:
         config = RICH_PRESENCE_CONFIG
         
-        # Create Watching activity (for Twitter/X links)
-        # Note: Streaming type requires Twitch/YouTube URL, Watching allows any URL
-        activity = discord.Activity(
-            type=discord.ActivityType.watching,
-            name=config.get('name', 'Creating League of Legends mods')
+        # Create Streaming activity (shows purple "Streaming" status with Watch button)
+        activity = discord.Streaming(
+            name=config.get('name', 'Creating League of Legends mods'),
+            url=config.get('url', 'https://www.twitch.tv/pimek532')
         )
         
         # Set the activity with online status
@@ -1976,8 +1975,8 @@ async def update_presence():
         )
         
         print(f"✅ Rich presence updated:")
-        print(f"   Watching: {config.get('name')}")
-        print(f"   Details: {config.get('details')}")
+        print(f"   Streaming: {config.get('name')}")
+        print(f"   URL: {config.get('url')}")
         print(f"   State: {config.get('state')}")
         
     except Exception as e:
