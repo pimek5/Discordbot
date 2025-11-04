@@ -1026,20 +1026,38 @@ async def before_runeforge_check():
 # Manual command to check threads now
 @bot.tree.command(name="checkruneforge", description="Manually check all threads for RuneForge mods")
 async def checkruneforge(interaction: discord.Interaction):
-    """Manually trigger RuneForge mod checking"""
-    await interaction.response.defer()
+    """Manually trigger RuneForge mod checking with enhanced UI"""
+    # Send initial "checking..." message
+    initial_embed = discord.Embed(
+        title="🔄 Checking RuneForge Mods...",
+        description="Fetching mods from runeforge.dev and scanning forum threads...",
+        color=0xFFA500
+    )
+    initial_embed.add_field(name="Status", value="⏳ Please wait...", inline=False)
+    await interaction.response.send_message(embed=initial_embed)
     
     try:
         # Get all mods from RuneForge
         runeforge_mods = await get_runeforge_mods()
         if not runeforge_mods:
-            await interaction.edit_original_response(content="❌ Failed to fetch mods from RuneForge")
+            error_embed = discord.Embed(
+                title="❌ RuneForge Connection Failed",
+                description="Could not fetch mods from RuneForge. Please try again later.",
+                color=0xFF0000
+            )
+            error_embed.add_field(name="Possible Issues", value="• RuneForge website might be down\n• Network connectivity issues\n• API rate limits", inline=False)
+            await interaction.edit_original_response(embed=error_embed)
             return
         
         # Get the Skin Ideas channel
         channel = bot.get_channel(SKIN_IDEAS_CHANNEL_ID)
         if not channel or not isinstance(channel, discord.ForumChannel):
-            await interaction.edit_original_response(content="❌ Skin Ideas channel not found")
+            error_embed = discord.Embed(
+                title="❌ Channel Not Found",
+                description=f"Could not find Skin Ideas forum channel (ID: {SKIN_IDEAS_CHANNEL_ID})",
+                color=0xFF0000
+            )
+            await interaction.edit_original_response(embed=error_embed)
             return
         
         # Get all threads
@@ -1057,40 +1075,104 @@ async def checkruneforge(interaction: discord.Interaction):
         # Check each thread
         tagged_count = 0
         matches_found = []
+        already_tagged = []
         
         for thread in all_threads:
             match, score = await find_matching_mod(thread.name, runeforge_mods, threshold=0.7)
             
             if match:
-                matches_found.append(f"• **{thread.name}** → **{match}** ({score:.0%})")
-                success = await add_runeforge_tag(thread)
-                if success:
-                    tagged_count += 1
-                await asyncio.sleep(0.5)
+                # Check if already has tag
+                has_tag = any(tag.name == "onRuneforge" for tag in thread.applied_tags)
+                
+                if has_tag:
+                    already_tagged.append(f"✅ **{thread.name}** → **{match}** ({score:.0%})")
+                else:
+                    matches_found.append({
+                        'thread': thread.name,
+                        'mod': match,
+                        'score': score,
+                        'url': thread.jump_url
+                    })
+                    success = await add_runeforge_tag(thread)
+                    if success:
+                        tagged_count += 1
+                    await asyncio.sleep(0.5)
         
-        # Create response embed
+        # Create detailed response embed
         embed = discord.Embed(
             title="🔥 RuneForge Mod Check Complete",
-            color=0xFF6B35
+            description=f"Scanned **{len(all_threads)}** threads against **{len(runeforge_mods)}** RuneForge mods",
+            color=0x00FF00 if tagged_count > 0 else 0xFF6B35,
+            timestamp=datetime.datetime.now()
         )
-        embed.add_field(name="RuneForge Mods Found", value=str(len(runeforge_mods)), inline=True)
-        embed.add_field(name="Threads Checked", value=str(len(all_threads)), inline=True)
-        embed.add_field(name="New Tags Added", value=str(tagged_count), inline=True)
         
+        # Statistics section
+        embed.add_field(
+            name="📊 Statistics",
+            value=f"**{len(runeforge_mods)}** mods on RuneForge\n**{len(threads)}** active threads\n**{len(archived_threads)}** archived threads",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🏷️ Tagging Results",
+            value=f"**{tagged_count}** new tags added\n**{len(already_tagged)}** already tagged\n**{len(matches_found) + len(already_tagged)}** total matches",
+            inline=True
+        )
+        
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
+        
+        # New matches section
         if matches_found:
-            matches_text = "\n".join(matches_found[:10])  # Limit to first 10
-            if len(matches_found) > 10:
-                matches_text += f"\n... and {len(matches_found) - 10} more"
-            embed.add_field(name="Matches Found", value=matches_text, inline=False)
-        else:
-            embed.add_field(name="Matches Found", value="No new matches", inline=False)
+            matches_text = ""
+            for i, match in enumerate(matches_found[:5], 1):  # Show first 5
+                matches_text += f"**{i}.** [{match['thread']}]({match['url']})\n"
+                matches_text += f"    └─ Matched to **{match['mod']}** ({match['score']:.0%} similarity)\n\n"
+            
+            if len(matches_found) > 5:
+                matches_text += f"*... and {len(matches_found) - 5} more new matches*"
+            
+            embed.add_field(name="✨ Newly Tagged Threads", value=matches_text, inline=False)
         
+        # Already tagged section (collapsed)
+        if already_tagged:
+            already_text = "\n".join(already_tagged[:3])
+            if len(already_tagged) > 3:
+                already_text += f"\n*... and {len(already_tagged) - 3} more*"
+            embed.add_field(name="📌 Already Tagged", value=already_text, inline=False)
+        
+        # No matches message
+        if not matches_found and not already_tagged:
+            embed.add_field(
+                name="💡 No Matches Found",
+                value="No threads match any mods on RuneForge (≥70% similarity threshold)",
+                inline=False
+            )
+        
+        # Add RuneForge branding
         embed.set_thumbnail(url=RUNEFORGE_ICON_URL)
+        embed.set_footer(
+            text=f"Checked by {interaction.user.name} • Next auto-check in {RUNEFORGE_CHECK_INTERVAL//60} minutes",
+            icon_url=interaction.user.display_avatar.url
+        )
         
         await interaction.edit_original_response(embed=embed)
         
+        # Log the manual check
+        log_channel = bot.get_channel(LOG_CHANNEL_ID)
+        if log_channel and tagged_count > 0:
+            await log_channel.send(
+                f"🔍 Manual RuneForge check by {interaction.user.mention}\n"
+                f"**{tagged_count}** new threads tagged with 'onRuneforge'"
+            )
+        
     except Exception as e:
-        await interaction.edit_original_response(content=f"❌ Error: {str(e)}")
+        error_embed = discord.Embed(
+            title="❌ Error During Check",
+            description=f"An unexpected error occurred:\n```{str(e)}```",
+            color=0xFF0000
+        )
+        error_embed.set_footer(text="Please contact an administrator if this persists")
+        await interaction.edit_original_response(embed=error_embed)
         print(f"❌ Error in checkruneforge command: {e}")
         import traceback
         traceback.print_exc()
