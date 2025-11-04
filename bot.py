@@ -50,7 +50,7 @@ MOD_REVIEW_CHANNEL_ID = 1433893934265925682  # Channel for mod review
 # RuneForge Configuration
 RUNEFORGE_USERNAME = "p1mek"
 RUNEFORGE_ICON_URL = "https://avatars.githubusercontent.com/u/132106741?s=200&v=4"
-RUNEFORGE_CHECK_INTERVAL = 3600  # Check every hour (3600 seconds)
+RUNEFORGE_CHECK_INTERVAL = 3600  # Check every hour (3600 seconds) - RuneForge mod tagging
 
 # Store voting data: {message_id: {user_id: 'up' or 'down', 'upvotes': int, 'downvotes': int}}
 voting_data = {}
