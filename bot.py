@@ -703,21 +703,28 @@ async def get_runeforge_mods():
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
+        print(f"🌐 Fetching RuneForge mods from: {url}")
         response = requests.get(url, headers=headers, timeout=10)
+        
         if response.status_code != 200:
             print(f"❌ Failed to fetch RuneForge mods: {response.status_code}")
             return []
         
+        print(f"✅ Successfully fetched RuneForge page (status: {response.status_code})")
         soup = BeautifulSoup(response.content, 'html.parser')
         
         # Find all mod titles - they're in links with specific structure
         mods = []
-        for link in soup.find_all('a', href=True):
+        all_links = soup.find_all('a', href=True)
+        print(f"🔍 Found {len(all_links)} total links on page")
+        
+        for link in all_links:
             if '/mods/' in link['href']:
                 # Get the text content which should be the mod name
                 mod_name = link.get_text(strip=True)
                 if mod_name and len(mod_name) > 3:  # Ignore very short names
                     mods.append(mod_name)
+                    print(f"  📦 Found mod: {mod_name}")
         
         # Remove duplicates while preserving order
         seen = set()
@@ -727,7 +734,12 @@ async def get_runeforge_mods():
                 seen.add(mod)
                 unique_mods.append(mod)
         
-        print(f"✅ Found {len(unique_mods)} mods on RuneForge")
+        print(f"✅ Found {len(unique_mods)} unique mods on RuneForge:")
+        for mod in unique_mods[:5]:  # Show first 5
+            print(f"  • {mod}")
+        if len(unique_mods) > 5:
+            print(f"  ... and {len(unique_mods) - 5} more")
+        
         return unique_mods
         
     except Exception as e:
@@ -754,43 +766,70 @@ async def find_matching_mod(thread_name, runeforge_mods, threshold=0.7):
 async def add_runeforge_tag(thread: discord.Thread):
     """Add 'onRuneforge' tag to a thread"""
     try:
+        print(f"🏷️ Attempting to add tag to thread: {thread.name} (ID: {thread.id})")
+        
         # Check if tag already exists
+        current_tag_names = [tag.name for tag in thread.applied_tags]
+        print(f"  Current tags: {current_tag_names}")
+        
         if any(tag.name == "onRuneforge" for tag in thread.applied_tags):
-            print(f"✅ Thread '{thread.name}' already has onRuneforge tag")
+            print(f"  ✅ Thread already has onRuneforge tag")
             return False
         
         # Get the parent channel (ForumChannel)
         parent = thread.parent
+        print(f"  Parent channel: {parent.name if parent else 'None'} (Type: {type(parent).__name__})")
+        
         if not parent or not isinstance(parent, discord.ForumChannel):
-            print(f"❌ Thread parent is not a ForumChannel")
+            print(f"  ❌ Thread parent is not a ForumChannel!")
             return False
         
         # Find or create the 'onRuneforge' tag
+        available_tag_names = [tag.name for tag in parent.available_tags]
+        print(f"  Available tags in forum: {available_tag_names}")
+        
         runeforge_tag = None
         for tag in parent.available_tags:
             if tag.name == "onRuneforge":
                 runeforge_tag = tag
+                print(f"  ✅ Found existing 'onRuneforge' tag")
                 break
         
         if not runeforge_tag:
             # Create the tag if it doesn't exist
-            print("Creating 'onRuneforge' tag...")
+            print(f"  🆕 Creating 'onRuneforge' tag...")
             try:
                 runeforge_tag = await parent.create_tag(
                     name="onRuneforge",
                     emoji="🔥"  # Using fire emoji as placeholder since we can't use custom URLs
                 )
-                print(f"✅ Created 'onRuneforge' tag")
+                print(f"  ✅ Successfully created 'onRuneforge' tag")
+            except discord.errors.Forbidden as e:
+                print(f"  ❌ Permission denied to create tag: {e}")
+                return False
             except Exception as e:
-                print(f"❌ Failed to create tag: {e}")
+                print(f"  ❌ Failed to create tag: {e}")
+                import traceback
+                traceback.print_exc()
                 return False
         
         # Add the tag to the thread
         current_tags = list(thread.applied_tags)
         if runeforge_tag not in current_tags:
             current_tags.append(runeforge_tag)
-            await thread.edit(applied_tags=current_tags)
-            print(f"✅ Added 'onRuneforge' tag to thread: {thread.name}")
+            print(f"  🔄 Editing thread to add tag...")
+            try:
+                await thread.edit(applied_tags=current_tags)
+                print(f"  ✅ Successfully added 'onRuneforge' tag to thread: {thread.name}")
+                return True
+            except discord.errors.Forbidden as e:
+                print(f"  ❌ Permission denied to edit thread: {e}")
+                return False
+            except Exception as e:
+                print(f"  ❌ Failed to edit thread: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
             return True
         
         return False
@@ -805,30 +844,44 @@ async def add_runeforge_tag(thread: discord.Thread):
 async def check_threads_for_runeforge():
     """Background task to check all threads for RuneForge mods"""
     try:
-        print(f"🔄 Checking threads for RuneForge mods...")
+        print(f"\n{'='*60}")
+        print(f"🔄 Starting RuneForge mod check...")
+        print(f"{'='*60}")
         
         # Get all mods from RuneForge
         runeforge_mods = await get_runeforge_mods()
         if not runeforge_mods:
-            print("⚠️ No mods fetched from RuneForge")
+            print("⚠️ No mods fetched from RuneForge - aborting check")
             return
         
-        print(f"📋 Checking against {len(runeforge_mods)} RuneForge mods")
+        print(f"\n📋 Will check against {len(runeforge_mods)} RuneForge mods")
         
         # Get the Skin Ideas channel
         channel = bot.get_channel(SKIN_IDEAS_CHANNEL_ID)
-        if not channel or not isinstance(channel, discord.ForumChannel):
-            print(f"❌ Skin Ideas channel not found or not a ForumChannel")
+        print(f"🔍 Looking for channel ID: {SKIN_IDEAS_CHANNEL_ID}")
+        print(f"📺 Channel found: {channel.name if channel else 'None'}")
+        print(f"📺 Channel type: {type(channel).__name__ if channel else 'None'}")
+        
+        if not channel:
+            print(f"❌ Skin Ideas channel not found (ID: {SKIN_IDEAS_CHANNEL_ID})")
+            return
+            
+        if not isinstance(channel, discord.ForumChannel):
+            print(f"❌ Channel is not a ForumChannel! It's a {type(channel).__name__}")
             return
         
         # Get all active threads
         threads = channel.threads
+        print(f"🧵 Found {len(threads)} active threads")
+        
         archived_threads = []
         
         # Also get archived threads
+        print(f"🗄️ Fetching archived threads...")
         try:
             async for thread in channel.archived_threads(limit=100):
                 archived_threads.append(thread)
+            print(f"🗄️ Found {len(archived_threads)} archived threads")
         except Exception as e:
             print(f"⚠️ Error fetching archived threads: {e}")
         
