@@ -58,7 +58,7 @@ RICH_PRESENCE_CONFIG = {
     'name': 'Creating League of Legends mods',  # Main activity name (shows as "Streaming X")
     'details': 'HEXRTBRXEN CHROMAS',  # Detail line
     'state': 'discord.gg/hexrtbrxenchromas',  # State line (shows below details)
-    'url': 'https://www.twitch.tv/p1mek'  # Streaming URL (required for Streaming type)
+    'url': 'https://www.twitch.tv/pimek532'  # Streaming URL - must be Twitch/YouTube for Discord (will show "Watch" button)
 }
 
 # Store voting data: {message_id: {user_id: 'up' or 'down', 'upvotes': int, 'downvotes': int}}
@@ -1962,12 +1962,11 @@ async def update_presence():
     try:
         config = RICH_PRESENCE_CONFIG
         
-        # Create Streaming activity (shows purple "Streaming" status)
-        activity = discord.Streaming(
-            name=config.get('name', 'Creating League of Legends mods'),
-            url=config.get('url', 'https://www.twitch.tv/p1mek'),
-            details=config.get('details'),
-            state=config.get('state')
+        # Create Watching activity (for Twitter/X links)
+        # Note: Streaming type requires Twitch/YouTube URL, Watching allows any URL
+        activity = discord.Activity(
+            type=discord.ActivityType.watching,
+            name=config.get('name', 'Creating League of Legends mods')
         )
         
         # Set the activity with online status
@@ -1977,10 +1976,9 @@ async def update_presence():
         )
         
         print(f"✅ Rich presence updated:")
-        print(f"   Streaming: {config.get('name')}")
+        print(f"   Watching: {config.get('name')}")
         print(f"   Details: {config.get('details')}")
         print(f"   State: {config.get('state')}")
-        print(f"   URL: {config.get('url')}")
         
     except Exception as e:
         print(f"❌ Error updating rich presence: {e}")
