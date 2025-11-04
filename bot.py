@@ -1372,11 +1372,14 @@ async def get_twitter_user_tweets(username):
                                         for img in img_tags:
                                             img_url = img.get('src', '')
                                             if img_url:
-                                                # Convert Nitter image URLs to full URLs
+                                                # Convert Nitter image URLs to full HTTPS URLs
                                                 if img_url.startswith('/pic/'):
                                                     img_url = f"https://{instance}{img_url}"
                                                 elif img_url.startswith('//'):
                                                     img_url = f"https:{img_url}"
+                                                elif img_url.startswith('http://'):
+                                                    # Force HTTPS for Discord embed compatibility
+                                                    img_url = img_url.replace('http://', 'https://', 1)
                                                 
                                                 media_list.append({
                                                     'type': 'photo',
