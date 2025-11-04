@@ -891,15 +891,23 @@ async def add_runeforge_tag(thread: discord.Thread):
             emoji_to_use = "🔥"  # Default fallback
             guild = parent.guild
             
-            # Search for custom emoji with "runeforge" in name (case insensitive)
+            # Search for custom emoji - prefer exact match "onruneforge" or "OnRuneforge"
             for emoji in guild.emojis:
-                if "runeforge" in emoji.name.lower():
+                if emoji.name.lower() == "onruneforge":
                     emoji_to_use = emoji
                     print(f"  ✅ Found custom emoji: {emoji.name} (ID: {emoji.id})")
                     break
             
+            # If exact match not found, try partial match
             if emoji_to_use == "🔥":
-                print(f"  ℹ️ No custom RuneForge emoji found, using 🔥")
+                for emoji in guild.emojis:
+                    if "runeforge" in emoji.name.lower():
+                        emoji_to_use = emoji
+                        print(f"  ✅ Found custom emoji: {emoji.name} (ID: {emoji.id})")
+                        break
+            
+            if emoji_to_use == "🔥":
+                print(f"  ℹ️ No custom RuneForge emoji found, using 🔥 fallback")
             
             try:
                 runeforge_tag = await parent.create_tag(
