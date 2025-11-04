@@ -2615,6 +2615,19 @@ async def on_message(message):
     
     channel_id = message.channel.id
     
+    # Block messages in Loldle channel (only allow slash commands)
+    if channel_id == LOLDLE_CHANNEL_ID:
+        try:
+            await message.delete()
+            # Send ephemeral-like message that auto-deletes
+            warning = await message.channel.send(
+                f"❌ {message.author.mention} Only `/guess` command is allowed in this channel!",
+                delete_after=3
+            )
+        except:
+            pass
+        return
+    
     # Only track channels with auto-slowmode enabled
     if channel_id not in AUTO_SLOWMODE_ENABLED or not AUTO_SLOWMODE_ENABLED[channel_id]:
         return
