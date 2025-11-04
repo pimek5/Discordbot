@@ -266,6 +266,93 @@ async def invite(interaction: discord.Interaction, user: discord.Member):
     await interaction.response.send_message(f"{user.mention} has been added to {channel.mention}", ephemeral=False)
 
 # ================================
+#        DIAGNOSTICS
+# ================================
+@bot.tree.command(name="diagnose", description="Check RuneForge system configuration and status")
+async def diagnose(interaction: discord.Interaction):
+    """Diagnostic command to check RuneForge integration"""
+    await interaction.response.defer()
+    
+    embed = discord.Embed(
+        title="🔍 RuneForge System Diagnostics",
+        color=0xFF6B35
+    )
+    
+    # Check channel
+    channel = bot.get_channel(SKIN_IDEAS_CHANNEL_ID)
+    if channel:
+        embed.add_field(
+            name="📺 Skin Ideas Channel",
+            value=f"✅ Found: {channel.name}\nType: {type(channel).__name__}\nID: {channel.id}",
+            inline=False
+        )
+        
+        # If it's a forum channel, show tags
+        if isinstance(channel, discord.ForumChannel):
+            tags = [tag.name for tag in channel.available_tags]
+            embed.add_field(
+                name="🏷️ Available Tags",
+                value=f"{', '.join(tags) if tags else 'No tags'}",
+                inline=False
+            )
+            
+            # Show thread count
+            active_threads = len(channel.threads)
+            embed.add_field(
+                name="🧵 Active Threads",
+                value=str(active_threads),
+                inline=True
+            )
+    else:
+        embed.add_field(
+            name="📺 Skin Ideas Channel",
+            value=f"❌ Not found (ID: {SKIN_IDEAS_CHANNEL_ID})",
+            inline=False
+        )
+    
+    # Check RuneForge connection
+    embed.add_field(
+        name="🌐 RuneForge Config",
+        value=f"Username: {RUNEFORGE_USERNAME}\nCheck Interval: {RUNEFORGE_CHECK_INTERVAL}s",
+        inline=False
+    )
+    
+    # Check task status
+    task_status = "🟢 Running" if check_threads_for_runeforge.is_running() else "🔴 Stopped"
+    embed.add_field(
+        name="⚙️ Background Task",
+        value=task_status,
+        inline=True
+    )
+    
+    # Check bot permissions
+    if channel and isinstance(channel, discord.ForumChannel):
+        perms = channel.permissions_for(interaction.guild.me)
+        perms_text = []
+        if perms.manage_threads:
+            perms_text.append("✅ Manage Threads")
+        else:
+            perms_text.append("❌ Manage Threads")
+        if perms.create_public_threads:
+            perms_text.append("✅ Create Public Threads")
+        else:
+            perms_text.append("❌ Create Public Threads")
+        if perms.manage_messages:
+            perms_text.append("✅ Manage Messages")
+        else:
+            perms_text.append("❌ Manage Messages")
+            
+        embed.add_field(
+            name="🔐 Bot Permissions",
+            value="\n".join(perms_text),
+            inline=False
+        )
+    
+    embed.set_footer(text="Use /checkruneforge to manually trigger a check")
+    
+    await interaction.edit_original_response(embed=embed)
+
+# ================================
 #        FIXED MESSAGES
 # ================================
 class FixedMessageView(discord.ui.View):
