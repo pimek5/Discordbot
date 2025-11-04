@@ -75,28 +75,32 @@ loldle_quote_data = {
     'daily_champion': None,
     'daily_date': None,
     'players': {},
-    'embed_message_id': None
+    'embed_message_id': None,
+    'recent_guesses': []
 }
 
 loldle_ability_data = {
     'daily_champion': None,
     'daily_date': None,
     'players': {},
-    'embed_message_id': None
+    'embed_message_id': None,
+    'recent_guesses': []
 }
 
 loldle_emoji_data = {
     'daily_champion': None,
     'daily_date': None,
     'players': {},
-    'embed_message_id': None
+    'embed_message_id': None,
+    'recent_guesses': []
 }
 
 loldle_splash_data = {
     'daily_champion': None,
     'daily_date': None,
     'players': {},
-    'embed_message_id': None
+    'embed_message_id': None,
+    'recent_guesses': []
 }
 
 # Champion database - All LoL Champions (updated 2024)
@@ -2911,18 +2915,76 @@ async def quote(interaction: discord.Interaction, champion: str):
         return
     
     player_data['guesses'].append(champion)
+    loldle_quote_data['recent_guesses'].append(champion)
     
     if champion == correct_champion:
         player_data['solved'] = True
         
-        embed = discord.Embed(
+        # Delete old game embed
+        if loldle_quote_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                old_message = await channel.fetch_message(loldle_quote_data['embed_message_id'])
+                await old_message.delete()
+            except:
+                pass
+        
+        # Send winner announcement
+        winner_embed = discord.Embed(
             title="🎉 Quote Mode - Correct!",
             description=f"**{interaction.user.mention} Guessed! 👑**\n\n**{correct_champion}**: \"{LOLDLE_EXTENDED[correct_champion]['quote']}\"",
             color=0x00FF00
         )
-        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        winner_embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        winner_embed.set_footer(text="New champion will be selected in 5 seconds...")
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=winner_embed)
+        
+        # Get winner message to delete later
+        try:
+            winner_message = await interaction.original_response()
+        except:
+            winner_message = None
+        
+        print(f"💬 {interaction.user.name} solved Quote mode in {len(player_data['guesses'])} attempts")
+        
+        # Wait 5 seconds
+        await asyncio.sleep(5)
+        
+        # Clear and pick new champion
+        import random
+        available = [c for c in LOLDLE_EXTENDED.keys()]
+        loldle_quote_data['daily_champion'] = random.choice(available)
+        loldle_quote_data['players'] = {}
+        loldle_quote_data['recent_guesses'] = []
+        loldle_quote_data['embed_message_id'] = None
+        
+        # Send new game embed
+        new_champion = loldle_quote_data['daily_champion']
+        quote_text = LOLDLE_EXTENDED[new_champion]['quote']
+        
+        new_embed = discord.Embed(
+            title="💬 Quote Mode - New Game!",
+            description=f"**Quote:** \"{quote_text}\"\n\nUse `/quote <champion>` to guess!",
+            color=0x9B59B6
+        )
+        new_embed.set_footer(text="Guess the champion from their iconic quote!")
+        
+        try:
+            new_message = await interaction.channel.send(embed=new_embed)
+            loldle_quote_data['embed_message_id'] = new_message.id
+            print(f"💬 New Quote champion: {new_champion}")
+        except:
+            pass
+        
+        # Wait 5 more seconds then delete winner message
+        await asyncio.sleep(5)
+        if winner_message:
+            try:
+                await winner_message.delete()
+            except:
+                pass
+        
     else:
         quote_text = LOLDLE_EXTENDED[correct_champion]['quote']
         embed = discord.Embed(
@@ -2930,9 +2992,40 @@ async def quote(interaction: discord.Interaction, champion: str):
             description=f"**Quote:** \"{quote_text}\"\n\n**{interaction.user.name}** guessed **{champion}** ❌",
             color=0xFF6B6B
         )
-        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        embed.add_field(name="Total Guesses", value=str(len(player_data['guesses'])), inline=True)
         
-        await interaction.response.send_message(embed=embed)
+        # Show recent guesses (last 5)
+        if len(loldle_quote_data['recent_guesses']) > 0:
+            recent = loldle_quote_data['recent_guesses'][-5:]
+            embed.add_field(
+                name="Recent Guesses", 
+                value=" → ".join(recent), 
+                inline=False
+            )
+        
+        embed.set_footer(text="Keep guessing! Use /quote <champion> to try again.")
+        
+        # Edit existing embed or create new one
+        if loldle_quote_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                message = await channel.fetch_message(loldle_quote_data['embed_message_id'])
+                await message.edit(embed=embed)
+                await interaction.response.send_message(f"❌ {champion} is not the champion!", ephemeral=True)
+            except:
+                await interaction.response.send_message(embed=embed)
+                try:
+                    msg = await interaction.original_response()
+                    loldle_quote_data['embed_message_id'] = msg.id
+                except:
+                    pass
+        else:
+            await interaction.response.send_message(embed=embed)
+            try:
+                msg = await interaction.original_response()
+                loldle_quote_data['embed_message_id'] = msg.id
+            except:
+                pass
 
 # ================================
 #        LoLdle Emoji Mode
@@ -2995,18 +3088,76 @@ async def emoji(interaction: discord.Interaction, champion: str):
         return
     
     player_data['guesses'].append(champion)
+    loldle_emoji_data['recent_guesses'].append(champion)
     
     if champion == correct_champion:
         player_data['solved'] = True
         
-        embed = discord.Embed(
+        # Delete old game embed
+        if loldle_emoji_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                old_message = await channel.fetch_message(loldle_emoji_data['embed_message_id'])
+                await old_message.delete()
+            except:
+                pass
+        
+        # Send winner announcement
+        winner_embed = discord.Embed(
             title="🎉 Emoji Mode - Correct!",
             description=f"**{interaction.user.mention} Guessed! 👑**\n\n{LOLDLE_EXTENDED[correct_champion]['emoji']} = **{correct_champion}**",
             color=0x00FF00
         )
-        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        winner_embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        winner_embed.set_footer(text="New champion will be selected in 5 seconds...")
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=winner_embed)
+        
+        # Get winner message to delete later
+        try:
+            winner_message = await interaction.original_response()
+        except:
+            winner_message = None
+        
+        print(f"😃 {interaction.user.name} solved Emoji mode in {len(player_data['guesses'])} attempts")
+        
+        # Wait 5 seconds
+        await asyncio.sleep(5)
+        
+        # Clear and pick new champion
+        import random
+        available = [c for c in LOLDLE_EXTENDED.keys()]
+        loldle_emoji_data['daily_champion'] = random.choice(available)
+        loldle_emoji_data['players'] = {}
+        loldle_emoji_data['recent_guesses'] = []
+        loldle_emoji_data['embed_message_id'] = None
+        
+        # Send new game embed
+        new_champion = loldle_emoji_data['daily_champion']
+        emoji_text = LOLDLE_EXTENDED[new_champion]['emoji']
+        
+        new_embed = discord.Embed(
+            title="😃 Emoji Mode - New Game!",
+            description=f"**Emojis:** {emoji_text}\n\nUse `/emoji <champion>` to guess!",
+            color=0xF39C12
+        )
+        new_embed.set_footer(text="Guess the champion from the emojis!")
+        
+        try:
+            new_message = await interaction.channel.send(embed=new_embed)
+            loldle_emoji_data['embed_message_id'] = new_message.id
+            print(f"😃 New Emoji champion: {new_champion}")
+        except:
+            pass
+        
+        # Wait 5 more seconds then delete winner message
+        await asyncio.sleep(5)
+        if winner_message:
+            try:
+                await winner_message.delete()
+            except:
+                pass
+        
     else:
         emoji_text = LOLDLE_EXTENDED[correct_champion]['emoji']
         embed = discord.Embed(
@@ -3014,9 +3165,40 @@ async def emoji(interaction: discord.Interaction, champion: str):
             description=f"**Emojis:** {emoji_text}\n\n**{interaction.user.name}** guessed **{champion}** ❌",
             color=0xFF6B6B
         )
-        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        embed.add_field(name="Total Guesses", value=str(len(player_data['guesses'])), inline=True)
         
-        await interaction.response.send_message(embed=embed)
+        # Show recent guesses (last 5)
+        if len(loldle_emoji_data['recent_guesses']) > 0:
+            recent = loldle_emoji_data['recent_guesses'][-5:]
+            embed.add_field(
+                name="Recent Guesses", 
+                value=" → ".join(recent), 
+                inline=False
+            )
+        
+        embed.set_footer(text="Keep guessing! Use /emoji <champion> to try again.")
+        
+        # Edit existing embed or create new one
+        if loldle_emoji_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                message = await channel.fetch_message(loldle_emoji_data['embed_message_id'])
+                await message.edit(embed=embed)
+                await interaction.response.send_message(f"❌ {champion} is not the champion!", ephemeral=True)
+            except:
+                await interaction.response.send_message(embed=embed)
+                try:
+                    msg = await interaction.original_response()
+                    loldle_emoji_data['embed_message_id'] = msg.id
+                except:
+                    pass
+        else:
+            await interaction.response.send_message(embed=embed)
+            try:
+                msg = await interaction.original_response()
+                loldle_emoji_data['embed_message_id'] = msg.id
+            except:
+                pass
 
 # ================================
 #        LoLdle Ability Mode
@@ -3089,21 +3271,89 @@ async def ability(interaction: discord.Interaction, champion: str):
         return
     
     player_data['guesses'].append(champion)
+    loldle_ability_data['recent_guesses'].append(champion)
     
     if champion == correct_champion:
         player_data['solved'] = True
         
+        # Delete old game embed
+        if loldle_ability_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                old_message = await channel.fetch_message(loldle_ability_data['embed_message_id'])
+                await old_message.delete()
+            except:
+                pass
+        
+        # Send winner announcement
         ability_data = LOLDLE_EXTENDED[correct_champion].get('ability', {})
         ability_name = ability_data.get('name', 'Unknown') if isinstance(ability_data, dict) else 'Unknown'
         
-        embed = discord.Embed(
+        winner_embed = discord.Embed(
             title="🎉 Ability Mode - Correct!",
             description=f"**{interaction.user.mention} Guessed! 👑**\n\n**{correct_champion}**'s ability: **{ability_name}**",
             color=0x00FF00
         )
-        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        winner_embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        winner_embed.set_footer(text="New champion will be selected in 5 seconds...")
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=winner_embed)
+        
+        # Get winner message to delete later
+        try:
+            winner_message = await interaction.original_response()
+        except:
+            winner_message = None
+        
+        print(f"🔮 {interaction.user.name} solved Ability mode in {len(player_data['guesses'])} attempts")
+        
+        # Wait 5 seconds
+        await asyncio.sleep(5)
+        
+        # Clear and pick new champion
+        import random
+        available = [c for c in LOLDLE_EXTENDED.keys() if 'ability' in LOLDLE_EXTENDED[c]]
+        if available:
+            loldle_ability_data['daily_champion'] = random.choice(available)
+            loldle_ability_data['players'] = {}
+            loldle_ability_data['recent_guesses'] = []
+            loldle_ability_data['embed_message_id'] = None
+            
+            # Send new game embed
+            new_champion = loldle_ability_data['daily_champion']
+            ability_data = LOLDLE_EXTENDED[new_champion].get('ability', {})
+            
+            if isinstance(ability_data, dict):
+                ability_desc = ability_data.get('description', 'No description')
+            else:
+                ability_desc = 'No description'
+            
+            # Truncate long descriptions
+            if len(ability_desc) > 300:
+                ability_desc = ability_desc[:300] + "..."
+            
+            new_embed = discord.Embed(
+                title="🔮 Ability Mode - New Game!",
+                description=f"**Ability Description:** {ability_desc}\n\nUse `/ability <champion>` to guess!",
+                color=0xE91E63
+            )
+            new_embed.set_footer(text="Guess the champion from their ability!")
+            
+            try:
+                new_message = await interaction.channel.send(embed=new_embed)
+                loldle_ability_data['embed_message_id'] = new_message.id
+                print(f"🔮 New Ability champion: {new_champion}")
+            except:
+                pass
+        
+        # Wait 5 more seconds then delete winner message
+        await asyncio.sleep(5)
+        if winner_message:
+            try:
+                await winner_message.delete()
+            except:
+                pass
+        
     else:
         ability_data = LOLDLE_EXTENDED[correct_champion].get('ability', {})
         
@@ -3121,9 +3371,40 @@ async def ability(interaction: discord.Interaction, champion: str):
             description=f"**Ability:** {ability_desc}\n\n**{interaction.user.name}** guessed **{champion}** ❌",
             color=0xFF6B6B
         )
-        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        embed.add_field(name="Total Guesses", value=str(len(player_data['guesses'])), inline=True)
         
-        await interaction.response.send_message(embed=embed)
+        # Show recent guesses (last 5)
+        if len(loldle_ability_data['recent_guesses']) > 0:
+            recent = loldle_ability_data['recent_guesses'][-5:]
+            embed.add_field(
+                name="Recent Guesses", 
+                value=" → ".join(recent), 
+                inline=False
+            )
+        
+        embed.set_footer(text="Keep guessing! Use /ability <champion> to try again.")
+        
+        # Edit existing embed or create new one
+        if loldle_ability_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                message = await channel.fetch_message(loldle_ability_data['embed_message_id'])
+                await message.edit(embed=embed)
+                await interaction.response.send_message(f"❌ {champion} is not the champion!", ephemeral=True)
+            except:
+                await interaction.response.send_message(embed=embed)
+                try:
+                    msg = await interaction.original_response()
+                    loldle_ability_data['embed_message_id'] = msg.id
+                except:
+                    pass
+        else:
+            await interaction.response.send_message(embed=embed)
+            try:
+                msg = await interaction.original_response()
+                loldle_ability_data['embed_message_id'] = msg.id
+            except:
+                pass
 
 # ================================
 #        AUTO-SLOWMODE SYSTEM
