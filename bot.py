@@ -886,12 +886,27 @@ async def add_runeforge_tag(thread: discord.Thread):
         if not runeforge_tag:
             # Create the tag if it doesn't exist
             print(f"  🆕 Creating 'onRuneforge' tag...")
+            
+            # Try to find RuneForge custom emoji on the server
+            emoji_to_use = "🔥"  # Default fallback
+            guild = parent.guild
+            
+            # Search for custom emoji with "runeforge" in name (case insensitive)
+            for emoji in guild.emojis:
+                if "runeforge" in emoji.name.lower():
+                    emoji_to_use = emoji
+                    print(f"  ✅ Found custom emoji: {emoji.name} (ID: {emoji.id})")
+                    break
+            
+            if emoji_to_use == "🔥":
+                print(f"  ℹ️ No custom RuneForge emoji found, using 🔥")
+            
             try:
                 runeforge_tag = await parent.create_tag(
                     name="onRuneforge",
-                    emoji="🔥"  # Using fire emoji as placeholder since we can't use custom URLs
+                    emoji=emoji_to_use
                 )
-                print(f"  ✅ Successfully created 'onRuneforge' tag")
+                print(f"  ✅ Successfully created 'onRuneforge' tag with emoji: {emoji_to_use}")
             except discord.errors.Forbidden as e:
                 print(f"  ❌ Permission denied to create tag: {e}")
                 return False
