@@ -8,6 +8,8 @@ import asyncio
 import requests 
 import json
 import datetime
+from bs4 import BeautifulSoup
+from difflib import SequenceMatcher
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -45,6 +47,11 @@ SKIN_IDEAS_CHANNEL_ID = 1329671504941682750  # Channel where threads are created
 YOUR_IDEAS_CHANNEL_ID = 1433892799862018109  # Channel where embeds are posted
 MOD_REVIEW_CHANNEL_ID = 1433893934265925682  # Channel for mod review
 
+# RuneForge Configuration
+RUNEFORGE_USERNAME = "p1mek"
+RUNEFORGE_ICON_URL = "https://avatars.githubusercontent.com/u/132106741?s=200&v=4"
+RUNEFORGE_CHECK_INTERVAL = 3600  # Check every hour (3600 seconds)
+
 # Store voting data: {message_id: {user_id: 'up' or 'down', 'upvotes': int, 'downvotes': int}}
 voting_data = {}
 
@@ -68,6 +75,7 @@ class MyBot(commands.Bot):
         self.tree.add_command(invite, guild=guild)
         self.tree.add_command(dpmhistory, guild=guild)
         self.tree.add_command(addthread, guild=guild)
+        self.tree.add_command(checkruneforge, guild=guild)
         self.tree.add_command(posttweet, guild=guild)
         self.tree.add_command(toggletweets, guild=guild)
         self.tree.add_command(starttweets, guild=guild)
@@ -817,6 +825,262 @@ async def addthread(interaction: discord.Interaction, thread_link: str):
         traceback.print_exc()
 
 # ================================
+#       RuneForge Mod Tracker
+# ================================
+
+def string_similarity(a, b):
+    """Calculate similarity between two strings (0-1)"""
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+async def get_runeforge_mods():
+    """Fetch all mods from RuneForge user profile"""
+    try:
+        url = f"https://runeforge.dev/users/{RUNEFORGE_USERNAME}/mods"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            print(f"❌ Failed to fetch RuneForge mods: {response.status_code}")
+            return []
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Find all mod titles - they're in links with specific structure
+        mods = []
+        for link in soup.find_all('a', href=True):
+            if '/mods/' in link['href']:
+                # Get the text content which should be the mod name
+                mod_name = link.get_text(strip=True)
+                if mod_name and len(mod_name) > 3:  # Ignore very short names
+                    mods.append(mod_name)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_mods = []
+        for mod in mods:
+            if mod not in seen:
+                seen.add(mod)
+                unique_mods.append(mod)
+        
+        print(f"✅ Found {len(unique_mods)} mods on RuneForge")
+        return unique_mods
+        
+    except Exception as e:
+        print(f"❌ Error fetching RuneForge mods: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+async def find_matching_mod(thread_name, runeforge_mods, threshold=0.7):
+    """Find if thread name matches any RuneForge mod (with similarity threshold)"""
+    best_match = None
+    best_score = 0
+    
+    for mod_name in runeforge_mods:
+        similarity = string_similarity(thread_name, mod_name)
+        if similarity > best_score:
+            best_score = similarity
+            best_match = mod_name
+    
+    if best_score >= threshold:
+        return best_match, best_score
+    return None, 0
+
+async def add_runeforge_tag(thread: discord.Thread):
+    """Add 'onRuneforge' tag to a thread"""
+    try:
+        # Check if tag already exists
+        if any(tag.name == "onRuneforge" for tag in thread.applied_tags):
+            print(f"✅ Thread '{thread.name}' already has onRuneforge tag")
+            return False
+        
+        # Get the parent channel (ForumChannel)
+        parent = thread.parent
+        if not parent or not isinstance(parent, discord.ForumChannel):
+            print(f"❌ Thread parent is not a ForumChannel")
+            return False
+        
+        # Find or create the 'onRuneforge' tag
+        runeforge_tag = None
+        for tag in parent.available_tags:
+            if tag.name == "onRuneforge":
+                runeforge_tag = tag
+                break
+        
+        if not runeforge_tag:
+            # Create the tag if it doesn't exist
+            print("Creating 'onRuneforge' tag...")
+            try:
+                runeforge_tag = await parent.create_tag(
+                    name="onRuneforge",
+                    emoji="🔥"  # Using fire emoji as placeholder since we can't use custom URLs
+                )
+                print(f"✅ Created 'onRuneforge' tag")
+            except Exception as e:
+                print(f"❌ Failed to create tag: {e}")
+                return False
+        
+        # Add the tag to the thread
+        current_tags = list(thread.applied_tags)
+        if runeforge_tag not in current_tags:
+            current_tags.append(runeforge_tag)
+            await thread.edit(applied_tags=current_tags)
+            print(f"✅ Added 'onRuneforge' tag to thread: {thread.name}")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"❌ Error adding RuneForge tag to thread '{thread.name}': {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+@tasks.loop(seconds=RUNEFORGE_CHECK_INTERVAL)
+async def check_threads_for_runeforge():
+    """Background task to check all threads for RuneForge mods"""
+    try:
+        print(f"🔄 Checking threads for RuneForge mods...")
+        
+        # Get all mods from RuneForge
+        runeforge_mods = await get_runeforge_mods()
+        if not runeforge_mods:
+            print("⚠️ No mods fetched from RuneForge")
+            return
+        
+        print(f"📋 Checking against {len(runeforge_mods)} RuneForge mods")
+        
+        # Get the Skin Ideas channel
+        channel = bot.get_channel(SKIN_IDEAS_CHANNEL_ID)
+        if not channel or not isinstance(channel, discord.ForumChannel):
+            print(f"❌ Skin Ideas channel not found or not a ForumChannel")
+            return
+        
+        # Get all active threads
+        threads = channel.threads
+        archived_threads = []
+        
+        # Also get archived threads
+        try:
+            async for thread in channel.archived_threads(limit=100):
+                archived_threads.append(thread)
+        except Exception as e:
+            print(f"⚠️ Error fetching archived threads: {e}")
+        
+        all_threads = list(threads) + archived_threads
+        print(f"🔍 Checking {len(all_threads)} threads...")
+        
+        tagged_count = 0
+        for thread in all_threads:
+            # Check if thread name matches any RuneForge mod
+            match, score = await find_matching_mod(thread.name, runeforge_mods, threshold=0.7)
+            
+            if match:
+                print(f"🎯 Match found: '{thread.name}' matches '{match}' (score: {score:.2f})")
+                success = await add_runeforge_tag(thread)
+                if success:
+                    tagged_count += 1
+                    
+                    # Log to log channel
+                    log_channel = bot.get_channel(LOG_CHANNEL_ID)
+                    if log_channel:
+                        await log_channel.send(
+                            f"🔥 Tagged thread with 'onRuneforge': **{thread.name}**\n"
+                            f"Matched to RuneForge mod: **{match}** (similarity: {score:.0%})\n"
+                            f"Thread: {thread.jump_url}"
+                        )
+                
+                # Small delay to avoid rate limits
+                await asyncio.sleep(1)
+        
+        print(f"✅ RuneForge check complete. Tagged {tagged_count} new threads.")
+        
+    except Exception as e:
+        print(f"❌ Error in RuneForge check task: {e}")
+        import traceback
+        traceback.print_exc()
+
+@check_threads_for_runeforge.before_loop
+async def before_runeforge_check():
+    """Wait for bot to be ready before starting the RuneForge check loop"""
+    await bot.wait_until_ready()
+    print("RuneForge thread monitoring started!")
+
+# Manual command to check threads now
+@bot.tree.command(name="checkruneforge", description="Manually check all threads for RuneForge mods")
+async def checkruneforge(interaction: discord.Interaction):
+    """Manually trigger RuneForge mod checking"""
+    await interaction.response.defer()
+    
+    try:
+        # Get all mods from RuneForge
+        runeforge_mods = await get_runeforge_mods()
+        if not runeforge_mods:
+            await interaction.edit_original_response(content="❌ Failed to fetch mods from RuneForge")
+            return
+        
+        # Get the Skin Ideas channel
+        channel = bot.get_channel(SKIN_IDEAS_CHANNEL_ID)
+        if not channel or not isinstance(channel, discord.ForumChannel):
+            await interaction.edit_original_response(content="❌ Skin Ideas channel not found")
+            return
+        
+        # Get all threads
+        threads = list(channel.threads)
+        archived_threads = []
+        
+        try:
+            async for thread in channel.archived_threads(limit=100):
+                archived_threads.append(thread)
+        except:
+            pass
+        
+        all_threads = threads + archived_threads
+        
+        # Check each thread
+        tagged_count = 0
+        matches_found = []
+        
+        for thread in all_threads:
+            match, score = await find_matching_mod(thread.name, runeforge_mods, threshold=0.7)
+            
+            if match:
+                matches_found.append(f"• **{thread.name}** → **{match}** ({score:.0%})")
+                success = await add_runeforge_tag(thread)
+                if success:
+                    tagged_count += 1
+                await asyncio.sleep(0.5)
+        
+        # Create response embed
+        embed = discord.Embed(
+            title="🔥 RuneForge Mod Check Complete",
+            color=0xFF6B35
+        )
+        embed.add_field(name="RuneForge Mods Found", value=str(len(runeforge_mods)), inline=True)
+        embed.add_field(name="Threads Checked", value=str(len(all_threads)), inline=True)
+        embed.add_field(name="New Tags Added", value=str(tagged_count), inline=True)
+        
+        if matches_found:
+            matches_text = "\n".join(matches_found[:10])  # Limit to first 10
+            if len(matches_found) > 10:
+                matches_text += f"\n... and {len(matches_found) - 10} more"
+            embed.add_field(name="Matches Found", value=matches_text, inline=False)
+        else:
+            embed.add_field(name="Matches Found", value="No new matches", inline=False)
+        
+        embed.set_thumbnail(url=RUNEFORGE_ICON_URL)
+        
+        await interaction.edit_original_response(embed=embed)
+        
+    except Exception as e:
+        await interaction.edit_original_response(content=f"❌ Error: {str(e)}")
+        print(f"❌ Error in checkruneforge command: {e}")
+        import traceback
+        traceback.print_exc()
+
+# ================================
 #       Tweet Poster
 # ================================
 
@@ -1545,6 +1809,11 @@ async def on_ready():
     if not check_for_new_tweets.is_running():
         check_for_new_tweets.start()
         print(f"🐦 Started monitoring @{TWITTER_USERNAME} for new tweets")
+    
+    # Start RuneForge thread monitoring
+    if not check_threads_for_runeforge.is_running():
+        check_threads_for_runeforge.start()
+        print(f"🔥 Started monitoring threads for RuneForge mods")
 
 bot.run(os.getenv("BOT_TOKEN"))
 

@@ -4,3 +4,5 @@ python-dotenv
 requests
 py-cord==2.6.1
 tweepy
+beautifulsoup4
+lxml
