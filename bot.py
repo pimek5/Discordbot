@@ -2392,6 +2392,12 @@ async def guess(interaction: discord.Interaction, champion: str):
         
         await interaction.response.send_message(embed=winner_embed)
         
+        # Get winner message to delete later
+        try:
+            winner_message = await interaction.original_response()
+        except:
+            winner_message = None
+        
         print(f"🎮 {interaction.user.name} solved LoLdle in {len(player_data['guesses'])} attempts")
         
         # Auto-reset after 5 seconds
@@ -2422,6 +2428,14 @@ async def guess(interaction: discord.Interaction, champion: str):
             print(f"🎮 New LoLdle champion: {loldle_data['daily_champion']}")
         except:
             pass
+        
+        # Wait 5 more seconds, then delete winner message (total 10 seconds)
+        await asyncio.sleep(5)
+        if winner_message:
+            try:
+                await winner_message.delete()
+            except:
+                pass
             
     else:
         # Get champion data
