@@ -2251,206 +2251,6 @@ async def update_presence():
 #        LoLdle
 # ================================
 
-# ================================
-#        AUTO-SLOWMODE SYSTEM
-# ================================
-@bot.event
-async def on_message(message):
-    """Monitor message frequency and apply auto-slowmode"""
-    # Ignore bot messages and DMs
-    if message.author.bot or not message.guild:
-        return
-    
-    channel_id = message.channel.id
-    
-    # Only track channels with auto-slowmode enabled
-    if channel_id not in AUTO_SLOWMODE_ENABLED or not AUTO_SLOWMODE_ENABLED[channel_id]:
-        return
-    
-    # Track message timestamp
-    current_time = datetime.datetime.now().timestamp()
-    
-    if channel_id not in message_tracker:
-        message_tracker[channel_id] = []
-    
-    # Add current message
-    message_tracker[channel_id].append(current_time)
-    
-    # Remove messages older than 10 seconds
-    message_tracker[channel_id] = [
-        ts for ts in message_tracker[channel_id] 
-        if current_time - ts <= 10
-    ]
-    
-    # Check if threshold exceeded
-    message_count = len(message_tracker[channel_id])
-    
-    if message_count >= AUTO_SLOWMODE_THRESHOLD:
-        # Check current slowmode
-        if message.channel.slowmode_delay == 0:
-            try:
-                await message.channel.edit(slowmode_delay=AUTO_SLOWMODE_DELAY)
-                
-                # Send notification
-                embed = discord.Embed(
-                    title="🐌 Auto-Slowmode Activated",
-                    description=f"High activity detected! Slowmode set to **{AUTO_SLOWMODE_DELAY} seconds** for {AUTO_SLOWMODE_COOLDOWN//60} minutes.",
-                    color=0xFFA500
-                )
-                await message.channel.send(embed=embed, delete_after=10)
-                
-                print(f"🐌 Auto-slowmode activated in #{message.channel.name} ({message_count} messages/10s)")
-                
-                # Schedule slowmode removal
-                await asyncio.sleep(AUTO_SLOWMODE_COOLDOWN)
-                
-                # Disable slowmode if still active
-                if message.channel.slowmode_delay == AUTO_SLOWMODE_DELAY:
-                    await message.channel.edit(slowmode_delay=0)
-                    
-                    embed = discord.Embed(
-                        title="⚡ Auto-Slowmode Deactivated",
-                        description="Activity has normalized. Slowmode removed.",
-                        color=0x00FF00
-                    )
-                    await message.channel.send(embed=embed, delete_after=10)
-                    
-                    print(f"⚡ Auto-slowmode deactivated in #{message.channel.name}")
-                
-            except discord.Forbidden:
-                print(f"❌ Missing permissions to set slowmode in #{message.channel.name}")
-            except Exception as e:
-                print(f"❌ Error setting auto-slowmode: {e}")
-
-@bot.tree.command(name="autoslowmode", description="Enable/disable automatic slowmode for this channel")
-@app_commands.describe(enabled="Enable or disable auto-slowmode")
-async def autoslowmode(interaction: discord.Interaction, enabled: bool):
-    """Toggle auto-slowmode for the current channel"""
-    
-    # Check permissions
-    if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message("❌ You need 'Manage Channels' permission to use this command.", ephemeral=True)
-        return
-    
-    channel_id = interaction.channel.id
-    AUTO_SLOWMODE_ENABLED[channel_id] = enabled
-    
-    if enabled:
-        embed = discord.Embed(
-            title="✅ Auto-Slowmode Enabled",
-            description=f"Auto-slowmode is now **active** in {interaction.channel.mention}",
-            color=0x00FF00
-        )
-        embed.add_field(name="Threshold", value=f"{AUTO_SLOWMODE_THRESHOLD} messages per 10 seconds", inline=True)
-        embed.add_field(name="Delay", value=f"{AUTO_SLOWMODE_DELAY} seconds", inline=True)
-        embed.add_field(name="Duration", value=f"{AUTO_SLOWMODE_COOLDOWN//60} minutes", inline=True)
-        embed.set_footer(text=f"Enabled by {interaction.user.name}")
-        
-        print(f"✅ Auto-slowmode enabled in #{interaction.channel.name} by {interaction.user.name}")
-    else:
-        embed = discord.Embed(
-            title="❌ Auto-Slowmode Disabled",
-            description=f"Auto-slowmode is now **inactive** in {interaction.channel.mention}",
-            color=0xFF0000
-        )
-        embed.set_footer(text=f"Disabled by {interaction.user.name}")
-        
-        # Clear tracking data
-        if channel_id in message_tracker:
-            del message_tracker[channel_id]
-        
-        print(f"❌ Auto-slowmode disabled in #{interaction.channel.name} by {interaction.user.name}")
-    
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="slowmode", description="Manually set slowmode delay for current channel")
-@app_commands.describe(seconds="Slowmode delay in seconds (0 to disable, max 21600)")
-async def slowmode(interaction: discord.Interaction, seconds: int):
-    """Set slowmode for the current channel"""
-    
-    # Check permissions
-    if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message("❌ You need 'Manage Channels' permission to use this command.", ephemeral=True)
-        return
-    
-    # Validate input
-    if seconds < 0 or seconds > 21600:
-        await interaction.response.send_message("❌ Slowmode must be between 0 and 21600 seconds (6 hours).", ephemeral=True)
-        return
-    
-    try:
-        await interaction.response.defer()
-        
-        channel = interaction.channel
-        await channel.edit(slowmode_delay=seconds)
-        
-        if seconds == 0:
-            embed = discord.Embed(
-                title="⚡ Slowmode Disabled",
-                description=f"Slowmode has been disabled in {channel.mention}",
-                color=0x00FF00
-            )
-        else:
-            # Format time nicely
-            if seconds < 60:
-                time_str = f"{seconds} second{'s' if seconds != 1 else ''}"
-            elif seconds < 3600:
-                minutes = seconds // 60
-                time_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
-            else:
-                hours = seconds // 3600
-                time_str = f"{hours} hour{'s' if hours != 1 else ''}"
-            
-            embed = discord.Embed(
-                title="🐌 Slowmode Enabled",
-                description=f"Slowmode set to **{time_str}** in {channel.mention}",
-                color=0xFFA500
-            )
-        
-        embed.set_footer(text=f"Set by {interaction.user.name}")
-        await interaction.edit_original_response(embed=embed)
-        
-        print(f"⚙️ Slowmode set to {seconds}s in #{channel.name} by {interaction.user.name}")
-        
-    except discord.Forbidden:
-        await interaction.edit_original_response(content="❌ I don't have permission to edit this channel.")
-    except Exception as e:
-        await interaction.edit_original_response(content=f"❌ Error setting slowmode: {e}")
-
-@bot.tree.command(name="slowmodeinfo", description="Check current slowmode settings")
-async def slowmodeinfo(interaction: discord.Interaction):
-    """Check slowmode status of current channel"""
-    
-    channel = interaction.channel
-    delay = channel.slowmode_delay
-    
-    embed = discord.Embed(
-        title=f"⏱️ Slowmode Info: #{channel.name}",
-        color=0x1DA1F2
-    )
-    
-    if delay == 0:
-        embed.description = "✅ Slowmode is **disabled** in this channel"
-        embed.color = 0x00FF00
-    else:
-        # Format time nicely
-        if delay < 60:
-            time_str = f"{delay} second{'s' if delay != 1 else ''}"
-        elif delay < 3600:
-            minutes = delay // 60
-            time_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
-        else:
-            hours = delay // 3600
-            time_str = f"{hours} hour{'s' if hours != 1 else ''}"
-        
-        embed.description = f"🐌 Slowmode is **enabled**\nDelay: **{time_str}** ({delay}s)"
-        embed.color = 0xFFA500
-    
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# ================================
-#        LOLDLE GAME SYSTEM
-# ================================
 def get_daily_champion():
     """Get or set the daily champion"""
     today = datetime.date.today().isoformat()
@@ -2686,7 +2486,7 @@ async def loldlestats(interaction: discord.Interaction):
     
     if user_id not in loldle_data['players']:
         await interaction.response.send_message(
-            "📊 You haven't played LoLdle today yet! Use `/loldle` to start guessing.",
+            "📊 You haven't played LoLdle today yet! Use `/guess` to start guessing.",
             ephemeral=True
         )
         return
@@ -2709,6 +2509,203 @@ async def loldlestats(interaction: discord.Interaction):
         embed.add_field(name="Guesses", value=", ".join(player_data['guesses']), inline=False)
     
     embed.set_footer(text=f"Daily Challenge • {loldle_data['daily_date']}")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# ================================
+#        AUTO-SLOWMODE SYSTEM
+# ================================
+@bot.event
+async def on_message(message):
+    """Monitor message frequency and apply auto-slowmode"""
+    # Ignore bot messages and DMs
+    if message.author.bot or not message.guild:
+        return
+    
+    channel_id = message.channel.id
+    
+    # Only track channels with auto-slowmode enabled
+    if channel_id not in AUTO_SLOWMODE_ENABLED or not AUTO_SLOWMODE_ENABLED[channel_id]:
+        return
+    
+    # Track message timestamp
+    current_time = datetime.datetime.now().timestamp()
+    
+    if channel_id not in message_tracker:
+        message_tracker[channel_id] = []
+    
+    # Add current message
+    message_tracker[channel_id].append(current_time)
+    
+    # Remove messages older than 10 seconds
+    message_tracker[channel_id] = [
+        ts for ts in message_tracker[channel_id] 
+        if current_time - ts <= 10
+    ]
+    
+    # Check if threshold exceeded
+    message_count = len(message_tracker[channel_id])
+    
+    if message_count >= AUTO_SLOWMODE_THRESHOLD:
+        # Check current slowmode
+        if message.channel.slowmode_delay == 0:
+            try:
+                await message.channel.edit(slowmode_delay=AUTO_SLOWMODE_DELAY)
+                
+                # Send notification
+                embed = discord.Embed(
+                    title="🐌 Auto-Slowmode Activated",
+                    description=f"High activity detected! Slowmode set to **{AUTO_SLOWMODE_DELAY} seconds** for {AUTO_SLOWMODE_COOLDOWN//60} minutes.",
+                    color=0xFFA500
+                )
+                await message.channel.send(embed=embed, delete_after=10)
+                
+                print(f"🐌 Auto-slowmode activated in #{message.channel.name} ({message_count} messages/10s)")
+                
+                # Schedule slowmode removal
+                await asyncio.sleep(AUTO_SLOWMODE_COOLDOWN)
+                
+                # Disable slowmode if still active
+                if message.channel.slowmode_delay == AUTO_SLOWMODE_DELAY:
+                    await message.channel.edit(slowmode_delay=0)
+                    
+                    embed = discord.Embed(
+                        title="⚡ Auto-Slowmode Deactivated",
+                        description="Activity has normalized. Slowmode removed.",
+                        color=0x00FF00
+                    )
+                    await message.channel.send(embed=embed, delete_after=10)
+                    
+                    print(f"⚡ Auto-slowmode deactivated in #{message.channel.name}")
+                
+            except discord.Forbidden:
+                print(f"❌ Missing permissions to set slowmode in #{message.channel.name}")
+            except Exception as e:
+                print(f"❌ Error setting auto-slowmode: {e}")
+
+@bot.tree.command(name="autoslowmode", description="Enable/disable automatic slowmode for this channel")
+@app_commands.describe(enabled="Enable or disable auto-slowmode")
+async def autoslowmode(interaction: discord.Interaction, enabled: bool):
+    """Toggle auto-slowmode for the current channel"""
+    
+    # Check permissions
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("❌ You need 'Manage Channels' permission to use this command.", ephemeral=True)
+        return
+    
+    channel_id = interaction.channel.id
+    AUTO_SLOWMODE_ENABLED[channel_id] = enabled
+    
+    if enabled:
+        embed = discord.Embed(
+            title="✅ Auto-Slowmode Enabled",
+            description=f"Auto-slowmode is now **active** in {interaction.channel.mention}",
+            color=0x00FF00
+        )
+        embed.add_field(name="Threshold", value=f"{AUTO_SLOWMODE_THRESHOLD} messages per 10 seconds", inline=True)
+        embed.add_field(name="Delay", value=f"{AUTO_SLOWMODE_DELAY} seconds", inline=True)
+        embed.add_field(name="Duration", value=f"{AUTO_SLOWMODE_COOLDOWN//60} minutes", inline=True)
+        embed.set_footer(text=f"Enabled by {interaction.user.name}")
+        
+        print(f"✅ Auto-slowmode enabled in #{interaction.channel.name} by {interaction.user.name}")
+    else:
+        embed = discord.Embed(
+            title="❌ Auto-Slowmode Disabled",
+            description=f"Auto-slowmode is now **inactive** in {interaction.channel.mention}",
+            color=0xFF0000
+        )
+        embed.set_footer(text=f"Disabled by {interaction.user.name}")
+        
+        # Clear tracking data
+        if channel_id in message_tracker:
+            del message_tracker[channel_id]
+        
+        print(f"❌ Auto-slowmode disabled in #{interaction.channel.name} by {interaction.user.name}")
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="slowmode", description="Manually set slowmode delay for current channel")
+@app_commands.describe(seconds="Slowmode delay in seconds (0 to disable, max 21600)")
+async def slowmode(interaction: discord.Interaction, seconds: int):
+    """Set slowmode for the current channel"""
+    
+    # Check permissions
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("❌ You need 'Manage Channels' permission to use this command.", ephemeral=True)
+        return
+    
+    # Validate input
+    if seconds < 0 or seconds > 21600:
+        await interaction.response.send_message("❌ Slowmode must be between 0 and 21600 seconds (6 hours).", ephemeral=True)
+        return
+    
+    try:
+        await interaction.response.defer()
+        
+        channel = interaction.channel
+        await channel.edit(slowmode_delay=seconds)
+        
+        if seconds == 0:
+            embed = discord.Embed(
+                title="⚡ Slowmode Disabled",
+                description=f"Slowmode has been disabled in {channel.mention}",
+                color=0x00FF00
+            )
+        else:
+            # Format time nicely
+            if seconds < 60:
+                time_str = f"{seconds} second{'s' if seconds != 1 else ''}"
+            elif seconds < 3600:
+                minutes = seconds // 60
+                time_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+            else:
+                hours = seconds // 3600
+                time_str = f"{hours} hour{'s' if hours != 1 else ''}"
+            
+            embed = discord.Embed(
+                title="🐌 Slowmode Enabled",
+                description=f"Slowmode set to **{time_str}** in {channel.mention}",
+                color=0xFFA500
+            )
+        
+        embed.set_footer(text=f"Set by {interaction.user.name}")
+        await interaction.edit_original_response(embed=embed)
+        
+        print(f"⚙️ Slowmode set to {seconds}s in #{channel.name} by {interaction.user.name}")
+        
+    except discord.Forbidden:
+        await interaction.edit_original_response(content="❌ I don't have permission to edit this channel.")
+    except Exception as e:
+        await interaction.edit_original_response(content=f"❌ Error setting slowmode: {e}")
+
+@bot.tree.command(name="slowmodeinfo", description="Check current slowmode settings")
+async def slowmodeinfo(interaction: discord.Interaction):
+    """Check slowmode status of current channel"""
+    
+    channel = interaction.channel
+    delay = channel.slowmode_delay
+    
+    embed = discord.Embed(
+        title=f"⏱️ Slowmode Info: #{channel.name}",
+        color=0x1DA1F2
+    )
+    
+    if delay == 0:
+        embed.description = "✅ Slowmode is **disabled** in this channel"
+        embed.color = 0x00FF00
+    else:
+        # Format time nicely
+        if delay < 60:
+            time_str = f"{delay} second{'s' if delay != 1 else ''}"
+        elif delay < 3600:
+            minutes = delay // 60
+            time_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+        else:
+            hours = delay // 3600
+            time_str = f"{hours} hour{'s' if hours != 1 else ''}"
+        
+        embed.description = f"🐌 Slowmode is **enabled**\nDelay: **{time_str}** ({delay}s)"
+        embed.color = 0xFFA500
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
