@@ -37,7 +37,7 @@ LOG_CHANNEL_ID = 1408036991454417039
 # Twitter Configuration
 TWITTER_USERNAME = "p1mek"
 TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
-TWITTER_CHECK_INTERVAL = 300  # Check every 5 minutes (300 seconds) to avoid rate limits
+TWITTER_CHECK_INTERVAL = 120  # Check every 2 minutes (120 seconds)
 
 # Twitter API Configuration (add these to your .env file)
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
