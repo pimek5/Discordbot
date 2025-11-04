@@ -1635,9 +1635,10 @@ async def create_tweet_embed(tweet_data):
         if metrics_text:
             embed.add_field(name="Engagement", value=metrics_text.strip(), inline=False)
     
-    # Add footer with Twitter branding
+    # Add footer with Twitter branding and dynamic timestamp
+    # Use Discord's timestamp format - will auto-update for each user
     embed.set_footer(
-        text="Twitter • Today at 3:44 AM",
+        text="Twitter",
         icon_url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png"
     )
     
