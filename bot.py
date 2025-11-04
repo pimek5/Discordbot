@@ -269,6 +269,7 @@ async def invite(interaction: discord.Interaction, user: discord.Member):
 # ================================
 #        DIAGNOSTICS
 # ================================
+# Updated: Custom emoji support for RuneForge tags
 @bot.tree.command(name="diagnose", description="Check RuneForge system configuration and status")
 async def diagnose(interaction: discord.Interaction):
     """Diagnostic command to check RuneForge integration"""
