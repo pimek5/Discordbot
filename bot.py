@@ -51,6 +51,7 @@ MOD_REVIEW_CHANNEL_ID = 1433893934265925682  # Channel for mod review
 RUNEFORGE_USERNAME = "p1mek"
 RUNEFORGE_ICON_URL = "https://avatars.githubusercontent.com/u/132106741?s=200&v=4"
 RUNEFORGE_CHECK_INTERVAL = 3600  # Check every hour (3600 seconds) - RuneForge mod tagging
+RUNEFORGE_TAG_ID = 1435096925144748062  # ID of the onRuneforge tag
 
 # Store voting data: {message_id: {user_id: 'up' or 'down', 'upvotes': int, 'downvotes': int}}
 voting_data = {}
@@ -888,57 +889,17 @@ async def add_runeforge_tag(thread: discord.Thread):
             print(f"  ❌ Thread parent is not a ForumChannel!")
             return False
         
-        # Find or create the 'onRuneforge' tag
-        available_tag_names = [tag.name for tag in parent.available_tags]
-        print(f"  Available tags in forum: {available_tag_names}")
-        
+        # Find the RuneForge tag by ID
         runeforge_tag = None
         for tag in parent.available_tags:
-            if tag.name == "onRuneforge":
+            if tag.id == RUNEFORGE_TAG_ID:
                 runeforge_tag = tag
-                print(f"  ✅ Found existing 'onRuneforge' tag")
+                print(f"  ✅ Found 'onRuneforge' tag by ID: {tag.name}")
                 break
         
         if not runeforge_tag:
-            # Create the tag if it doesn't exist
-            print(f"  🆕 Creating 'onRuneforge' tag...")
-            
-            # Try to find RuneForge custom emoji on the server
-            emoji_to_use = "🔥"  # Default fallback
-            guild = parent.guild
-            
-            # Search for custom emoji - prefer exact match "onruneforge" or "OnRuneforge"
-            for emoji in guild.emojis:
-                if emoji.name.lower() == "onruneforge":
-                    emoji_to_use = emoji
-                    print(f"  ✅ Found custom emoji: {emoji.name} (ID: {emoji.id})")
-                    break
-            
-            # If exact match not found, try partial match
-            if emoji_to_use == "🔥":
-                for emoji in guild.emojis:
-                    if "runeforge" in emoji.name.lower():
-                        emoji_to_use = emoji
-                        print(f"  ✅ Found custom emoji: {emoji.name} (ID: {emoji.id})")
-                        break
-            
-            if emoji_to_use == "🔥":
-                print(f"  ℹ️ No custom RuneForge emoji found, using 🔥 fallback")
-            
-            try:
-                runeforge_tag = await parent.create_tag(
-                    name="onRuneforge",
-                    emoji=emoji_to_use
-                )
-                print(f"  ✅ Successfully created 'onRuneforge' tag with emoji: {emoji_to_use}")
-            except discord.errors.Forbidden as e:
-                print(f"  ❌ Permission denied to create tag: {e}")
-                return False
-            except Exception as e:
-                print(f"  ❌ Failed to create tag: {e}")
-                import traceback
-                traceback.print_exc()
-                return False
+            print(f"  ❌ Tag with ID {RUNEFORGE_TAG_ID} not found in forum")
+            return False
         
         # Add the tag to the thread
         current_tags = list(thread.applied_tags)
