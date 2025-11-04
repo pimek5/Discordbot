@@ -232,6 +232,7 @@ CHAMPIONS = {
     'Yasuo': {'gender': 'Male', 'position': 'Bottom Middle Top', 'species': 'Human', 'resource': 'Flow', 'range': 'Melee', 'region': 'Ionia'},
     'Yone': {'gender': 'Male', 'position': 'Middle Top', 'species': 'Spirit', 'resource': 'Flow', 'range': 'Melee', 'region': 'Ionia'},
     'Yorick': {'gender': 'Male', 'position': 'Top', 'species': 'Human', 'resource': 'Mana', 'range': 'Melee', 'region': 'Shadow Isles'},
+    'Yunara': {'gender': 'Female', 'position': 'Bottom', 'species': 'Human', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Ionia'},
     'Yuumi': {'gender': 'Female', 'position': 'Support', 'species': 'Cat', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Bandle City'},
     'Zac': {'gender': 'Male', 'position': 'Jungle', 'species': 'Golem', 'resource': 'Health', 'range': 'Melee', 'region': 'Zaun'},
     'Zed': {'gender': 'Male', 'position': 'Middle', 'species': 'Human', 'resource': 'Energy', 'range': 'Melee', 'region': 'Ionia'},
