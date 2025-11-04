@@ -74,6 +74,7 @@ class MyBot(commands.Bot):
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
         self.tree.add_command(addthread, guild=guild)
+        self.tree.add_command(diagnose, guild=guild)
         self.tree.add_command(checkruneforge, guild=guild)
         self.tree.add_command(posttweet, guild=guild)
         self.tree.add_command(toggletweets, guild=guild)
