@@ -2782,16 +2782,21 @@ async def loldlestart(interaction: discord.Interaction, mode: app_commands.Choic
         loldle_emoji_data['daily_champion'] = random.choice(available)
         loldle_emoji_data['players'] = {}
         loldle_emoji_data['embed_message_id'] = None
+        loldle_emoji_data['recent_guesses'] = []
         
         champion = loldle_emoji_data['daily_champion']
-        emoji_text = LOLDLE_EXTENDED[champion]['emoji']
+        emoji_full = LOLDLE_EXTENDED[champion]['emoji']
+        # Show only first emoji initially
+        emoji_display = emoji_full[0] if emoji_full else '❓'
+        hidden_count = len(emoji_full) - 1
+        emoji_display = emoji_display + ('❓' * hidden_count)
         
         new_embed = discord.Embed(
             title="😃 LoLdle Emoji - New Game!",
-            description=f"**Emojis:** {emoji_text}\n\nUse `/emoji <champion>` to guess!",
+            description=f"**Emojis:** {emoji_display}\n\nUse `/emoji <champion>` to guess!",
             color=0xF39C12
         )
-        new_embed.set_footer(text="Guess the champion from the emojis!")
+        new_embed.set_footer(text="Guess the champion from the emojis! More emojis reveal with each wrong guess.")
         
         await interaction.response.send_message(embed=new_embed)
         
@@ -3061,7 +3066,7 @@ async def emoji(interaction: discord.Interaction, champion: str):
     user_id = interaction.user.id
     
     if user_id not in loldle_emoji_data['players']:
-        loldle_emoji_data['players'][user_id] = {'guesses': [], 'solved': False}
+        loldle_emoji_data['players'][user_id] = {'guesses': [], 'solved': False, 'revealed_emojis': 1}
     
     player_data = loldle_emoji_data['players'][user_id]
     
@@ -3134,14 +3139,18 @@ async def emoji(interaction: discord.Interaction, champion: str):
         
         # Send new game embed
         new_champion = loldle_emoji_data['daily_champion']
-        emoji_text = LOLDLE_EXTENDED[new_champion]['emoji']
+        emoji_full = LOLDLE_EXTENDED[new_champion]['emoji']
+        # Show only first emoji initially
+        emoji_display = emoji_full[0] if emoji_full else '❓'
+        hidden_count = len(emoji_full) - 1
+        emoji_display = emoji_display + ('❓' * hidden_count)
         
         new_embed = discord.Embed(
             title="😃 Emoji Mode - New Game!",
-            description=f"**Emojis:** {emoji_text}\n\nUse `/emoji <champion>` to guess!",
+            description=f"**Emojis:** {emoji_display}\n\nUse `/emoji <champion>` to guess!",
             color=0xF39C12
         )
-        new_embed.set_footer(text="Guess the champion from the emojis!")
+        new_embed.set_footer(text="Guess the champion from the emojis! More emojis reveal with each wrong guess.")
         
         try:
             new_message = await interaction.channel.send(embed=new_embed)
@@ -3159,13 +3168,24 @@ async def emoji(interaction: discord.Interaction, champion: str):
                 pass
         
     else:
-        emoji_text = LOLDLE_EXTENDED[correct_champion]['emoji']
+        # Wrong guess - reveal one more emoji (max 4)
+        full_emoji = LOLDLE_EXTENDED[correct_champion]['emoji']
+        if player_data['revealed_emojis'] < 4:
+            player_data['revealed_emojis'] += 1
+        
+        # Show only revealed emojis
+        revealed_count = min(player_data['revealed_emojis'], len(full_emoji))
+        revealed_emoji = full_emoji[:revealed_count]
+        hidden_count = len(full_emoji) - revealed_count
+        display_emoji = revealed_emoji + ('❓' * hidden_count)
+        
         embed = discord.Embed(
             title="😃 Emoji Mode",
-            description=f"**Emojis:** {emoji_text}\n\n**{interaction.user.name}** guessed **{champion}** ❌",
+            description=f"**Emojis:** {display_emoji}\n\n**{interaction.user.name}** guessed **{champion}** ❌",
             color=0xFF6B6B
         )
         embed.add_field(name="Total Guesses", value=str(len(player_data['guesses'])), inline=True)
+        embed.add_field(name="Revealed", value=f"{revealed_count}/{len(full_emoji)}", inline=True)
         
         # Show recent guesses (last 5)
         if len(loldle_emoji_data['recent_guesses']) > 0:

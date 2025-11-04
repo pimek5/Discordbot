@@ -88,14 +88,25 @@ def generate_emoji_for_champion(champion_data):
         'Tank': '🛡️'
     }
     
+    # Additional emojis based on champion name/theme
+    extra_emojis = ['⭐', '💫', '✨', '🌟', '💥', '🔥', '❄️', '⚡', '🌊', '🍃']
+    
     tags = champion_data.get('tags', [])
     emojis = []
     
-    for tag in tags[:2]:  # Get first 2 tags
+    # Add role-based emojis (up to 2 from tags)
+    for tag in tags[:2]:
         if tag in emoji_map:
             emojis.append(emoji_map[tag])
     
-    return ''.join(emojis) if emojis else '❓'
+    # Fill up to 4 emojis with extra themed emojis
+    import random
+    while len(emojis) < 4:
+        emoji = random.choice(extra_emojis)
+        if emoji not in emojis:
+            emojis.append(emoji)
+    
+    return ''.join(emojis[:4]) if emojis else '❓'
 
 def extract_ability_description(champion_data):
     """Extract a random ability description and clean it"""
