@@ -2643,8 +2643,14 @@ async def loldlestats(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="loldlestart", description="Start a new LoLdle game")
-async def loldlestart(interaction: discord.Interaction):
-    """Start a new LoLdle game"""
+@app_commands.describe(mode="Choose game mode: classic, quote, emoji")
+@app_commands.choices(mode=[
+    app_commands.Choice(name="Classic (Attributes)", value="classic"),
+    app_commands.Choice(name="Quote", value="quote"),
+    app_commands.Choice(name="Emoji", value="emoji")
+])
+async def loldlestart(interaction: discord.Interaction, mode: app_commands.Choice[str] = None):
+    """Start a new LoLdle game with selected mode"""
     
     # Channel restriction check
     if interaction.channel_id != LOLDLE_CHANNEL_ID:
@@ -2654,43 +2660,118 @@ async def loldlestart(interaction: discord.Interaction):
         )
         return
     
-    # Delete old game embed if exists
-    if loldle_data['embed_message_id']:
+    # Default to classic if no mode selected
+    game_mode = mode.value if mode else "classic"
+    
+    import random
+    
+    if game_mode == "classic":
+        # Delete old game embed if exists
+        if loldle_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                old_message = await channel.fetch_message(loldle_data['embed_message_id'])
+                await old_message.delete()
+            except:
+                pass
+        
+        # Clear game state and pick new champion
+        loldle_data['daily_champion'] = random.choice(list(CHAMPIONS.keys()))
+        loldle_data['players'] = {}
+        loldle_data['recent_guesses'] = []
+        loldle_data['embed_message_id'] = None
+        
+        # Send new game starting embed
+        new_embed = discord.Embed(
+            title="🎮 LoLdle Classic - New Game!",
+            description=f"A new champion has been selected!\nUse `/guess <champion>` to start guessing.",
+            color=0x1DA1F2
+        )
+        new_embed.add_field(name="How to Play", value="Guess the champion and get hints about gender, position, species, resource, range, and region!", inline=False)
+        new_embed.add_field(name="Legend", value="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong", inline=False)
+        
+        # Create buttons view for new game
+        view = LoldleButtonsView()
+        
+        await interaction.response.send_message(embed=new_embed, view=view)
+        
+        # Get the message to store its ID
         try:
-            channel = interaction.channel
-            old_message = await channel.fetch_message(loldle_data['embed_message_id'])
-            await old_message.delete()
+            msg = await interaction.original_response()
+            loldle_data['embed_message_id'] = msg.id
+            print(f"🎮 New LoLdle Classic started: {loldle_data['daily_champion']}")
         except:
             pass
     
-    # Clear game state and pick new champion
-    import random
-    loldle_data['daily_champion'] = random.choice(list(CHAMPIONS.keys()))
-    loldle_data['players'] = {}
-    loldle_data['recent_guesses'] = []
-    loldle_data['embed_message_id'] = None
+    elif game_mode == "quote":
+        # Delete old quote game embed
+        if loldle_quote_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                old_message = await channel.fetch_message(loldle_quote_data['embed_message_id'])
+                await old_message.delete()
+            except:
+                pass
+        
+        # Pick new quote champion
+        available = [c for c in LOLDLE_EXTENDED.keys()]
+        loldle_quote_data['daily_champion'] = random.choice(available)
+        loldle_quote_data['players'] = {}
+        loldle_quote_data['embed_message_id'] = None
+        
+        champion = loldle_quote_data['daily_champion']
+        quote_text = LOLDLE_EXTENDED[champion]['quote']
+        
+        new_embed = discord.Embed(
+            title="💬 LoLdle Quote - New Game!",
+            description=f"**Quote:** \"{quote_text}\"\n\nUse `/quote <champion>` to guess!",
+            color=0x9B59B6
+        )
+        new_embed.set_footer(text="Guess the champion from their iconic quote!")
+        
+        await interaction.response.send_message(embed=new_embed)
+        
+        try:
+            msg = await interaction.original_response()
+            loldle_quote_data['embed_message_id'] = msg.id
+            print(f"💬 New LoLdle Quote started: {champion}")
+        except:
+            pass
     
-    # Send new game starting embed
-    new_embed = discord.Embed(
-        title="🎮 New LoLdle Challenge Started!",
-        description=f"A new champion has been selected!\nUse `/guess <champion>` to start guessing.",
-        color=0x1DA1F2
-    )
-    new_embed.add_field(name="How to Play", value="Guess the champion and get hints about gender, position, species, resource, range, and region!", inline=False)
-    new_embed.add_field(name="Legend", value="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong", inline=False)
-    
-    # Create buttons view for new game
-    view = LoldleButtonsView()
-    
-    await interaction.response.send_message(embed=new_embed, view=view)
-    
-    # Get the message to store its ID
-    try:
-        msg = await interaction.original_response()
-        loldle_data['embed_message_id'] = msg.id
-        print(f"🎮 New LoLdle champion started manually: {loldle_data['daily_champion']}")
-    except:
-        pass
+    elif game_mode == "emoji":
+        # Delete old emoji game embed
+        if loldle_emoji_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                old_message = await channel.fetch_message(loldle_emoji_data['embed_message_id'])
+                await old_message.delete()
+            except:
+                pass
+        
+        # Pick new emoji champion
+        available = [c for c in LOLDLE_EXTENDED.keys()]
+        loldle_emoji_data['daily_champion'] = random.choice(available)
+        loldle_emoji_data['players'] = {}
+        loldle_emoji_data['embed_message_id'] = None
+        
+        champion = loldle_emoji_data['daily_champion']
+        emoji_text = LOLDLE_EXTENDED[champion]['emoji']
+        
+        new_embed = discord.Embed(
+            title="😃 LoLdle Emoji - New Game!",
+            description=f"**Emojis:** {emoji_text}\n\nUse `/emoji <champion>` to guess!",
+            color=0xF39C12
+        )
+        new_embed.set_footer(text="Guess the champion from the emojis!")
+        
+        await interaction.response.send_message(embed=new_embed)
+        
+        try:
+            msg = await interaction.original_response()
+            loldle_emoji_data['embed_message_id'] = msg.id
+            print(f"😃 New LoLdle Emoji started: {champion}")
+        except:
+            pass
 
 # ================================
 #        LoLdle Quote Mode
