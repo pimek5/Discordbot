@@ -65,7 +65,7 @@ LOLDLE_CHANNEL_ID = 1435357204374093824  # Channel restriction for /guess comman
 loldle_data = {
     'daily_champion': None,
     'daily_date': None,
-    'players': {},  # {user_id: {'guesses': [], 'solved': False}}
+    'players': {},  # {user_id: {'guesses': [], 'solved': False, 'correct_attributes': {}}}
     'embed_message_id': None,  # Stores message ID for persistent embed
     'recent_guesses': []  # Track recent guesses for display
 }
@@ -2330,7 +2330,7 @@ async def guess(interaction: discord.Interaction, champion: str):
     
     # Initialize player data
     if user_id not in loldle_data['players']:
-        loldle_data['players'][user_id] = {'guesses': [], 'solved': False}
+        loldle_data['players'][user_id] = {'guesses': [], 'solved': False, 'correct_attributes': {}}
     
     player_data = loldle_data['players'][user_id]
     
@@ -2372,8 +2372,8 @@ async def guess(interaction: discord.Interaction, champion: str):
         player_data['solved'] = True
         
         embed = discord.Embed(
-            title="🎉 CORRECT! You Won!",
-            description=f"**{interaction.user.name}** guessed **{correct_champion}** correctly!",
+            title="🎉 CORRECT! Champion Guessed!",
+            description=f"**{interaction.user.mention} Guessed! 👑**\n\nThe champion was **{correct_champion}**!",
             color=0x00FF00
         )
         embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])} guess{'es' if len(player_data['guesses']) > 1 else ''}", inline=True)
@@ -2424,6 +2424,17 @@ async def guess(interaction: discord.Interaction, champion: str):
             pass
             
     else:
+        # Get champion data
+        guess_data = CHAMPIONS[champion]
+        correct_data = CHAMPIONS[correct_champion]
+        
+        # Track correct attributes
+        attributes_to_check = ['gender', 'position', 'species', 'resource', 'range', 'region']
+        for attr in attributes_to_check:
+            emoji = get_hint_emoji(guess_data[attr], correct_data[attr], attr)
+            if emoji == "🟩":  # Fully correct
+                player_data['correct_attributes'][attr] = correct_data[attr]
+        
         # Build comparison table
         embed = discord.Embed(
             title=f"🎮 LoLdle - Guess the Champion!",
@@ -2431,14 +2442,44 @@ async def guess(interaction: discord.Interaction, champion: str):
             color=0xFF6B6B
         )
         
-        # Compare attributes with emojis
+        # Compare attributes with emojis - show known correct attributes
         hints = []
-        hints.append(f"**Gender:** {guess_data['gender']} {get_hint_emoji(guess_data['gender'], correct_data['gender'], 'gender')}")
-        hints.append(f"**Position:** {guess_data['position']} {get_hint_emoji(guess_data['position'], correct_data['position'], 'position')}")
-        hints.append(f"**Species:** {guess_data['species']} {get_hint_emoji(guess_data['species'], correct_data['species'], 'species')}")
-        hints.append(f"**Resource:** {guess_data['resource']} {get_hint_emoji(guess_data['resource'], correct_data['resource'], 'resource')}")
-        hints.append(f"**Range:** {guess_data['range']} {get_hint_emoji(guess_data['range'], correct_data['range'], 'range')}")
-        hints.append(f"**Region:** {guess_data['region']} {get_hint_emoji(guess_data['region'], correct_data['region'], 'region')}")
+        
+        # Gender
+        if 'gender' in player_data['correct_attributes']:
+            hints.append(f"**Gender:** {player_data['correct_attributes']['gender']} 🟩")
+        else:
+            hints.append(f"**Gender:** {guess_data['gender']} {get_hint_emoji(guess_data['gender'], correct_data['gender'], 'gender')}")
+        
+        # Position
+        if 'position' in player_data['correct_attributes']:
+            hints.append(f"**Position:** {player_data['correct_attributes']['position']} 🟩")
+        else:
+            hints.append(f"**Position:** {guess_data['position']} {get_hint_emoji(guess_data['position'], correct_data['position'], 'position')}")
+        
+        # Species
+        if 'species' in player_data['correct_attributes']:
+            hints.append(f"**Species:** {player_data['correct_attributes']['species']} 🟩")
+        else:
+            hints.append(f"**Species:** {guess_data['species']} {get_hint_emoji(guess_data['species'], correct_data['species'], 'species')}")
+        
+        # Resource
+        if 'resource' in player_data['correct_attributes']:
+            hints.append(f"**Resource:** {player_data['correct_attributes']['resource']} 🟩")
+        else:
+            hints.append(f"**Resource:** {guess_data['resource']} {get_hint_emoji(guess_data['resource'], correct_data['resource'], 'resource')}")
+        
+        # Range
+        if 'range' in player_data['correct_attributes']:
+            hints.append(f"**Range:** {player_data['correct_attributes']['range']} 🟩")
+        else:
+            hints.append(f"**Range:** {guess_data['range']} {get_hint_emoji(guess_data['range'], correct_data['range'], 'range')}")
+        
+        # Region
+        if 'region' in player_data['correct_attributes']:
+            hints.append(f"**Region:** {player_data['correct_attributes']['region']} 🟩")
+        else:
+            hints.append(f"**Region:** {guess_data['region']} {get_hint_emoji(guess_data['region'], correct_data['region'], 'region')}")
         
         embed.add_field(name="Comparison", value="\n".join(hints), inline=False)
         embed.add_field(name="Legend", value="🟩 = Correct | 🟨 = Partial | 🟥 = Wrong", inline=False)
