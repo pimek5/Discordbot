@@ -1360,39 +1360,35 @@ async def get_twitter_user_tweets(username):
                             # Convert Nitter URL to Twitter URL
                             twitter_url = f'https://twitter.com/{username}/status/{tweet_id}'
                             
-                            # Extract images from description HTML
+                            # Extract images from description HTML using BeautifulSoup
                             media_list = []
                             if description is not None and description.text:
                                 try:
-                                    from html.parser import HTMLParser
+                                    # Parse HTML content
+                                    desc_soup = BeautifulSoup(description.text, 'html.parser')
+                                    img_tags = desc_soup.find_all('img')
                                     
-                                    class ImageExtractor(HTMLParser):
-                                        def __init__(self):
-                                            super().__init__()
-                                            self.images = []
-                                        
-                                        def handle_starttag(self, tag, attrs):
-                                            if tag == 'img':
-                                                attrs_dict = dict(attrs)
-                                                if 'src' in attrs_dict:
-                                                    img_url = attrs_dict['src']
-                                                    # Convert Nitter image URLs to full URLs
-                                                    if img_url.startswith('/pic/'):
-                                                        img_url = f"https://{instance}{img_url}"
-                                                    self.images.append(img_url)
-                                    
-                                    parser = ImageExtractor()
-                                    parser.feed(description.text)
-                                    
-                                    if parser.images:
-                                        for img_url in parser.images:
-                                            media_list.append({
-                                                'type': 'photo',
-                                                'url': img_url
-                                            })
-                                        print(f"🖼️ Found {len(parser.images)} images in tweet {tweet_id}")
+                                    if img_tags:
+                                        for img in img_tags:
+                                            img_url = img.get('src', '')
+                                            if img_url:
+                                                # Convert Nitter image URLs to full URLs
+                                                if img_url.startswith('/pic/'):
+                                                    img_url = f"https://{instance}{img_url}"
+                                                elif img_url.startswith('//'):
+                                                    img_url = f"https:{img_url}"
+                                                
+                                                media_list.append({
+                                                    'type': 'photo',
+                                                    'url': img_url
+                                                })
+                                        print(f"🖼️ Found {len(img_tags)} images in tweet {tweet_id}")
+                                    else:
+                                        print(f"ℹ️ No images found in tweet {tweet_id}")
                                 except Exception as e:
                                     print(f"⚠️ Error parsing images from description: {e}")
+                                    import traceback
+                                    traceback.print_exc()
                             
                             tweet_obj = {
                                 'id': tweet_id,
