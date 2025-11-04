@@ -53,6 +53,20 @@ RUNEFORGE_ICON_URL = "https://avatars.githubusercontent.com/u/132106741?s=200&v=
 RUNEFORGE_CHECK_INTERVAL = 3600  # Check every hour (3600 seconds) - RuneForge mod tagging
 RUNEFORGE_TAG_ID = 1435096925144748062  # ID of the onRuneforge tag
 
+# Rich Presence Configuration
+RICH_PRESENCE_CONFIG = {
+    'state': 'discord.gg/hexrtbrxenchromas',
+    'details': 'Creating League of Legends mods',
+    'large_image': 'https://i.imgur.com/sjVSWi5.gif',
+    'large_text': 'HEXRTBRXEN CHROMAS',
+    'small_image': 'https://i.imgur.com/o3MkB9q.gif',
+    'small_text': 'Online',
+    'buttons': [
+        {'label': 'Join Discord Server', 'url': 'https://discord.gg/hexrtbrxenchromas'},
+        {'label': 'Follow my Twitter', 'url': 'https://x.com/p1mek'}
+    ]
+}
+
 # Store voting data: {message_id: {user_id: 'up' or 'down', 'upvotes': int, 'downvotes': int}}
 voting_data = {}
 
@@ -1947,12 +1961,118 @@ async def addtweet(interaction: discord.Interaction, tweet_id: str):
         await interaction.edit_original_response(content="💥 Error adding tweet:", embed=error_embed)
 
 # ================================
+#        RICH PRESENCE COMMANDS
+# ================================
+
+@bot.tree.command(name="setpresence", description="Update bot's rich presence/activity")
+@app_commands.describe(
+    details="Main activity text (e.g., 'Creating LoL mods')",
+    state="Secondary text (e.g., 'discord.gg/...')"
+)
+async def setpresence(interaction: discord.Interaction, details: str = None, state: str = None):
+    """Update the bot's rich presence"""
+    
+    # Check if user has admin permissions
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ You need administrator permissions to use this command.", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Update config if values provided
+        if details:
+            RICH_PRESENCE_CONFIG['details'] = details
+        if state:
+            RICH_PRESENCE_CONFIG['state'] = state
+        
+        # Update presence
+        await update_presence()
+        
+        embed = discord.Embed(
+            title="✅ Rich Presence Updated",
+            color=0x00FF00
+        )
+        embed.add_field(name="Details", value=RICH_PRESENCE_CONFIG.get('details', 'Not set'), inline=False)
+        embed.add_field(name="State", value=RICH_PRESENCE_CONFIG.get('state', 'Not set'), inline=False)
+        embed.set_footer(text="Changes will be visible in a few seconds")
+        
+        await interaction.edit_original_response(embed=embed)
+        
+    except Exception as e:
+        await interaction.edit_original_response(content=f"❌ Error updating presence: {e}")
+
+@bot.tree.command(name="showpresence", description="Show current rich presence configuration")
+async def showpresence(interaction: discord.Interaction):
+    """Show the current rich presence configuration"""
+    
+    config = RICH_PRESENCE_CONFIG
+    
+    embed = discord.Embed(
+        title="🎮 Current Rich Presence Configuration",
+        color=0x5865F2
+    )
+    
+    embed.add_field(name="Details (Line 1)", value=f"`{config.get('details', 'Not set')}`", inline=False)
+    embed.add_field(name="State (Line 2)", value=f"`{config.get('state', 'Not set')}`", inline=False)
+    
+    embed.add_field(name="Large Image", value=config.get('large_image', 'Not set'), inline=False)
+    embed.add_field(name="Large Image Text", value=f"`{config.get('large_text', 'Not set')}`", inline=True)
+    
+    embed.add_field(name="Small Image", value=config.get('small_image', 'Not set'), inline=False)
+    embed.add_field(name="Small Image Text", value=f"`{config.get('small_text', 'Not set')}`", inline=True)
+    
+    if config.get('buttons'):
+        buttons_text = ""
+        for i, btn in enumerate(config['buttons'], 1):
+            buttons_text += f"**{i}.** {btn['label']}\n    └─ {btn['url']}\n"
+        embed.add_field(name="🔘 Buttons", value=buttons_text, inline=False)
+    
+    embed.set_thumbnail(url=config.get('large_image', ''))
+    embed.set_footer(text="Note: Bot activities have limitations - buttons may not display properly")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# ================================
 #        OTHER EVENTS
 # ================================
+async def update_presence():
+    """Update bot's rich presence/activity"""
+    try:
+        config = RICH_PRESENCE_CONFIG
+        
+        # Create activity with streaming type to show buttons
+        activity = discord.Streaming(
+            name=config.get('details', 'League of Legends'),
+            url="https://www.twitch.tv/directory"  # Required for Streaming type
+        )
+        
+        # Set the activity
+        await bot.change_presence(
+            activity=activity,
+            status=discord.Status.online
+        )
+        
+        print(f"✅ Rich presence updated: {config.get('details')}")
+        print(f"   State: {config.get('state')}")
+        
+    except Exception as e:
+        print(f"❌ Error updating rich presence: {e}")
+
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     print('------')
+    
+    # Set rich presence
+    await update_presence()
+    
+    # Sync commands
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} command(s)")
+    except Exception as e:
+        print(f"⚠️ Failed to sync commands: {e}")
     
     # Start tweet monitoring
     if not check_for_new_tweets.is_running():
