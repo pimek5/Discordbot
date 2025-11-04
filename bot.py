@@ -1375,13 +1375,14 @@ async def get_twitter_user_tweets(username):
                                     # Parse HTML content
                                     desc_soup = BeautifulSoup(description.text, 'html.parser')
                                     
-                                    # Look for Twitter CDN image URLs in anchor tags (links)
-                                    # Nitter wraps images in <a href="TWITTER_CDN_URL"><img src="/pic/..."></a>
+                                    # Debug: print first 500 chars of description for first tweet
+                                    if not tweets:  # Only for first tweet to avoid spam
+                                        print(f"🔍 Description preview: {description.text[:500]}...")
+                                    
+                                    # Method 1: Look for Twitter CDN URLs in anchor tags
                                     for a_tag in desc_soup.find_all('a'):
                                         href = a_tag.get('href', '')
-                                        # Twitter CDN URLs contain 'pbs.twimg.com'
-                                        if 'pbs.twimg.com' in href:
-                                            # Ensure HTTPS
+                                        if 'pbs.twimg.com' in href or 'twimg.com/media' in href:
                                             if href.startswith('http://'):
                                                 href = href.replace('http://', 'https://', 1)
                                             elif not href.startswith('http'):
@@ -1392,28 +1393,50 @@ async def get_twitter_user_tweets(username):
                                                 'url': href
                                             })
                                     
-                                    # Fallback: if no Twitter CDN URLs found, try img tags
+                                    # Method 2: Look in img tags
                                     if not media_list:
-                                        img_tags = desc_soup.find_all('img')
-                                        for img in img_tags:
-                                            img_url = img.get('src', '')
-                                            if img_url and 'pbs.twimg.com' in img_url:
-                                                if img_url.startswith('http://'):
-                                                    img_url = img_url.replace('http://', 'https://', 1)
-                                                elif not img_url.startswith('http'):
-                                                    img_url = f"https://{img_url}" if not img_url.startswith('//') else f"https:{img_url}"
+                                        for img in desc_soup.find_all('img'):
+                                            src = img.get('src', '')
+                                            if 'pbs.twimg.com' in src or 'twimg.com/media' in src:
+                                                if src.startswith('http://'):
+                                                    src = src.replace('http://', 'https://', 1)
+                                                elif not src.startswith('http'):
+                                                    src = f"https://{src}" if not src.startswith('//') else f"https:{src}"
                                                 
                                                 media_list.append({
                                                     'type': 'photo',
-                                                    'url': img_url
+                                                    'url': src
                                                 })
                                     
+                                    # Method 3: Use Nitter proxy as last resort (convert to direct later)
+                                    if not media_list:
+                                        for img in desc_soup.find_all('img'):
+                                            src = img.get('src', '')
+                                            if src and '/pic/' in src:
+                                                # Build full Nitter URL
+                                                if src.startswith('/'):
+                                                    src = f"https://{instance}{src}"
+                                                elif src.startswith('http://'):
+                                                    src = src.replace('http://', 'https://', 1)
+                                                
+                                                # Try to extract filename and build Twitter CDN URL
+                                                # Nitter URLs: /pic/media%2FFILENAME or /pic/orig/media%2FFILENAME
+                                                import urllib.parse
+                                                if 'media%2F' in src:
+                                                    filename = src.split('media%2F')[-1].split('&')[0].split('?')[0]
+                                                    # Construct direct Twitter CDN URL
+                                                    twitter_img = f"https://pbs.twimg.com/media/{filename}"
+                                                    media_list.append({
+                                                        'type': 'photo',
+                                                        'url': twitter_img
+                                                    })
+                                    
                                     if media_list:
-                                        print(f"🖼️ Found {len(media_list)} Twitter CDN images in tweet {tweet_id}")
+                                        print(f"🖼️ Found {len(media_list)} images in tweet {tweet_id}")
                                         for idx, media in enumerate(media_list, 1):
                                             print(f"  📸 Image {idx}: {media['url']}")
                                     else:
-                                        print(f"ℹ️ No Twitter CDN images found in tweet {tweet_id}")
+                                        print(f"ℹ️ No images found in tweet {tweet_id}")
                                 except Exception as e:
                                     print(f"⚠️ Error parsing images from description: {e}")
                                     import traceback
