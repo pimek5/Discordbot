@@ -1,0 +1,2662 @@
+{
+  "Aatrox": {
+    "id": "Aatrox",
+    "name": "Aatrox",
+    "title": "the Darkin Blade",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Aatrox_0.jpg",
+    "emoji": "⚔️",
+    "tags": [
+      "Fighter"
+    ],
+    "quote": "\"Now, hear the silence of Annihilation\"",
+    "ability": {
+      "name": "Infernal Chains",
+      "description": "Aatrox smashes the ground, dealing damage to the first enemy hit. Champions and large monsters have to leave the impact area quickly or they will be dragged to the center and take the damage again."
+    }
+  },
+  "Ahri": {
+    "id": "Ahri",
+    "name": "Ahri",
+    "title": "the Nine-Tailed Fox",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Ahri_0.jpg",
+    "emoji": "🔮🗡️",
+    "tags": [
+      "Mage",
+      "Assassin"
+    ],
+    "quote": "\"A clever fox is never caught.\"",
+    "ability": {
+      "name": "Spirit Rush",
+      "description": "Ahri dashes forward and fires essence bolts, damaging nearby enemies. Spirit Rush can be cast up to three times before going on cooldown, and gains additional recasts when taking down enemy champions."
+    }
+  },
+  "Akali": {
+    "id": "Akali",
+    "name": "Akali",
+    "title": "the Rogue Assassin",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Akali_0.jpg",
+    "emoji": "🗡️",
+    "tags": [
+      "Assassin"
+    ],
+    "quote": "\"Fear the assassin with no master.\"",
+    "ability": {
+      "name": "Shuriken Flip",
+      "description": "Flip backward and fire a shuriken forward, dealing magic damage. The first enemy or smoke cloud hit is marked. Re-cast to dash to the marked target, dealing additional damage."
+    }
+  },
+  "Akshan": {
+    "id": "Akshan",
+    "name": "Akshan",
+    "title": "the Rogue Sentinel",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Akshan_0.jpg",
+    "emoji": "🏹🗡️",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "quote": "\"Fixing the world, one scoundrel at a time!\"",
+    "ability": {
+      "name": "Comeuppance",
+      "description": "Akshan locks onto an enemy champion and starts storing bullets. When released, he fires all stored bullets, dealing damage based on missing health to the first champion, minion, or structure hit."
+    }
+  },
+  "Alistar": {
+    "id": "Alistar",
+    "name": "Alistar",
+    "title": "the Minotaur",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Alistar_0.jpg",
+    "emoji": "🛡️💚",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "quote": "\"Nothing can hold me back!\"",
+    "ability": {
+      "name": "Unbreakable Will",
+      "description": "Alistar lets out a wild roar, removing all crowd control effects on himself, and reducing incoming physical and magical damage for the duration."
+    }
+  },
+  "Ambessa": {
+    "id": "Ambessa",
+    "name": "Ambessa",
+    "title": "Matriarch of War",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Ambessa_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "ability": {
+      "name": "Lacerate",
+      "description": "Ambessa whips her twin drakehounds around herself, damaging and slowing nearby enemies. Initiating Drakehound's Step from this ability causes her to strike a second time at the end of its dash."
+    }
+  },
+  "Amumu": {
+    "id": "Amumu",
+    "name": "Amumu",
+    "title": "the Sad Mummy",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Amumu_0.jpg",
+    "emoji": "🛡️💚",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "quote": "\"I thought you'd never pick me.\"",
+    "ability": {
+      "name": "Bandage Toss",
+      "description": "Amumu tosses a sticky bandage at a target, stunning and damaging the target while he pulls himself to them."
+    }
+  },
+  "Anivia": {
+    "id": "Anivia",
+    "name": "Anivia",
+    "title": "the Cryophoenix",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Anivia_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"Meaning, in every snowflake.\"",
+    "ability": {
+      "name": "Flash Frost",
+      "description": "Anivia brings her wings together and summons a sphere of ice that flies towards her opponents, chilling and damaging anyone in its path. When the sphere explodes it does moderate damage in a radius, stunning anyone in the area."
+    }
+  },
+  "Annie": {
+    "id": "Annie",
+    "name": "Annie",
+    "title": "the Dark Child",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Annie_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"You wanna play too? It'll be fun!\"",
+    "ability": {
+      "name": "Molten Shield",
+      "description": "Grants Annie or an ally a shield, a burst of Move Speed, and damages enemies who strike her with attacks or spells."
+    }
+  },
+  "Aphelios": {
+    "id": "Aphelios",
+    "name": "Aphelios",
+    "title": "the Weapon of the Faithful",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Aphelios_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "Main article: Voidborn",
+    "ability": {
+      "name": "Phase",
+      "description": "Aphelios swaps his main-hand gun with his off-hand gun, replacing his basic attack and activated ability."
+    }
+  },
+  "Ashe": {
+    "id": "Ashe",
+    "name": "Ashe",
+    "title": "the Frost Archer",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Ashe_0.jpg",
+    "emoji": "🏹💚",
+    "tags": [
+      "Marksman",
+      "Support"
+    ],
+    "quote": "\"All the world on one arrow.\"",
+    "ability": {
+      "name": "Hawkshot",
+      "description": "Ashe sends her Hawk Spirit on a scouting mission anywhere on the map."
+    }
+  },
+  "Aurelion Sol": {
+    "id": "AurelionSol",
+    "name": "Aurelion Sol",
+    "title": "The Star Forger",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/AurelionSol_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"In a constantly shifting cosmos, a world this static is... refreshing.\"",
+    "ability": {
+      "name": "Astral Flight",
+      "description": "Aurelion Sol flies over terrain in a targeted direction. While in this state, he can cast other abilities. Breath of Light no longer has a cooldown or maximum channel duration and deals increased damage while flying.<br><br>Astral Flight's remaining cooldown is reduced whenever an enemy champion dies after being recently damaged by Aurelion Sol.<br><br>Stardust increases Astral Flight's maximum range."
+    }
+  },
+  "Aurora": {
+    "id": "Aurora",
+    "name": "Aurora",
+    "title": "the Witch Between Worlds",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Aurora_0.jpg",
+    "emoji": "🔮🗡️",
+    "tags": [
+      "Mage",
+      "Assassin"
+    ],
+    "quote": "\"See with eyes unclouded.\"",
+    "ability": {
+      "name": "Between Worlds",
+      "description": "Aurora leaps in a direction of her choosing, releasing a shockwave that damages and slows any enemies it hits. Afterward, she creates an area that traps enemies within it and allows Aurora to teleport from one side of the area to the other."
+    }
+  },
+  "Azir": {
+    "id": "Azir",
+    "name": "Azir",
+    "title": "the Emperor of the Sands",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Azir_0.jpg",
+    "emoji": "🔮🏹",
+    "tags": [
+      "Mage",
+      "Marksman"
+    ],
+    "quote": "\"Shurima! Your emperor has returned!\"",
+    "ability": {
+      "name": "Conquering Sands",
+      "description": "Azir sends all Sand Soldiers towards a location. Sand Soldiers deal magic damage to enemies they pass through and apply a slow for 1 second."
+    }
+  },
+  "Bard": {
+    "id": "Bard",
+    "name": "Bard",
+    "title": "the Wandering Caretaker",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Bard_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "Bard lets a  Meep onto his shoulder and lets it run to and fro across his arms.",
+    "ability": {
+      "name": "Magical Journey",
+      "description": "Bard opens a portal in nearby terrain. Allies and enemies alike can take a one-way trip through that terrain by moving into the portal."
+    }
+  },
+  "Bel'Veth": {
+    "id": "Belveth",
+    "name": "Bel'Veth",
+    "title": "the Empress of the Void",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Belveth_0.jpg",
+    "emoji": "⚔️",
+    "tags": [
+      "Fighter"
+    ],
+    "quote": "\"I am the voice of the silence.\"",
+    "ability": {
+      "name": "Endless Banquet",
+      "description": "Bel'Veth consumes Void coral remnants, transforming into her true form and increasing her max health, attack range, attack speed, and out-of-combat move speed. Consuming the Void coral remnants of a Void epic monster will grant her a longer ultimate duration, as well as the power to summon Void remora."
+    }
+  },
+  "Blitzcrank": {
+    "id": "Blitzcrank",
+    "name": "Blitzcrank",
+    "title": "the Great Steam Golem",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Blitzcrank_0.jpg",
+    "emoji": "🛡️💚",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "quote": "\"Fired up and ready to serve.\"",
+    "ability": {
+      "name": "Rocket Grab",
+      "description": "Blitzcrank fires their right hand to grab an opponent on its path, dealing damage and dragging it back to them."
+    }
+  },
+  "Brand": {
+    "id": "Brand",
+    "name": "Brand",
+    "title": "the Burning Vengeance",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Brand_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"Ready to set the world on fire? Heheheh...\"",
+    "ability": {
+      "name": "Pillar of Flame",
+      "description": "After a short delay, Brand creates a Pillar of Flame at a target area, dealing magic damage to enemy units within the area. Units that are ablaze take an additional 25% damage."
+    }
+  },
+  "Braum": {
+    "id": "Braum",
+    "name": "Braum",
+    "title": "the Heart of the Freljord",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Braum_0.jpg",
+    "emoji": "🛡️💚",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "quote": "\"The heart is the strongest muscle.\"",
+    "ability": {
+      "name": "Stand Behind Me",
+      "description": "Braum leaps to a target allied champion or minion. On arrival, Braum and the ally gain Armor and Magic Resist for a few seconds."
+    }
+  },
+  "Briar": {
+    "id": "Briar",
+    "name": "Briar",
+    "title": "the Restrained Hunger",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Briar_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"Nice to meet you! I'm hungry. I mean... Briar!\"",
+    "ability": {
+      "name": "Chilling Scream",
+      "description": "Briar refocuses her mind, removing Blood Frenzy and channeling energy into a powerful scream that damages and slows enemies. While charging, she takes reduced damage and heals for a portion of her max Health. A fully charged scream knocks foes back, dealing additional damage and stunning those who collide with a wall."
+    }
+  },
+  "Caitlyn": {
+    "id": "Caitlyn",
+    "name": "Caitlyn",
+    "title": "the Sheriff of Piltover",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Caitlyn_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "\"Shall I turn in my badge and rifle as well?\"",
+    "ability": {
+      "name": "90 Caliber Net",
+      "description": "Caitlyn fires a heavy net to slow her target. The recoil knocks Caitlyn back."
+    }
+  },
+  "Camille": {
+    "id": "Camille",
+    "name": "Camille",
+    "title": "the Steel Shadow",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Camille_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"Precision is the difference between a butcher and a surgeon.\"",
+    "ability": {
+      "name": "Precision Protocol",
+      "description": "Camille's next attack deals bonus damage and grants bonus Move Speed. This spell can be recast for a short period of time, doing significantly increased bonus damage if Camille delays a period of time between the two attacks."
+    }
+  },
+  "Cassiopeia": {
+    "id": "Cassiopeia",
+    "name": "Cassiopeia",
+    "title": "the Serpent's Embrace",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Cassiopeia_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"There is no antidote for me.\"",
+    "ability": {
+      "name": "Petrifying Gaze",
+      "description": "Cassiopeia releases a swirl of magical energy from her eyes, stunning any enemies in front of her that are facing her and slowing any others with their back turned."
+    }
+  },
+  "Cho'Gath": {
+    "id": "Chogath",
+    "name": "Cho'Gath",
+    "title": "the Terror of the Void",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Chogath_0.jpg",
+    "emoji": "🛡️🔮",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "quote": "\"You'd wish the world you know to end! Yeeeesssss...\"",
+    "ability": {
+      "name": "Feast",
+      "description": "Devours an enemy unit, dealing a high amount of true damage. If the target is killed, Cho'Gath grows, gaining maximum Health."
+    }
+  },
+  "Corki": {
+    "id": "Corki",
+    "name": "Corki",
+    "title": "the Daring Bombardier",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Corki_0.jpg",
+    "emoji": "🏹🔮",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "quote": "\"I'm up to snuff, and gots me an ace machine!\"",
+    "ability": {
+      "name": "Phosphorus Bomb",
+      "description": "Corki fires a flash bomb at a target location, dealing magic damage to enemies in the area. This attack additionally reveals units in the area for a duration."
+    }
+  },
+  "Darius": {
+    "id": "Darius",
+    "name": "Darius",
+    "title": "the Hand of Noxus",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Darius_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"They will regret opposing me.\"",
+    "ability": {
+      "name": "Decimate",
+      "description": "Darius winds up and swings his axe in a wide circle. Enemies struck by the blade take more damage than those struck by the handle. Darius heals based on enemy champions and large monsters hit by the blade."
+    }
+  },
+  "Diana": {
+    "id": "Diana",
+    "name": "Diana",
+    "title": "Scorn of the Moon",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Diana_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"A new moon is rising.\"",
+    "ability": {
+      "name": "Moonfall",
+      "description": "Diana reveals and draws in all nearby enemies and slows them.<br><br>If Diana pulls in one or more enemy champions, the moonlight crashes down onto her after a short delay, dealing magic damage in an area around her, increased for each target beyond the first pulled."
+    }
+  },
+  "Draven": {
+    "id": "Draven",
+    "name": "Draven",
+    "title": "the Glorious Executioner",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Draven_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "\"Welcome to the League of Draven.\"",
+    "ability": {
+      "name": "Whirling Death",
+      "description": "Draven hurls two massive axes to deal physical damage to each unit struck. Whirling Death slowly reverses direction and returns to Draven after striking an enemy champion. Draven may also activate this ability while the axes are in flight to cause it to return early. Deals less damage for each unit hit and resets when the axes reverse direction. Executes enemies who have less health than Draven's number of Adoration stacks."
+    }
+  },
+  "Dr. Mundo": {
+    "id": "DrMundo",
+    "name": "Dr. Mundo",
+    "title": "the Madman of Zaun",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/DrMundo_0.jpg",
+    "emoji": "🛡️⚔️",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "quote": "Main article: Voidborn",
+    "ability": {
+      "name": "Blunt Force Trauma",
+      "description": "Passive - Dr. Mundo gains bonus Attack Damage, increasing based on his max Health.<br><br>Active - Dr. Mundo slams his “medical” bag into an enemy, dealing additional damage based on his missing Health. If the enemy dies they are swatted away, dealing damage to enemies they pass through."
+    }
+  },
+  "Ekko": {
+    "id": "Ekko",
+    "name": "Ekko",
+    "title": "the Boy Who Shattered Time",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Ekko_0.jpg",
+    "emoji": "🗡️🔮",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "quote": "\"It's not how much time you have, it's how you use it.\"",
+    "ability": {
+      "name": "Phase Dive",
+      "description": "Ekko rolls evasively while charging up his Z-Drive. His next attack deals bonus damage and warps reality, teleporting him to his target."
+    }
+  },
+  "Elise": {
+    "id": "Elise",
+    "name": "Elise",
+    "title": "the Spider Queen",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Elise_0.jpg",
+    "emoji": "🗡️🔮",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "quote": "\"Only the spider is safe in her web.\"",
+    "ability": {
+      "name": "Spider Form",
+      "description": "Transforms into a menacing spider, reducing her attack range in exchange for Move Speed, new abilities, and a Spiderling swarm that will attack her foes."
+    }
+  },
+  "Evelynn": {
+    "id": "Evelynn",
+    "name": "Evelynn",
+    "title": "Agony's Embrace",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Evelynn_0.jpg",
+    "emoji": "🗡️🔮",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "quote": "\"You know you want me.\"",
+    "ability": {
+      "name": "Allure",
+      "description": "Evelynn curses her target, causing her next attack or spell after a delay to charm her target and reduce their magic resist."
+    }
+  },
+  "Ezreal": {
+    "id": "Ezreal",
+    "name": "Ezreal",
+    "title": "the Prodigal Explorer",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Ezreal_0.jpg",
+    "emoji": "🏹🔮",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "quote": "\"Quest accepted! ...Wait, where are we going?\"",
+    "ability": {
+      "name": "Arcane Shift",
+      "description": "Ezreal teleports to a target nearby location and fires a homing bolt which strikes the nearest enemy unit. Prioritizes enemies stuck with Essence Flux."
+    }
+  },
+  "Fiddlesticks": {
+    "id": "Fiddlesticks",
+    "name": "Fiddlesticks",
+    "title": "the Ancient Fear",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Fiddlesticks_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "A stripped-down version of Star Guardian 2022's orchestral theme plays.",
+    "ability": {
+      "name": "Crowstorm",
+      "description": "A murder of crows flock wildly around Fiddlesticks, dealing damage per second to all enemy units in the area."
+    }
+  },
+  "Fiora": {
+    "id": "Fiora",
+    "name": "Fiora",
+    "title": "the Grand Duelist",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Fiora_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"I long for a worthy opponent.\"",
+    "ability": {
+      "name": "Riposte",
+      "description": "Fiora parries all incoming damage and disables for a short time, then stabs in a direction. This stab slows the first enemy champion hit, or stuns them if Fiora blocked an immobilizing effect with this ability."
+    }
+  },
+  "Fizz": {
+    "id": "Fizz",
+    "name": "Fizz",
+    "title": "the Tidal Trickster",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Fizz_0.jpg",
+    "emoji": "🗡️⚔️",
+    "tags": [
+      "Assassin",
+      "Fighter"
+    ],
+    "quote": "\"One jump ahead of you.\"",
+    "ability": {
+      "name": "Playful / Trickster",
+      "description": "Fizz hops into the air, landing gracefully upon his spear and becoming untargetable. From this position, Fizz can either slam the ground or choose to jump again before smashing back down."
+    }
+  },
+  "Galio": {
+    "id": "Galio",
+    "name": "Galio",
+    "title": "the Colossus",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Galio_0.jpg",
+    "emoji": "🛡️🔮",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "quote": "\"Time to make an impact!\"",
+    "ability": {
+      "name": "Winds of War",
+      "description": "Galio fires two windblasts that converge into a large tornado that deals damage over time."
+    }
+  },
+  "Gangplank": {
+    "id": "Gangplank",
+    "name": "Gangplank",
+    "title": "the Saltwater Scourge",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Gangplank_0.jpg",
+    "emoji": "⚔️",
+    "tags": [
+      "Fighter"
+    ],
+    "quote": "\"Neither the flames nor the depths could claim me.\"",
+    "ability": {
+      "name": "Remove Scurvy",
+      "description": "Eats citrus to cure crowd control effects and restore Health."
+    }
+  },
+  "Garen": {
+    "id": "Garen",
+    "name": "Garen",
+    "title": "The Might of Demacia",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Garen_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"My heart and sword always for Demacia.\"",
+    "ability": {
+      "name": "Demacian Justice",
+      "description": "Garen calls upon the might of Demacia to attempt to execute an enemy champion."
+    }
+  },
+  "Gnar": {
+    "id": "Gnar",
+    "name": "Gnar",
+    "title": "the Missing Link",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Gnar_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "Gnar drops upside down and playfully flaunts the skull he carries around.",
+    "ability": {
+      "name": "Boomerang Throw / Boulder Toss",
+      "description": "Gnar throws a boomerang that damages and slows enemies it hits before returning to him. If he catches the boomerang its cooldown is reduced.<br><br>Mega Gnar instead throws a boulder that stops on the first unit hit, damaging and slowing everything nearby. It can then be picked up to reduce the cooldown."
+    }
+  },
+  "Gragas": {
+    "id": "Gragas",
+    "name": "Gragas",
+    "title": "the Rabble Rouser",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Gragas_0.jpg",
+    "emoji": "⚔️🔮",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "quote": "\"If you're buying, I'm in!\"",
+    "ability": {
+      "name": "Explosive Cask",
+      "description": "Gragas hurls his cask to a location, dealing damage and knocking back enemies caught in the blast radius."
+    }
+  },
+  "Graves": {
+    "id": "Graves",
+    "name": "Graves",
+    "title": "the Outlaw",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Graves_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "\"I ain't got time to bleed.\"",
+    "ability": {
+      "name": "Smoke Screen",
+      "description": "Graves fires a smoke canister at the target area creating a cloud of smoke that reduces sight range. Enemies caught in the initial impact are dealt magic damage and have their Move Speed reduced briefly."
+    }
+  },
+  "Gwen": {
+    "id": "Gwen",
+    "name": "Gwen",
+    "title": "The Hallowed Seamstress",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Gwen_0.jpg",
+    "emoji": "⚔️",
+    "tags": [
+      "Fighter"
+    ],
+    "quote": "\"Head high, chin up, scissors ready!\"",
+    "ability": {
+      "name": "Skip 'n Slash",
+      "description": "Gwen dashes a short distance then gains Attack Speed, attack range, and magic damage <OnHit>On-Hit</OnHit> for a few seconds. If she hits an enemy during that time, this Ability's cooldown is partially refunded. "
+    }
+  },
+  "Hecarim": {
+    "id": "Hecarim",
+    "name": "Hecarim",
+    "title": "the Shadow of War",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Hecarim_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"Behold, the might of the Shadow Isles.\"",
+    "ability": {
+      "name": "Onslaught of Shadows",
+      "description": "Hecarim summons spectral riders and charges forward, dealing magic damage in a line. Hecarim creates a shockwave when he finishes his charge, causing nearby enemies to flee in terror."
+    }
+  },
+  "Heimerdinger": {
+    "id": "Heimerdinger",
+    "name": "Heimerdinger",
+    "title": "the Revered Inventor",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Heimerdinger_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"Indeed, a wise choice.\"",
+    "ability": {
+      "name": "CH-2 Electron Storm Grenade",
+      "description": "Heimerdinger lobs a grenade at a location, dealing damage to enemy units, as well as stunning anyone directly hit and slowing surrounding units."
+    }
+  },
+  "Hwei": {
+    "id": "Hwei",
+    "name": "Hwei",
+    "title": "the Visionary",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Hwei_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"A painter meets their subject eye to eye.\"",
+    "ability": {
+      "name": "Spiraling Despair",
+      "description": "Hwei paints a vision of pure despair. The first enemy champion struck becomes the center of an expanding painting that slows and damages nearby enemies. The vision explodes after reaching its maximum size or when the champion dies."
+    }
+  },
+  "Illaoi": {
+    "id": "Illaoi",
+    "name": "Illaoi",
+    "title": "the Kraken Priestess",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Illaoi_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"I'm not big on sermons—broken bones teach better lessons.\"",
+    "ability": {
+      "name": "Tentacle Smash",
+      "description": "Increases the damage dealt by Tentacles. When activated, Illaoi smashes down a Tentacle that deals physical damage."
+    }
+  },
+  "Irelia": {
+    "id": "Irelia",
+    "name": "Irelia",
+    "title": "the Blade Dancer",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Irelia_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"Fight for the First Lands!\"",
+    "ability": {
+      "name": "Defiant Dance",
+      "description": "Irelia charges a strike that deals more damage as she charges. She takes reduced physical damage during the charge."
+    }
+  },
+  "Ivern": {
+    "id": "Ivern",
+    "name": "Ivern",
+    "title": "the Green Father",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Ivern_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "\"My favorite color is spring.\"",
+    "ability": {
+      "name": "Brushmaker",
+      "description": "In brush, Ivern and his nearby allies attacks deal bonus magic damage. Ivern can activate this ability to create a patch of brush."
+    }
+  },
+  "Janna": {
+    "id": "Janna",
+    "name": "Janna",
+    "title": "the Storm's Fury",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Janna_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "\"The tempest is at your command.\"",
+    "ability": {
+      "name": "Eye Of The Storm",
+      "description": "Janna conjures a defensive gale that shields an ally champion or turret from incoming damage and increases their Attack Damage."
+    }
+  },
+  "Jarvan IV": {
+    "id": "JarvanIV",
+    "name": "Jarvan IV",
+    "title": "the Exemplar of Demacia",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/JarvanIV_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"By my will, this shall be finished.\"",
+    "ability": {
+      "name": "Dragon Strike",
+      "description": "Jarvan IV extends his lance, dealing physical damage and lowering the Armor of enemies in its path. Additionally, this will pull Jarvan to his Demacian Standard, knocking up enemies in his path."
+    }
+  },
+  "Jax": {
+    "id": "Jax",
+    "name": "Jax",
+    "title": "Grandmaster at Arms",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Jax_0.jpg",
+    "emoji": "⚔️",
+    "tags": [
+      "Fighter"
+    ],
+    "quote": "Jax yawns. \"Looks like I'll be carrying more than my own weight today.\"",
+    "ability": {
+      "name": "Leap Strike",
+      "description": "Jax leaps toward a unit. If they are an enemy, he strikes them with his weapon."
+    }
+  },
+  "Jayce": {
+    "id": "Jayce",
+    "name": "Jayce",
+    "title": "the Defender of Tomorrow",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Jayce_0.jpg",
+    "emoji": "🏹⚔️",
+    "tags": [
+      "Marksman",
+      "Fighter"
+    ],
+    "quote": "\"I fight for a brighter tomorrow.\"",
+    "ability": {
+      "name": "Thundering Blow / Acceleration Gate",
+      "description": "Hammer Stance: Deals magic damage to an enemy and knocks them back a short distance.<br><br>Cannon Stance: Deploys an Acceleration Gate increasing the Move Speed of all allied champions who pass through it. If Shock Blast is fired through the gate the missile speed, range, and damage will increase."
+    }
+  },
+  "Jhin": {
+    "id": "Jhin",
+    "name": "Jhin",
+    "title": "the Virtuoso",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Jhin_0.jpg",
+    "emoji": "🏹🔮",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "quote": "\"In carnage, I bloom, like a flower in the dawn.\"",
+    "ability": {
+      "name": "Curtain Call",
+      "description": "Jhin channels, transforming Whisper into a shoulder-mounted mega-cannon. It is able to fire 4 super shots at extreme range that pierce through minions and monsters, but stop on the first champion impacted. Whisper cripples enemies hit, which slows them and deals execute damage. The 4th shot is perfectly crafted, epically powerful, and guaranteed to critically strike."
+    }
+  },
+  "Jinx": {
+    "id": "Jinx",
+    "name": "Jinx",
+    "title": "the Loose Cannon",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Jinx_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "\"Rules are made to be broken... like buildings! Or people!\"",
+    "ability": {
+      "name": "Super Mega Death Rocket!",
+      "description": "Jinx fires a super rocket across the map that gains damage as it travels. The rocket will explode upon colliding with an enemy champion, dealing damage to it and surrounding enemies based on their missing Health."
+    }
+  },
+  "Kai'Sa": {
+    "id": "Kaisa",
+    "name": "Kai'Sa",
+    "title": "Daughter of the Void",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Kaisa_0.jpg",
+    "emoji": "🏹🔮",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "quote": "\"Are you the hunter... or the prey?\"",
+    "ability": {
+      "name": "Void Seeker",
+      "description": "Kai'Sa shoots a long range missile, marking enemies with her passive.<br><br>Living Weapon: Void Seeker is upgraded to apply more passive marks and reduce cooldown on champion hit."
+    }
+  },
+  "Kalista": {
+    "id": "Kalista",
+    "name": "Kalista",
+    "title": "the Spear of Vengeance",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Kalista_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "\"Death to all betrayers.\"",
+    "ability": {
+      "name": "Rend",
+      "description": "Attacks impale their targets with spears. Activate to rip the spears out, slowing and dealing escalating damage."
+    }
+  },
+  "Karma": {
+    "id": "Karma",
+    "name": "Karma",
+    "title": "the Enlightened One",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Karma_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"Always trust your spirit.\"",
+    "ability": {
+      "name": "Inspire",
+      "description": "Karma summons a protective shield that absorbs incoming damage and increases the Move Speed of the protected ally.<br><br>Mantra Bonus: Energy radiates out from her target, strengthening the initial shield and applying Inspire to nearby allied champions."
+    }
+  },
+  "Karthus": {
+    "id": "Karthus",
+    "name": "Karthus",
+    "title": "the Deathsinger",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Karthus_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"Agony, ecstasy, peace. Every passing has a beauty all its own.\"",
+    "ability": {
+      "name": "Wall of Pain",
+      "description": "Karthus creates a passable screen of leeching energy. Any enemy units that walk through the screen have their Move Speed and Magic Resist reduced for a period."
+    }
+  },
+  "Kassadin": {
+    "id": "Kassadin",
+    "name": "Kassadin",
+    "title": "the Void Walker",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Kassadin_0.jpg",
+    "emoji": "🗡️🔮",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "quote": "\"The balance of power must be preserved.\"",
+    "ability": {
+      "name": "Force Pulse",
+      "description": "Kassadin draws energy from spells cast in his vicinity. Upon charging up, Kassadin can use Force Pulse to damage and slow enemies in a cone in front of him."
+    }
+  },
+  "Katarina": {
+    "id": "Katarina",
+    "name": "Katarina",
+    "title": "the Sinister Blade",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Katarina_0.jpg",
+    "emoji": "🗡️🔮",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "quote": "\"Violence solves everything.\"",
+    "ability": {
+      "name": "Preparation",
+      "description": "Katarina gains a burst of Move Speed, tossing a <font color='#FFF673'>Dagger</font> into the air directly above herself."
+    }
+  },
+  "Kayle": {
+    "id": "Kayle",
+    "name": "Kayle",
+    "title": "the Righteous",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Kayle_0.jpg",
+    "emoji": "🔮🏹",
+    "tags": [
+      "Mage",
+      "Marksman"
+    ],
+    "quote": "\"They shall tremble at my perfection.\"",
+    "ability": {
+      "name": "Divine Judgment",
+      "description": "Kayle makes an ally invulnerable and calls upon former Aspects of Justice to purify the area around her target with a holy rain of swords."
+    }
+  },
+  "Kayn": {
+    "id": "Kayn",
+    "name": "Kayn",
+    "title": "the Shadow Reaper",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Kayn_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"Will you prove worthy?\"",
+    "ability": {
+      "name": "Umbral Trespass",
+      "description": "Kayn hides in an enemy's body, dealing massive damage when he bursts out."
+    }
+  },
+  "Kennen": {
+    "id": "Kennen",
+    "name": "Kennen",
+    "title": "the Heart of the Tempest",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Kennen_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"The eyes never lie.\"",
+    "ability": {
+      "name": "Electrical Surge",
+      "description": "Kennen passively deals extra damage and adds a Mark of the Storm to his target every few attacks, and he can activate this ability to damage and add another Mark of the Storm to targets who are already marked."
+    }
+  },
+  "Kha'Zix": {
+    "id": "Khazix",
+    "name": "Kha'Zix",
+    "title": "the Voidreaver",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Khazix_0.jpg",
+    "emoji": "🗡️",
+    "tags": [
+      "Assassin"
+    ],
+    "quote": "\"Position for ambush.\"",
+    "ability": {
+      "name": "Void Assault",
+      "description": "Each rank allows Kha'Zix to evolve one of his abilities, giving it a unique additional effect. When activated, Kha'Zix becomes <font color='#91d7ee'>Invisible</font>, triggering Unseen Threat and increasing Move Speed. If he chooses to <font color='#00DD33'>Evolve Adaptive Cloaking</font>, Void Assault gains increased <font color='#91d7ee'>Invisibility</font> duration, and an additional use."
+    }
+  },
+  "Kindred": {
+    "id": "Kindred",
+    "name": "Kindred",
+    "title": "The Eternal Hunters",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Kindred_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "\"...without the other.\"",
+    "ability": {
+      "name": "Mounting Dread",
+      "description": "Lamb fires a carefully placed shot, slowing the target. If Lamb attacks the target two more times, her third attack instead directs Wolf to pounce on the enemy, savaging them for massive damage."
+    }
+  },
+  "Kled": {
+    "id": "Kled",
+    "name": "Kled",
+    "title": "the Cantankerous Cavalier",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Kled_0.jpg",
+    "emoji": "⚔️",
+    "tags": [
+      "Fighter"
+    ],
+    "quote": "\"I find courage unpredictable. It's total insanity you can rely on!\"",
+    "ability": {
+      "name": "Violent Tendencies",
+      "description": "Kled gains massive attack speed for four attacks. The fourth attack deals more damage."
+    }
+  },
+  "Kog'Maw": {
+    "id": "KogMaw",
+    "name": "Kog'Maw",
+    "title": "the Mouth of the Abyss",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/KogMaw_0.jpg",
+    "emoji": "🏹🔮",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "quote": "\"Hungry never sleep.\"",
+    "ability": {
+      "name": "Living Artillery",
+      "description": "Kog'Maw fires an artillery shell at a great distance dealing magic damage (increased significantly on low health enemies) and revealing non-stealthed targets. Additionally, multiple Living Artilleries in a short period of time cause them to cost additional Mana."
+    }
+  },
+  "K'Sante": {
+    "id": "KSante",
+    "name": "K'Sante",
+    "title": "the Pride of Nazumah",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/KSante_0.jpg",
+    "emoji": "🛡️⚔️",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "quote": "\"Better to fight, than to live in fear.\"",
+    "ability": {
+      "name": "All Out",
+      "description": "K'Sante knocks an enemy back, launching them through any wall in their path. Then, K'Sante goes All Out and dashes after them, gaining increased damage, healing, and transformed abilities at the cost of reduced defenses."
+    }
+  },
+  "LeBlanc": {
+    "id": "Leblanc",
+    "name": "LeBlanc",
+    "title": "the Deceiver",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Leblanc_0.jpg",
+    "emoji": "🗡️🔮",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "quote": "\"The Black Rose shall bloom once more.\"",
+    "ability": {
+      "name": "Distortion",
+      "description": "LeBlanc dashes to a location, dealing damage to enemies near her destination. For the next 4 seconds, activate Distortion again to return LeBlanc to her starting location."
+    }
+  },
+  "Lee Sin": {
+    "id": "LeeSin",
+    "name": "Lee Sin",
+    "title": "the Blind Monk",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/LeeSin_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"Your will, my hands.\"",
+    "ability": {
+      "name": "Safeguard / Iron Will",
+      "description": "Safeguard: Lee Sin rushes to target ally, shielding himself from damage. If the ally is a champion, they are also shielded. After using Safeguard, Lee Sin can cast Iron Will.<br>Iron Will: Lee Sin's intense training allows him to thrive in battle. Lee Sin gains Life Steal and Spell Vamp."
+    }
+  },
+  "Leona": {
+    "id": "Leona",
+    "name": "Leona",
+    "title": "the Radiant Dawn",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Leona_0.jpg",
+    "emoji": "🛡️💚",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "quote": "\"The dawn has arrived.\"",
+    "ability": {
+      "name": "Solar Flare",
+      "description": "Leona calls down a beam of solar energy, dealing damage to enemies in an area. Enemies in the center of the area are stunned, while enemies on the outside are slowed."
+    }
+  },
+  "Lillia": {
+    "id": "Lillia",
+    "name": "Lillia",
+    "title": "the Bashful Bloom",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Lillia_0.jpg",
+    "emoji": "⚔️🔮",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "quote": "\"Me? A dream come true.\"",
+    "ability": {
+      "name": "Blooming Blows",
+      "description": "Passively, Lillia gains stacking Move Speed when hitting enemies with spells. She can activate this to deal magic damage to nearby enemies, dealing extra true damage on the edge."
+    }
+  },
+  "Lissandra": {
+    "id": "Lissandra",
+    "name": "Lissandra",
+    "title": "the Ice Witch",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Lissandra_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"I will bury the world in ice.\"",
+    "ability": {
+      "name": "Frozen Tomb",
+      "description": "If cast on an enemy champion, the target is frozen solid, stunning it. If cast on Lissandra, she encases herself in dark ice, healing herself while becoming untargetable and invulnerable. Dark ice then emanates from the target dealing magic damage to enemies and slowing Move Speed."
+    }
+  },
+  "Lucian": {
+    "id": "Lucian",
+    "name": "Lucian",
+    "title": "the Purifier",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Lucian_0.jpg",
+    "emoji": "🏹🗡️",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "quote": "\"Everybody dies. Some just need a little help.\"",
+    "ability": {
+      "name": "Piercing Light",
+      "description": "Lucian shoots a bolt of piercing light through a target."
+    }
+  },
+  "Lulu": {
+    "id": "Lulu",
+    "name": "Lulu",
+    "title": "the Fae Sorceress",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Lulu_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "\"Pleased to meet you!\"",
+    "ability": {
+      "name": "Help, Pix!",
+      "description": "If cast on an ally, commands Pix to jump to an ally and shield them. He then follows them and aids their attacks. If cast on an enemy, commands Pix to jump to an enemy and damage them. He then follows them and grants you vision of that enemy."
+    }
+  },
+  "Lux": {
+    "id": "Lux",
+    "name": "Lux",
+    "title": "the Lady of Luminosity",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Lux_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"But all my light puns would've brightened your day.\"",
+    "ability": {
+      "name": "Prismatic Barrier",
+      "description": "Lux throws her wand and bends the light around any friendly target it touches, protecting them from enemy damage."
+    }
+  },
+  "Malphite": {
+    "id": "Malphite",
+    "name": "Malphite",
+    "title": "Shard of the Monolith",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Malphite_0.jpg",
+    "emoji": "🛡️🔮",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "quote": "\"I'm moving as fast as I can.\"",
+    "ability": {
+      "name": "Thunderclap",
+      "description": "Malphite attacks with such force that it creates a sonic boom. For the next few seconds, his attacks create aftershocks in front of him."
+    }
+  },
+  "Malzahar": {
+    "id": "Malzahar",
+    "name": "Malzahar",
+    "title": "the Prophet of the Void",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Malzahar_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"Second sight ordains it.\"",
+    "ability": {
+      "name": "Call of the Void",
+      "description": "Malzahar opens up two portals to the Void. After a short delay, they fire projectiles that deal Magic Damage and silence enemy champions."
+    }
+  },
+  "Maokai": {
+    "id": "Maokai",
+    "name": "Maokai",
+    "title": "the Twisted Treant",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Maokai_0.jpg",
+    "emoji": "🛡️💚",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "quote": "\"The Isles will bloom again!\"",
+    "ability": {
+      "name": "Sapling Toss",
+      "description": "Maokai flings a sapling to the target area to stand guard. More effective in brush."
+    }
+  },
+  "Master Yi": {
+    "id": "MasterYi",
+    "name": "Master Yi",
+    "title": "the Wuju Bladesman",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/MasterYi_0.jpg",
+    "emoji": "🗡️⚔️",
+    "tags": [
+      "Assassin",
+      "Fighter"
+    ],
+    "quote": "\"Doubt is the greatest enemy.\"",
+    "ability": {
+      "name": "Wuju Style",
+      "description": "Grants bonus true damage on basic attacks."
+    }
+  },
+  "Milio": {
+    "id": "Milio",
+    "name": "Milio",
+    "title": "The Gentle Flame",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Milio_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "\"Stick with me! I'll keep you warm.\" Fuemigo cheers.",
+    "ability": {
+      "name": "Warm Hugs",
+      "description": "Milio tosses a shield to an ally, temporarily increasing their movement speed. This ability has 2 charges."
+    }
+  },
+  "Miss Fortune": {
+    "id": "MissFortune",
+    "name": "Miss Fortune",
+    "title": "the Bounty Hunter",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/MissFortune_0.jpg",
+    "emoji": "🏹🔮",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "quote": "\"Fortune doesn't favor fools.\"",
+    "ability": {
+      "name": "Strut",
+      "description": "Miss Fortune passively gains Move Speed when not attacked. This ability can be activated to grant bonus Attack Speed for a short duration. While it's on cooldown, Love Taps reduce the remaining cooldown of Strut."
+    }
+  },
+  "Wukong": {
+    "id": "MonkeyKing",
+    "name": "Wukong",
+    "title": "the Monkey King",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/MonkeyKing_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"I will be the best.\"",
+    "ability": {
+      "name": "Cyclone",
+      "description": "Wukong's extends his staff and spins it around repeatedly, gaining Move Speed.<br><br>Enemies struck take damage and are knocked up."
+    }
+  },
+  "Mordekaiser": {
+    "id": "Mordekaiser",
+    "name": "Mordekaiser",
+    "title": "the Iron Revenant",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Mordekaiser_0.jpg",
+    "emoji": "⚔️🔮",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "quote": "\"Destiny. Domination. Deceit.\"",
+    "ability": {
+      "name": "Death's Grasp",
+      "description": "Mordekaiser pulls all enemies in an area."
+    }
+  },
+  "Morgana": {
+    "id": "Morgana",
+    "name": "Morgana",
+    "title": "the Fallen",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Morgana_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"I am bound, but I will not break.\"",
+    "ability": {
+      "name": "Black Shield",
+      "description": "Morgana anoints an ally with a protective barrier of starfire, which absorbs magical damage and disabling effects until it is broken."
+    }
+  },
+  "Naafiri": {
+    "id": "Naafiri",
+    "name": "Naafiri",
+    "title": "the Hound of a Hundred Bites",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Naafiri_0.jpg",
+    "emoji": "🗡️⚔️",
+    "tags": [
+      "Assassin",
+      "Fighter"
+    ],
+    "quote": "\"We won't be muzzled.\"",
+    "ability": {
+      "name": "Eviscerate",
+      "description": "Naafiri dashes and damages enemies in an area around her, recalling her packmates and fully healing them."
+    }
+  },
+  "Nami": {
+    "id": "Nami",
+    "name": "Nami",
+    "title": "the Tidecaller",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Nami_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "\"I decide what the tide will bring.\"",
+    "ability": {
+      "name": "Tidal Wave",
+      "description": "Summons a massive Tidal Wave that knocks up, slows, and damages enemies. Allies hit gain double the effect of Surging Tides."
+    }
+  },
+  "Nasus": {
+    "id": "Nasus",
+    "name": "Nasus",
+    "title": "the Curator of the Sands",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Nasus_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"The cycle of life and death continues,we will live,they will die.\"",
+    "ability": {
+      "name": "Wither",
+      "description": "Nasus ages an enemy champion, decelerating their Move Speed and Attack Speed over time."
+    }
+  },
+  "Nautilus": {
+    "id": "Nautilus",
+    "name": "Nautilus",
+    "title": "the Titan of the Depths",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Nautilus_0.jpg",
+    "emoji": "🛡️💚",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "quote": "\"Do you hear them calling?\"",
+    "ability": {
+      "name": "Depth Charge",
+      "description": "Nautilus fires a shockwave into the earth that chases an opponent. This shockwave rips up the earth above it, knocking enemies into the air. When it reaches the opponent, the shockwave erupts, knocking his target into the air and stunning them."
+    }
+  },
+  "Neeko": {
+    "id": "Neeko",
+    "name": "Neeko",
+    "title": "the Curious Chameleon",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Neeko_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"Neeko is best decision!\"",
+    "ability": {
+      "name": "Pop Blossom",
+      "description": "After a short preparation, Neeko leaps into the air. Upon landing, nearby enemies are damaged and knocked up. The preparation is hidden if Neeko is disguised."
+    }
+  },
+  "Nidalee": {
+    "id": "Nidalee",
+    "name": "Nidalee",
+    "title": "the Bestial Huntress",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Nidalee_0.jpg",
+    "emoji": "🗡️🔮",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "quote": "\"The wild calls. I answer.\"",
+    "ability": {
+      "name": "Primal Surge / Swipe",
+      "description": "In human form, Nidalee channels the spirit of the cougar to heal her allies and imbue them with Attack Speed for a short duration. As a cougar, she claws in a direction, dealing damage to enemies in front of her."
+    }
+  },
+  "Nilah": {
+    "id": "Nilah",
+    "name": "Nilah",
+    "title": "the Joy Unbound",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Nilah_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"Joy, unceasing and forever!\"",
+    "ability": {
+      "name": "Slipstream",
+      "description": "Nilah enthusiastically dashes toward her target, dealing damage to any enemies she passes through on the way."
+    }
+  },
+  "Nocturne": {
+    "id": "Nocturne",
+    "name": "Nocturne",
+    "title": "the Eternal Nightmare",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Nocturne_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"Embrace the darkness.\"",
+    "ability": {
+      "name": "Shroud of Darkness",
+      "description": "Nocturne empowers his blades, passively gaining Attack Speed. Activating Shroud of Darkness allows Nocturne to fade into the shadows, creating a magical barrier which blocks a single enemy ability and doubles his passive Attack Speed if successful."
+    }
+  },
+  "Nunu & Willump": {
+    "id": "Nunu",
+    "name": "Nunu & Willump",
+    "title": "the Boy and His Yeti",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Nunu_0.jpg",
+    "emoji": "🛡️🔮",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "ability": {
+      "name": "Consume",
+      "description": "Willump takes a bite out of a minion, monster, or enemy champion, dealing damage and healing himself."
+    }
+  },
+  "Olaf": {
+    "id": "Olaf",
+    "name": "Olaf",
+    "title": "the Berserker",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Olaf_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"Leave nothing behind!\"",
+    "ability": {
+      "name": "Tough It Out",
+      "description": "Olaf's Attack Speed is increased and he gains a Shield."
+    }
+  },
+  "Orianna": {
+    "id": "Orianna",
+    "name": "Orianna",
+    "title": "the Lady of Clockwork",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Orianna_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"We will kill your enemies. That will be fun.\"",
+    "ability": {
+      "name": "Command: Attack",
+      "description": "Orianna commands her Ball to fire toward a target location, dealing magic damage to targets along the way (deals less damage to subsequent targets). Her Ball remains at the target location after."
+    }
+  },
+  "Ornn": {
+    "id": "Ornn",
+    "name": "Ornn",
+    "title": "The Fire below the Mountain",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Ornn_0.jpg",
+    "emoji": "🛡️",
+    "tags": [
+      "Tank"
+    ],
+    "quote": "\"I have fur. It is soft. Do not hug me.\"",
+    "ability": {
+      "name": "Volcanic Rupture",
+      "description": "Ornn slams the ground, sending out a fissure dealing damage and slowing enemies hit. After a small delay, a magma pillar forms at the end location."
+    }
+  },
+  "Pantheon": {
+    "id": "Pantheon",
+    "name": "Pantheon",
+    "title": "the Unbreakable Spear",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Pantheon_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"In battle, we are reborn.\"",
+    "ability": {
+      "name": "Grand Starfall",
+      "description": "Pantheon composes himself and then leaps into the air, landing at a chosen location as a comet."
+    }
+  },
+  "Poppy": {
+    "id": "Poppy",
+    "name": "Poppy",
+    "title": "Keeper of the Hammer",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Poppy_0.jpg",
+    "emoji": "🛡️⚔️",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "quote": "\"I'm no hero—just a Yordle with a hammer.\"",
+    "ability": {
+      "name": "Steadfast Presence",
+      "description": "Poppy passively gains Armor and Magic Resist. This bonus increases when she is low on Health. Poppy can activate Steadfast Presence to gain Move Speed and stop enemy dashes around her. If a dash is stopped, the enemy is slowed and grounded."
+    }
+  },
+  "Pyke": {
+    "id": "Pyke",
+    "name": "Pyke",
+    "title": "the Bloodharbor Ripper",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Pyke_0.jpg",
+    "emoji": "💚🗡️",
+    "tags": [
+      "Support",
+      "Assassin"
+    ],
+    "quote": "\"My list just got longer.\"",
+    "ability": {
+      "name": "Bone Skewer",
+      "description": "Pyke either stabs an enemy in front of him or pulls an enemy towards him."
+    }
+  },
+  "Qiyana": {
+    "id": "Qiyana",
+    "name": "Qiyana",
+    "title": "Empress of the Elements",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Qiyana_0.jpg",
+    "emoji": "🗡️",
+    "tags": [
+      "Assassin"
+    ],
+    "quote": "\"You may now appreciate me.\"",
+    "ability": {
+      "name": "Elemental Wrath / Edge of Ixtal",
+      "description": "Qiyana swings her weapon, dealing damage with a bonus effect based on her element."
+    }
+  },
+  "Quinn": {
+    "id": "Quinn",
+    "name": "Quinn",
+    "title": "Demacia's Wings",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Quinn_0.jpg",
+    "emoji": "🏹🗡️",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "quote": "\"Justice takes wing.\"",
+    "ability": {
+      "name": "Heightened Senses",
+      "description": "Passively grants Quinn Attack Speed and Move Speed after she attacks a <font color='#FFF673'>Vulnerable</font> target. Activate to have Valor reveal a large area nearby."
+    }
+  },
+  "Rakan": {
+    "id": "Rakan",
+    "name": "Rakan",
+    "title": "The Charmer",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Rakan_0.jpg",
+    "emoji": "💚",
+    "tags": [
+      "Support"
+    ],
+    "quote": "\"Seriously? Seriously? Lame.\"",
+    "ability": {
+      "name": "Gleaming Quill",
+      "description": "Flings a magical feather that deals magic damage. Striking a champion or epic monster enables Rakan to heal his allies."
+    }
+  },
+  "Rammus": {
+    "id": "Rammus",
+    "name": "Rammus",
+    "title": "the Armordillo",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Rammus_0.jpg",
+    "emoji": "🛡️",
+    "tags": [
+      "Tank"
+    ],
+    "quote": "The voice-over for  Durian Defender Rammus is not available as unique set of audio files (the audio is directly pitched in-game from the base voice-over by the audio engine).",
+    "ability": {
+      "name": "Defensive Ball Curl",
+      "description": "Rammus goes into a defensive formation, vastly increasing his Armor and Magic Resistance, amplifying Spiked Shells' damage, and returning damage to enemies that basic attack him."
+    }
+  },
+  "Rek'Sai": {
+    "id": "RekSai",
+    "name": "Rek'Sai",
+    "title": "the Void Burrower",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/RekSai_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "Menacing music plays.",
+    "ability": {
+      "name": "Void Rush",
+      "description": "Rek'Sai passively marks targets by damaging them. She can activate this ability to become briefly untargetable and lunge at a marked target for heavy damage based on their missing health."
+    }
+  },
+  "Rell": {
+    "id": "Rell",
+    "name": "Rell",
+    "title": "the Iron Maiden",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Rell_0.jpg",
+    "emoji": "🛡️💚",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "quote": "\"Nothing gets in, no one gets out.\"",
+    "ability": {
+      "name": "Ferromancy: Crash Down",
+      "description": "Mounted: Rell Dismounts, crashing down in her armor, Knocking enemies up and gaining a large Shield. While dismounted, she gains Armor, Magic Resist, Attack Speed, and Attack Range, but is Slowed.<br><br>Dismounted: Rell forms her Mount, gaining a burst of speed and Knocking Up the next enemy she attacks.<br><br>"
+    }
+  },
+  "Renata Glasc": {
+    "id": "Renata",
+    "name": "Renata Glasc",
+    "title": "the Chem-Baroness",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Renata_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "\"It's 'Miss Glasc'... if you value your life.\"",
+    "ability": {
+      "name": "Handshake",
+      "description": "Renata sends out a missile rooting the first enemy hit, and can recast the ability to throw the unit in a direction."
+    }
+  },
+  "Renekton": {
+    "id": "Renekton",
+    "name": "Renekton",
+    "title": "the Butcher of the Sands",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Renekton_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"As I live, all will die!\"",
+    "ability": {
+      "name": "Slice and Dice",
+      "description": "Renekton dashes, dealing damage to units along the way. Empowered, Renekton deals bonus damage and reduces the Armor of units hit."
+    }
+  },
+  "Rengar": {
+    "id": "Rengar",
+    "name": "Rengar",
+    "title": "the Pridestalker",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Rengar_0.jpg",
+    "emoji": "🗡️⚔️",
+    "tags": [
+      "Assassin",
+      "Fighter"
+    ],
+    "quote": "\"A true hunter never rests.\"",
+    "ability": {
+      "name": "Savagery",
+      "description": "Rengar's next Attack brutally stabs his target for bonus damage.<br><br>Ferocity effect: deals increased damage and grants Attack Speed."
+    }
+  },
+  "Riven": {
+    "id": "Riven",
+    "name": "Riven",
+    "title": "the Exile",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Riven_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"What is broken can be reforged.\"",
+    "ability": {
+      "name": "Valor",
+      "description": "Riven steps forward a short distance and blocks incoming damage."
+    }
+  },
+  "Rumble": {
+    "id": "Rumble",
+    "name": "Rumble",
+    "title": "the Mechanized Menace",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Rumble_0.jpg",
+    "emoji": "⚔️🔮",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "quote": "\"Let's get in the fight!\"",
+    "ability": {
+      "name": "Flamespitter",
+      "description": "Rumble torches opponents in front of him, dealing magic damage in a cone for 3 seconds. While in Danger Zone this damage is increased."
+    }
+  },
+  "Ryze": {
+    "id": "Ryze",
+    "name": "Ryze",
+    "title": "the Rune Mage",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Ryze_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"A step ahead of cataclysm.\"",
+    "ability": {
+      "name": "Realm Warp",
+      "description": "Passively, Overload deals even more damage against targets with Flux.<br><br>On cast, Ryze creates a portal to a nearby location. After a few seconds, allies standing near the portal are teleported to the target location."
+    }
+  },
+  "Samira": {
+    "id": "Samira",
+    "name": "Samira",
+    "title": "the Desert Rose",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Samira_0.jpg",
+    "emoji": "🏹🗡️",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "quote": "\"You want style? You've found her.\"",
+    "ability": {
+      "name": "Inferno Trigger",
+      "description": "Samira unleashes a torrent of shots from her weapons, wildly shooting all enemies surrounding her."
+    }
+  },
+  "Sejuani": {
+    "id": "Sejuani",
+    "name": "Sejuani",
+    "title": "Fury of the North",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Sejuani_0.jpg",
+    "emoji": "🛡️",
+    "tags": [
+      "Tank"
+    ],
+    "quote": "\"Trust nothing but your strength.\"",
+    "ability": {
+      "name": "Glacial Prison",
+      "description": "Sejuani throws her bola that freezes and stuns the first champion hit and creates an ice storm that slows other enemies."
+    }
+  },
+  "Senna": {
+    "id": "Senna",
+    "name": "Senna",
+    "title": "the Redeemer",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Senna_0.jpg",
+    "emoji": "💚🏹",
+    "tags": [
+      "Support",
+      "Marksman"
+    ],
+    "quote": "\"No one fights alone in the Mist.\"",
+    "ability": {
+      "name": "Dawning Shadow",
+      "description": "Senna calls upon the relic stones of fallen Sentinels, splitting her relic cannon into a holy array of shadow and light. She then fires a global beam that shields allies from harm, while damaging enemies caught in the center."
+    }
+  },
+  "Seraphine": {
+    "id": "Seraphine",
+    "name": "Seraphine",
+    "title": "the Starry-Eyed Songstress",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Seraphine_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "ability": {
+      "name": "Surround Sound",
+      "description": "Seraphine Shields and Hastes nearby allies. If she is already Shielded she will Heal nearby allies as well."
+    }
+  },
+  "Sett": {
+    "id": "Sett",
+    "name": "Sett",
+    "title": "the Boss",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Sett_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"'Ey, never pick a fight you can't win.\"",
+    "ability": {
+      "name": "Haymaker",
+      "description": "Sett passively stores damage he takes as Grit. On cast, Sett expends all stored Grit to gain a shield and punch an area, dealing true damage in the center and physical damage on the sides."
+    }
+  },
+  "Shaco": {
+    "id": "Shaco",
+    "name": "Shaco",
+    "title": "the Demon Jester",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Shaco_0.jpg",
+    "emoji": "🗡️",
+    "tags": [
+      "Assassin"
+    ],
+    "quote": "\"How about a magic trick?\"",
+    "ability": {
+      "name": "Hallucinate",
+      "description": "Shaco creates an illusion of himself near him, which can attack nearby enemies (Deals reduced damage to turrets).  Upon death, it explodes, spawning three mini Jack in the Boxes and dealing damage to nearby enemies."
+    }
+  },
+  "Shen": {
+    "id": "Shen",
+    "name": "Shen",
+    "title": "the Eye of Twilight",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Shen_0.jpg",
+    "emoji": "🛡️",
+    "tags": [
+      "Tank"
+    ],
+    "quote": "\"A demonstration of superior judgement.\"",
+    "ability": {
+      "name": "Shadow Dash",
+      "description": "Shen dashes in a direction, taunting enemies in his path."
+    }
+  },
+  "Shyvana": {
+    "id": "Shyvana",
+    "name": "Shyvana",
+    "title": "the Half-Dragon",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Shyvana_0.jpg",
+    "emoji": "⚔️🔮",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "quote": "\"They are nothing before me.\"",
+    "ability": {
+      "name": "Flame Breath",
+      "description": "Shyvana unleashes a fireball that deals damage to all enemies it encounters and leaves cinders on the target, marking them for 5 seconds. Shyvana's basic attacks on marked targets deal a percentage of their maximum Health as damage on-hit.<br><br><font color='#FF3300'>Dragon Form: </font>Flame Breath explodes on impact or at target location, dealing bonus damage and scorching the earth for a short duration."
+    }
+  },
+  "Singed": {
+    "id": "Singed",
+    "name": "Singed",
+    "title": "the Mad Chemist",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Singed_0.jpg",
+    "emoji": "🛡️🔮",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "quote": "\"Mix, mix, swirl, mix.\"",
+    "ability": {
+      "name": "Mega Adhesive",
+      "description": "Throws a vial of mega adhesive on the ground, slowing and grounding enemies who walk on it."
+    }
+  },
+  "Sion": {
+    "id": "Sion",
+    "name": "Sion",
+    "title": "The Undead Juggernaut",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Sion_0.jpg",
+    "emoji": "🛡️⚔️",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "quote": "\"Rest is for the living.\"",
+    "ability": {
+      "name": "Decimating Smash",
+      "description": "Sion charges a powerful swing in an area in front of himself that will deal damage to enemies when released. If he charges for enough time, enemies hit by the swing will also be knocked up and stunned."
+    }
+  },
+  "Sivir": {
+    "id": "Sivir",
+    "name": "Sivir",
+    "title": "the Battle Mistress",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Sivir_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "\"I always take my toll; blood, or gold.\"",
+    "ability": {
+      "name": "Ricochet",
+      "description": "Sivir's next few basic attacks gain additional attack speed and bounce to nearby targets, dealing reduced damage while bouncing."
+    }
+  },
+  "Skarner": {
+    "id": "Skarner",
+    "name": "Skarner",
+    "title": "the Primordial Sovereign",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Skarner_0.jpg",
+    "emoji": "🛡️⚔️",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "quote": "\"I am the vanguard of Ixtal's protection.\"",
+    "ability": {
+      "name": "Seismic Bastion",
+      "description": "Skarner gains a shield and creates an earthquake whose shockwave damages and slows foes."
+    }
+  },
+  "Smolder": {
+    "id": "Smolder",
+    "name": "Smolder",
+    "title": "the Fiery Fledgling",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Smolder_0.jpg",
+    "emoji": "🏹🔮",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "quote": "\"I heard that the royal family of Camaroar used to offer rings to my ancestors. Ha, those things must've been humongous.\"",
+    "ability": {
+      "name": "Achooo!",
+      "description": "Smolder lets out an adorable flaming sneeze that explodes when hitting enemy champions."
+    }
+  },
+  "Sona": {
+    "id": "Sona",
+    "name": "Sona",
+    "title": "Maven of the Strings",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Sona_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "Main article: Voidborn",
+    "ability": {
+      "name": "Hymn of Valor",
+      "description": "Sona plays the Hymn of Valor, sends out bolts of sound, dealing magic damage to two nearby enemies, prioritizing champions and monsters. Sona gains a temporary aura that grants allies tagged by the zone bonus damage on their next attack against enemies."
+    }
+  },
+  "Soraka": {
+    "id": "Soraka",
+    "name": "Soraka",
+    "title": "the Starchild",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Soraka_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "Main article: Voidborn",
+    "ability": {
+      "name": "Starcall",
+      "description": "A star falls from the sky at the target location dealing magic damage and slowing enemies. If an enemy champion is hit by Starcall, Soraka recovers Health."
+    }
+  },
+  "Swain": {
+    "id": "Swain",
+    "name": "Swain",
+    "title": "the Noxian Grand General",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Swain_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "Main article: Voidborn",
+    "ability": {
+      "name": "Nevermove",
+      "description": "Swain launches a wave of demonic power forward. It then returns to Swain and roots enemies it hits. Swain can then choose to pull all rooted champions closer. This ability has a shorter cooldown during Demonic Ascension."
+    }
+  },
+  "Sylas": {
+    "id": "Sylas",
+    "name": "Sylas",
+    "title": "the Unshackled",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Sylas_0.jpg",
+    "emoji": "🔮🗡️",
+    "tags": [
+      "Mage",
+      "Assassin"
+    ],
+    "quote": "\"You can't cage me for long.\"",
+    "ability": {
+      "name": "Kingslayer",
+      "description": "Sylas lunges at an enemy with magical force dealing damage and healing himself against enemy champions."
+    }
+  },
+  "Syndra": {
+    "id": "Syndra",
+    "name": "Syndra",
+    "title": "the Dark Sovereign",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Syndra_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"So much untapped power!\"",
+    "ability": {
+      "name": "Unleashed Power",
+      "description": "Syndra bombards an enemy Champion with all of her Dark Spheres."
+    }
+  },
+  "Tahm Kench": {
+    "id": "TahmKench",
+    "name": "Tahm Kench",
+    "title": "The River King",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/TahmKench_0.jpg",
+    "emoji": "🛡️💚",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "quote": "\"Call me king, call me demon. Water forgets the names of the drowned.\"",
+    "ability": {
+      "name": "Thick Skin",
+      "description": "<passive>Passive:</passive> Tahm Kench stores a percent of the damage he takes and heals based on it while out of combat.<br><br><active>Active:</active> Convert all stored damage into a temporary shield."
+    }
+  },
+  "Taliyah": {
+    "id": "Taliyah",
+    "name": "Taliyah",
+    "title": "the Stoneweaver",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Taliyah_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"Know the loom. Be the stone.\"",
+    "ability": {
+      "name": "Seismic Shove",
+      "description": "Taliyah causes an area of ground to erupt and throws enemies within it in a direction of her choosing."
+    }
+  },
+  "Talon": {
+    "id": "Talon",
+    "name": "Talon",
+    "title": "the Blade's Shadow",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Talon_0.jpg",
+    "emoji": "🗡️",
+    "tags": [
+      "Assassin"
+    ],
+    "quote": "\"Live and die by the blade.\"",
+    "ability": {
+      "name": "Rake",
+      "description": "Talon sends out a volley of daggers that then return back to him, dealing physical damage every time it passes through an enemy. The returning blades deal bonus damage and slow units hit."
+    }
+  },
+  "Taric": {
+    "id": "Taric",
+    "name": "Taric",
+    "title": "the Shield of Valoran",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Taric_0.jpg",
+    "emoji": "💚🛡️",
+    "tags": [
+      "Support",
+      "Tank"
+    ],
+    "quote": "\"That glimmer of hope you see, that's me.\"",
+    "ability": {
+      "name": "Starlight's Touch",
+      "description": "Heals nearby allied champions based on charges stored. Bravado-empowered attacks grant a charge of Starlight's Touch."
+    }
+  },
+  "Teemo": {
+    "id": "Teemo",
+    "name": "Teemo",
+    "title": "the Swift Scout",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Teemo_0.jpg",
+    "emoji": "🏹🔮",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "quote": "Main article: Voidborn",
+    "ability": {
+      "name": "Move Quick",
+      "description": "Teemo scampers around, passively increasing his Move Speed until he is struck by an enemy champion or turret. Teemo can sprint to gain bonus Move Speed that isn't stopped by being struck for a short time."
+    }
+  },
+  "Thresh": {
+    "id": "Thresh",
+    "name": "Thresh",
+    "title": "the Chain Warden",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Thresh_0.jpg",
+    "emoji": "💚🛡️",
+    "tags": [
+      "Support",
+      "Tank"
+    ],
+    "quote": "\"What delightful agony we shall inflict.\"",
+    "ability": {
+      "name": "Death Sentence",
+      "description": "Thresh binds an enemy in chains and pulls them toward him. Activating this ability a second time pulls Thresh to the enemy."
+    }
+  },
+  "Tristana": {
+    "id": "Tristana",
+    "name": "Tristana",
+    "title": "the Yordle Gunner",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Tristana_0.jpg",
+    "emoji": "🏹🗡️",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "quote": "\"Once a Bandle gunner, always a Bandle gunner!\"",
+    "ability": {
+      "name": "Buster Shot",
+      "description": "Tristana loads a massive cannonball into her weapon and fires it at an enemy unit. This deals Magic Damage and knocks the target back. If the target is carrying the Explosive Charge bomb, the bomb detonation radius is doubled."
+    }
+  },
+  "Trundle": {
+    "id": "Trundle",
+    "name": "Trundle",
+    "title": "the Troll King",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Trundle_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"I'm troll judge, troll jury, and execu... troll!\"",
+    "ability": {
+      "name": "Pillar of Ice",
+      "description": "Trundle creates an ice pillar at target location, becoming impassable terrain and slowing all nearby enemy units."
+    }
+  },
+  "Tryndamere": {
+    "id": "Tryndamere",
+    "name": "Tryndamere",
+    "title": "the Barbarian King",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Tryndamere_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"This'll be a slaughter.\"",
+    "ability": {
+      "name": "Bloodlust",
+      "description": "Tryndamere thrives on the thrills of combat, increasing his Attack Damage as he is more and more wounded. He can cast Bloodlust to consume his Fury and heal himself."
+    }
+  },
+  "Twisted Fate": {
+    "id": "TwistedFate",
+    "name": "Twisted Fate",
+    "title": "the Card Master",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/TwistedFate_0.jpg",
+    "emoji": "🔮🏹",
+    "tags": [
+      "Mage",
+      "Marksman"
+    ],
+    "quote": "\"Lady Luck is smilin'.\"",
+    "ability": {
+      "name": "Pick a Card",
+      "description": "Twisted Fate chooses a magic card from his deck, and uses that for his next attack, causing bonus effects."
+    }
+  },
+  "Twitch": {
+    "id": "Twitch",
+    "name": "Twitch",
+    "title": "the Plague Rat",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Twitch_0.jpg",
+    "emoji": "🏹🗡️",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "quote": "\"What doesn't kill you just isn't finished yet.\"",
+    "ability": {
+      "name": "Venom Cask",
+      "description": "Twitch hurls a cask of venom that explodes in an area, slowing targets and applying deadly venom to the target."
+    }
+  },
+  "Udyr": {
+    "id": "Udyr",
+    "name": "Udyr",
+    "title": "the Spirit Walker",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Udyr_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"Conflict feeds the Freljord.\"",
+    "ability": {
+      "name": "Wingborne Storm",
+      "description": "Udyr surrounds himself in a glacial storm, damaging and slowing nearby enemies. Recast: Empower and unleash the storm, causing it to track enemies and deal additional damage."
+    }
+  },
+  "Urgot": {
+    "id": "Urgot",
+    "name": "Urgot",
+    "title": "the Dreadnought",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Urgot_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"You cannot know strength... Until you are broken.\"",
+    "ability": {
+      "name": "Fear Beyond Death",
+      "description": "Urgot fires a chem-drill that impales the first enemy champion hit. If that champion falls below a health threshold, Urgot judges them weak and can execute them."
+    }
+  },
+  "Varus": {
+    "id": "Varus",
+    "name": "Varus",
+    "title": "the Arrow of Retribution",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Varus_0.jpg",
+    "emoji": "🏹🔮",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "quote": "\"The guilty will know agony.\"",
+    "ability": {
+      "name": "Piercing Arrow",
+      "description": "Varus readies and then fires a powerful shot that gains extra range and damage the longer he spends preparing to fire."
+    }
+  },
+  "Vayne": {
+    "id": "Vayne",
+    "name": "Vayne",
+    "title": "the Night Hunter",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Vayne_0.jpg",
+    "emoji": "🏹🗡️",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "quote": "\"Let us hunt those who have fallen to darkness.\"",
+    "ability": {
+      "name": "Silver Bolts",
+      "description": "Vayne tips her bolts with a rare metal, toxic to evil things. The third consecutive attack or ability against the same target deals a percentage of the target's max health as bonus true damage."
+    }
+  },
+  "Veigar": {
+    "id": "Veigar",
+    "name": "Veigar",
+    "title": "the Tiny Master of Evil",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Veigar_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "Main article: Voidborn",
+    "ability": {
+      "name": "Event Horizon",
+      "description": "Veigar twists the edges of space, creating a cage that Stuns enemies that pass through."
+    }
+  },
+  "Vel'Koz": {
+    "id": "Velkoz",
+    "name": "Vel'Koz",
+    "title": "the Eye of the Void",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Velkoz_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"Knowledge through... disintegration.\"",
+    "ability": {
+      "name": "Void Rift",
+      "description": "Vel'Koz opens a rift to the void that deals an initial burst of damage, then explodes for a second burst of damage after a delay."
+    }
+  },
+  "Vex": {
+    "id": "Vex",
+    "name": "Vex",
+    "title": "the Gloomist",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Vex_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"'Kay. See if I care.\"",
+    "ability": {
+      "name": "Mistral Bolt",
+      "description": "Launch a damaging missile that accelerates mid-flight."
+    }
+  },
+  "Vi": {
+    "id": "Vi",
+    "name": "Vi",
+    "title": "the Piltover Enforcer",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Vi_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"Punch first. Ask questions while punching.\"",
+    "ability": {
+      "name": "Vault Breaker",
+      "description": "Vi charges her gauntlets and unleashes a vault shattering punch, carrying her forward. Enemies she hits are knocked back and receive a stack of Denting Blows."
+    }
+  },
+  "Viego": {
+    "id": "Viego",
+    "name": "Viego",
+    "title": "The Ruined King",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Viego_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"My heart was already broken.\"",
+    "ability": {
+      "name": "Spectral Maw",
+      "description": "Viego charges up before dashing forward, releasing a ball of concentrated Black Mist that stuns the first enemy hit."
+    }
+  },
+  "Viktor": {
+    "id": "Viktor",
+    "name": "Viktor",
+    "title": "the Machine Herald",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Viktor_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"Join the glorious evolution.\"",
+    "ability": {
+      "name": "Gravity Field",
+      "description": "Viktor conjures a heavy gravitational field that slows enemies in its radius. Enemies who stay within the device for too long are stunned.<br><br>Augment: Viktor's non-periodic spells apply a slow to enemies."
+    }
+  },
+  "Vladimir": {
+    "id": "Vladimir",
+    "name": "Vladimir",
+    "title": "the Crimson Reaper",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Vladimir_0.jpg",
+    "emoji": "🔮⚔️",
+    "tags": [
+      "Mage",
+      "Fighter"
+    ],
+    "quote": "\"The rivers will run red.\"",
+    "ability": {
+      "name": "Sanguine Pool",
+      "description": "Vladimir sinks into a pool of blood, becoming untargetable for 2 seconds. Additionally, enemies on the pool are slowed and Vladimir siphons life from them."
+    }
+  },
+  "Volibear": {
+    "id": "Volibear",
+    "name": "Volibear",
+    "title": "the Relentless Storm",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Volibear_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"Feel the power of the wild.\"",
+    "ability": {
+      "name": "Frenzied Maul",
+      "description": "Volibear damages an enemy, applying on-hit effects and marking them.  Casting this ability again on the same target deals bonus damage and Heals Volibear."
+    }
+  },
+  "Warwick": {
+    "id": "Warwick",
+    "name": "Warwick",
+    "title": "the Uncaged Wrath of Zaun",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Warwick_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"Blood runs... they all run.\"",
+    "ability": {
+      "name": "Jaws of the Beast",
+      "description": "Warwick lunges forward and bites his target, dealing damage based on their maximum health and healing for damage dealt."
+    }
+  },
+  "Xayah": {
+    "id": "Xayah",
+    "name": "Xayah",
+    "title": "the Rebel",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Xayah_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "\"I can never resist an invitation to dance.\"",
+    "ability": {
+      "name": "Featherstorm",
+      "description": "Xayah leaps into the air becoming untargetable and throwing out a fan of daggers, dropping Feathers she can recall."
+    }
+  },
+  "Xerath": {
+    "id": "Xerath",
+    "name": "Xerath",
+    "title": "the Magus Ascendant",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Xerath_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"Renekton, show them your hatred!\"",
+    "ability": {
+      "name": "Arcanopulse",
+      "description": "Fires a long-range beam of energy, dealing magic damage to all targets hit."
+    }
+  },
+  "Xin Zhao": {
+    "id": "XinZhao",
+    "name": "Xin Zhao",
+    "title": "the Seneschal of Demacia",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/XinZhao_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"The warrior's spirit is never broken.\"",
+    "ability": {
+      "name": "Three Talon Strike",
+      "description": "Xin Zhao's next 3 standard attacks deal increased damage with the third attack knocking an opponent into the air."
+    }
+  },
+  "Yasuo": {
+    "id": "Yasuo",
+    "name": "Yasuo",
+    "title": "the Unforgiven",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Yasuo_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"Death is like the wind—always by my side.\"",
+    "ability": {
+      "name": "Last Breath",
+      "description": "Blinks to an <factionIonia1>Airborne</factionIonia1> enemy champion, dealing physical damage and holding all <factionIonia1>Airborne</factionIonia1> enemies in the area in the air. Grants maximum Flow but resets all stacks of Gathering Storm.<br><br>For a moderate time afterwards, Yasuo's critical strikes gain significant Bonus Armor Penetration."
+    }
+  },
+  "Yone": {
+    "id": "Yone",
+    "name": "Yone",
+    "title": "the Unforgotten",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Yone_0.jpg",
+    "emoji": "⚔️🗡️",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "quote": "\"One to cut, one to seal.\"",
+    "ability": {
+      "name": "Fate Sealed",
+      "description": "Yone blinks behind the last champion in a line with a slash so powerful it pulls all enemies hit towards him."
+    }
+  },
+  "Yorick": {
+    "id": "Yorick",
+    "name": "Yorick",
+    "title": "Shepherd of Souls",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Yorick_0.jpg",
+    "emoji": "⚔️🛡️",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "quote": "\"Fear not... I will make use of your corpse.\"",
+    "ability": {
+      "name": "Dark Procession",
+      "description": "Yorick summons a destructible wall at target location that will block enemy movement."
+    }
+  },
+  "Yuumi": {
+    "id": "Yuumi",
+    "name": "Yuumi",
+    "title": "the Magical Cat",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Yuumi_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "\"You and me, we got this!\"",
+    "ability": {
+      "name": "Prowling Projectile",
+      "description": "Yuumi fires a missile, dealing damage and slowing first target hit. It deals bonus damage and an enchanced slow if it takes at least 1.35 seconds to get to its target. While on her Best Friend, the slow is always enhanced and grants bonus On-Hit damage to her ally.<br><br>While Attached, the missile can be controlled with your cursor for a brief period."
+    }
+  },
+  "Zac": {
+    "id": "Zac",
+    "name": "Zac",
+    "title": "the Secret Weapon",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Zac_0.jpg",
+    "emoji": "🛡️⚔️",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "quote": "\"I was made for this... literally.\"",
+    "ability": {
+      "name": "Unstable Matter",
+      "description": "Zac explodes outward towards nearby enemies, dealing a percentage of their maximum health as magic damage."
+    }
+  },
+  "Zed": {
+    "id": "Zed",
+    "name": "Zed",
+    "title": "the Master of Shadows",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Zed_0.jpg",
+    "emoji": "🗡️",
+    "tags": [
+      "Assassin"
+    ],
+    "quote": "\"The unseen blade is the deadliest.\"",
+    "ability": {
+      "name": "Living Shadow",
+      "description": "<font color='#FF9900'>Passive:</font> Zed gains energy whenever he and his shadows strike an enemy with the same ability. Energy can only be gained once per cast ability.<br><br><font color='#FF9900'>Active:</font> Zed's shadow dashes forward, remaining in place for a few seconds. Reactivating Living Shadow will cause Zed to switch positions with this shadow."
+    }
+  },
+  "Zeri": {
+    "id": "Zeri",
+    "name": "Zeri",
+    "title": "The Spark of Zaun",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Zeri_0.jpg",
+    "emoji": "🏹",
+    "tags": [
+      "Marksman"
+    ],
+    "quote": "Main article: Voidborn",
+    "ability": {
+      "name": "Ultrashock Laser",
+      "description": "Zeri fires an electric pulse that slows and damages the first enemy hit. If the pulse hits a wall it expands into a long range laser."
+    }
+  },
+  "Ziggs": {
+    "id": "Ziggs",
+    "name": "Ziggs",
+    "title": "the Hexplosives Expert",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Ziggs_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"This'll be a blast!\"",
+    "ability": {
+      "name": "Bouncing Bomb",
+      "description": "Ziggs throws a bouncing bomb that deals magic damage."
+    }
+  },
+  "Zilean": {
+    "id": "Zilean",
+    "name": "Zilean",
+    "title": "the Chronokeeper",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Zilean_0.jpg",
+    "emoji": "💚🔮",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "quote": "\"I knew you would do that... \"",
+    "ability": {
+      "name": "Rewind",
+      "description": "Zilean can prepare himself for future confrontations, reducing the cooldowns of his other basic abilities."
+    }
+  },
+  "Zoe": {
+    "id": "Zoe",
+    "name": "Zoe",
+    "title": "the Aspect of Twilight",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Zoe_0.jpg",
+    "emoji": "🔮",
+    "tags": [
+      "Mage"
+    ],
+    "quote": "\"Yes! This'll be fun! Right?\"",
+    "ability": {
+      "name": "Sleepy Trouble Bubble",
+      "description": "Causes the target to become drowsy, then fall asleep. While asleep, the target's Magic Resist is reduced. The first source of damage that breaks the sleep is doubled, up to a cap."
+    }
+  },
+  "Zyra": {
+    "id": "Zyra",
+    "name": "Zyra",
+    "title": "Rise of the Thorns",
+    "splash_art": "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Zyra_0.jpg",
+    "emoji": "🔮💚",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "quote": "\"Feel the thorns' embrace.\"",
+    "ability": {
+      "name": "Deadly Spines",
+      "description": "Thick vines spread through the ground and explode into spines, dealing magic damage to enemies within the area. If cast near a seed, Deadly Spines grows a Thorn Spitter plant, which fires at enemies from afar."
+    }
+  }
+}

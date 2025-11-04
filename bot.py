@@ -318,6 +318,29 @@ LOLDLE_EXTENDED = {
     }
 }
 
+# Load extended data from JSON if available
+def load_loldle_extended_data():
+    """Load champion extended data from JSON file"""
+    try:
+        with open('loldle_extended_data.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            print(f"✅ Loaded extended data for {len(data)} champions from JSON")
+            return data
+    except FileNotFoundError:
+        print("⚠️  loldle_extended_data.json not found, using default data")
+        return LOLDLE_EXTENDED
+    except Exception as e:
+        print(f"❌ Error loading extended data: {e}")
+        return LOLDLE_EXTENDED
+
+# Try to load from JSON, fall back to hardcoded data
+LOLDLE_EXTENDED_LOADED = load_loldle_extended_data()
+
+# Use loaded data if available, otherwise use hardcoded
+if len(LOLDLE_EXTENDED_LOADED) > len(LOLDLE_EXTENDED):
+    LOLDLE_EXTENDED = LOLDLE_EXTENDED_LOADED
+    print(f"🎮 Using {len(LOLDLE_EXTENDED)} champions for extended modes")
+
 # Rich Presence Configuration
 RICH_PRESENCE_CONFIG = {
     'name': 'Creating League of Legends mods',  # Main activity name (shows as "Streaming X")
@@ -366,6 +389,7 @@ class MyBot(commands.Bot):
         self.tree.add_command(loldlestart, guild=guild)
         self.tree.add_command(quote, guild=guild)
         self.tree.add_command(emoji, guild=guild)
+        self.tree.add_command(ability, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
@@ -2643,11 +2667,12 @@ async def loldlestats(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="loldlestart", description="Start a new LoLdle game")
-@app_commands.describe(mode="Choose game mode: classic, quote, emoji")
+@app_commands.describe(mode="Choose game mode: classic, quote, emoji, ability")
 @app_commands.choices(mode=[
     app_commands.Choice(name="Classic (Attributes)", value="classic"),
     app_commands.Choice(name="Quote", value="quote"),
-    app_commands.Choice(name="Emoji", value="emoji")
+    app_commands.Choice(name="Emoji", value="emoji"),
+    app_commands.Choice(name="Ability", value="ability")
 ])
 async def loldlestart(interaction: discord.Interaction, mode: app_commands.Choice[str] = None):
     """Start a new LoLdle game with selected mode"""
@@ -2770,6 +2795,57 @@ async def loldlestart(interaction: discord.Interaction, mode: app_commands.Choic
             msg = await interaction.original_response()
             loldle_emoji_data['embed_message_id'] = msg.id
             print(f"😃 New LoLdle Emoji started: {champion}")
+        except:
+            pass
+    
+    elif game_mode == "ability":
+        # Delete old ability game embed
+        if loldle_ability_data['embed_message_id']:
+            try:
+                channel = interaction.channel
+                old_message = await channel.fetch_message(loldle_ability_data['embed_message_id'])
+                await old_message.delete()
+            except:
+                pass
+        
+        # Pick new ability champion
+        available = [c for c in LOLDLE_EXTENDED.keys() if 'ability' in LOLDLE_EXTENDED[c]]
+        if not available:
+            await interaction.response.send_message(
+                "⚠️ Ability mode is not available yet. Please wait for data to be loaded.",
+                ephemeral=True
+            )
+            return
+        
+        loldle_ability_data['daily_champion'] = random.choice(available)
+        loldle_ability_data['players'] = {}
+        loldle_ability_data['embed_message_id'] = None
+        
+        champion = loldle_ability_data['daily_champion']
+        ability_data = LOLDLE_EXTENDED[champion].get('ability', {})
+        
+        if isinstance(ability_data, dict):
+            ability_desc = ability_data.get('description', 'No description')
+        else:
+            ability_desc = 'No description'
+        
+        # Truncate long descriptions
+        if len(ability_desc) > 300:
+            ability_desc = ability_desc[:300] + "..."
+        
+        new_embed = discord.Embed(
+            title="🔮 LoLdle Ability - New Game!",
+            description=f"**Ability Description:** {ability_desc}\n\nUse `/ability <champion>` to guess!",
+            color=0xE91E63
+        )
+        new_embed.set_footer(text="Guess the champion from their ability!")
+        
+        await interaction.response.send_message(embed=new_embed)
+        
+        try:
+            msg = await interaction.original_response()
+            loldle_ability_data['embed_message_id'] = msg.id
+            print(f"🔮 New LoLdle Ability started: {champion}")
         except:
             pass
 
@@ -2936,6 +3012,113 @@ async def emoji(interaction: discord.Interaction, champion: str):
         embed = discord.Embed(
             title="😃 Emoji Mode",
             description=f"**Emojis:** {emoji_text}\n\n**{interaction.user.name}** guessed **{champion}** ❌",
+            color=0xFF6B6B
+        )
+        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+
+# ================================
+#        LoLdle Ability Mode
+# ================================
+
+def get_daily_ability_champion():
+    """Get or set the daily ability champion"""
+    today = datetime.date.today().isoformat()
+    
+    if loldle_ability_data['daily_date'] != today:
+        import random
+        # Only pick champions that have ability data
+        available = [c for c in LOLDLE_EXTENDED.keys() if 'ability' in LOLDLE_EXTENDED[c]]
+        if available:
+            loldle_ability_data['daily_champion'] = random.choice(available)
+            loldle_ability_data['daily_date'] = today
+            loldle_ability_data['players'] = {}
+            loldle_ability_data['embed_message_id'] = None
+    
+    return loldle_ability_data['daily_champion']
+
+@bot.tree.command(name="ability", description="Guess the champion by their ability!")
+@app_commands.describe(champion="Guess the champion name")
+async def ability(interaction: discord.Interaction, champion: str):
+    """LoLdle Ability Mode - Guess by ability description"""
+    
+    if interaction.channel_id != LOLDLE_CHANNEL_ID:
+        await interaction.response.send_message(
+            f"❌ This command can only be used in <#{LOLDLE_CHANNEL_ID}>!",
+            ephemeral=True
+        )
+        return
+    
+    correct_champion = get_daily_ability_champion()
+    
+    if not correct_champion or correct_champion not in LOLDLE_EXTENDED:
+        await interaction.response.send_message(
+            "⚠️ Ability mode is not available yet. Please wait for data to be loaded.",
+            ephemeral=True
+        )
+        return
+    
+    user_id = interaction.user.id
+    
+    if user_id not in loldle_ability_data['players']:
+        loldle_ability_data['players'][user_id] = {'guesses': [], 'solved': False}
+    
+    player_data = loldle_ability_data['players'][user_id]
+    
+    if player_data['solved']:
+        await interaction.response.send_message(
+            f"✅ You already solved today's Ability! The champion is **{correct_champion}**.",
+            ephemeral=True
+        )
+        return
+    
+    champion = champion.strip().title()
+    if champion not in CHAMPIONS:
+        await interaction.response.send_message(
+            f"❌ '{champion}' is not a valid champion name.",
+            ephemeral=True
+        )
+        return
+    
+    if champion in player_data['guesses']:
+        await interaction.response.send_message(
+            f"⚠️ You already guessed **{champion}**!",
+            ephemeral=True
+        )
+        return
+    
+    player_data['guesses'].append(champion)
+    
+    if champion == correct_champion:
+        player_data['solved'] = True
+        
+        ability_data = LOLDLE_EXTENDED[correct_champion].get('ability', {})
+        ability_name = ability_data.get('name', 'Unknown') if isinstance(ability_data, dict) else 'Unknown'
+        
+        embed = discord.Embed(
+            title="🎉 Ability Mode - Correct!",
+            description=f"**{interaction.user.mention} Guessed! 👑**\n\n**{correct_champion}**'s ability: **{ability_name}**",
+            color=0x00FF00
+        )
+        embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+    else:
+        ability_data = LOLDLE_EXTENDED[correct_champion].get('ability', {})
+        
+        if isinstance(ability_data, dict):
+            ability_desc = ability_data.get('description', 'No description available')
+        else:
+            ability_desc = 'No description available'
+        
+        # Truncate long descriptions
+        if len(ability_desc) > 300:
+            ability_desc = ability_desc[:300] + "..."
+        
+        embed = discord.Embed(
+            title="🔮 Ability Mode",
+            description=f"**Ability:** {ability_desc}\n\n**{interaction.user.name}** guessed **{champion}** ❌",
             color=0xFF6B6B
         )
         embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])}", inline=True)
