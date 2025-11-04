@@ -242,13 +242,6 @@ CHAMPIONS = {
     'Zoe': {'gender': 'Female', 'position': 'Middle', 'species': 'Human', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Targon'},
     'Zyra': {'gender': 'Female', 'position': 'Support', 'species': 'Plant', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Ixtal'},
 }
-    'Darius': {'gender': 'Male', 'position': 'Top', 'species': 'Human', 'resource': 'Manaless', 'range': 'Melee', 'region': 'Noxus'},
-    'Lux': {'gender': 'Female', 'position': 'Middle', 'species': 'Human', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Demacia'},
-    'Zed': {'gender': 'Male', 'position': 'Middle', 'species': 'Human', 'resource': 'Energy', 'range': 'Melee', 'region': 'Ionia'},
-    'Thresh': {'gender': 'Male', 'position': 'Support', 'species': 'Undead', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Shadow Isles'},
-    'Vayne': {'gender': 'Female', 'position': 'Bottom', 'species': 'Human', 'resource': 'Mana', 'range': 'Ranged', 'region': 'Demacia'},
-    'Lee Sin': {'gender': 'Male', 'position': 'Jungle', 'species': 'Human', 'resource': 'Energy', 'range': 'Melee', 'region': 'Ionia'},
-}
 
 # Rich Presence Configuration
 RICH_PRESENCE_CONFIG = {
