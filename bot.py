@@ -1186,16 +1186,16 @@ last_tweet_id = None
 
 async def get_specific_tweet(tweet_id):
     """
-    Fetch a specific tweet by ID using Twitter API v2
+    Fetch a specific tweet by ID using available methods
+    Twitter API requires paid plan, so we try Nitter first
     """
-    print(f"🔍 DEBUG: Fetching specific tweet ID: {tweet_id}")
+    print(f"🔍 Fetching specific tweet ID: {tweet_id}")
     
-    # Method 1: Try Twitter API v2 (official)
+    # Method 1: Try Twitter API v2 if bearer token exists
     if TWITTER_BEARER_TOKEN:
         try:
-            print(f"Using Twitter API v2 for tweet ID: {tweet_id}...")
+            print(f"📡 Trying Twitter API v2 for tweet ID: {tweet_id}...")
             
-            # Get specific tweet
             tweet_url = f"https://api.twitter.com/2/tweets/{tweet_id}"
             headers = {
                 'Authorization': f'Bearer {TWITTER_BEARER_TOKEN}',
@@ -1203,29 +1203,25 @@ async def get_specific_tweet(tweet_id):
             }
             
             tweet_params = {
-                'tweet.fields': 'created_at,public_metrics,text,non_public_metrics,attachments,author_id',
+                'tweet.fields': 'created_at,public_metrics,text,attachments,author_id',
                 'expansions': 'author_id,attachments.media_keys',
                 'user.fields': 'name,username,profile_image_url',
-                'media.fields': 'type,url,preview_image_url,width,height'
+                'media.fields': 'type,url,preview_image_url'
             }
             
             tweets_response = requests.get(tweet_url, headers=headers, params=tweet_params, timeout=10)
-            print(f"🔍 DEBUG: Tweet API response: {tweets_response.status_code}")
             
-            # Handle rate limiting
             if tweets_response.status_code == 429:
-                print(f"⚠️ Twitter API rate limit reached (429). Cannot fetch tweet.")
-                return None
-            
-            if tweets_response.status_code == 200:
+                print(f"⚠️ Twitter API rate limit reached")
+            elif tweets_response.status_code == 200:
                 tweets_data = tweets_response.json()
                 
                 if 'data' in tweets_data:
                     tweet = tweets_data['data']
                     
-                    # Get user profile image from includes
-                    profile_image_url = None
+                    # Get username
                     username = "Unknown"
+                    profile_image_url = None
                     if 'includes' in tweets_data and 'users' in tweets_data['includes']:
                         for user in tweets_data['includes']['users']:
                             if user['id'] == tweet['author_id']:
@@ -1233,7 +1229,7 @@ async def get_specific_tweet(tweet_id):
                                 profile_image_url = user.get('profile_image_url', '').replace('_normal', '_400x400')
                                 break
                     
-                    # Get media data from includes
+                    # Get media
                     media_dict = {}
                     if 'includes' in tweets_data and 'media' in tweets_data['includes']:
                         for media in tweets_data['includes']['media']:
@@ -1245,14 +1241,13 @@ async def get_specific_tweet(tweet_id):
                         'url': f'https://twitter.com/{username}/status/{tweet["id"]}',
                         'created_at': tweet.get('created_at', ''),
                         'metrics': tweet.get('public_metrics', {}),
-                        'description': tweet['text']  # Full text as description
+                        'description': tweet['text']
                     }
                     
-                    # Add profile image if available
                     if profile_image_url:
                         tweet_obj['profile_image_url'] = profile_image_url
                     
-                    # Add media if available
+                    # Add media
                     if 'attachments' in tweet and 'media_keys' in tweet['attachments']:
                         media_list = []
                         for media_key in tweet['attachments']['media_keys']:
@@ -1262,16 +1257,12 @@ async def get_specific_tweet(tweet_id):
                                     media_list.append({
                                         'type': 'photo',
                                         'url': media_info.get('url', ''),
-                                        'preview_url': media_info.get('preview_image_url', ''),
-                                        'width': media_info.get('width', 0),
-                                        'height': media_info.get('height', 0)
+                                        'preview_url': media_info.get('preview_image_url', '')
                                     })
                                 elif media_info['type'] in ['video', 'animated_gif']:
                                     media_list.append({
                                         'type': media_info['type'],
-                                        'preview_url': media_info.get('preview_image_url', ''),
-                                        'width': media_info.get('width', 0),
-                                        'height': media_info.get('height', 0)
+                                        'preview_url': media_info.get('preview_image_url', '')
                                     })
                         
                         if media_list:
@@ -1279,158 +1270,48 @@ async def get_specific_tweet(tweet_id):
                     
                     print(f"✅ Twitter API v2: Found tweet {tweet_id}")
                     return tweet_obj
-                        
             else:
-                print(f"❌ Twitter API v2 tweet error: {tweets_response.status_code}")
-                print(f"🔍 DEBUG: Error response: {tweets_response.text}")
+                print(f"⚠️ Twitter API v2 returned status {tweets_response.status_code}")
                 
         except Exception as e:
             print(f"❌ Twitter API v2 error: {e}")
-            import traceback
-            traceback.print_exc()
     
-    print(f"❌ Failed to fetch tweet {tweet_id}")
+    # Method 2: Try getting it from user's recent tweets via Nitter
+    print(f"📡 Trying to find tweet via Nitter RSS...")
+    try:
+        # We need to know the username to use Nitter, so this method is limited
+        # Try with configured username
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME)
+        for tweet in tweets:
+            if tweet['id'] == tweet_id:
+                print(f"✅ Found tweet {tweet_id} in recent tweets via Nitter")
+                return tweet
+    except Exception as e:
+        print(f"❌ Nitter search error: {e}")
+    
+    print(f"❌ Could not fetch tweet {tweet_id} - tweet may be old, deleted, or from different user")
     return None
 
 async def get_twitter_user_tweets(username):
     """
-    Fetch the latest tweets from a Twitter user using Twitter API v2
+    Fetch the latest tweets from a Twitter user using Nitter (free alternative)
+    Twitter API requires expensive paid plan, so we use Nitter RSS feeds
     """
-    print(f"🔍 DEBUG: Starting tweet fetch for @{username}")
-    print(f"🔍 DEBUG: TWITTER_BEARER_TOKEN exists: {bool(TWITTER_BEARER_TOKEN)}")
-    if TWITTER_BEARER_TOKEN:
-        print(f"🔍 DEBUG: Bearer token: {TWITTER_BEARER_TOKEN[:10]}...{TWITTER_BEARER_TOKEN[-4:]}")
-    else:
-        print("🔍 DEBUG: No Bearer token - will use Nitter")
-    # Method 1: Try Twitter API v2 (official)
-    if TWITTER_BEARER_TOKEN:
-        try:
-            print(f"Using Twitter API v2 for @{username}...")
-            
-            # Get user ID first
-            user_url = f"https://api.twitter.com/2/users/by/username/{username}"
-            headers = {
-                'Authorization': f'Bearer {TWITTER_BEARER_TOKEN}',
-                'User-Agent': 'v2UserLookupPython'
-            }
-            
-            user_response = requests.get(user_url, headers=headers, timeout=10)
-            print(f"🔍 DEBUG: User API response: {user_response.status_code}")
-            
-            # Handle rate limiting
-            if user_response.status_code == 429:
-                print(f"⚠️ Twitter API rate limit reached (429). Will retry on next check.")
-                print(f"🔍 Rate limit will reset in ~15 minutes")
-                return []  # Return empty to skip this check
-            
-            if user_response.status_code == 200:
-                user_data = user_response.json()
-                user_id = user_data['data']['id']
-                
-                # Get user tweets
-                tweets_url = f"https://api.twitter.com/2/users/{user_id}/tweets"
-                tweet_params = {
-                    'max_results': 5,
-                    'tweet.fields': 'created_at,public_metrics,text,non_public_metrics,attachments',
-                    'expansions': 'author_id,attachments.media_keys',
-                    'user.fields': 'name,username,profile_image_url',
-                    'media.fields': 'type,url,preview_image_url,width,height'
-                }
-                
-                tweets_response = requests.get(tweets_url, headers=headers, params=tweet_params, timeout=10)
-                print(f"🔍 DEBUG: Tweets API response: {tweets_response.status_code}")
-                
-                if tweets_response.status_code == 200:
-                    tweets_data = tweets_response.json()
-                    
-                    if 'data' in tweets_data:
-                        tweets = []
-                        
-                        # Get user profile image from includes
-                        profile_image_url = None
-                        if 'includes' in tweets_data and 'users' in tweets_data['includes']:
-                            for user in tweets_data['includes']['users']:
-                                if user['username'].lower() == username.lower():
-                                    profile_image_url = user.get('profile_image_url', '').replace('_normal', '_400x400')
-                                    break
-                        
-                        # Get media data from includes
-                        media_dict = {}
-                        if 'includes' in tweets_data and 'media' in tweets_data['includes']:
-                            for media in tweets_data['includes']['media']:
-                                media_dict[media['media_key']] = media
-                        
-                        for tweet in tweets_data['data']:
-                            tweet_obj = {
-                                'id': tweet['id'],
-                                'text': tweet['text'],
-                                'url': f'https://twitter.com/{username}/status/{tweet["id"]}',
-                                'created_at': tweet.get('created_at', ''),
-                                'metrics': tweet.get('public_metrics', {}),
-                                'description': tweet['text']  # Full text as description
-                            }
-                            
-                            # Add profile image if available
-                            if profile_image_url:
-                                tweet_obj['profile_image_url'] = profile_image_url
-                            
-                            # Add media if available
-                            if 'attachments' in tweet and 'media_keys' in tweet['attachments']:
-                                media_list = []
-                                for media_key in tweet['attachments']['media_keys']:
-                                    if media_key in media_dict:
-                                        media_info = media_dict[media_key]
-                                        if media_info['type'] == 'photo':
-                                            media_list.append({
-                                                'type': 'photo',
-                                                'url': media_info.get('url', ''),
-                                                'preview_url': media_info.get('preview_image_url', ''),
-                                                'width': media_info.get('width', 0),
-                                                'height': media_info.get('height', 0)
-                                            })
-                                        elif media_info['type'] in ['video', 'animated_gif']:
-                                            media_list.append({
-                                                'type': media_info['type'],
-                                                'preview_url': media_info.get('preview_image_url', ''),
-                                                'width': media_info.get('width', 0),
-                                                'height': media_info.get('height', 0)
-                                            })
-                                
-                                if media_list:
-                                    tweet_obj['media'] = media_list
-                                
-                            tweets.append(tweet_obj)
-                        
-                        print(f"✅ Twitter API v2: Found {len(tweets)} tweets")
-                        print(f"🔍 DEBUG: Latest tweet ID: {tweets[0]['id']}")
-                        return tweets
-                        
-                else:
-                    print(f"❌ Twitter API v2 tweets error: {tweets_response.status_code}")
-                    print(f"🔍 DEBUG: Error response: {tweets_response.text}")
-                    
-            else:
-                print(f"❌ Twitter API v2 user error: {user_response.status_code}")
-                print(f"🔍 DEBUG: Error response: {user_response.text}")
-                
-        except Exception as e:
-            print(f"❌ Twitter API v2 error: {e}")
-            import traceback
-            traceback.print_exc()
+    print(f"🔍 Starting tweet fetch for @{username}")
     
-    # Method 2: Fallback to Nitter instances
-    print("🔍 DEBUG: Twitter API failed, trying Nitter instances...")
+    # Method 1: Try Nitter instances (primary method - no API key needed!)
     nitter_instances = [
         "nitter.poast.org",
-        "nitter.privacydev.net", 
+        "nitter.privacydev.net",
+        "nitter.net",
         "nitter.1d4.us",
-        "nitter.domain.glass",
-        "nitter.unixfox.eu"
+        "nitter.unixfox.eu",
+        "nitter.domain.glass"
     ]
     
     for instance in nitter_instances:
         try:
-            print(f"Trying {instance} for @{username}...")
+            print(f"� Trying {instance} for @{username}...")
             
             url = f"https://{instance}/{username}/rss"
             headers = {
@@ -1448,9 +1329,9 @@ async def get_twitter_user_tweets(username):
                     root = ET.fromstring(response.content)
                     
                     tweets = []
-                    for item in root.findall('.//item'):
+                    for item in root.findall('.//item')[:5]:  # Get first 5 tweets
                         title = item.find('title')
-                        link = item.find('link') 
+                        link = item.find('link')
                         pub_date = item.find('pubDate')
                         description = item.find('description')
                         
@@ -1462,10 +1343,13 @@ async def get_twitter_user_tweets(username):
                             if tweet_text.startswith('RT by'):
                                 tweet_text = tweet_text.split(': ', 1)[-1] if ': ' in tweet_text else tweet_text
                             
+                            # Convert Nitter URL to Twitter URL
+                            twitter_url = f'https://twitter.com/{username}/status/{tweet_id}'
+                            
                             tweets.append({
                                 'id': tweet_id,
                                 'text': tweet_text,
-                                'url': link.text.replace(instance, 'twitter.com').replace('/nitter.', '/twitter.'),
+                                'url': twitter_url,
                                 'created_at': pub_date.text if pub_date is not None else '',
                                 'description': description.text if description is not None else tweet_text,
                                 'metrics': {}
@@ -1473,39 +1357,123 @@ async def get_twitter_user_tweets(username):
                     
                     if tweets:
                         print(f"✅ Nitter: Found {len(tweets)} tweets from {instance}")
-                        print(f"🔍 DEBUG: Latest tweet ID from Nitter: {tweets[0]['id']}")
-                        return tweets[:5]
+                        print(f"🆕 Latest tweet ID: {tweets[0]['id']}")
+                        print(f"📝 Latest tweet text: {tweets[0]['text'][:100]}...")
+                        return tweets
+                    else:
+                        print(f"⚠️ No tweets parsed from {instance}")
                         
                 except ET.ParseError as e:
                     print(f"❌ XML parsing error for {instance}: {e}")
                     continue
+            else:
+                print(f"⚠️ {instance} returned status {response.status_code}")
                     
         except Exception as e:
             print(f"❌ Error with {instance}: {e}")
             continue
     
-    # Method 3: Create test tweet as last resort
-    print("� DEBUG: All methods failed, creating test tweet...")
-    print("�🔄 Creating test tweet...")
-    try:
-        test_url = f"https://twitter.com/{username}"
-        headers = {'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)'}
-        
-        response = requests.get(test_url, headers=headers, timeout=10, allow_redirects=True)
-        if response.status_code == 200:
-            return [{
-                'id': 'test_connection',
-                'text': f'Twitter monitoring is active for @{username}! 🐦\n\nWaiting for new tweets to post automatically...',
-                'url': f'https://twitter.com/{username}',
-                'created_at': 'now',
-                'description': 'Connection test - monitoring is working',
-                'metrics': {}
-            }]
+    # Method 2: Try Twitter API v2 (fallback - only if bearer token exists)
+    if TWITTER_BEARER_TOKEN:
+    # Method 2: Try Twitter API v2 (fallback - only if bearer token exists)
+    if TWITTER_BEARER_TOKEN:
+        try:
+            print(f"📡 Trying Twitter API v2 for @{username}...")
             
-    except Exception as e:
-        print(f"❌ Test method failed: {e}")
+            # Get user ID first
+            user_url = f"https://api.twitter.com/2/users/by/username/{username}"
+            headers = {
+                'Authorization': f'Bearer {TWITTER_BEARER_TOKEN}',
+                'User-Agent': 'v2UserLookupPython'
+            }
+            
+            user_response = requests.get(user_url, headers=headers, timeout=10)
+            
+            # Handle rate limiting
+            if user_response.status_code == 429:
+                print(f"⚠️ Twitter API rate limit reached")
+                return []
+            
+            if user_response.status_code == 200:
+                user_data = user_response.json()
+                user_id = user_data['data']['id']
+                
+                # Get user tweets
+                tweets_url = f"https://api.twitter.com/2/users/{user_id}/tweets"
+                tweet_params = {
+                    'max_results': 5,
+                    'tweet.fields': 'created_at,public_metrics,text,attachments',
+                    'expansions': 'author_id,attachments.media_keys',
+                    'user.fields': 'name,username,profile_image_url',
+                    'media.fields': 'type,url,preview_image_url'
+                }
+                
+                tweets_response = requests.get(tweets_url, headers=headers, params=tweet_params, timeout=10)
+                
+                if tweets_response.status_code == 200:
+                    tweets_data = tweets_response.json()
+                    
+                    if 'data' in tweets_data:
+                        tweets = []
+                        
+                        # Get user profile image
+                        profile_image_url = None
+                        if 'includes' in tweets_data and 'users' in tweets_data['includes']:
+                            for user in tweets_data['includes']['users']:
+                                if user['username'].lower() == username.lower():
+                                    profile_image_url = user.get('profile_image_url', '').replace('_normal', '_400x400')
+                                    break
+                        
+                        # Get media data
+                        media_dict = {}
+                        if 'includes' in tweets_data and 'media' in tweets_data['includes']:
+                            for media in tweets_data['includes']['media']:
+                                media_dict[media['media_key']] = media
+                        
+                        for tweet in tweets_data['data']:
+                            tweet_obj = {
+                                'id': tweet['id'],
+                                'text': tweet['text'],
+                                'url': f'https://twitter.com/{username}/status/{tweet["id"]}',
+                                'created_at': tweet.get('created_at', ''),
+                                'metrics': tweet.get('public_metrics', {}),
+                                'description': tweet['text']
+                            }
+                            
+                            if profile_image_url:
+                                tweet_obj['profile_image_url'] = profile_image_url
+                            
+                            # Add media if available
+                            if 'attachments' in tweet and 'media_keys' in tweet['attachments']:
+                                media_list = []
+                                for media_key in tweet['attachments']['media_keys']:
+                                    if media_key in media_dict:
+                                        media_info = media_dict[media_key]
+                                        if media_info['type'] == 'photo':
+                                            media_list.append({
+                                                'type': 'photo',
+                                                'url': media_info.get('url', ''),
+                                                'preview_url': media_info.get('preview_image_url', '')
+                                            })
+                                        elif media_info['type'] in ['video', 'animated_gif']:
+                                            media_list.append({
+                                                'type': media_info['type'],
+                                                'preview_url': media_info.get('preview_image_url', '')
+                                            })
+                                
+                                if media_list:
+                                    tweet_obj['media'] = media_list
+                                
+                            tweets.append(tweet_obj)
+                        
+                        print(f"✅ Twitter API v2: Found {len(tweets)} tweets")
+                        print(f"🆕 Latest tweet ID: {tweets[0]['id']}")
+                        return tweets
+                    
+        except Exception as e:
+            print(f"❌ Twitter API v2 error: {e}")
     
-    print("❌ All methods failed")
+    print("❌ All methods failed - no tweets found")
     return []
 
 async def create_tweet_embed(tweet_data):
@@ -1711,9 +1679,10 @@ async def testtwitter(interaction: discord.Interaction):
         # Send initial status
         embed = discord.Embed(
             title="🔄 Testing Twitter Connection...",
-            description="Trying multiple methods to fetch tweets",
+            description=f"Fetching tweets from @{TWITTER_USERNAME} using Nitter (free method)",
             color=0xFFFF00
         )
+        embed.add_field(name="Methods", value="1️⃣ Nitter RSS feeds (6 instances)\n2️⃣ Twitter API v2 (if token available)", inline=False)
         await interaction.edit_original_response(embed=embed)
         
         tweets = await get_twitter_user_tweets(TWITTER_USERNAME)
@@ -1721,39 +1690,66 @@ async def testtwitter(interaction: discord.Interaction):
         if tweets:
             embed = discord.Embed(
                 title="✅ Twitter Connection Test - SUCCESS",
+                description=f"Successfully fetched tweets for @{TWITTER_USERNAME}",
                 color=0x00FF00
             )
-            embed.add_field(name="Status", value="Successfully fetched tweets", inline=False)
-            embed.add_field(name="Tweets Found", value=len(tweets), inline=True)
-            embed.add_field(name="Latest Tweet ID", value=tweets[0]['id'], inline=True)
-            embed.add_field(name="Latest Tweet", value=tweets[0]['text'][:200] + "..." if len(tweets[0]['text']) > 200 else tweets[0]['text'], inline=False)
-            embed.add_field(name="URL", value=tweets[0]['url'], inline=False)
-            embed.set_footer(text="Tweet monitoring should work properly now!")
+            embed.add_field(name="📊 Tweets Found", value=str(len(tweets)), inline=True)
+            embed.add_field(name="🆕 Latest Tweet ID", value=f"`{tweets[0]['id']}`", inline=True)
+            embed.add_field(name="🔗 Latest Tweet", value=f"[View on Twitter]({tweets[0]['url']})", inline=True)
+            embed.add_field(
+                name="📝 Tweet Preview",
+                value=tweets[0]['text'][:300] + ("..." if len(tweets[0]['text']) > 300 else ""),
+                inline=False
+            )
+            
+            # Show which method worked
+            if TWITTER_BEARER_TOKEN and 'metrics' in tweets[0] and tweets[0]['metrics']:
+                embed.add_field(name="✨ Method Used", value="Twitter API v2 (with metrics)", inline=False)
+            else:
+                embed.add_field(name="✨ Method Used", value="Nitter RSS (free alternative)", inline=False)
+            
+            embed.set_footer(text="✅ Tweet monitoring is working properly!")
+            embed.set_thumbnail(url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png")
             
             await interaction.edit_original_response(content="🐦 Twitter connection test completed:", embed=embed)
         else:
             embed = discord.Embed(
                 title="❌ Twitter Connection Test - FAILED",
+                description="Could not fetch tweets from any available source",
                 color=0xFF0000
             )
-            embed.add_field(name="Status", value="No tweets found", inline=False)
-            embed.add_field(name="Tried Methods", value="• Multiple Nitter instances\n• RSS feeds\n• HTML scraping\n• Direct Twitter check", inline=False)
-            embed.add_field(name="Possible Solutions", value="• Wait a few minutes and try again\n• Check if @p1mek account exists\n• Use `/post_latest_tweet` to test manually", inline=False)
-            embed.add_field(name="Username", value=f"@{TWITTER_USERNAME}", inline=True)
-            embed.set_footer(text="Check bot console logs for detailed error information")
+            embed.add_field(
+                name="🔍 Attempted Methods",
+                value="✗ 6 Nitter instances tried\n✗ Twitter API v2 (if configured)\n✗ All failed or rate limited",
+                inline=False
+            )
+            embed.add_field(
+                name="💡 Possible Causes",
+                value="• All Nitter instances are down\n• Account @{} doesn't exist\n• Network connectivity issues\n• Temporary rate limits".format(TWITTER_USERNAME),
+                inline=False
+            )
+            embed.add_field(
+                name="🔧 Solutions",
+                value="• Wait 5-10 minutes and try again\n• Check if @{} exists on Twitter\n• Try `/posttweet` to test manually\n• Check bot console logs for details".format(TWITTER_USERNAME),
+                inline=False
+            )
+            embed.set_footer(text="Note: Nitter instances can be temporarily unavailable")
             
             await interaction.edit_original_response(content="⚠️ Twitter connection test failed:", embed=embed)
             
     except Exception as e:
         embed = discord.Embed(
             title="💥 Twitter Connection Test - ERROR",
+            description="An unexpected error occurred during testing",
             color=0xFF0000
         )
-        embed.add_field(name="Error", value=str(e)[:1000], inline=False)
+        embed.add_field(name="Error", value=f"```{str(e)[:500]}```", inline=False)
         embed.add_field(name="Username", value=f"@{TWITTER_USERNAME}", inline=True)
-        embed.add_field(name="Suggestion", value="Try again in a few minutes or contact admin", inline=False)
+        embed.add_field(name="Suggestion", value="Check bot console logs or contact admin", inline=False)
         
         print(f"Error in Twitter connection test: {e}")
+        import traceback
+        traceback.print_exc()
         await interaction.edit_original_response(content="💥 Twitter connection test error:", embed=embed)
 
 # Command to reset tweet tracking
