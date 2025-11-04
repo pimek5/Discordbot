@@ -3,7 +3,7 @@ LoLdle Data Scraper
 Collects champion data from official League of Legends sources
 - Quotes from Universe/Wiki
 - Splash arts from Data Dragon
-- Emojis (custom mappings or from Loldle)
+- Emojis (hand-crafted mappings from champion_emojis.py)
 - Ability descriptions from Data Dragon
 """
 
@@ -12,6 +12,7 @@ import json
 import time
 from bs4 import BeautifulSoup
 import re
+from champion_emojis import get_champion_emoji, normalize_champion_name
 
 # Data Dragon API endpoints
 DDRAGON_VERSION = "14.23.1"  # Update to latest version
@@ -226,7 +227,7 @@ def scrape_all_data():
         if not champ_details:
             continue
         
-        # Try to get emoji from Loldle data first, fallback to generation
+        # Try to get emoji from Loldle data first, fallback to hand-crafted mappings
         emoji = None
         if loldle_emojis and champ_details['name'] in loldle_emojis:
             emoji = loldle_emojis[champ_details['name']].get('emoji')
@@ -234,7 +235,9 @@ def scrape_all_data():
                 print(f"  ✅ Using Loldle emoji: {emoji}")
         
         if not emoji:
-            emoji = generate_emoji_for_champion(champ_details)
+            # Use hand-crafted emoji from champion_emojis.py
+            emoji = get_champion_emoji(champ_details['name'])
+            print(f"  🎭 Emoji: {emoji}")
         
         # Collect data
         data = {
