@@ -10,8 +10,8 @@
     ],
     "quote": "\"Now, hear the silence of Annihilation\"",
     "ability": {
-      "name": "Infernal Chains",
-      "description": "Aatrox smashes the ground, dealing damage to the first enemy hit. Champions and large monsters have to leave the impact area quickly or they will be dragged to the center and take the damage again."
+      "name": "The Darkin Blade",
+      "description": "[Champion] slams his greatsword down, dealing physical damage. He can swing three times, each with a different area of effect."
     }
   },
   "Ahri": {
@@ -26,8 +26,8 @@
     ],
     "quote": "\"A clever fox is never caught.\"",
     "ability": {
-      "name": "Spirit Rush",
-      "description": "Ahri dashes forward and fires essence bolts, damaging nearby enemies. Spirit Rush can be cast up to three times before going on cooldown, and gains additional recasts when taking down enemy champions."
+      "name": "Orb of Deception",
+      "description": "[Champion] sends out and pulls back her orb, dealing magic damage on the way out and true damage on the way back."
     }
   },
   "Akali": {
@@ -57,8 +57,8 @@
     ],
     "quote": "\"Fixing the world, one scoundrel at a time!\"",
     "ability": {
-      "name": "Comeuppance",
-      "description": "Akshan locks onto an enemy champion and starts storing bullets. When released, he fires all stored bullets, dealing damage based on missing health to the first champion, minion, or structure hit."
+      "name": "Heroic Swing",
+      "description": "[Champion] fires a grappling hook into terrain then swings around it, repeatedly firing at the nearest enemy while swinging. He can jump off early or gets knocked off when colliding with champions or terrain."
     }
   },
   "Alistar": {
@@ -73,8 +73,8 @@
     ],
     "quote": "\"Nothing can hold me back!\"",
     "ability": {
-      "name": "Unbreakable Will",
-      "description": "Alistar lets out a wild roar, removing all crowd control effects on himself, and reducing incoming physical and magical damage for the duration."
+      "name": "Pulverize",
+      "description": "[Champion] smashes the ground, dealing damage to nearby enemies and tossing them into the air."
     }
   },
   "Ambessa": {
@@ -89,7 +89,7 @@
     ],
     "ability": {
       "name": "Lacerate",
-      "description": "Ambessa whips her twin drakehounds around herself, damaging and slowing nearby enemies. Initiating Drakehound's Step from this ability causes her to strike a second time at the end of its dash."
+      "description": "[Champion] whips her twin drakehounds around herself, damaging and slowing nearby enemies. Initiating Drakehound's Step from this ability causes her to strike a second time at the end of its dash."
     }
   },
   "Amumu": {
@@ -104,8 +104,8 @@
     ],
     "quote": "\"I thought you'd never pick me.\"",
     "ability": {
-      "name": "Bandage Toss",
-      "description": "Amumu tosses a sticky bandage at a target, stunning and damaging the target while he pulls himself to them."
+      "name": "Tantrum",
+      "description": "Permanently reduces the physical damage [Champion] would take. [Champion] can unleash his rage, dealing damage to surrounding enemies. Each time [Champion] is hit, the cooldown on Tantrum is reduced."
     }
   },
   "Anivia": {
@@ -119,8 +119,8 @@
     ],
     "quote": "\"Meaning, in every snowflake.\"",
     "ability": {
-      "name": "Flash Frost",
-      "description": "Anivia brings her wings together and summons a sphere of ice that flies towards her opponents, chilling and damaging anyone in its path. When the sphere explodes it does moderate damage in a radius, stunning anyone in the area."
+      "name": "Glacial Storm",
+      "description": "[Champion] summons a driving rain of ice and hail to damage her enemies and slow their advance."
     }
   },
   "Annie": {
@@ -135,8 +135,8 @@
     ],
     "quote": "\"You wanna play too? It'll be fun!\"",
     "ability": {
-      "name": "Molten Shield",
-      "description": "Grants Annie or an ally a shield, a burst of Move Speed, and damages enemies who strike her with attacks or spells."
+      "name": "Summon: Tibbers",
+      "description": "[Champion] wills her bear Tibbers to life, dealing damage to units in the area. Tibbers can attack and also burns enemies that stand near him."
     }
   },
   "Aphelios": {
@@ -150,8 +150,8 @@
     ],
     "quote": "Main article: Voidborn",
     "ability": {
-      "name": "Phase",
-      "description": "Aphelios swaps his main-hand gun with his off-hand gun, replacing his basic attack and activated ability."
+      "name": "Weapon Abilites",
+      "description": "[Champion] has 5 different activated abilities, based on his main-hand weapon:Calibrum (Rifle): Long range shot that marks its target for a long-range follow-up attack.Severum (Scythe Pistol): Run fast while attacking nearby enemies with both weapons.Gravitum (Cannon): Root all enemies slowed by this weapon.Infernum (Flamethrower): Blast enemies in a cone and attack them with your off-hand weapon.Crescendum (Chakram): Deploy a sentry that shoots your off-hand weapon."
     }
   },
   "Ashe": {
@@ -167,7 +167,7 @@
     "quote": "\"All the world on one arrow.\"",
     "ability": {
       "name": "Hawkshot",
-      "description": "Ashe sends her Hawk Spirit on a scouting mission anywhere on the map."
+      "description": "[Champion] sends her Hawk Spirit on a scouting mission anywhere on the map."
     }
   },
   "Aurelion Sol": {
@@ -181,8 +181,8 @@
     ],
     "quote": "\"In a constantly shifting cosmos, a world this static is... refreshing.\"",
     "ability": {
-      "name": "Astral Flight",
-      "description": "Aurelion Sol flies over terrain in a targeted direction. While in this state, he can cast other abilities. Breath of Light no longer has a cooldown or maximum channel duration and deals increased damage while flying.<br><br>Astral Flight's remaining cooldown is reduced whenever an enemy champion dies after being recently damaged by Aurelion Sol.<br><br>Stardust increases Astral Flight's maximum range."
+      "name": "Falling Star / The Skies Descend",
+      "description": "Falling Star: [Champion] crashes a star into the earth. This impact deals magic damage and stuns enemies while also granting Stardust for each enemy champion it hits. Gathering enough Stardust transforms [Champion]'s next Falling Star into The Skies Descend.The Skies Descend: [Champion] drags a giant star down from the heavens with an increased impact zone and increased damage, knocking up enemies rather than stunning them. A shockwave then spreads from the edge of the impact zone, which damages and slows the enemies it hits. Stardust increases the impact area of both Falling Star and The Skies Descend."
     }
   },
   "Aurora": {
@@ -197,8 +197,8 @@
     ],
     "quote": "\"See with eyes unclouded.\"",
     "ability": {
-      "name": "Between Worlds",
-      "description": "Aurora leaps in a direction of her choosing, releasing a shockwave that damages and slows any enemies it hits. Afterward, she creates an area that traps enemies within it and allows Aurora to teleport from one side of the area to the other."
+      "name": "Twofold Hex",
+      "description": "[Champion] sends out a missile that curses any enemies it hits. She can then recast the ability to draw active curses back toward herself, damaging foes who are hit along the way."
     }
   },
   "Azir": {
@@ -213,8 +213,8 @@
     ],
     "quote": "\"Shurima! Your emperor has returned!\"",
     "ability": {
-      "name": "Conquering Sands",
-      "description": "Azir sends all Sand Soldiers towards a location. Sand Soldiers deal magic damage to enemies they pass through and apply a slow for 1 second."
+      "name": "Emperor's Divide",
+      "description": "[Champion] summons a wall of soldiers which charge forward, knocking back and damaging enemies."
     }
   },
   "Bard": {
@@ -229,8 +229,8 @@
     ],
     "quote": "Bard lets a  Meep onto his shoulder and lets it run to and fro across his arms.",
     "ability": {
-      "name": "Magical Journey",
-      "description": "Bard opens a portal in nearby terrain. Allies and enemies alike can take a one-way trip through that terrain by moving into the portal."
+      "name": "Tempered Fate",
+      "description": "[Champion] sends spirit energy arcing to a location, putting all champions, minions, monsters, and turrets hit into stasis for a brief time."
     }
   },
   "Bel'Veth": {
@@ -244,8 +244,8 @@
     ],
     "quote": "\"I am the voice of the silence.\"",
     "ability": {
-      "name": "Endless Banquet",
-      "description": "Bel'Veth consumes Void coral remnants, transforming into her true form and increasing her max health, attack range, attack speed, and out-of-combat move speed. Consuming the Void coral remnants of a Void epic monster will grant her a longer ultimate duration, as well as the power to summon Void remora."
+      "name": "Void Surge",
+      "description": "[Champion] dashes in a chosen direction and damages all enemies she passes through."
     }
   },
   "Blitzcrank": {
@@ -261,7 +261,7 @@
     "quote": "\"Fired up and ready to serve.\"",
     "ability": {
       "name": "Rocket Grab",
-      "description": "Blitzcrank fires their right hand to grab an opponent on its path, dealing damage and dragging it back to them."
+      "description": "[Champion] fires their right hand to grab an opponent on its path, dealing damage and dragging it back to them."
     }
   },
   "Brand": {
@@ -276,8 +276,8 @@
     ],
     "quote": "\"Ready to set the world on fire? Heheheh...\"",
     "ability": {
-      "name": "Pillar of Flame",
-      "description": "After a short delay, Brand creates a Pillar of Flame at a target area, dealing magic damage to enemy units within the area. Units that are ablaze take an additional 25% damage."
+      "name": "Pyroclasm",
+      "description": "[Champion] unleashes a devastating torrent of fire that bounces up to 5 times off of [Champion] and nearby enemies, dealing magic damage to enemies each time bounce. Bounces prioritize stacking Blaze to max on Champions. If a target is ablaze, Pyroclasm will briefly slow them."
     }
   },
   "Braum": {
@@ -292,8 +292,8 @@
     ],
     "quote": "\"The heart is the strongest muscle.\"",
     "ability": {
-      "name": "Stand Behind Me",
-      "description": "Braum leaps to a target allied champion or minion. On arrival, Braum and the ally gain Armor and Magic Resist for a few seconds."
+      "name": "Glacial Fissure",
+      "description": "[Champion] slams the ground, knocking up enemies nearby and in a line in front of him. A fissure is left along the line that slows enemies."
     }
   },
   "Briar": {
@@ -308,8 +308,8 @@
     ],
     "quote": "\"Nice to meet you! I'm hungry. I mean... Briar!\"",
     "ability": {
-      "name": "Chilling Scream",
-      "description": "Briar refocuses her mind, removing Blood Frenzy and channeling energy into a powerful scream that damages and slows enemies. While charging, she takes reduced damage and heals for a portion of her max Health. A fully charged scream knocks foes back, dealing additional damage and stunning those who collide with a wall."
+      "name": "Head Rush",
+      "description": "[Champion] leaps to a unit and hits enemies with The Heel Wheel (of Pain), stunning them and breaking their Armor."
     }
   },
   "Caitlyn": {
@@ -323,8 +323,8 @@
     ],
     "quote": "\"Shall I turn in my badge and rifle as well?\"",
     "ability": {
-      "name": "90 Caliber Net",
-      "description": "Caitlyn fires a heavy net to slow her target. The recoil knocks Caitlyn back."
+      "name": "Piltover Peacemaker",
+      "description": "[Champion] revs up her rifle for 1 second to unleash a penetrating shot that deals physical damage (deals less damage to subsequent targets)."
     }
   },
   "Camille": {
@@ -340,7 +340,7 @@
     "quote": "\"Precision is the difference between a butcher and a surgeon.\"",
     "ability": {
       "name": "Precision Protocol",
-      "description": "Camille's next attack deals bonus damage and grants bonus Move Speed. This spell can be recast for a short period of time, doing significantly increased bonus damage if Camille delays a period of time between the two attacks."
+      "description": "[Champion]'s next attack deals bonus damage and grants bonus Move Speed. This spell can be recast for a short period of time, doing significantly increased bonus damage if [Champion] delays a period of time between the two attacks."
     }
   },
   "Cassiopeia": {
@@ -354,8 +354,8 @@
     ],
     "quote": "\"There is no antidote for me.\"",
     "ability": {
-      "name": "Petrifying Gaze",
-      "description": "Cassiopeia releases a swirl of magical energy from her eyes, stunning any enemies in front of her that are facing her and slowing any others with their back turned."
+      "name": "Noxious Blast",
+      "description": "[Champion] blasts an area with Poison after a brief delay, granting her increased Move Speed if she hits an enemy champion."
     }
   },
   "Cho'Gath": {
@@ -370,8 +370,8 @@
     ],
     "quote": "\"You'd wish the world you know to end! Yeeeesssss...\"",
     "ability": {
-      "name": "Feast",
-      "description": "Devours an enemy unit, dealing a high amount of true damage. If the target is killed, Cho'Gath grows, gaining maximum Health."
+      "name": "Rupture",
+      "description": "Ruptures the ground at target location, popping enemy units into the air, dealing damage and slowing them."
     }
   },
   "Corki": {
@@ -387,7 +387,7 @@
     "quote": "\"I'm up to snuff, and gots me an ace machine!\"",
     "ability": {
       "name": "Phosphorus Bomb",
-      "description": "Corki fires a flash bomb at a target location, dealing magic damage to enemies in the area. This attack additionally reveals units in the area for a duration."
+      "description": "[Champion] fires a flash bomb at a target location, dealing magic damage to enemies in the area. This attack additionally reveals units in the area for a duration."
     }
   },
   "Darius": {
@@ -402,8 +402,8 @@
     ],
     "quote": "\"They will regret opposing me.\"",
     "ability": {
-      "name": "Decimate",
-      "description": "Darius winds up and swings his axe in a wide circle. Enemies struck by the blade take more damage than those struck by the handle. Darius heals based on enemy champions and large monsters hit by the blade."
+      "name": "Apprehend",
+      "description": "[Champion] hones his axe, passively causing his physical damage to ignore a percentage of his target's Armor. When activated, [Champion] sweeps up his enemies with his axe's hook and pulls them to him."
     }
   },
   "Diana": {
@@ -418,8 +418,8 @@
     ],
     "quote": "\"A new moon is rising.\"",
     "ability": {
-      "name": "Moonfall",
-      "description": "Diana reveals and draws in all nearby enemies and slows them.<br><br>If Diana pulls in one or more enemy champions, the moonlight crashes down onto her after a short delay, dealing magic damage in an area around her, increased for each target beyond the first pulled."
+      "name": "Lunar Rush",
+      "description": "Becomes the living embodiment of the vengeful moon, dashing to an enemy and dealing magic damage.Lunar Rush has no cooldown when used to dash to an enemy afflicted with Moonlight. All other enemies will have the Moonlight debuff removed regardless of whether they were the target of Lunar Rush."
     }
   },
   "Draven": {
@@ -433,8 +433,8 @@
     ],
     "quote": "\"Welcome to the League of Draven.\"",
     "ability": {
-      "name": "Whirling Death",
-      "description": "Draven hurls two massive axes to deal physical damage to each unit struck. Whirling Death slowly reverses direction and returns to Draven after striking an enemy champion. Draven may also activate this ability while the axes are in flight to cause it to return early. Deals less damage for each unit hit and resets when the axes reverse direction. Executes enemies who have less health than Draven's number of Adoration stacks."
+      "name": "Blood Rush",
+      "description": "[Champion] gains increased Move Speed and Attack Speed. The Move Speed bonus decreases rapidly over its duration. Catching a Spinning Axe will refresh the cooldown of Blood Rush."
     }
   },
   "Dr. Mundo": {
@@ -449,8 +449,8 @@
     ],
     "quote": "Main article: Voidborn",
     "ability": {
-      "name": "Blunt Force Trauma",
-      "description": "Passive - Dr. Mundo gains bonus Attack Damage, increasing based on his max Health.<br><br>Active - Dr. Mundo slams his “medical” bag into an enemy, dealing additional damage based on his missing Health. If the enemy dies they are swatted away, dealing damage to enemies they pass through."
+      "name": "Heart Zapper",
+      "description": "[Champion] electrocutes himself, dealing persistent damage to nearby enemies and storing a portion of damage he takes. At the end of the duration or on Recast, [Champion] deals a burst of damage to nearby enemies. If the burst hit an enemy, he heals a percentage of the stored damage."
     }
   },
   "Ekko": {
@@ -465,8 +465,8 @@
     ],
     "quote": "\"It's not how much time you have, it's how you use it.\"",
     "ability": {
-      "name": "Phase Dive",
-      "description": "Ekko rolls evasively while charging up his Z-Drive. His next attack deals bonus damage and warps reality, teleporting him to his target."
+      "name": "Parallel Convergence",
+      "description": "[Champion]'s basic attacks deal bonus magic damage to low health enemies. He can cast Parallel Convergence to split the timeline, creating an anomaly after a few seconds that slows enemies caught inside. If [Champion] enters the anomaly, he gains shielding and stuns enemies by suspending them in time."
     }
   },
   "Elise": {
@@ -497,8 +497,8 @@
     ],
     "quote": "\"You know you want me.\"",
     "ability": {
-      "name": "Allure",
-      "description": "Evelynn curses her target, causing her next attack or spell after a delay to charm her target and reduce their magic resist."
+      "name": "Whiplash",
+      "description": "[Champion] whips her target with her Lasher, dealing damage. She then gains Move Speed for a short duration."
     }
   },
   "Ezreal": {
@@ -514,7 +514,7 @@
     "quote": "\"Quest accepted! ...Wait, where are we going?\"",
     "ability": {
       "name": "Arcane Shift",
-      "description": "Ezreal teleports to a target nearby location and fires a homing bolt which strikes the nearest enemy unit. Prioritizes enemies stuck with Essence Flux."
+      "description": "[Champion] teleports to a target nearby location and fires a homing bolt which strikes the nearest enemy unit. Prioritizes enemies stuck with Essence Flux."
     }
   },
   "Fiddlesticks": {
@@ -529,8 +529,8 @@
     ],
     "quote": "A stripped-down version of Star Guardian 2022's orchestral theme plays.",
     "ability": {
-      "name": "Crowstorm",
-      "description": "A murder of crows flock wildly around Fiddlesticks, dealing damage per second to all enemy units in the area."
+      "name": "Reap",
+      "description": "[Champion] slashes an area with its scythe, slowing all enemies hit and silencing enemies hit in the center of the slash."
     }
   },
   "Fiora": {
@@ -546,7 +546,7 @@
     "quote": "\"I long for a worthy opponent.\"",
     "ability": {
       "name": "Riposte",
-      "description": "Fiora parries all incoming damage and disables for a short time, then stabs in a direction. This stab slows the first enemy champion hit, or stuns them if Fiora blocked an immobilizing effect with this ability."
+      "description": "[Champion] parries all incoming damage and disables for a short time, then stabs in a direction. This stab slows the first enemy champion hit, or stuns them if [Champion] blocked an immobilizing effect with this ability."
     }
   },
   "Fizz": {
@@ -561,8 +561,8 @@
     ],
     "quote": "\"One jump ahead of you.\"",
     "ability": {
-      "name": "Playful / Trickster",
-      "description": "Fizz hops into the air, landing gracefully upon his spear and becoming untargetable. From this position, Fizz can either slam the ground or choose to jump again before smashing back down."
+      "name": "Urchin Strike",
+      "description": "[Champion] dashes through his target, dealing magic damage and applying on hit effects."
     }
   },
   "Galio": {
@@ -577,8 +577,8 @@
     ],
     "quote": "\"Time to make an impact!\"",
     "ability": {
-      "name": "Winds of War",
-      "description": "Galio fires two windblasts that converge into a large tornado that deals damage over time."
+      "name": "Hero's Entrance",
+      "description": "[Champion] designates an ally's position as his landing spot, granting all allies in the area a magic shield. After a delay [Champion] smashes down location, knocking up nearby enemies."
     }
   },
   "Gangplank": {
@@ -592,8 +592,8 @@
     ],
     "quote": "\"Neither the flames nor the depths could claim me.\"",
     "ability": {
-      "name": "Remove Scurvy",
-      "description": "Eats citrus to cure crowd control effects and restore Health."
+      "name": "Parrrley",
+      "description": "Shoots target, plundering Gold for each enemy unit killed."
     }
   },
   "Garen": {
@@ -608,8 +608,8 @@
     ],
     "quote": "\"My heart and sword always for Demacia.\"",
     "ability": {
-      "name": "Demacian Justice",
-      "description": "Garen calls upon the might of Demacia to attempt to execute an enemy champion."
+      "name": "Courage",
+      "description": "[Champion] passively increases his armor and magic resist by killing enemies. He may also activate this ability to give him a shield and tenacity for a brief moment followed by a lesser amount of damage reduction for a longer duration."
     }
   },
   "Gnar": {
@@ -625,7 +625,7 @@
     "quote": "Gnar drops upside down and playfully flaunts the skull he carries around.",
     "ability": {
       "name": "Boomerang Throw / Boulder Toss",
-      "description": "Gnar throws a boomerang that damages and slows enemies it hits before returning to him. If he catches the boomerang its cooldown is reduced.<br><br>Mega Gnar instead throws a boulder that stops on the first unit hit, damaging and slowing everything nearby. It can then be picked up to reduce the cooldown."
+      "description": "[Champion] throws a boomerang that damages and slows enemies it hits before returning to him. If he catches the boomerang its cooldown is reduced.Mega [Champion] instead throws a boulder that stops on the first unit hit, damaging and slowing everything nearby. It can then be picked up to reduce the cooldown."
     }
   },
   "Gragas": {
@@ -640,8 +640,8 @@
     ],
     "quote": "\"If you're buying, I'm in!\"",
     "ability": {
-      "name": "Explosive Cask",
-      "description": "Gragas hurls his cask to a location, dealing damage and knocking back enemies caught in the blast radius."
+      "name": "Barrel Roll",
+      "description": "[Champion] rolls his cask to a location, which can be activated to explode or will explode on its own after 4 seconds. The potency of the explosion increases over time. Enemies struck by the blast have their Move Speed slowed."
     }
   },
   "Graves": {
@@ -655,8 +655,8 @@
     ],
     "quote": "\"I ain't got time to bleed.\"",
     "ability": {
-      "name": "Smoke Screen",
-      "description": "Graves fires a smoke canister at the target area creating a cloud of smoke that reduces sight range. Enemies caught in the initial impact are dealt magic damage and have their Move Speed reduced briefly."
+      "name": "Quickdraw",
+      "description": "[Champion] dashes forward gaining an Armor boost for several seconds. If [Champion] dashes towards an enemy champion, gain two stacks of True Grit instead. Hitting enemies with basic attacks lowers the cooldown of this skill and refreshes the resistance boost."
     }
   },
   "Gwen": {
@@ -670,8 +670,8 @@
     ],
     "quote": "\"Head high, chin up, scissors ready!\"",
     "ability": {
-      "name": "Skip 'n Slash",
-      "description": "Gwen dashes a short distance then gains Attack Speed, attack range, and magic damage <OnHit>On-Hit</OnHit> for a few seconds. If she hits an enemy during that time, this Ability's cooldown is partially refunded. "
+      "name": "Hallowed Mist",
+      "description": "[Champion] summons mist that protects her from enemies outside of it. She can only be targeted by enemies who enter the mist."
     }
   },
   "Hecarim": {
@@ -687,7 +687,7 @@
     "quote": "\"Behold, the might of the Shadow Isles.\"",
     "ability": {
       "name": "Onslaught of Shadows",
-      "description": "Hecarim summons spectral riders and charges forward, dealing magic damage in a line. Hecarim creates a shockwave when he finishes his charge, causing nearby enemies to flee in terror."
+      "description": "[Champion] summons spectral riders and charges forward, dealing magic damage in a line. [Champion] creates a shockwave when he finishes his charge, causing nearby enemies to flee in terror."
     }
   },
   "Heimerdinger": {
@@ -703,7 +703,7 @@
     "quote": "\"Indeed, a wise choice.\"",
     "ability": {
       "name": "CH-2 Electron Storm Grenade",
-      "description": "Heimerdinger lobs a grenade at a location, dealing damage to enemy units, as well as stunning anyone directly hit and slowing surrounding units."
+      "description": "[Champion] lobs a grenade at a location, dealing damage to enemy units, as well as stunning anyone directly hit and slowing surrounding units."
     }
   },
   "Hwei": {
@@ -718,8 +718,8 @@
     ],
     "quote": "\"A painter meets their subject eye to eye.\"",
     "ability": {
-      "name": "Spiraling Despair",
-      "description": "Hwei paints a vision of pure despair. The first enemy champion struck becomes the center of an expanding painting that slows and damages nearby enemies. The vision explodes after reaching its maximum size or when the champion dies."
+      "name": "Subject: Serenity",
+      "description": "[Champion] envisions a series of serenities, allowing him to paint invigorating settings.This ability replaces [Champion]'s abilities with utility abilities: Fleeting Current, Pool of Reflection, and Stirring Lights."
     }
   },
   "Illaoi": {
@@ -734,8 +734,8 @@
     ],
     "quote": "\"I'm not big on sermons—broken bones teach better lessons.\"",
     "ability": {
-      "name": "Tentacle Smash",
-      "description": "Increases the damage dealt by Tentacles. When activated, Illaoi smashes down a Tentacle that deals physical damage."
+      "name": "Harsh Lesson",
+      "description": "[Champion] leaps to her target, dealing physical damage and causing nearby Tentacles to also swing at the target."
     }
   },
   "Irelia": {
@@ -750,8 +750,8 @@
     ],
     "quote": "\"Fight for the First Lands!\"",
     "ability": {
-      "name": "Defiant Dance",
-      "description": "Irelia charges a strike that deals more damage as she charges. She takes reduced physical damage during the charge."
+      "name": "Bladesurge",
+      "description": "[Champion] dashes forward to strike her target, healing herself. If the target is Marked or dies to Bladesurge, its cooldown refreshes."
     }
   },
   "Ivern": {
@@ -766,8 +766,8 @@
     ],
     "quote": "\"My favorite color is spring.\"",
     "ability": {
-      "name": "Brushmaker",
-      "description": "In brush, Ivern and his nearby allies attacks deal bonus magic damage. Ivern can activate this ability to create a patch of brush."
+      "name": "Triggerseed",
+      "description": "[Champion] places a shield on an ally which explodes after a short duration slowing and damaging enemies. The shield refreshes if it hits no enemies."
     }
   },
   "Janna": {
@@ -783,7 +783,7 @@
     "quote": "\"The tempest is at your command.\"",
     "ability": {
       "name": "Eye Of The Storm",
-      "description": "Janna conjures a defensive gale that shields an ally champion or turret from incoming damage and increases their Attack Damage."
+      "description": "[Champion] conjures a defensive gale that shields an ally champion or turret from incoming damage and increases their Attack Damage."
     }
   },
   "Jarvan IV": {
@@ -798,8 +798,8 @@
     ],
     "quote": "\"By my will, this shall be finished.\"",
     "ability": {
-      "name": "Dragon Strike",
-      "description": "Jarvan IV extends his lance, dealing physical damage and lowering the Armor of enemies in its path. Additionally, this will pull Jarvan to his Demacian Standard, knocking up enemies in his path."
+      "name": "Golden Aegis",
+      "description": "[Champion] calls upon the ancient kings of Demacia to shield him from harm and slow surrounding enemies."
     }
   },
   "Jax": {
@@ -813,8 +813,8 @@
     ],
     "quote": "Jax yawns. \"Looks like I'll be carrying more than my own weight today.\"",
     "ability": {
-      "name": "Leap Strike",
-      "description": "Jax leaps toward a unit. If they are an enemy, he strikes them with his weapon."
+      "name": "Counter Strike",
+      "description": "[Champion]'s combat prowess allows him to dodge all incoming attacks for a short duration and then quickly counterattack, stunning all surrounding enemies."
     }
   },
   "Jayce": {
@@ -829,8 +829,8 @@
     ],
     "quote": "\"I fight for a brighter tomorrow.\"",
     "ability": {
-      "name": "Thundering Blow / Acceleration Gate",
-      "description": "Hammer Stance: Deals magic damage to an enemy and knocks them back a short distance.<br><br>Cannon Stance: Deploys an Acceleration Gate increasing the Move Speed of all allied champions who pass through it. If Shock Blast is fired through the gate the missile speed, range, and damage will increase."
+      "name": "To the Skies! / Shock Blast",
+      "description": "Hammer Stance: Leaps to an enemy dealing physical damage and slowing enemies.Cannon Stance: Fires an orb of electricity that detonates upon hitting an enemy (or reaching the end of its path) dealing physical damage to all enemies hit."
     }
   },
   "Jhin": {
@@ -846,7 +846,7 @@
     "quote": "\"In carnage, I bloom, like a flower in the dawn.\"",
     "ability": {
       "name": "Curtain Call",
-      "description": "Jhin channels, transforming Whisper into a shoulder-mounted mega-cannon. It is able to fire 4 super shots at extreme range that pierce through minions and monsters, but stop on the first champion impacted. Whisper cripples enemies hit, which slows them and deals execute damage. The 4th shot is perfectly crafted, epically powerful, and guaranteed to critically strike."
+      "description": "[Champion] channels, transforming Whisper into a shoulder-mounted mega-cannon. It is able to fire 4 super shots at extreme range that pierce through minions and monsters, but stop on the first champion impacted. Whisper cripples enemies hit, which slows them and deals execute damage. The 4th shot is perfectly crafted, epically powerful, and guaranteed to critically strike."
     }
   },
   "Jinx": {
@@ -860,8 +860,8 @@
     ],
     "quote": "\"Rules are made to be broken... like buildings! Or people!\"",
     "ability": {
-      "name": "Super Mega Death Rocket!",
-      "description": "Jinx fires a super rocket across the map that gains damage as it travels. The rocket will explode upon colliding with an enemy champion, dealing damage to it and surrounding enemies based on their missing Health."
+      "name": "Flame Chompers!",
+      "description": "[Champion] throws out a line of snare grenades that explode after 5 seconds, lighting enemies on fire. Flame Chompers will bite enemy champions who walk over them, rooting them in place."
     }
   },
   "Kai'Sa": {
@@ -876,8 +876,8 @@
     ],
     "quote": "\"Are you the hunter... or the prey?\"",
     "ability": {
-      "name": "Void Seeker",
-      "description": "Kai'Sa shoots a long range missile, marking enemies with her passive.<br><br>Living Weapon: Void Seeker is upgraded to apply more passive marks and reduce cooldown on champion hit."
+      "name": "Killer Instinct",
+      "description": "[Champion] dashes near an enemy champion."
     }
   },
   "Kalista": {
@@ -891,8 +891,8 @@
     ],
     "quote": "\"Death to all betrayers.\"",
     "ability": {
-      "name": "Rend",
-      "description": "Attacks impale their targets with spears. Activate to rip the spears out, slowing and dealing escalating damage."
+      "name": "Sentinel",
+      "description": "Gain bonus damage when [Champion] and her Oathsworn strike the same target. Activate to send a soul to scout out the path, revealing the area in front of it."
     }
   },
   "Karma": {
@@ -907,8 +907,8 @@
     ],
     "quote": "\"Always trust your spirit.\"",
     "ability": {
-      "name": "Inspire",
-      "description": "Karma summons a protective shield that absorbs incoming damage and increases the Move Speed of the protected ally.<br><br>Mantra Bonus: Energy radiates out from her target, strengthening the initial shield and applying Inspire to nearby allied champions."
+      "name": "Inner Flame",
+      "description": "[Champion] sends forth a ball of spirit energy that explodes and deals damage upon hitting an enemy unit.Mantra Bonus: In addition to the explosion, Mantra increases the destructive power of her Inner Flame, creating a cataclysm which deals damage after a short delay."
     }
   },
   "Karthus": {
@@ -922,8 +922,8 @@
     ],
     "quote": "\"Agony, ecstasy, peace. Every passing has a beauty all its own.\"",
     "ability": {
-      "name": "Wall of Pain",
-      "description": "Karthus creates a passable screen of leeching energy. Any enemy units that walk through the screen have their Move Speed and Magic Resist reduced for a period."
+      "name": "Lay Waste",
+      "description": "[Champion] unleashes a delayed blast at a location, dealing damage to nearby enemies. Deals increased damage to isolated enemies."
     }
   },
   "Kassadin": {
@@ -938,8 +938,8 @@
     ],
     "quote": "\"The balance of power must be preserved.\"",
     "ability": {
-      "name": "Force Pulse",
-      "description": "Kassadin draws energy from spells cast in his vicinity. Upon charging up, Kassadin can use Force Pulse to damage and slow enemies in a cone in front of him."
+      "name": "Riftwalk",
+      "description": "[Champion] teleports to a nearby location dealing damage to nearby enemy units. Multiple Riftwalks in a short period of time cost additional Mana but also deal additional damage."
     }
   },
   "Katarina": {
@@ -954,8 +954,8 @@
     ],
     "quote": "\"Violence solves everything.\"",
     "ability": {
-      "name": "Preparation",
-      "description": "Katarina gains a burst of Move Speed, tossing a <font color='#FFF673'>Dagger</font> into the air directly above herself."
+      "name": "Bouncing Blade",
+      "description": "[Champion] throws a Dagger at the target that then bounces to nearby enemies before ricocheting onto the ground."
     }
   },
   "Kayle": {
@@ -970,8 +970,8 @@
     ],
     "quote": "\"They shall tremble at my perfection.\"",
     "ability": {
-      "name": "Divine Judgment",
-      "description": "Kayle makes an ally invulnerable and calls upon former Aspects of Justice to purify the area around her target with a holy rain of swords."
+      "name": "Radiant Blast",
+      "description": "[Champion] conjures a portal, summoning a celestial sword that pierces through enemies, slowing, damaging, and reducing the resistances of all hit."
     }
   },
   "Kayn": {
@@ -986,8 +986,8 @@
     ],
     "quote": "\"Will you prove worthy?\"",
     "ability": {
-      "name": "Umbral Trespass",
-      "description": "Kayn hides in an enemy's body, dealing massive damage when he bursts out."
+      "name": "Reaping Slash",
+      "description": "[Champion] dashes, then slashes. Both deal damage."
     }
   },
   "Kennen": {
@@ -1001,8 +1001,8 @@
     ],
     "quote": "\"The eyes never lie.\"",
     "ability": {
-      "name": "Electrical Surge",
-      "description": "Kennen passively deals extra damage and adds a Mark of the Storm to his target every few attacks, and he can activate this ability to damage and add another Mark of the Storm to targets who are already marked."
+      "name": "Thundering Shuriken",
+      "description": "[Champion] throws a fast moving shuriken towards a location, causing damage and adding a Mark of the Storm to any opponent that it hits."
     }
   },
   "Kha'Zix": {
@@ -1016,8 +1016,8 @@
     ],
     "quote": "\"Position for ambush.\"",
     "ability": {
-      "name": "Void Assault",
-      "description": "Each rank allows Kha'Zix to evolve one of his abilities, giving it a unique additional effect. When activated, Kha'Zix becomes <font color='#91d7ee'>Invisible</font>, triggering Unseen Threat and increasing Move Speed. If he chooses to <font color='#00DD33'>Evolve Adaptive Cloaking</font>, Void Assault gains increased <font color='#91d7ee'>Invisibility</font> duration, and an additional use."
+      "name": "Leap",
+      "description": "[Champion] leaps to an area, dealing physical damage upon landing. If he chooses to Evolve Wings, Leap's range increases by 200 and the cooldown resets on champion kill or assist."
     }
   },
   "Kindred": {
@@ -1046,8 +1046,8 @@
     ],
     "quote": "\"I find courage unpredictable. It's total insanity you can rely on!\"",
     "ability": {
-      "name": "Violent Tendencies",
-      "description": "Kled gains massive attack speed for four attacks. The fourth attack deals more damage."
+      "name": "Bear Trap on a Rope",
+      "description": "[Champion] throws a bear trap that damages and hooks an enemy champion. If shackled for a short duration, the target takes additional physical damage and is yanked toward [Champion].When dismounted, this ability is replaced by Pocket Pistol, a ranged gun blast that knocks back [Champion] and restores courage."
     }
   },
   "Kog'Maw": {
@@ -1062,8 +1062,8 @@
     ],
     "quote": "\"Hungry never sleep.\"",
     "ability": {
-      "name": "Living Artillery",
-      "description": "Kog'Maw fires an artillery shell at a great distance dealing magic damage (increased significantly on low health enemies) and revealing non-stealthed targets. Additionally, multiple Living Artilleries in a short period of time cause them to cost additional Mana."
+      "name": "Void Ooze",
+      "description": "[Champion] launches a peculiar ooze which damages all enemies it passes through and leaves a trail which slows enemies who stand on it."
     }
   },
   "K'Sante": {
@@ -1079,7 +1079,7 @@
     "quote": "\"Better to fight, than to live in fear.\"",
     "ability": {
       "name": "All Out",
-      "description": "K'Sante knocks an enemy back, launching them through any wall in their path. Then, K'Sante goes All Out and dashes after them, gaining increased damage, healing, and transformed abilities at the cost of reduced defenses."
+      "description": "[Champion] knocks an enemy back, launching them through any wall in their path. Then, [Champion] goes All Out and dashes after them, gaining increased damage, healing, and transformed abilities at the cost of reduced defenses."
     }
   },
   "LeBlanc": {
@@ -1094,8 +1094,8 @@
     ],
     "quote": "\"The Black Rose shall bloom once more.\"",
     "ability": {
-      "name": "Distortion",
-      "description": "LeBlanc dashes to a location, dealing damage to enemies near her destination. For the next 4 seconds, activate Distortion again to return LeBlanc to her starting location."
+      "name": "Mimic",
+      "description": "[Champion] casts a mimicked version of one of her basic spells."
     }
   },
   "Lee Sin": {
@@ -1111,7 +1111,7 @@
     "quote": "\"Your will, my hands.\"",
     "ability": {
       "name": "Safeguard / Iron Will",
-      "description": "Safeguard: Lee Sin rushes to target ally, shielding himself from damage. If the ally is a champion, they are also shielded. After using Safeguard, Lee Sin can cast Iron Will.<br>Iron Will: Lee Sin's intense training allows him to thrive in battle. Lee Sin gains Life Steal and Spell Vamp."
+      "description": "Safeguard: [Champion] rushes to target ally, shielding himself from damage. If the ally is a champion, they are also shielded. After using Safeguard, [Champion] can cast Iron Will.Iron Will: [Champion]'s intense training allows him to thrive in battle. [Champion] gains Life Steal and Spell Vamp."
     }
   },
   "Leona": {
@@ -1126,8 +1126,8 @@
     ],
     "quote": "\"The dawn has arrived.\"",
     "ability": {
-      "name": "Solar Flare",
-      "description": "Leona calls down a beam of solar energy, dealing damage to enemies in an area. Enemies in the center of the area are stunned, while enemies on the outside are slowed."
+      "name": "Shield of Daybreak",
+      "description": "[Champion] uses her shield to perform her next basic attack, dealing bonus magic damage and stunning the target."
     }
   },
   "Lillia": {
@@ -1143,7 +1143,7 @@
     "quote": "\"Me? A dream come true.\"",
     "ability": {
       "name": "Blooming Blows",
-      "description": "Passively, Lillia gains stacking Move Speed when hitting enemies with spells. She can activate this to deal magic damage to nearby enemies, dealing extra true damage on the edge."
+      "description": "Passively, [Champion] gains stacking Move Speed when hitting enemies with spells. She can activate this to deal magic damage to nearby enemies, dealing extra true damage on the edge."
     }
   },
   "Lissandra": {
@@ -1157,8 +1157,8 @@
     ],
     "quote": "\"I will bury the world in ice.\"",
     "ability": {
-      "name": "Frozen Tomb",
-      "description": "If cast on an enemy champion, the target is frozen solid, stunning it. If cast on Lissandra, she encases herself in dark ice, healing herself while becoming untargetable and invulnerable. Dark ice then emanates from the target dealing magic damage to enemies and slowing Move Speed."
+      "name": "Ring of Frost",
+      "description": "Freezes nearby enemies in ice, dealing magic damage and rooting them."
     }
   },
   "Lucian": {
@@ -1174,7 +1174,7 @@
     "quote": "\"Everybody dies. Some just need a little help.\"",
     "ability": {
       "name": "Piercing Light",
-      "description": "Lucian shoots a bolt of piercing light through a target."
+      "description": "[Champion] shoots a bolt of piercing light through a target."
     }
   },
   "Lulu": {
@@ -1189,8 +1189,8 @@
     ],
     "quote": "\"Pleased to meet you!\"",
     "ability": {
-      "name": "Help, Pix!",
-      "description": "If cast on an ally, commands Pix to jump to an ally and shield them. He then follows them and aids their attacks. If cast on an enemy, commands Pix to jump to an enemy and damage them. He then follows them and grants you vision of that enemy."
+      "name": "Wild Growth",
+      "description": "[Champion] enlarges an ally, knocking nearby enemies into the air and granting the ally a large amount of bonus health. For the next few seconds, that ally gains an aura that slows nearby enemies."
     }
   },
   "Lux": {
@@ -1206,7 +1206,7 @@
     "quote": "\"But all my light puns would've brightened your day.\"",
     "ability": {
       "name": "Prismatic Barrier",
-      "description": "Lux throws her wand and bends the light around any friendly target it touches, protecting them from enemy damage."
+      "description": "[Champion] throws her wand and bends the light around any friendly target it touches, protecting them from enemy damage."
     }
   },
   "Malphite": {
@@ -1222,7 +1222,7 @@
     "quote": "\"I'm moving as fast as I can.\"",
     "ability": {
       "name": "Thunderclap",
-      "description": "Malphite attacks with such force that it creates a sonic boom. For the next few seconds, his attacks create aftershocks in front of him."
+      "description": "[Champion] attacks with such force that it creates a sonic boom. For the next few seconds, his attacks create aftershocks in front of him."
     }
   },
   "Malzahar": {
@@ -1236,8 +1236,8 @@
     ],
     "quote": "\"Second sight ordains it.\"",
     "ability": {
-      "name": "Call of the Void",
-      "description": "Malzahar opens up two portals to the Void. After a short delay, they fire projectiles that deal Magic Damage and silence enemy champions."
+      "name": "Nether Grasp",
+      "description": "[Champion] channels the essence of the Void to suppress an enemy champion over a zone of damaging negative energy."
     }
   },
   "Maokai": {
@@ -1252,8 +1252,8 @@
     ],
     "quote": "\"The Isles will bloom again!\"",
     "ability": {
-      "name": "Sapling Toss",
-      "description": "Maokai flings a sapling to the target area to stand guard. More effective in brush."
+      "name": "Bramble Smash",
+      "description": "[Champion] knocks back nearby enemies with a shockwave, dealing magic damage and slowing them."
     }
   },
   "Master Yi": {
@@ -1284,8 +1284,8 @@
     ],
     "quote": "\"Stick with me! I'll keep you warm.\" Fuemigo cheers.",
     "ability": {
-      "name": "Warm Hugs",
-      "description": "Milio tosses a shield to an ally, temporarily increasing their movement speed. This ability has 2 charges."
+      "name": "Ultra Mega Fire Kick",
+      "description": "Kick a ball that knocks back an enemy. The ball launches upward on hit and falls toward the enemy, damaging and slowing enemies in the area upon impact."
     }
   },
   "Miss Fortune": {
@@ -1300,8 +1300,8 @@
     ],
     "quote": "\"Fortune doesn't favor fools.\"",
     "ability": {
-      "name": "Strut",
-      "description": "Miss Fortune passively gains Move Speed when not attacked. This ability can be activated to grant bonus Attack Speed for a short duration. While it's on cooldown, Love Taps reduce the remaining cooldown of Strut."
+      "name": "Bullet Time",
+      "description": "[Champion] channels a barrage of bullets into a cone in front of her, dealing large amounts of damage to enemies. Each wave of Bullet Time can critically strike"
     }
   },
   "Wukong": {
@@ -1316,8 +1316,8 @@
     ],
     "quote": "\"I will be the best.\"",
     "ability": {
-      "name": "Cyclone",
-      "description": "Wukong's extends his staff and spins it around repeatedly, gaining Move Speed.<br><br>Enemies struck take damage and are knocked up."
+      "name": "Warrior Trickster",
+      "description": "[Champion] becomes Invisible and dashes in a direction, leaving behind a clone that will attack nearby enemies."
     }
   },
   "Mordekaiser": {
@@ -1332,8 +1332,8 @@
     ],
     "quote": "\"Destiny. Domination. Deceit.\"",
     "ability": {
-      "name": "Death's Grasp",
-      "description": "Mordekaiser pulls all enemies in an area."
+      "name": "Obliterate",
+      "description": "[Champion] smashes the ground with his mace dealing damage to each enemy struck. Damage is increased when hitting a single enemy."
     }
   },
   "Morgana": {
@@ -1349,7 +1349,7 @@
     "quote": "\"I am bound, but I will not break.\"",
     "ability": {
       "name": "Black Shield",
-      "description": "Morgana anoints an ally with a protective barrier of starfire, which absorbs magical damage and disabling effects until it is broken."
+      "description": "[Champion] anoints an ally with a protective barrier of starfire, which absorbs magical damage and disabling effects until it is broken."
     }
   },
   "Naafiri": {
@@ -1365,7 +1365,7 @@
     "quote": "\"We won't be muzzled.\"",
     "ability": {
       "name": "Eviscerate",
-      "description": "Naafiri dashes and damages enemies in an area around her, recalling her packmates and fully healing them."
+      "description": "[Champion] dashes and damages enemies in an area around her, recalling her packmates and fully healing them."
     }
   },
   "Nami": {
@@ -1380,8 +1380,8 @@
     ],
     "quote": "\"I decide what the tide will bring.\"",
     "ability": {
-      "name": "Tidal Wave",
-      "description": "Summons a massive Tidal Wave that knocks up, slows, and damages enemies. Allies hit gain double the effect of Surging Tides."
+      "name": "Aqua Prison",
+      "description": "Sends a bubble to a target area, dealing damage and stunning all enemies on impact."
     }
   },
   "Nasus": {
@@ -1396,8 +1396,8 @@
     ],
     "quote": "\"The cycle of life and death continues,we will live,they will die.\"",
     "ability": {
-      "name": "Wither",
-      "description": "Nasus ages an enemy champion, decelerating their Move Speed and Attack Speed over time."
+      "name": "Fury of the Sands",
+      "description": "[Champion] unleashes a mighty sandstorm that batters nearby enemies. While the storm rages, he gains increased Health, Attack Range, damages nearby enemies, has a reduced cooldown on Siphoning Strike, and gains bonus Armor and Magic Resistance."
     }
   },
   "Nautilus": {
@@ -1412,8 +1412,8 @@
     ],
     "quote": "\"Do you hear them calling?\"",
     "ability": {
-      "name": "Depth Charge",
-      "description": "Nautilus fires a shockwave into the earth that chases an opponent. This shockwave rips up the earth above it, knocking enemies into the air. When it reaches the opponent, the shockwave erupts, knocking his target into the air and stunning them."
+      "name": "Titan's Wrath",
+      "description": "[Champion] gains a temporary Shield.  While it persists, his Attacks deal damage over time to his target and surrounding enemies."
     }
   },
   "Neeko": {
@@ -1428,8 +1428,8 @@
     ],
     "quote": "\"Neeko is best decision!\"",
     "ability": {
-      "name": "Pop Blossom",
-      "description": "After a short preparation, Neeko leaps into the air. Upon landing, nearby enemies are damaged and knocked up. The preparation is hidden if Neeko is disguised."
+      "name": "Tangle-Barbs",
+      "description": "[Champion] slings a tangle that damage and root everything it passes through. If the tangle kills an enemy or passes through a champion, it becomes larger, faster, and roots for longer."
     }
   },
   "Nidalee": {
@@ -1444,8 +1444,8 @@
     ],
     "quote": "\"The wild calls. I answer.\"",
     "ability": {
-      "name": "Primal Surge / Swipe",
-      "description": "In human form, Nidalee channels the spirit of the cougar to heal her allies and imbue them with Attack Speed for a short duration. As a cougar, she claws in a direction, dealing damage to enemies in front of her."
+      "name": "Javelin Toss / Takedown",
+      "description": "In human form, [Champion] throws a spiked javelin at her target that gains damage as it flies.  As a cougar, her next attack will attempt to fatally wound her target, dealing more damage the less life they have."
     }
   },
   "Nilah": {
@@ -1461,7 +1461,7 @@
     "quote": "\"Joy, unceasing and forever!\"",
     "ability": {
       "name": "Slipstream",
-      "description": "Nilah enthusiastically dashes toward her target, dealing damage to any enemies she passes through on the way."
+      "description": "[Champion] enthusiastically dashes toward her target, dealing damage to any enemies she passes through on the way."
     }
   },
   "Nocturne": {
@@ -1476,8 +1476,8 @@
     ],
     "quote": "\"Embrace the darkness.\"",
     "ability": {
-      "name": "Shroud of Darkness",
-      "description": "Nocturne empowers his blades, passively gaining Attack Speed. Activating Shroud of Darkness allows Nocturne to fade into the shadows, creating a magical barrier which blocks a single enemy ability and doubles his passive Attack Speed if successful."
+      "name": "Duskbringer",
+      "description": "[Champion] throws a shadow blade that deals damage, leaves a Dusk Trail, and causes champions to leave a Dusk Trail. While on the trail, [Champion] can move through units and has increased Move Speed and Attack Damage."
     }
   },
   "Nunu & Willump": {
@@ -1491,8 +1491,8 @@
       "Mage"
     ],
     "ability": {
-      "name": "Consume",
-      "description": "Willump takes a bite out of a minion, monster, or enemy champion, dealing damage and healing himself."
+      "name": "Absolute Zero",
+      "description": "[Champion] create a powerful blizzard in an area that slows enemies and deals massive damage at the end."
     }
   },
   "Olaf": {
@@ -1507,8 +1507,8 @@
     ],
     "quote": "\"Leave nothing behind!\"",
     "ability": {
-      "name": "Tough It Out",
-      "description": "Olaf's Attack Speed is increased and he gains a Shield."
+      "name": "Ragnarok",
+      "description": "[Champion] passively gains increased armor and magic resist. He can activate this ability to become immune to disables for as long as he keeps attacking."
     }
   },
   "Orianna": {
@@ -1524,7 +1524,7 @@
     "quote": "\"We will kill your enemies. That will be fun.\"",
     "ability": {
       "name": "Command: Attack",
-      "description": "Orianna commands her Ball to fire toward a target location, dealing magic damage to targets along the way (deals less damage to subsequent targets). Her Ball remains at the target location after."
+      "description": "[Champion] commands her Ball to fire toward a target location, dealing magic damage to targets along the way (deals less damage to subsequent targets). Her Ball remains at the target location after."
     }
   },
   "Ornn": {
@@ -1538,8 +1538,8 @@
     ],
     "quote": "\"I have fur. It is soft. Do not hug me.\"",
     "ability": {
-      "name": "Volcanic Rupture",
-      "description": "Ornn slams the ground, sending out a fissure dealing damage and slowing enemies hit. After a small delay, a magma pillar forms at the end location."
+      "name": "Bellows Breath",
+      "description": "[Champion] advances, breathing fire. Enemies hit by the final gout of flame become Brittle."
     }
   },
   "Pantheon": {
@@ -1554,8 +1554,8 @@
     ],
     "quote": "\"In battle, we are reborn.\"",
     "ability": {
-      "name": "Grand Starfall",
-      "description": "Pantheon composes himself and then leaps into the air, landing at a chosen location as a comet."
+      "name": "Comet Spear",
+      "description": "[Champion] either thrusts his spear or throws his spear in the chosen direction."
     }
   },
   "Poppy": {
@@ -1571,7 +1571,7 @@
     "quote": "\"I'm no hero—just a Yordle with a hammer.\"",
     "ability": {
       "name": "Steadfast Presence",
-      "description": "Poppy passively gains Armor and Magic Resist. This bonus increases when she is low on Health. Poppy can activate Steadfast Presence to gain Move Speed and stop enemy dashes around her. If a dash is stopped, the enemy is slowed and grounded."
+      "description": "[Champion] passively gains Armor and Magic Resist. This bonus increases when she is low on Health. [Champion] can activate Steadfast Presence to gain Move Speed and stop enemy dashes around her. If a dash is stopped, the enemy is slowed and grounded."
     }
   },
   "Pyke": {
@@ -1586,8 +1586,8 @@
     ],
     "quote": "\"My list just got longer.\"",
     "ability": {
-      "name": "Bone Skewer",
-      "description": "Pyke either stabs an enemy in front of him or pulls an enemy towards him."
+      "name": "Ghostwater Dive",
+      "description": "[Champion] enters Camouflage and gains significant Move Speed that decays over time."
     }
   },
   "Qiyana": {
@@ -1601,8 +1601,8 @@
     ],
     "quote": "\"You may now appreciate me.\"",
     "ability": {
-      "name": "Elemental Wrath / Edge of Ixtal",
-      "description": "Qiyana swings her weapon, dealing damage with a bonus effect based on her element."
+      "name": "Audacity",
+      "description": "[Champion] dashes to an enemy, damaging them."
     }
   },
   "Quinn": {
@@ -1617,8 +1617,8 @@
     ],
     "quote": "\"Justice takes wing.\"",
     "ability": {
-      "name": "Heightened Senses",
-      "description": "Passively grants Quinn Attack Speed and Move Speed after she attacks a <font color='#FFF673'>Vulnerable</font> target. Activate to have Valor reveal a large area nearby."
+      "name": "Behind Enemy Lines",
+      "description": "[Champion] and Valor team up to fly around at great speed.  Ending the ability casts Skystrike, which deals damage to nearby enemies and marks champions as Vulnerable."
     }
   },
   "Rakan": {
@@ -1632,8 +1632,8 @@
     ],
     "quote": "\"Seriously? Seriously? Lame.\"",
     "ability": {
-      "name": "Gleaming Quill",
-      "description": "Flings a magical feather that deals magic damage. Striking a champion or epic monster enables Rakan to heal his allies."
+      "name": "Grand Entrance",
+      "description": "Dashes to a location, knocking up nearby enemies on arrival."
     }
   },
   "Rammus": {
@@ -1648,7 +1648,7 @@
     "quote": "The voice-over for  Durian Defender Rammus is not available as unique set of audio files (the audio is directly pitched in-game from the base voice-over by the audio engine).",
     "ability": {
       "name": "Defensive Ball Curl",
-      "description": "Rammus goes into a defensive formation, vastly increasing his Armor and Magic Resistance, amplifying Spiked Shells' damage, and returning damage to enemies that basic attack him."
+      "description": "[Champion] goes into a defensive formation, vastly increasing his Armor and Magic Resistance, amplifying Spiked Shells' damage, and returning damage to enemies that basic attack him."
     }
   },
   "Rek'Sai": {
@@ -1663,8 +1663,8 @@
     ],
     "quote": "Menacing music plays.",
     "ability": {
-      "name": "Void Rush",
-      "description": "Rek'Sai passively marks targets by damaging them. She can activate this ability to become briefly untargetable and lunge at a marked target for heavy damage based on their missing health."
+      "name": "Furious Bite / Tunnel",
+      "description": "[Champion] bites her target, dealing bonus damage if she has max Fury.While Burrowed, [Champion] creates a re-usable, long lasting tunnel. Enemies can destroy it by standing on top of either entrance."
     }
   },
   "Rell": {
@@ -1679,8 +1679,8 @@
     ],
     "quote": "\"Nothing gets in, no one gets out.\"",
     "ability": {
-      "name": "Ferromancy: Crash Down",
-      "description": "Mounted: Rell Dismounts, crashing down in her armor, Knocking enemies up and gaining a large Shield. While dismounted, she gains Armor, Magic Resist, Attack Speed, and Attack Range, but is Slowed.<br><br>Dismounted: Rell forms her Mount, gaining a burst of speed and Knocking Up the next enemy she attacks.<br><br>"
+      "name": "Full Tilt",
+      "description": "Passive: [Champion] gains out of combat Move Speed.Active: [Champion] and an ally gain ramping Move Speed, doubled toward enemies and each other. Her next Attack explodes, dealing magic damage."
     }
   },
   "Renata Glasc": {
@@ -1695,8 +1695,8 @@
     ],
     "quote": "\"It's 'Miss Glasc'... if you value your life.\"",
     "ability": {
-      "name": "Handshake",
-      "description": "Renata sends out a missile rooting the first enemy hit, and can recast the ability to throw the unit in a direction."
+      "name": "Hostile Takeover",
+      "description": "Renata sends out a wave of chemicals, causing any enemies hit to go Berserk."
     }
   },
   "Renekton": {
@@ -1711,8 +1711,8 @@
     ],
     "quote": "\"As I live, all will die!\"",
     "ability": {
-      "name": "Slice and Dice",
-      "description": "Renekton dashes, dealing damage to units along the way. Empowered, Renekton deals bonus damage and reduces the Armor of units hit."
+      "name": "Cull the Meek",
+      "description": "[Champion] swings his blade, dealing moderate physical damage to all targets around him, and heals for a small portion of the damage dealt. If he has more than 50 Fury, his damage and heal are increased."
     }
   },
   "Rengar": {
@@ -1728,7 +1728,7 @@
     "quote": "\"A true hunter never rests.\"",
     "ability": {
       "name": "Savagery",
-      "description": "Rengar's next Attack brutally stabs his target for bonus damage.<br><br>Ferocity effect: deals increased damage and grants Attack Speed."
+      "description": "[Champion]'s next Attack brutally stabs his target for bonus damage.Ferocity effect: deals increased damage and grants Attack Speed."
     }
   },
   "Riven": {
@@ -1743,8 +1743,8 @@
     ],
     "quote": "\"What is broken can be reforged.\"",
     "ability": {
-      "name": "Valor",
-      "description": "Riven steps forward a short distance and blocks incoming damage."
+      "name": "Ki Burst",
+      "description": "[Champion] emits a Ki Burst, damaging and stunning nearby enemies."
     }
   },
   "Rumble": {
@@ -1759,8 +1759,8 @@
     ],
     "quote": "\"Let's get in the fight!\"",
     "ability": {
-      "name": "Flamespitter",
-      "description": "Rumble torches opponents in front of him, dealing magic damage in a cone for 3 seconds. While in Danger Zone this damage is increased."
+      "name": "Scrap Shield",
+      "description": "[Champion] pulls up a shield, protecting him from damage and granting him a quick burst of speed. While in Danger Zone, the shield strength and speed bonus is increased."
     }
   },
   "Ryze": {
@@ -1775,7 +1775,7 @@
     "quote": "\"A step ahead of cataclysm.\"",
     "ability": {
       "name": "Realm Warp",
-      "description": "Passively, Overload deals even more damage against targets with Flux.<br><br>On cast, Ryze creates a portal to a nearby location. After a few seconds, allies standing near the portal are teleported to the target location."
+      "description": "Passively, Overload deals even more damage against targets with Flux.On cast, [Champion] creates a portal to a nearby location. After a few seconds, allies standing near the portal are teleported to the target location."
     }
   },
   "Samira": {
@@ -1790,8 +1790,8 @@
     ],
     "quote": "\"You want style? You've found her.\"",
     "ability": {
-      "name": "Inferno Trigger",
-      "description": "Samira unleashes a torrent of shots from her weapons, wildly shooting all enemies surrounding her."
+      "name": "Wild Rush",
+      "description": "[Champion] dashes through an enemy (including structures), slashing enemies she passes through and gaining Attack Speed. Killing an enemy champion refreshes this ability's cooldown."
     }
   },
   "Sejuani": {
@@ -1806,7 +1806,7 @@
     "quote": "\"Trust nothing but your strength.\"",
     "ability": {
       "name": "Glacial Prison",
-      "description": "Sejuani throws her bola that freezes and stuns the first champion hit and creates an ice storm that slows other enemies."
+      "description": "[Champion] throws her bola that freezes and stuns the first champion hit and creates an ice storm that slows other enemies."
     }
   },
   "Senna": {
@@ -1821,8 +1821,8 @@
     ],
     "quote": "\"No one fights alone in the Mist.\"",
     "ability": {
-      "name": "Dawning Shadow",
-      "description": "Senna calls upon the relic stones of fallen Sentinels, splitting her relic cannon into a holy array of shadow and light. She then fires a global beam that shields allies from harm, while damaging enemies caught in the center."
+      "name": "Curse of the Black Mist",
+      "description": "[Champion] draws the Mist she has stored in her weapon into a storm around her, embracing darkness and becoming a wraith within. Allies who enter the area are camouflaged and also appear as wraiths as the Mist shrouds them. Wraiths gain increased Move Speed, are unselectable, and hide their identities."
     }
   },
   "Seraphine": {
@@ -1835,9 +1835,10 @@
       "Support",
       "Mage"
     ],
+    "quote": "Main article: Voidborn",
     "ability": {
-      "name": "Surround Sound",
-      "description": "Seraphine Shields and Hastes nearby allies. If she is already Shielded she will Heal nearby allies as well."
+      "name": "High Note",
+      "description": "[Champion] deals damage in an area."
     }
   },
   "Sett": {
@@ -1852,8 +1853,8 @@
     ],
     "quote": "\"'Ey, never pick a fight you can't win.\"",
     "ability": {
-      "name": "Haymaker",
-      "description": "Sett passively stores damage he takes as Grit. On cast, Sett expends all stored Grit to gain a shield and punch an area, dealing true damage in the center and physical damage on the sides."
+      "name": "Knuckle Down",
+      "description": "[Champion]'s next two attacks deal additional damage based off of the target's max health. [Champion] also gains Move Speed while moving towards enemy champions."
     }
   },
   "Shaco": {
@@ -1867,8 +1868,8 @@
     ],
     "quote": "\"How about a magic trick?\"",
     "ability": {
-      "name": "Hallucinate",
-      "description": "Shaco creates an illusion of himself near him, which can attack nearby enemies (Deals reduced damage to turrets).  Upon death, it explodes, spawning three mini Jack in the Boxes and dealing damage to nearby enemies."
+      "name": "Two-Shiv Poison",
+      "description": "[Champion]'s Shivs passively poison targets on hit, slowing their Move Speed. He can throw his Shivs to deal damage and poison the target. The thrown Shiv deals bonus damage if the target is below 30% health."
     }
   },
   "Shen": {
@@ -1882,8 +1883,8 @@
     ],
     "quote": "\"A demonstration of superior judgement.\"",
     "ability": {
-      "name": "Shadow Dash",
-      "description": "Shen dashes in a direction, taunting enemies in his path."
+      "name": "Twilight Assault",
+      "description": "[Champion] recalls his spirit blade to attack with it, dealing damage based on the target's max health. The attacks are greatly empowered if it collides with an enemy champion, and all collided enemies are slowed while running away from [Champion]."
     }
   },
   "Shyvana": {
@@ -1898,8 +1899,8 @@
     ],
     "quote": "\"They are nothing before me.\"",
     "ability": {
-      "name": "Flame Breath",
-      "description": "Shyvana unleashes a fireball that deals damage to all enemies it encounters and leaves cinders on the target, marking them for 5 seconds. Shyvana's basic attacks on marked targets deal a percentage of their maximum Health as damage on-hit.<br><br><font color='#FF3300'>Dragon Form: </font>Flame Breath explodes on impact or at target location, dealing bonus damage and scorching the earth for a short duration."
+      "name": "Dragon's Descent",
+      "description": "[Champion] transforms into a dragon and takes flight to a target location. Enemies along her path take damage and are knocked toward her target location.[Champion] passively gains Fury per second and gains 2 Fury on basic attack."
     }
   },
   "Singed": {
@@ -1914,8 +1915,8 @@
     ],
     "quote": "\"Mix, mix, swirl, mix.\"",
     "ability": {
-      "name": "Mega Adhesive",
-      "description": "Throws a vial of mega adhesive on the ground, slowing and grounding enemies who walk on it."
+      "name": "Insanity Potion",
+      "description": "[Champion] drinks a potent brew of chemicals, granting him increased combat stats, and making his Poison Trail apply Grievous Wounds."
     }
   },
   "Sion": {
@@ -1930,8 +1931,8 @@
     ],
     "quote": "\"Rest is for the living.\"",
     "ability": {
-      "name": "Decimating Smash",
-      "description": "Sion charges a powerful swing in an area in front of himself that will deal damage to enemies when released. If he charges for enough time, enemies hit by the swing will also be knocked up and stunned."
+      "name": "Soul Furnace",
+      "description": "[Champion] shields himself and can reactivate after 3 seconds to deal Magic Damage to enemies nearby. When [Champion] kills enemies, he passively gains maximum Health."
     }
   },
   "Sivir": {
@@ -1945,8 +1946,8 @@
     ],
     "quote": "\"I always take my toll; blood, or gold.\"",
     "ability": {
-      "name": "Ricochet",
-      "description": "Sivir's next few basic attacks gain additional attack speed and bounce to nearby targets, dealing reduced damage while bouncing."
+      "name": "On The Hunt",
+      "description": "[Champion] leads her allies in battle, granting them a surge of Move Speed for a period of time. In addition, [Champion]'s attacks reduce her spell cooldowns."
     }
   },
   "Skarner": {
@@ -1961,8 +1962,8 @@
     ],
     "quote": "\"I am the vanguard of Ixtal's protection.\"",
     "ability": {
-      "name": "Seismic Bastion",
-      "description": "Skarner gains a shield and creates an earthquake whose shockwave damages and slows foes."
+      "name": "Impale",
+      "description": "[Champion]'s tails lash forward to suppress enemy champions. Once suppressed, the victims will be dragged along by [Champion] as he moves around."
     }
   },
   "Smolder": {
@@ -1978,7 +1979,7 @@
     "quote": "\"I heard that the royal family of Camaroar used to offer rings to my ancestors. Ha, those things must've been humongous.\"",
     "ability": {
       "name": "Achooo!",
-      "description": "Smolder lets out an adorable flaming sneeze that explodes when hitting enemy champions."
+      "description": "[Champion] lets out an adorable flaming sneeze that explodes when hitting enemy champions."
     }
   },
   "Sona": {
@@ -1993,8 +1994,8 @@
     ],
     "quote": "Main article: Voidborn",
     "ability": {
-      "name": "Hymn of Valor",
-      "description": "Sona plays the Hymn of Valor, sends out bolts of sound, dealing magic damage to two nearby enemies, prioritizing champions and monsters. Sona gains a temporary aura that grants allies tagged by the zone bonus damage on their next attack against enemies."
+      "name": "Aria of Perseverance",
+      "description": "[Champion] plays the Aria of Perseverance, sending out protective melodies, healing [Champion] and a nearby wounded ally. [Champion] gains a temporary aura that grants allies tagged by the zone a temporary shield."
     }
   },
   "Soraka": {
@@ -2009,8 +2010,8 @@
     ],
     "quote": "Main article: Voidborn",
     "ability": {
-      "name": "Starcall",
-      "description": "A star falls from the sky at the target location dealing magic damage and slowing enemies. If an enemy champion is hit by Starcall, Soraka recovers Health."
+      "name": "Wish",
+      "description": "[Champion] fills her allies with hope, instantly restoring health to herself and all allied champions."
     }
   },
   "Swain": {
@@ -2025,8 +2026,8 @@
     ],
     "quote": "Main article: Voidborn",
     "ability": {
-      "name": "Nevermove",
-      "description": "Swain launches a wave of demonic power forward. It then returns to Swain and roots enemies it hits. Swain can then choose to pull all rooted champions closer. This ability has a shorter cooldown during Demonic Ascension."
+      "name": "Death's Hand",
+      "description": "[Champion] unleashes several bolts of eldritch power that pierce through enemies. Enemies hit take more damage for each bolt they are struck by."
     }
   },
   "Sylas": {
@@ -2041,8 +2042,8 @@
     ],
     "quote": "\"You can't cage me for long.\"",
     "ability": {
-      "name": "Kingslayer",
-      "description": "Sylas lunges at an enemy with magical force dealing damage and healing himself against enemy champions."
+      "name": "Abscond / Abduct",
+      "description": "[Champion] dashes to a location. [Champion] can recast the ability to throw his chains out, pulling himself to an enemy he hits."
     }
   },
   "Syndra": {
@@ -2056,8 +2057,8 @@
     ],
     "quote": "\"So much untapped power!\"",
     "ability": {
-      "name": "Unleashed Power",
-      "description": "Syndra bombards an enemy Champion with all of her Dark Spheres."
+      "name": "Force of Will",
+      "description": "[Champion] picks up and throws a Dark Sphere or enemy minion dealing magic damage and slowing the Move Speed of enemies."
     }
   },
   "Tahm Kench": {
@@ -2072,8 +2073,8 @@
     ],
     "quote": "\"Call me king, call me demon. Water forgets the names of the drowned.\"",
     "ability": {
-      "name": "Thick Skin",
-      "description": "<passive>Passive:</passive> Tahm Kench stores a percent of the damage he takes and heals based on it while out of combat.<br><br><active>Active:</active> Convert all stored damage into a temporary shield."
+      "name": "Tongue Lash",
+      "description": "[Champion] lashes out with his tongue, damaging and slowing the first unit hit and healing himself if he strikes an enemy champion.Applies a stack of  An Acquired Taste to enemy champions. If the champion already has 3 stacks of An Acquired Taste, they are stunned and the stacks are consumed."
     }
   },
   "Taliyah": {
@@ -2088,8 +2089,8 @@
     ],
     "quote": "\"Know the loom. Be the stone.\"",
     "ability": {
-      "name": "Seismic Shove",
-      "description": "Taliyah causes an area of ground to erupt and throws enemies within it in a direction of her choosing."
+      "name": "Weaver's Wall",
+      "description": "[Champion] creates a very long wall and then surfs it."
     }
   },
   "Talon": {
@@ -2103,8 +2104,8 @@
     ],
     "quote": "\"Live and die by the blade.\"",
     "ability": {
-      "name": "Rake",
-      "description": "Talon sends out a volley of daggers that then return back to him, dealing physical damage every time it passes through an enemy. The returning blades deal bonus damage and slow units hit."
+      "name": "Assassin's Path",
+      "description": "[Champion] vaults over any terrain or structure, up to a max distance. This ability has a low cooldown, but puts the used terrain on a long cooldown."
     }
   },
   "Taric": {
@@ -2135,8 +2136,8 @@
     ],
     "quote": "Main article: Voidborn",
     "ability": {
-      "name": "Move Quick",
-      "description": "Teemo scampers around, passively increasing his Move Speed until he is struck by an enemy champion or turret. Teemo can sprint to gain bonus Move Speed that isn't stopped by being struck for a short time."
+      "name": "Noxious Trap",
+      "description": "[Champion] throws an explosive poisonous trap using one of the mushrooms stored in his pack. If an enemy steps on the trap, it will release a poisonous cloud, slowing enemies and damaging them over time. If [Champion] throws a mushroom onto another mushroom it will bounce, gaining additional range."
     }
   },
   "Thresh": {
@@ -2151,8 +2152,8 @@
     ],
     "quote": "\"What delightful agony we shall inflict.\"",
     "ability": {
-      "name": "Death Sentence",
-      "description": "Thresh binds an enemy in chains and pulls them toward him. Activating this ability a second time pulls Thresh to the enemy."
+      "name": "Flay",
+      "description": "[Champion]'s attacks wind up, dealing more damage the longer he waits between attacks. When activated, [Champion] sweeps his chain, knocking all enemies hit in the direction of the blow."
     }
   },
   "Tristana": {
@@ -2167,8 +2168,8 @@
     ],
     "quote": "\"Once a Bandle gunner, always a Bandle gunner!\"",
     "ability": {
-      "name": "Buster Shot",
-      "description": "Tristana loads a massive cannonball into her weapon and fires it at an enemy unit. This deals Magic Damage and knocks the target back. If the target is carrying the Explosive Charge bomb, the bomb detonation radius is doubled."
+      "name": "Rocket Jump",
+      "description": "[Champion] fires at the ground to propel her to a distant location, dealing damage and slowing surrounding units for a brief period where she lands."
     }
   },
   "Trundle": {
@@ -2183,8 +2184,8 @@
     ],
     "quote": "\"I'm troll judge, troll jury, and execu... troll!\"",
     "ability": {
-      "name": "Pillar of Ice",
-      "description": "Trundle creates an ice pillar at target location, becoming impassable terrain and slowing all nearby enemy units."
+      "name": "Chomp",
+      "description": "[Champion] bites his opponent, dealing damage, briefly slowing and sapping some of their Attack Damage."
     }
   },
   "Tryndamere": {
@@ -2199,8 +2200,8 @@
     ],
     "quote": "\"This'll be a slaughter.\"",
     "ability": {
-      "name": "Bloodlust",
-      "description": "Tryndamere thrives on the thrills of combat, increasing his Attack Damage as he is more and more wounded. He can cast Bloodlust to consume his Fury and heal himself."
+      "name": "Spinning Slash",
+      "description": "[Champion] slices toward a target unit, dealing damage to enemies in his path."
     }
   },
   "Twisted Fate": {
@@ -2215,8 +2216,8 @@
     ],
     "quote": "\"Lady Luck is smilin'.\"",
     "ability": {
-      "name": "Pick a Card",
-      "description": "Twisted Fate chooses a magic card from his deck, and uses that for his next attack, causing bonus effects."
+      "name": "Wild Cards",
+      "description": "[Champion] throws three cards, dealing damage to each enemy unit they pass through."
     }
   },
   "Twitch": {
@@ -2231,8 +2232,8 @@
     ],
     "quote": "\"What doesn't kill you just isn't finished yet.\"",
     "ability": {
-      "name": "Venom Cask",
-      "description": "Twitch hurls a cask of venom that explodes in an area, slowing targets and applying deadly venom to the target."
+      "name": "Contaminate",
+      "description": "[Champion] wreaks further havoc on poisoned enemies with a blast of his vile diseases."
     }
   },
   "Udyr": {
@@ -2247,8 +2248,8 @@
     ],
     "quote": "\"Conflict feeds the Freljord.\"",
     "ability": {
-      "name": "Wingborne Storm",
-      "description": "Udyr surrounds himself in a glacial storm, damaging and slowing nearby enemies. Recast: Empower and unleash the storm, causing it to track enemies and deal additional damage."
+      "name": "Blazing Stampede",
+      "description": "[Champion] gains movement speed and his first attack against each target will Stun them. Recast: Gain even more movement speed and immunity to immobilizing effects for a couple seconds."
     }
   },
   "Urgot": {
@@ -2263,8 +2264,8 @@
     ],
     "quote": "\"You cannot know strength... Until you are broken.\"",
     "ability": {
-      "name": "Fear Beyond Death",
-      "description": "Urgot fires a chem-drill that impales the first enemy champion hit. If that champion falls below a health threshold, Urgot judges them weak and can execute them."
+      "name": "Purge",
+      "description": "[Champion] slows himself while he unloads his weapon on nearby enemies. Prioritizes enemy champions [Champion] has recently struck with other abilities and triggers Echoing Flames."
     }
   },
   "Varus": {
@@ -2279,8 +2280,8 @@
     ],
     "quote": "\"The guilty will know agony.\"",
     "ability": {
-      "name": "Piercing Arrow",
-      "description": "Varus readies and then fires a powerful shot that gains extra range and damage the longer he spends preparing to fire."
+      "name": "Blighted Quiver",
+      "description": "Passive: [Champion]' basic attacks deal bonus magic damage and apply Blight. [Champion]' other abilities detonate Blight, dealing magic damage based on the target's maximum Health. Active: [Champion] empowers his next Piercing Arrow."
     }
   },
   "Vayne": {
@@ -2295,8 +2296,8 @@
     ],
     "quote": "\"Let us hunt those who have fallen to darkness.\"",
     "ability": {
-      "name": "Silver Bolts",
-      "description": "Vayne tips her bolts with a rare metal, toxic to evil things. The third consecutive attack or ability against the same target deals a percentage of the target's max health as bonus true damage."
+      "name": "Condemn",
+      "description": "[Champion] draws a heavy crossbow from her back, and fires a huge bolt at her target, knocking them back and dealing damage. If they collide with terrain, they are impaled, dealing bonus damage and stunning them."
     }
   },
   "Veigar": {
@@ -2310,8 +2311,8 @@
     ],
     "quote": "Main article: Voidborn",
     "ability": {
-      "name": "Event Horizon",
-      "description": "Veigar twists the edges of space, creating a cage that Stuns enemies that pass through."
+      "name": "Baleful Strike",
+      "description": "[Champion] unleashes a bolt of dark energy that deals magic damage to the first two enemies hit. Units killed by this bolt grant [Champion] some ability power permanently."
     }
   },
   "Vel'Koz": {
@@ -2326,8 +2327,8 @@
     ],
     "quote": "\"Knowledge through... disintegration.\"",
     "ability": {
-      "name": "Void Rift",
-      "description": "Vel'Koz opens a rift to the void that deals an initial burst of damage, then explodes for a second burst of damage after a delay."
+      "name": "Tectonic Disruption",
+      "description": "[Champion] causes an area to explode, knocking up enemies, and knocking close enemies slightly away."
     }
   },
   "Vex": {
@@ -2341,8 +2342,8 @@
     ],
     "quote": "\"'Kay. See if I care.\"",
     "ability": {
-      "name": "Mistral Bolt",
-      "description": "Launch a damaging missile that accelerates mid-flight."
+      "name": "Personal Space",
+      "description": "Gain a shield and damage nearby enemies."
     }
   },
   "Vi": {
@@ -2357,8 +2358,8 @@
     ],
     "quote": "\"Punch first. Ask questions while punching.\"",
     "ability": {
-      "name": "Vault Breaker",
-      "description": "Vi charges her gauntlets and unleashes a vault shattering punch, carrying her forward. Enemies she hits are knocked back and receive a stack of Denting Blows."
+      "name": "Cease and Desist",
+      "description": "[Champion] runs down an enemy, knocking aside anyone in the way. When she reaches her target she knocks it into the air, jumps after it, and slams it back into the ground."
     }
   },
   "Viego": {
@@ -2373,8 +2374,8 @@
     ],
     "quote": "\"My heart was already broken.\"",
     "ability": {
-      "name": "Spectral Maw",
-      "description": "Viego charges up before dashing forward, releasing a ball of concentrated Black Mist that stuns the first enemy hit."
+      "name": "Blade of the Ruined King",
+      "description": "[Champion]'s spectral blade passively deals bonus percent current Health damage On-Hit and strikes twice vs. enemies he recently hit with an Ability, stealing Health.[Champion] can activate this Ability to thrust his zweihander forward, impaling enemies in front of him."
     }
   },
   "Viktor": {
@@ -2388,8 +2389,8 @@
     ],
     "quote": "\"Join the glorious evolution.\"",
     "ability": {
-      "name": "Gravity Field",
-      "description": "Viktor conjures a heavy gravitational field that slows enemies in its radius. Enemies who stay within the device for too long are stunned.<br><br>Augment: Viktor's non-periodic spells apply a slow to enemies."
+      "name": "Death Ray",
+      "description": "[Champion] uses his robotic arm to fire a chaos beam that cuts across the field in a line, dealing damage to all enemies in its path.Augment: An explosion follows the Death Ray's wake, dealing magic damage."
     }
   },
   "Vladimir": {
@@ -2404,8 +2405,8 @@
     ],
     "quote": "\"The rivers will run red.\"",
     "ability": {
-      "name": "Sanguine Pool",
-      "description": "Vladimir sinks into a pool of blood, becoming untargetable for 2 seconds. Additionally, enemies on the pool are slowed and Vladimir siphons life from them."
+      "name": "Tides of Blood",
+      "description": "[Champion] pays his own health to charge up a reservoir of blood which, when released, deals damage in the area around him but can be blocked by enemy units."
     }
   },
   "Volibear": {
@@ -2421,7 +2422,7 @@
     "quote": "\"Feel the power of the wild.\"",
     "ability": {
       "name": "Frenzied Maul",
-      "description": "Volibear damages an enemy, applying on-hit effects and marking them.  Casting this ability again on the same target deals bonus damage and Heals Volibear."
+      "description": "[Champion] damages an enemy, applying on-hit effects and marking them.  Casting this ability again on the same target deals bonus damage and Heals [Champion]."
     }
   },
   "Warwick": {
@@ -2436,8 +2437,8 @@
     ],
     "quote": "\"Blood runs... they all run.\"",
     "ability": {
-      "name": "Jaws of the Beast",
-      "description": "Warwick lunges forward and bites his target, dealing damage based on their maximum health and healing for damage dealt."
+      "name": "Blood Hunt",
+      "description": "[Champion] senses enemies below 50% health, gaining Move Speed toward and attack speed against them. When they fall below 20% health, he frenzies and these bonuses triple."
     }
   },
   "Xayah": {
@@ -2451,8 +2452,8 @@
     ],
     "quote": "\"I can never resist an invitation to dance.\"",
     "ability": {
-      "name": "Featherstorm",
-      "description": "Xayah leaps into the air becoming untargetable and throwing out a fan of daggers, dropping Feathers she can recall."
+      "name": "Bladecaller",
+      "description": "[Champion] calls back all her dropped Feathers dealing damage and rooting enemies."
     }
   },
   "Xerath": {
@@ -2467,8 +2468,8 @@
     ],
     "quote": "\"Renekton, show them your hatred!\"",
     "ability": {
-      "name": "Arcanopulse",
-      "description": "Fires a long-range beam of energy, dealing magic damage to all targets hit."
+      "name": "Shocking Orb",
+      "description": "Deals magic damage to an enemy and stuns them."
     }
   },
   "Xin Zhao": {
@@ -2483,8 +2484,8 @@
     ],
     "quote": "\"The warrior's spirit is never broken.\"",
     "ability": {
-      "name": "Three Talon Strike",
-      "description": "Xin Zhao's next 3 standard attacks deal increased damage with the third attack knocking an opponent into the air."
+      "name": "Crescent Guard",
+      "description": "[Champion] challenges an enemy he damaged recently. [Champion] deals damage to nearby enemies based on their current Health and knocks non-challenged targets back, becoming impervious to damage dealt by champions outside of the circle created."
     }
   },
   "Yasuo": {
@@ -2499,8 +2500,8 @@
     ],
     "quote": "\"Death is like the wind—always by my side.\"",
     "ability": {
-      "name": "Last Breath",
-      "description": "Blinks to an <factionIonia1>Airborne</factionIonia1> enemy champion, dealing physical damage and holding all <factionIonia1>Airborne</factionIonia1> enemies in the area in the air. Grants maximum Flow but resets all stacks of Gathering Storm.<br><br>For a moderate time afterwards, Yasuo's critical strikes gain significant Bonus Armor Penetration."
+      "name": "Steel Tempest",
+      "description": "Thrusts forward, damaging all enemies in a line.On hit, grants a stack of Gathering Storm for a few seconds. At 2 stacks, Steel Tempest fires a whirlwind that knocks Airborne.Steel Tempest is treated as a basic attack and scales with all the same things."
     }
   },
   "Yone": {
@@ -2515,8 +2516,8 @@
     ],
     "quote": "\"One to cut, one to seal.\"",
     "ability": {
-      "name": "Fate Sealed",
-      "description": "Yone blinks behind the last champion in a line with a slash so powerful it pulls all enemies hit towards him."
+      "name": "Mortal Steel",
+      "description": "Thrusts forward, damaging all enemies in a line.On hit, grants a stack of Gathering Storm for a few seconds. At 2 stacks, Mortal Steel dashes [Champion] forward with a gust of wind knocking enemies Airborne.Mortal Steel is treated as a basic attack and scales with all the same things."
     }
   },
   "Yorick": {
@@ -2531,8 +2532,8 @@
     ],
     "quote": "\"Fear not... I will make use of your corpse.\"",
     "ability": {
-      "name": "Dark Procession",
-      "description": "Yorick summons a destructible wall at target location that will block enemy movement."
+      "name": "Eulogy of the Isles",
+      "description": "[Champion] summons the Maiden of the Mist that causes [Champion]'s attacks against the Maiden's target to deal bonus damage. The Maiden will also automatically raise Walkers from dead enemies."
     }
   },
   "Yuumi": {
@@ -2547,8 +2548,8 @@
     ],
     "quote": "\"You and me, we got this!\"",
     "ability": {
-      "name": "Prowling Projectile",
-      "description": "Yuumi fires a missile, dealing damage and slowing first target hit. It deals bonus damage and an enchanced slow if it takes at least 1.35 seconds to get to its target. While on her Best Friend, the slow is always enhanced and grants bonus On-Hit damage to her ally.<br><br>While Attached, the missile can be controlled with your cursor for a brief period."
+      "name": "Final Chapter",
+      "description": "[Champion] channels five waves that damage enemies and heal allies. [Champion] can move, attach, and cast Zoomies! while channeling. While on her Best Friend, this spell also follows her mouse."
     }
   },
   "Zac": {
@@ -2563,8 +2564,8 @@
     ],
     "quote": "\"I was made for this... literally.\"",
     "ability": {
-      "name": "Unstable Matter",
-      "description": "Zac explodes outward towards nearby enemies, dealing a percentage of their maximum health as magic damage."
+      "name": "Elastic Slingshot",
+      "description": "[Champion] attaches his arms to the ground and stretches back, launching himself forward."
     }
   },
   "Zed": {
@@ -2578,8 +2579,8 @@
     ],
     "quote": "\"The unseen blade is the deadliest.\"",
     "ability": {
-      "name": "Living Shadow",
-      "description": "<font color='#FF9900'>Passive:</font> Zed gains energy whenever he and his shadows strike an enemy with the same ability. Energy can only be gained once per cast ability.<br><br><font color='#FF9900'>Active:</font> Zed's shadow dashes forward, remaining in place for a few seconds. Reactivating Living Shadow will cause Zed to switch positions with this shadow."
+      "name": "Razor Shuriken",
+      "description": "[Champion] and his shadows throw their shurikens.Each shuriken deals damage to every enemy hit."
     }
   },
   "Zeri": {
@@ -2593,8 +2594,8 @@
     ],
     "quote": "Main article: Voidborn",
     "ability": {
-      "name": "Ultrashock Laser",
-      "description": "Zeri fires an electric pulse that slows and damages the first enemy hit. If the pulse hits a wall it expands into a long range laser."
+      "name": "Burst Fire",
+      "description": "Burst Fire shoots a burst of 7 rounds that deal attack damage to the first enemy hit. This Ability is treated as an Attack."
     }
   },
   "Ziggs": {
@@ -2609,7 +2610,7 @@
     "quote": "\"This'll be a blast!\"",
     "ability": {
       "name": "Bouncing Bomb",
-      "description": "Ziggs throws a bouncing bomb that deals magic damage."
+      "description": "[Champion] throws a bouncing bomb that deals magic damage."
     }
   },
   "Zilean": {
@@ -2624,8 +2625,8 @@
     ],
     "quote": "\"I knew you would do that... \"",
     "ability": {
-      "name": "Rewind",
-      "description": "Zilean can prepare himself for future confrontations, reducing the cooldowns of his other basic abilities."
+      "name": "Time Bomb",
+      "description": "Tosses a bomb to target area that sticks to units that come near it (prioritizes Champions). It detonates after 3 seconds, dealing area of effect damage. If a Time Bomb is detonated early by another Time Bomb, it also stuns enemies."
     }
   },
   "Zoe": {
@@ -2655,8 +2656,8 @@
     ],
     "quote": "\"Feel the thorns' embrace.\"",
     "ability": {
-      "name": "Deadly Spines",
-      "description": "Thick vines spread through the ground and explode into spines, dealing magic damage to enemies within the area. If cast near a seed, Deadly Spines grows a Thorn Spitter plant, which fires at enemies from afar."
+      "name": "Rampant Growth",
+      "description": "[Champion] plants a seed, lasting up to 60 seconds. Deadly Spines and Grasping Roots cast near seeds will turn them into plants who fight for [Champion]. [Champion] can store multiple seeds at once, and killing enemies reduces Rampant Growth's recharge time."
     }
   }
 }

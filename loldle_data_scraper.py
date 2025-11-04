@@ -98,16 +98,29 @@ def generate_emoji_for_champion(champion_data):
     return ''.join(emojis) if emojis else '❓'
 
 def extract_ability_description(champion_data):
-    """Extract a random ability description"""
+    """Extract a random ability description and clean it"""
     try:
         spells = champion_data.get('spells', [])
         if spells:
             # Pick a random spell (Q/W/E/R)
             import random
+            import re
             spell = random.choice(spells)
+            
+            # Clean the description - remove champion name mentions
+            description = spell['description']
+            champion_name = champion_data.get('name', '')
+            
+            # Remove champion name (case insensitive)
+            if champion_name:
+                description = re.sub(r'\b' + re.escape(champion_name) + r'\b', '[Champion]', description, flags=re.IGNORECASE)
+            
+            # Remove HTML tags
+            description = re.sub(r'<[^>]+>', '', description)
+            
             return {
                 'name': spell['name'],
-                'description': spell['description']
+                'description': description.strip()
             }
     except Exception as e:
         print(f"Error extracting ability: {e}")
