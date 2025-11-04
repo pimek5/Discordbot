@@ -290,6 +290,7 @@ class MyBot(commands.Bot):
         self.tree.add_command(slowmodeinfo, guild=guild)
         self.tree.add_command(guess, guild=guild)
         self.tree.add_command(loldlestats, guild=guild)
+        self.tree.add_command(loldlestart, guild=guild)
         await self.tree.sync(guild=guild)
 
 bot = MyBot()
