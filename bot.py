@@ -2032,12 +2032,8 @@ async def on_ready():
     # Set rich presence
     await update_presence()
     
-    # Sync commands
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} command(s)")
-    except Exception as e:
-        print(f"⚠️ Failed to sync commands: {e}")
+    # Commands are already synced in setup_hook()
+    print(f"✅ Bot is ready with synced commands")
     
     # Start tweet monitoring
     if not check_for_new_tweets.is_running():
