@@ -422,6 +422,21 @@ class LoldleButtonsView(discord.ui.View):
         )
 
 # ================================
+#        COMMAND GROUPS
+# ================================
+# Twitter Commands Group
+twitter_group = app_commands.Group(name="twitter", description="Twitter monitoring commands")
+
+# LoLdle Games Group
+loldle_group = app_commands.Group(name="loldle", description="LoLdle daily guessing games")
+
+# Moderation Group
+mod_group = app_commands.Group(name="mod", description="Moderation and server management")
+
+# Server Info Group
+server_group = app_commands.Group(name="server", description="Server information and statistics")
+
+# ================================
 #        BOT INIT
 # ================================
 class MyBot(commands.Bot):
@@ -470,33 +485,19 @@ class MyBot(commands.Bot):
                 logging.error(f"Orianna initialization error: {e}", exc_info=True)
         
         guild = discord.Object(id=1153027935553454191)
+        
+        # Register command groups
+        self.tree.add_command(twitter_group, guild=guild)
+        self.tree.add_command(loldle_group, guild=guild)
+        self.tree.add_command(mod_group, guild=guild)
+        self.tree.add_command(server_group, guild=guild)
+        
+        # Standalone commands (general use)
         self.tree.add_command(setup_create_panel, guild=guild)
         self.tree.add_command(invite, guild=guild)
         self.tree.add_command(addthread, guild=guild)
         self.tree.add_command(diagnose, guild=guild)
         self.tree.add_command(checkruneforge, guild=guild)
-        self.tree.add_command(posttweet, guild=guild)
-        self.tree.add_command(toggletweets, guild=guild)
-        self.tree.add_command(starttweets, guild=guild)
-        self.tree.add_command(tweetstatus, guild=guild)
-        self.tree.add_command(testtwitter, guild=guild)
-        self.tree.add_command(resettweets, guild=guild)
-        self.tree.add_command(checktweet, guild=guild)
-        self.tree.add_command(addtweet, guild=guild)
-        self.tree.add_command(autoslowmode, guild=guild)
-        self.tree.add_command(slowmode, guild=guild)
-        self.tree.add_command(slowmodeinfo, guild=guild)
-        self.tree.add_command(guess, guild=guild)
-        self.tree.add_command(loldlestats, guild=guild)
-        self.tree.add_command(loldlestart, guild=guild)
-        self.tree.add_command(quote, guild=guild)
-        self.tree.add_command(emoji, guild=guild)
-        self.tree.add_command(ability, guild=guild)
-        self.tree.add_command(loldletop, guild=guild)
-        self.tree.add_command(searchtweet, guild=guild)
-        self.tree.add_command(tweetstats, guild=guild)
-        self.tree.add_command(serverstats, guild=guild)
-        self.tree.add_command(activity, guild=guild)
         
         # Copy global commands (from Orianna Cogs) to guild
         self.tree.copy_global_to(guild=guild)
@@ -2133,7 +2134,7 @@ async def before_tweet_check():
     print("Tweet monitoring started!")
 
 # Manual tweet posting command (for testing)
-@bot.tree.command(name="posttweet", description="Manually post the latest tweet from @p1mek")
+@twitter_group.command(name="post", description="Manually post the latest tweet from @p1mek")
 async def posttweet(interaction: discord.Interaction):
     """Manual command to post the latest tweet"""
     await interaction.response.defer()
@@ -2154,7 +2155,7 @@ async def posttweet(interaction: discord.Interaction):
         await interaction.edit_original_response(content="❌ Error fetching tweet.")
 
 # Command to toggle tweet monitoring
-@bot.tree.command(name="toggletweets", description="Start or stop automatic tweet monitoring")
+@twitter_group.command(name="toggle", description="Start or stop automatic tweet monitoring")
 async def toggletweets(interaction: discord.Interaction):
     """Toggle the tweet monitoring task"""
     if check_for_new_tweets.is_running():
@@ -2165,7 +2166,7 @@ async def toggletweets(interaction: discord.Interaction):
         await interaction.response.send_message("▶️ Tweet monitoring started.", ephemeral=True)
 
 # Command to start tweet monitoring
-@bot.tree.command(name="starttweets", description="Start automatic tweet monitoring")
+@twitter_group.command(name="start", description="Start automatic tweet monitoring")
 async def starttweets(interaction: discord.Interaction):
     """Start the tweet monitoring task"""
     if check_for_new_tweets.is_running():
@@ -2175,7 +2176,7 @@ async def starttweets(interaction: discord.Interaction):
         await interaction.response.send_message("▶️ Tweet monitoring started successfully!", ephemeral=True)
 
 # Command to check tweet monitoring status
-@bot.tree.command(name="tweetstatus", description="Check if tweet monitoring is currently active")
+@twitter_group.command(name="status", description="Check if tweet monitoring is currently active")
 async def tweetstatus(interaction: discord.Interaction):
     """Check the status of tweet monitoring"""
     status = "🟢 **ACTIVE**" if check_for_new_tweets.is_running() else "🔴 **STOPPED**"
@@ -2195,7 +2196,7 @@ async def tweetstatus(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # Command to test Twitter connection
-@bot.tree.command(name="testtwitter", description="Test if Twitter data fetching is working")
+@twitter_group.command(name="test", description="Test if Twitter data fetching is working")
 async def testtwitter(interaction: discord.Interaction):
     """Test command to verify Twitter connection"""
     await interaction.response.defer()
@@ -2280,7 +2281,7 @@ async def testtwitter(interaction: discord.Interaction):
         await interaction.edit_original_response(content="💥 Twitter connection test error:", embed=embed)
 
 # Command to reset tweet tracking
-@bot.tree.command(name="resettweets", description="Reset tweet tracking to detect current tweet as new")
+@twitter_group.command(name="reset", description="Reset tweet tracking to detect current tweet as new")
 async def resettweets(interaction: discord.Interaction):
     """Reset tweet tracking to force detection of current tweets"""
     global last_tweet_id
@@ -2324,7 +2325,7 @@ async def resettweets(interaction: discord.Interaction):
         await interaction.edit_original_response(content="❌ Error resetting tweet tracking.")
 
 # Command to check specific tweet
-@bot.tree.command(name="checktweet", description="Check if a specific tweet ID is being detected")
+@twitter_group.command(name="check", description="Check if a specific tweet ID is being detected")
 @app_commands.describe(tweet_id="Tweet ID to check (e.g. 1978993084693102705)")
 async def checktweet(interaction: discord.Interaction, tweet_id: str):
     """Check if a specific tweet ID matches current latest tweet"""
@@ -2360,7 +2361,7 @@ async def checktweet(interaction: discord.Interaction, tweet_id: str):
         await interaction.edit_original_response(content="❌ Error checking specific tweet.")
 
 # Command to add specific tweet by ID
-@bot.tree.command(name="addtweet", description="Manually add a tweet by ID to the channel")
+@twitter_group.command(name="add", description="Manually add a tweet by ID to the channel")
 @app_commands.describe(tweet_id="Tweet ID to post (e.g. 1979003059117207752)")
 async def addtweet(interaction: discord.Interaction, tweet_id: str):
     """Manually add a specific tweet by ID"""
@@ -2426,7 +2427,7 @@ async def addtweet(interaction: discord.Interaction, tweet_id: str):
         print(f"Error in add tweet by ID: {e}")
         await interaction.edit_original_response(content="💥 Error adding tweet:", embed=error_embed)
 
-@bot.tree.command(name="searchtweet", description="Search @p1mek tweets by keyword")
+@twitter_group.command(name="search", description="Search @p1mek tweets by keyword")
 @app_commands.describe(query="Keywords to search for")
 async def searchtweet(interaction: discord.Interaction, query: str):
     """Search through recent tweets"""
@@ -2490,7 +2491,7 @@ async def searchtweet(interaction: discord.Interaction, query: str):
         print(f"Error searching tweets: {e}")
         await interaction.edit_original_response(content=f"❌ Error searching tweets: {e}")
 
-@bot.tree.command(name="tweetstats", description="@p1mek Twitter analytics and statistics")
+@twitter_group.command(name="stats", description="@p1mek Twitter analytics and statistics")
 async def tweetstats(interaction: discord.Interaction):
     """Show Twitter statistics"""
     await interaction.response.defer()
