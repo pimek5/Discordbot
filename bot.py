@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 
 # Import Orianna modules
-from database import initialize_database
+from database import initialize_database, get_db
 from riot_api import RiotAPI, load_champion_data
 import profile_commands
 import stats_commands
@@ -462,6 +462,12 @@ class MyBot(commands.Bot):
                 db = initialize_database(DATABASE_URL)
                 if db:
                     print("✅ Database connection established")
+                    
+                    # Add default allowed channel
+                    default_channel_id = 1435422230421962762
+                    if not db.is_channel_allowed(GUILD_ID, default_channel_id):
+                        db.add_allowed_channel(GUILD_ID, default_channel_id)
+                        print(f"✅ Added default channel {default_channel_id} to allowed list")
                 else:
                     print("❌ Failed to connect to database")
                     
@@ -476,6 +482,11 @@ class MyBot(commands.Bot):
                 await self.add_cog(profile_commands.ProfileCommands(self, riot_api, GUILD_ID))
                 await self.add_cog(stats_commands.StatsCommands(self, riot_api, GUILD_ID))
                 await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
+                
+                # Load settings commands
+                from settings_commands import SettingsCommands
+                await self.add_cog(SettingsCommands(self))
+                
                 print("✅ Orianna Bot commands registered")
                 
                 orianna_initialized = True
@@ -483,6 +494,40 @@ class MyBot(commands.Bot):
             except Exception as e:
                 print(f"❌ Error initializing Orianna Bot: {e}")
                 logging.error(f"Orianna initialization error: {e}", exc_info=True)
+        
+        # Add global check for Orianna commands (channel restrictions)
+        async def orianna_check(interaction: discord.Interaction) -> bool:
+            """Check if command can be used in this channel"""
+            # Skip check for Loldle commands
+            if interaction.command and interaction.command.name.startswith('loldle'):
+                return True
+            
+            # Skip check for settings commands (admin only)
+            if interaction.command and interaction.command.name == 'settings':
+                return True
+            
+            # Check if command is from Orianna cogs
+            if interaction.command and hasattr(interaction.command, 'cog'):
+                cog_name = interaction.command.cog.__class__.__name__
+                if cog_name in ['ProfileCommands', 'StatsCommands', 'LeaderboardCommands']:
+                    db = get_db()
+                    allowed_channels = db.get_allowed_channels(interaction.guild.id)
+                    
+                    # If no channels configured, allow all
+                    if not allowed_channels:
+                        return True
+                    
+                    # Check if current channel is allowed
+                    if interaction.channel.id not in allowed_channels:
+                        await interaction.response.send_message(
+                            "❌ This command can only be used in designated channels!",
+                            ephemeral=True
+                        )
+                        return False
+            
+            return True
+        
+        self.tree.interaction_check = orianna_check
         
         guild = discord.Object(id=1153027935553454191)
         

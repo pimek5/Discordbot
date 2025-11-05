@@ -430,6 +430,63 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    # ==================== CHANNEL PERMISSIONS ====================
+    
+    def add_allowed_channel(self, guild_id: int, channel_id: int):
+        """Add a channel to allowed channels list"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO allowed_channels (guild_id, channel_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (guild_id, channel_id) DO NOTHING
+                """, (guild_id, channel_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def remove_allowed_channel(self, guild_id: int, channel_id: int):
+        """Remove a channel from allowed channels list"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    DELETE FROM allowed_channels 
+                    WHERE guild_id = %s AND channel_id = %s
+                """, (guild_id, channel_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def get_allowed_channels(self, guild_id: int) -> List[int]:
+        """Get all allowed channel IDs for a guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT channel_id FROM allowed_channels 
+                    WHERE guild_id = %s
+                """, (guild_id,))
+                return [row[0] for row in cur.fetchall()]
+        finally:
+            self.return_connection(conn)
+    
+    def is_channel_allowed(self, guild_id: int, channel_id: int) -> bool:
+        """Check if a channel is in the allowed list"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT EXISTS(
+                        SELECT 1 FROM allowed_channels 
+                        WHERE guild_id = %s AND channel_id = %s
+                    )
+                """, (guild_id, channel_id))
+                return cur.fetchone()[0]
+        finally:
+            self.return_connection(conn)
+    
     # ==================== WORKER OPERATIONS ====================
     
     def get_all_users_with_accounts(self) -> List[Dict]:
@@ -457,6 +514,7 @@ class Database:
 
 # Global database instance
 db = None
+
 
 def initialize_database(database_url: str = None):
     """Initialize the global database instance"""

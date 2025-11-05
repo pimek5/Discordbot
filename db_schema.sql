@@ -93,6 +93,15 @@ CREATE TABLE IF NOT EXISTS verification_codes (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Allowed channels for bot commands (per guild)
+CREATE TABLE IF NOT EXISTS allowed_channels (
+    id SERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(guild_id, channel_id)
+);
+
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_snowflake ON users(snowflake);
 CREATE INDEX IF NOT EXISTS idx_league_accounts_user ON league_accounts(user_id);
@@ -103,3 +112,4 @@ CREATE INDEX IF NOT EXISTS idx_mastery_delta_user_champ ON user_mastery_delta(us
 CREATE INDEX IF NOT EXISTS idx_ranks_user ON user_ranks(user_id);
 CREATE INDEX IF NOT EXISTS idx_guild_members_guild ON guild_members(guild_id);
 CREATE INDEX IF NOT EXISTS idx_verification_expires ON verification_codes(expires_at);
+CREATE INDEX IF NOT EXISTS idx_allowed_channels_guild ON allowed_channels(guild_id);
