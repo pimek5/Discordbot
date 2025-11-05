@@ -119,12 +119,9 @@ class ProfileCommands(commands.Cog):
         summoner_level = summoner_data.get('summonerLevel', 1)
         current_icon = summoner_data.get('profileIconId', 0)
         
-        # Generate random icon ID for verification (from common icons)
+        # Generate random icon ID for verification (basic starter icons 0-28)
         import random
-        verification_icon = random.choice([
-            588, 3379, 4568, 5143, 5360, 5377, 5893, 6070, 6104, 6111,
-            521, 4407, 5391, 29, 3273, 4909, 6, 7, 8, 9, 10
-        ])
+        verification_icon = random.randint(0, 28)
         
         # Save to database (no longer need summoner_id)
         user_id = db.get_or_create_user(interaction.user.id)
