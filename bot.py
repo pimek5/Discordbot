@@ -492,6 +492,11 @@ class MyBot(commands.Bot):
         self.tree.add_command(quote, guild=guild)
         self.tree.add_command(emoji, guild=guild)
         self.tree.add_command(ability, guild=guild)
+        self.tree.add_command(loldletop, guild=guild)
+        self.tree.add_command(searchtweet, guild=guild)
+        self.tree.add_command(tweetstats, guild=guild)
+        self.tree.add_command(serverstats, guild=guild)
+        self.tree.add_command(activity, guild=guild)
         
         # Copy global commands (from Orianna Cogs) to guild
         self.tree.copy_global_to(guild=guild)
