@@ -183,25 +183,33 @@ class RiotAPI:
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
         url = f"https://{platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
         
+        logger.info(f"🔍 Fetching summoner from platform: {platform}")
+        
         for attempt in range(retries):
             try:
                 timeout = aiohttp.ClientTimeout(total=30, connect=10)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
                         if response.status == 200:
+                            logger.info(f"✅ Got summoner data from {platform}")
                             return await response.json()
                         elif response.status == 404:
+                            logger.warning(f"❌ Summoner not found on {platform} (404)")
                             return None
                         elif response.status == 429:
+                            logger.warning(f"⏳ Rate limited on {platform}")
                             await asyncio.sleep(2)
                             continue
+                        else:
+                            logger.error(f"❌ Unexpected status {response.status} from {platform}")
+                            return None
             except asyncio.TimeoutError:
-                logger.warning(f"⏱️ Timeout getting summoner (attempt {attempt + 1}/{retries})")
+                logger.warning(f"⏱️ Timeout getting summoner from {platform} (attempt {attempt + 1}/{retries})")
                 if attempt < retries - 1:
                     await asyncio.sleep(2)
                 continue
             except aiohttp.ClientError as e:
-                logger.warning(f"🌐 Network error getting summoner (attempt {attempt + 1}/{retries}): {e}")
+                logger.error(f"🌐 Network error getting summoner from {platform} (attempt {attempt + 1}/{retries}): {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(2)
                 continue
