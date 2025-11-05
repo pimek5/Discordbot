@@ -221,14 +221,15 @@ class RiotAPI:
         logger.warning(f"⚠️ Failed to get summoner after {retries} attempts")
         return None
     
-    async def verify_third_party_code(self, summoner_id: str, region: str, 
+    async def verify_third_party_code(self, puuid: str, region: str, 
                                      expected_code: str, retries: int = 3) -> bool:
-        """Verify League client 3rd party code - uses platform endpoint"""
+        """Verify League client 3rd party code - uses platform endpoint with PUUID"""
         if not self.api_key:
             return False
         
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
-        url = f"https://{platform}.api.riotgames.com/lol/platform/v4/third-party-code/by-summoner/{summoner_id}"
+        # Use PUUID endpoint instead of summoner ID
+        url = f"https://{platform}.api.riotgames.com/lol/platform/v4/third-party-code/by-puuid/{puuid}"
         
         for attempt in range(retries):
             try:
@@ -252,14 +253,18 @@ class RiotAPI:
         
         return False
     
-    async def get_ranked_stats(self, summoner_id: str, region: str, 
+    async def get_ranked_stats(self, puuid: str, region: str, 
                               retries: int = 5) -> Optional[List[Dict]]:
-        """Get ranked statistics - uses platform endpoint"""
+        """Get ranked statistics - uses platform endpoint with PUUID"""
         if not self.api_key:
             return None
         
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
-        url = f"https://{platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+        # NOTE: league-v4 still uses summoner ID, not PUUID
+        # We need to get summoner data first to get the ID
+        logger.warning(f"⚠️ get_ranked_stats requires summoner_id which is no longer in API response")
+        logger.warning(f"⚠️ This endpoint needs refactoring - ranked stats may not work")
+        return None
         
         for attempt in range(retries):
             try:

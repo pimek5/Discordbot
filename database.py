@@ -95,9 +95,9 @@ class Database:
     # ==================== LEAGUE ACCOUNT OPERATIONS ====================
     
     def add_league_account(self, user_id: int, region: str, game_name: str, 
-                          tagline: str, puuid: str, summoner_id: str,
+                          tagline: str, puuid: str, summoner_id: Optional[str] = None,
                           summoner_level: int = 1, verified: bool = False) -> int:
-        """Add a new League account"""
+        """Add a new League account (summoner_id is optional as it's deprecated)"""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
@@ -111,7 +111,7 @@ class Database:
                      summoner_id, summoner_level, primary_account, verified, verified_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id, puuid) DO UPDATE SET
-                        summoner_id = EXCLUDED.summoner_id,
+                        summoner_id = COALESCE(EXCLUDED.summoner_id, league_accounts.summoner_id),
                         summoner_level = EXCLUDED.summoner_level,
                         verified = EXCLUDED.verified,
                         verified_at = EXCLUDED.verified_at,
@@ -359,7 +359,7 @@ class Database:
     
     def create_verification_code(self, user_id: int, code: str, game_name: str,
                                 tagline: str, region: str, puuid: str, 
-                                summoner_id: str, expires_minutes: int = 5) -> int:
+                                expires_minutes: int = 5) -> int:
         """Create a verification code"""
         conn = self.get_connection()
         try:
@@ -368,9 +368,9 @@ class Database:
                 cur.execute("""
                     INSERT INTO verification_codes 
                     (user_id, code, riot_id_game_name, riot_id_tagline, region, puuid, summoner_id, expires_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, NULL, %s)
                     RETURNING id
-                """, (user_id, code, game_name, tagline, region, puuid, summoner_id, expires_at))
+                """, (user_id, code, game_name, tagline, region, puuid, expires_at))
                 code_id = cur.fetchone()[0]
                 conn.commit()
                 return code_id

@@ -116,17 +116,16 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        summoner_id = summoner_data['id']
         summoner_level = summoner_data.get('summonerLevel', 1)
         
         # Generate verification code
         code = generate_verification_code()
         
-        # Save to database
+        # Save to database (no longer need summoner_id)
         user_id = db.get_or_create_user(interaction.user.id)
         db.create_verification_code(
             user_id, code, game_name, tag_line, 
-            detected_region, puuid, summoner_id, expires_minutes=5
+            detected_region, puuid, expires_minutes=5
         )
         
         # Create embed
@@ -210,7 +209,7 @@ class ProfileCommands(commands.Cog):
         logger.info(f"🔐 Verifying code for {verification['riot_id_game_name']}#{verification['riot_id_tagline']}")
         
         is_valid = await self.riot_api.verify_third_party_code(
-            verification['summoner_id'],
+            verification['puuid'],
             verification['region'],
             verification['code']
         )
@@ -225,14 +224,14 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        # Success! Add account to database
+        # Success! Add account to database (summoner_id no longer available)
         db.add_league_account(
             user['id'],
             verification['region'],
             verification['riot_id_game_name'],
             verification['riot_id_tagline'],
             verification['puuid'],
-            verification['summoner_id'],
+            summoner_id=None,  # No longer provided by API
             verified=True
         )
         
