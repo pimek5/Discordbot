@@ -50,9 +50,7 @@ CREATE TABLE IF NOT EXISTS user_mastery_delta (
     champion_id INTEGER NOT NULL,
     delta INTEGER NOT NULL,           -- Change in points (+500, +1200, etc)
     value INTEGER NOT NULL,            -- Total points after change
-    timestamp TIMESTAMP DEFAULT NOW(),
-    INDEX idx_user_champion (user_id, champion_id),
-    INDEX idx_timestamp (timestamp)
+    timestamp TIMESTAMP DEFAULT NOW()
 );
 
 -- Ranked statistics
