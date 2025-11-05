@@ -527,9 +527,8 @@ class ProfileCommands(commands.Cog):
                 )
 
             
-            # Set thumbnail to top champion
-            if top_champs:
-                embed.set_thumbnail(url=get_champion_icon_url(top_champs[0]['champion_id']))
+            # Set thumbnail to bot avatar GIF
+            embed.set_thumbnail(url="https://cdn.discordapp.com/avatars/1274276113660645389/a_445fd12821cb7e77b1258cc379f07da7.gif?size=1024")
         else:
             embed.add_field(
                 name="📊 Champion Mastery",
