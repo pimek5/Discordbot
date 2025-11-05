@@ -605,7 +605,7 @@ class ProfileCommands(commands.Cog):
         
         # Add accounts in two columns
         embed.add_field(
-            name="**Accounts**",
+            name="Accounts",
             value="\n".join(left_col) if left_col else "No accounts",
             inline=True
         )
