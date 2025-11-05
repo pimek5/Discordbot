@@ -489,9 +489,12 @@ class MyBot(commands.Bot):
         self.tree.add_command(emoji, guild=guild)
         self.tree.add_command(ability, guild=guild)
         
-        # Sync ALL commands (main bot + Orianna) at once
-        await self.tree.sync(guild=guild)
-        print("✅ All commands synced to Discord")
+        # Copy global commands (from Orianna Cogs) to guild
+        self.tree.copy_global_to(guild=guild)
+        
+        # Sync ALL commands to guild (fast, instant update)
+        synced_guild = await self.tree.sync(guild=guild)
+        print(f"✅ Synced {len(synced_guild)} commands to guild")
 
 bot = MyBot()
 
