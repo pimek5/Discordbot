@@ -1,0 +1,189 @@
+CHAMPION EMOJIS:
+============================================================
+
+  1. champ_Aatrox                   <- upload: Aatrox.png
+  2. champ_Ahri                     <- upload: Ahri.png
+  3. champ_Akali                    <- upload: Akali.png
+  4. champ_Akshan                   <- upload: Akshan.png
+  5. champ_Alistar                  <- upload: Alistar.png
+  6. champ_Ambessa                  <- upload: Ambessa.png
+  7. champ_Amumu                    <- upload: Amumu.png
+  8. champ_Anivia                   <- upload: Anivia.png
+  9. champ_Annie                    <- upload: Annie.png
+ 10. champ_Aphelios                 <- upload: Aphelios.png
+ 11. champ_Ashe                     <- upload: Ashe.png
+ 12. champ_AurelionSol              <- upload: AurelionSol.png
+ 13. champ_Aurora                   <- upload: Aurora.png
+ 14. champ_Azir                     <- upload: Azir.png
+ 15. champ_Bard                     <- upload: Bard.png
+ 16. champ_Belveth                  <- upload: Belveth.png
+ 17. champ_Blitzcrank               <- upload: Blitzcrank.png
+ 18. champ_Brand                    <- upload: Brand.png
+ 19. champ_Braum                    <- upload: Braum.png
+ 20. champ_Briar                    <- upload: Briar.png
+ 21. champ_Caitlyn                  <- upload: Caitlyn.png
+ 22. champ_Camille                  <- upload: Camille.png
+ 23. champ_Cassiopeia               <- upload: Cassiopeia.png
+ 24. champ_Chogath                  <- upload: Chogath.png
+ 25. champ_Corki                    <- upload: Corki.png
+ 26. champ_Darius                   <- upload: Darius.png
+ 27. champ_Diana                    <- upload: Diana.png
+ 28. champ_Draven                   <- upload: Draven.png
+ 29. champ_DrMundo                  <- upload: DrMundo.png
+ 30. champ_Ekko                     <- upload: Ekko.png
+ 31. champ_Elise                    <- upload: Elise.png
+ 32. champ_Evelynn                  <- upload: Evelynn.png
+ 33. champ_Ezreal                   <- upload: Ezreal.png
+ 34. champ_Fiddlesticks             <- upload: Fiddlesticks.png
+ 35. champ_Fiora                    <- upload: Fiora.png
+ 36. champ_Fizz                     <- upload: Fizz.png
+ 37. champ_Galio                    <- upload: Galio.png
+ 38. champ_Gangplank                <- upload: Gangplank.png
+ 39. champ_Garen                    <- upload: Garen.png
+ 40. champ_Gnar                     <- upload: Gnar.png
+ 41. champ_Gragas                   <- upload: Gragas.png
+ 42. champ_Graves                   <- upload: Graves.png
+ 43. champ_Gwen                     <- upload: Gwen.png
+ 44. champ_Hecarim                  <- upload: Hecarim.png
+ 45. champ_Heimerdinger             <- upload: Heimerdinger.png
+ 46. champ_Hwei                     <- upload: Hwei.png
+ 47. champ_Illaoi                   <- upload: Illaoi.png
+ 48. champ_Irelia                   <- upload: Irelia.png
+ 49. champ_Ivern                    <- upload: Ivern.png
+ 50. champ_Janna                    <- upload: Janna.png
+ 51. champ_JarvanIV                 <- upload: JarvanIV.png
+ 52. champ_Jax                      <- upload: Jax.png
+ 53. champ_Jayce                    <- upload: Jayce.png
+ 54. champ_Jhin                     <- upload: Jhin.png
+ 55. champ_Jinx                     <- upload: Jinx.png
+ 56. champ_Kaisa                    <- upload: Kaisa.png
+ 57. champ_Kalista                  <- upload: Kalista.png
+ 58. champ_Karma                    <- upload: Karma.png
+ 59. champ_Karthus                  <- upload: Karthus.png
+ 60. champ_Kassadin                 <- upload: Kassadin.png
+ 61. champ_Katarina                 <- upload: Katarina.png
+ 62. champ_Kayle                    <- upload: Kayle.png
+ 63. champ_Kayn                     <- upload: Kayn.png
+ 64. champ_Kennen                   <- upload: Kennen.png
+ 65. champ_Khazix                   <- upload: Khazix.png
+ 66. champ_Kindred                  <- upload: Kindred.png
+ 67. champ_Kled                     <- upload: Kled.png
+ 68. champ_KogMaw                   <- upload: KogMaw.png
+ 69. champ_KSante                   <- upload: KSante.png
+ 70. champ_Leblanc                  <- upload: Leblanc.png
+ 71. champ_LeeSin                   <- upload: LeeSin.png
+ 72. champ_Leona                    <- upload: Leona.png
+ 73. champ_Lillia                   <- upload: Lillia.png
+ 74. champ_Lissandra                <- upload: Lissandra.png
+ 75. champ_Lucian                   <- upload: Lucian.png
+ 76. champ_Lulu                     <- upload: Lulu.png
+ 77. champ_Lux                      <- upload: Lux.png
+ 78. champ_Malphite                 <- upload: Malphite.png
+ 79. champ_Malzahar                 <- upload: Malzahar.png
+ 80. champ_Maokai                   <- upload: Maokai.png
+ 81. champ_MasterYi                 <- upload: MasterYi.png
+ 82. champ_Mel                      <- upload: Mel.png
+ 83. champ_Milio                    <- upload: Milio.png
+ 84. champ_MissFortune              <- upload: MissFortune.png
+ 85. champ_Mordekaiser              <- upload: Mordekaiser.png
+ 86. champ_Morgana                  <- upload: Morgana.png
+ 87. champ_Naafiri                  <- upload: Naafiri.png
+ 88. champ_Nami                     <- upload: Nami.png
+ 89. champ_Nasus                    <- upload: Nasus.png
+ 90. champ_Nautilus                 <- upload: Nautilus.png
+ 91. champ_Neeko                    <- upload: Neeko.png
+ 92. champ_Nidalee                  <- upload: Nidalee.png
+ 93. champ_Nilah                    <- upload: Nilah.png
+ 94. champ_Nocturne                 <- upload: Nocturne.png
+ 95. champ_Nunu                     <- upload: Nunu.png
+ 96. champ_Olaf                     <- upload: Olaf.png
+ 97. champ_Orianna                  <- upload: Orianna.png
+ 98. champ_Ornn                     <- upload: Ornn.png
+ 99. champ_Pantheon                 <- upload: Pantheon.png
+100. champ_Poppy                    <- upload: Poppy.png
+101. champ_Pyke                     <- upload: Pyke.png
+102. champ_Qiyana                   <- upload: Qiyana.png
+103. champ_Quinn                    <- upload: Quinn.png
+104. champ_Rakan                    <- upload: Rakan.png
+105. champ_Rammus                   <- upload: Rammus.png
+106. champ_RekSai                   <- upload: RekSai.png
+107. champ_Rell                     <- upload: Rell.png
+108. champ_RenataGlasc              <- upload: RenataGlasc.png
+109. champ_Renekton                 <- upload: Renekton.png
+110. champ_Rengar                   <- upload: Rengar.png
+111. champ_Riven                    <- upload: Riven.png
+112. champ_Rumble                   <- upload: Rumble.png
+113. champ_Ryze                     <- upload: Ryze.png
+114. champ_Samira                   <- upload: Samira.png
+115. champ_Sejuani                  <- upload: Sejuani.png
+116. champ_Senna                    <- upload: Senna.png
+117. champ_Seraphine                <- upload: Seraphine.png
+118. champ_Sett                     <- upload: Sett.png
+119. champ_Shaco                    <- upload: Shaco.png
+120. champ_Shen                     <- upload: Shen.png
+121. champ_Shyvana                  <- upload: Shyvana.png
+122. champ_Singed                   <- upload: Singed.png
+123. champ_Sion                     <- upload: Sion.png
+124. champ_Sivir                    <- upload: Sivir.png
+125. champ_Skarner                  <- upload: Skarner.png
+126. champ_Smolder                  <- upload: Smolder.png
+127. champ_Sona                     <- upload: Sona.png
+128. champ_Soraka                   <- upload: Soraka.png
+129. champ_Swain                    <- upload: Swain.png
+130. champ_Sylas                    <- upload: Sylas.png
+131. champ_Syndra                   <- upload: Syndra.png
+132. champ_TahmKench                <- upload: TahmKench.png
+133. champ_Taliyah                  <- upload: Taliyah.png
+134. champ_Talon                    <- upload: Talon.png
+135. champ_Taric                    <- upload: Taric.png
+136. champ_Teemo                    <- upload: Teemo.png
+137. champ_Thresh                   <- upload: Thresh.png
+138. champ_Tristana                 <- upload: Tristana.png
+139. champ_Trundle                  <- upload: Trundle.png
+140. champ_Tryndamere               <- upload: Tryndamere.png
+141. champ_TwistedFate              <- upload: TwistedFate.png
+142. champ_Twitch                   <- upload: Twitch.png
+143. champ_Udyr                     <- upload: Udyr.png
+144. champ_Urgot                    <- upload: Urgot.png
+145. champ_Varus                    <- upload: Varus.png
+146. champ_Vayne                    <- upload: Vayne.png
+147. champ_Veigar                   <- upload: Veigar.png
+148. champ_Velkoz                   <- upload: Velkoz.png
+149. champ_Vex                      <- upload: Vex.png
+150. champ_Vi                       <- upload: Vi.png
+151. champ_Viego                    <- upload: Viego.png
+152. champ_Viktor                   <- upload: Viktor.png
+153. champ_Vladimir                 <- upload: Vladimir.png
+154. champ_Volibear                 <- upload: Volibear.png
+155. champ_Warwick                  <- upload: Warwick.png
+156. champ_Wukong                   <- upload: Wukong.png
+157. champ_Xayah                    <- upload: Xayah.png
+158. champ_Xerath                   <- upload: Xerath.png
+159. champ_XinZhao                  <- upload: XinZhao.png
+160. champ_Yasuo                    <- upload: Yasuo.png
+161. champ_Yone                     <- upload: Yone.png
+162. champ_Yorick                   <- upload: Yorick.png
+163. champ_Yunara                   <- upload: Yunara.png
+164. champ_Yuumi                    <- upload: Yuumi.png
+165. champ_Zac                      <- upload: Zac.png
+166. champ_Zed                      <- upload: Zed.png
+167. champ_Zeri                     <- upload: Zeri.png
+168. champ_Ziggs                    <- upload: Ziggs.png
+169. champ_Zilean                   <- upload: Zilean.png
+170. champ_Zoe                      <- upload: Zoe.png
+171. champ_Zyra                     <- upload: Zyra.png
+
+============================================================
+RANK EMOJIS:
+============================================================
+
+  1. rank_Bronze                    <- upload: Bronze.png
+  2. rank_Challenger                <- upload: Challenger.png
+  3. rank_Diamond                   <- upload: Diamond.png
+  4. rank_Emerald                   <- upload: Emerald.png
+  5. rank_Gold                      <- upload: Gold.png
+  6. rank_Grandmaster               <- upload: Grandmaster.png
+  7. rank_Iron                      <- upload: Iron.png
+  8. rank_Master                    <- upload: Master.png
+  9. rank_Platinum                  <- upload: Platinum.png
+ 10. rank_Silver                    <- upload: Silver.png

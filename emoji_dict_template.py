@@ -1,0 +1,189 @@
+# Emoji dictionary - uzupełnij ID po uploadzie
+# Znajdź ID: prawy przycisk na emotce -> Copy ID
+
+CHAMPION_EMOJIS = {
+    'Aatrox': '<:champ_Aatrox:YOUR_EMOJI_ID>',  # Aatrox
+    'Ahri': '<:champ_Ahri:YOUR_EMOJI_ID>',  # Ahri
+    'Akali': '<:champ_Akali:YOUR_EMOJI_ID>',  # Akali
+    'Akshan': '<:champ_Akshan:YOUR_EMOJI_ID>',  # Akshan
+    'Alistar': '<:champ_Alistar:YOUR_EMOJI_ID>',  # Alistar
+    'Ambessa': '<:champ_Ambessa:YOUR_EMOJI_ID>',  # Ambessa
+    'Amumu': '<:champ_Amumu:YOUR_EMOJI_ID>',  # Amumu
+    'Anivia': '<:champ_Anivia:YOUR_EMOJI_ID>',  # Anivia
+    'Annie': '<:champ_Annie:YOUR_EMOJI_ID>',  # Annie
+    'Aphelios': '<:champ_Aphelios:YOUR_EMOJI_ID>',  # Aphelios
+    'Ashe': '<:champ_Ashe:YOUR_EMOJI_ID>',  # Ashe
+    'AurelionSol': '<:champ_AurelionSol:YOUR_EMOJI_ID>',  # AurelionSol
+    'Aurora': '<:champ_Aurora:YOUR_EMOJI_ID>',  # Aurora
+    'Azir': '<:champ_Azir:YOUR_EMOJI_ID>',  # Azir
+    'Bard': '<:champ_Bard:YOUR_EMOJI_ID>',  # Bard
+    'Belveth': '<:champ_Belveth:YOUR_EMOJI_ID>',  # Belveth
+    'Blitzcrank': '<:champ_Blitzcrank:YOUR_EMOJI_ID>',  # Blitzcrank
+    'Brand': '<:champ_Brand:YOUR_EMOJI_ID>',  # Brand
+    'Braum': '<:champ_Braum:YOUR_EMOJI_ID>',  # Braum
+    'Briar': '<:champ_Briar:YOUR_EMOJI_ID>',  # Briar
+    'Caitlyn': '<:champ_Caitlyn:YOUR_EMOJI_ID>',  # Caitlyn
+    'Camille': '<:champ_Camille:YOUR_EMOJI_ID>',  # Camille
+    'Cassiopeia': '<:champ_Cassiopeia:YOUR_EMOJI_ID>',  # Cassiopeia
+    'Chogath': '<:champ_Chogath:YOUR_EMOJI_ID>',  # Chogath
+    'Corki': '<:champ_Corki:YOUR_EMOJI_ID>',  # Corki
+    'Darius': '<:champ_Darius:YOUR_EMOJI_ID>',  # Darius
+    'Diana': '<:champ_Diana:YOUR_EMOJI_ID>',  # Diana
+    'Draven': '<:champ_Draven:YOUR_EMOJI_ID>',  # Draven
+    'DrMundo': '<:champ_DrMundo:YOUR_EMOJI_ID>',  # DrMundo
+    'Ekko': '<:champ_Ekko:YOUR_EMOJI_ID>',  # Ekko
+    'Elise': '<:champ_Elise:YOUR_EMOJI_ID>',  # Elise
+    'Evelynn': '<:champ_Evelynn:YOUR_EMOJI_ID>',  # Evelynn
+    'Ezreal': '<:champ_Ezreal:YOUR_EMOJI_ID>',  # Ezreal
+    'Fiddlesticks': '<:champ_Fiddlesticks:YOUR_EMOJI_ID>',  # Fiddlesticks
+    'Fiora': '<:champ_Fiora:YOUR_EMOJI_ID>',  # Fiora
+    'Fizz': '<:champ_Fizz:YOUR_EMOJI_ID>',  # Fizz
+    'Galio': '<:champ_Galio:YOUR_EMOJI_ID>',  # Galio
+    'Gangplank': '<:champ_Gangplank:YOUR_EMOJI_ID>',  # Gangplank
+    'Garen': '<:champ_Garen:YOUR_EMOJI_ID>',  # Garen
+    'Gnar': '<:champ_Gnar:YOUR_EMOJI_ID>',  # Gnar
+    'Gragas': '<:champ_Gragas:YOUR_EMOJI_ID>',  # Gragas
+    'Graves': '<:champ_Graves:YOUR_EMOJI_ID>',  # Graves
+    'Gwen': '<:champ_Gwen:YOUR_EMOJI_ID>',  # Gwen
+    'Hecarim': '<:champ_Hecarim:YOUR_EMOJI_ID>',  # Hecarim
+    'Heimerdinger': '<:champ_Heimerdinger:YOUR_EMOJI_ID>',  # Heimerdinger
+    'Hwei': '<:champ_Hwei:YOUR_EMOJI_ID>',  # Hwei
+    'Illaoi': '<:champ_Illaoi:YOUR_EMOJI_ID>',  # Illaoi
+    'Irelia': '<:champ_Irelia:YOUR_EMOJI_ID>',  # Irelia
+    'Ivern': '<:champ_Ivern:YOUR_EMOJI_ID>',  # Ivern
+    'Janna': '<:champ_Janna:YOUR_EMOJI_ID>',  # Janna
+    'JarvanIV': '<:champ_JarvanIV:YOUR_EMOJI_ID>',  # JarvanIV
+    'Jax': '<:champ_Jax:YOUR_EMOJI_ID>',  # Jax
+    'Jayce': '<:champ_Jayce:YOUR_EMOJI_ID>',  # Jayce
+    'Jhin': '<:champ_Jhin:YOUR_EMOJI_ID>',  # Jhin
+    'Jinx': '<:champ_Jinx:YOUR_EMOJI_ID>',  # Jinx
+    'Kaisa': '<:champ_Kaisa:YOUR_EMOJI_ID>',  # Kaisa
+    'Kalista': '<:champ_Kalista:YOUR_EMOJI_ID>',  # Kalista
+    'Karma': '<:champ_Karma:YOUR_EMOJI_ID>',  # Karma
+    'Karthus': '<:champ_Karthus:YOUR_EMOJI_ID>',  # Karthus
+    'Kassadin': '<:champ_Kassadin:YOUR_EMOJI_ID>',  # Kassadin
+    'Katarina': '<:champ_Katarina:YOUR_EMOJI_ID>',  # Katarina
+    'Kayle': '<:champ_Kayle:YOUR_EMOJI_ID>',  # Kayle
+    'Kayn': '<:champ_Kayn:YOUR_EMOJI_ID>',  # Kayn
+    'Kennen': '<:champ_Kennen:YOUR_EMOJI_ID>',  # Kennen
+    'Khazix': '<:champ_Khazix:YOUR_EMOJI_ID>',  # Khazix
+    'Kindred': '<:champ_Kindred:YOUR_EMOJI_ID>',  # Kindred
+    'Kled': '<:champ_Kled:YOUR_EMOJI_ID>',  # Kled
+    'KogMaw': '<:champ_KogMaw:YOUR_EMOJI_ID>',  # KogMaw
+    'KSante': '<:champ_KSante:YOUR_EMOJI_ID>',  # KSante
+    'Leblanc': '<:champ_Leblanc:YOUR_EMOJI_ID>',  # Leblanc
+    'LeeSin': '<:champ_LeeSin:YOUR_EMOJI_ID>',  # LeeSin
+    'Leona': '<:champ_Leona:YOUR_EMOJI_ID>',  # Leona
+    'Lillia': '<:champ_Lillia:YOUR_EMOJI_ID>',  # Lillia
+    'Lissandra': '<:champ_Lissandra:YOUR_EMOJI_ID>',  # Lissandra
+    'Lucian': '<:champ_Lucian:YOUR_EMOJI_ID>',  # Lucian
+    'Lulu': '<:champ_Lulu:YOUR_EMOJI_ID>',  # Lulu
+    'Lux': '<:champ_Lux:YOUR_EMOJI_ID>',  # Lux
+    'Malphite': '<:champ_Malphite:YOUR_EMOJI_ID>',  # Malphite
+    'Malzahar': '<:champ_Malzahar:YOUR_EMOJI_ID>',  # Malzahar
+    'Maokai': '<:champ_Maokai:YOUR_EMOJI_ID>',  # Maokai
+    'MasterYi': '<:champ_MasterYi:YOUR_EMOJI_ID>',  # MasterYi
+    'Mel': '<:champ_Mel:YOUR_EMOJI_ID>',  # Mel
+    'Milio': '<:champ_Milio:YOUR_EMOJI_ID>',  # Milio
+    'MissFortune': '<:champ_MissFortune:YOUR_EMOJI_ID>',  # MissFortune
+    'Mordekaiser': '<:champ_Mordekaiser:YOUR_EMOJI_ID>',  # Mordekaiser
+    'Morgana': '<:champ_Morgana:YOUR_EMOJI_ID>',  # Morgana
+    'Naafiri': '<:champ_Naafiri:YOUR_EMOJI_ID>',  # Naafiri
+    'Nami': '<:champ_Nami:YOUR_EMOJI_ID>',  # Nami
+    'Nasus': '<:champ_Nasus:YOUR_EMOJI_ID>',  # Nasus
+    'Nautilus': '<:champ_Nautilus:YOUR_EMOJI_ID>',  # Nautilus
+    'Neeko': '<:champ_Neeko:YOUR_EMOJI_ID>',  # Neeko
+    'Nidalee': '<:champ_Nidalee:YOUR_EMOJI_ID>',  # Nidalee
+    'Nilah': '<:champ_Nilah:YOUR_EMOJI_ID>',  # Nilah
+    'Nocturne': '<:champ_Nocturne:YOUR_EMOJI_ID>',  # Nocturne
+    'Nunu': '<:champ_Nunu:YOUR_EMOJI_ID>',  # Nunu
+    'Olaf': '<:champ_Olaf:YOUR_EMOJI_ID>',  # Olaf
+    'Orianna': '<:champ_Orianna:YOUR_EMOJI_ID>',  # Orianna
+    'Ornn': '<:champ_Ornn:YOUR_EMOJI_ID>',  # Ornn
+    'Pantheon': '<:champ_Pantheon:YOUR_EMOJI_ID>',  # Pantheon
+    'Poppy': '<:champ_Poppy:YOUR_EMOJI_ID>',  # Poppy
+    'Pyke': '<:champ_Pyke:YOUR_EMOJI_ID>',  # Pyke
+    'Qiyana': '<:champ_Qiyana:YOUR_EMOJI_ID>',  # Qiyana
+    'Quinn': '<:champ_Quinn:YOUR_EMOJI_ID>',  # Quinn
+    'Rakan': '<:champ_Rakan:YOUR_EMOJI_ID>',  # Rakan
+    'Rammus': '<:champ_Rammus:YOUR_EMOJI_ID>',  # Rammus
+    'RekSai': '<:champ_RekSai:YOUR_EMOJI_ID>',  # RekSai
+    'Rell': '<:champ_Rell:YOUR_EMOJI_ID>',  # Rell
+    'RenataGlasc': '<:champ_RenataGlasc:YOUR_EMOJI_ID>',  # RenataGlasc
+    'Renekton': '<:champ_Renekton:YOUR_EMOJI_ID>',  # Renekton
+    'Rengar': '<:champ_Rengar:YOUR_EMOJI_ID>',  # Rengar
+    'Riven': '<:champ_Riven:YOUR_EMOJI_ID>',  # Riven
+    'Rumble': '<:champ_Rumble:YOUR_EMOJI_ID>',  # Rumble
+    'Ryze': '<:champ_Ryze:YOUR_EMOJI_ID>',  # Ryze
+    'Samira': '<:champ_Samira:YOUR_EMOJI_ID>',  # Samira
+    'Sejuani': '<:champ_Sejuani:YOUR_EMOJI_ID>',  # Sejuani
+    'Senna': '<:champ_Senna:YOUR_EMOJI_ID>',  # Senna
+    'Seraphine': '<:champ_Seraphine:YOUR_EMOJI_ID>',  # Seraphine
+    'Sett': '<:champ_Sett:YOUR_EMOJI_ID>',  # Sett
+    'Shaco': '<:champ_Shaco:YOUR_EMOJI_ID>',  # Shaco
+    'Shen': '<:champ_Shen:YOUR_EMOJI_ID>',  # Shen
+    'Shyvana': '<:champ_Shyvana:YOUR_EMOJI_ID>',  # Shyvana
+    'Singed': '<:champ_Singed:YOUR_EMOJI_ID>',  # Singed
+    'Sion': '<:champ_Sion:YOUR_EMOJI_ID>',  # Sion
+    'Sivir': '<:champ_Sivir:YOUR_EMOJI_ID>',  # Sivir
+    'Skarner': '<:champ_Skarner:YOUR_EMOJI_ID>',  # Skarner
+    'Smolder': '<:champ_Smolder:YOUR_EMOJI_ID>',  # Smolder
+    'Sona': '<:champ_Sona:YOUR_EMOJI_ID>',  # Sona
+    'Soraka': '<:champ_Soraka:YOUR_EMOJI_ID>',  # Soraka
+    'Swain': '<:champ_Swain:YOUR_EMOJI_ID>',  # Swain
+    'Sylas': '<:champ_Sylas:YOUR_EMOJI_ID>',  # Sylas
+    'Syndra': '<:champ_Syndra:YOUR_EMOJI_ID>',  # Syndra
+    'TahmKench': '<:champ_TahmKench:YOUR_EMOJI_ID>',  # TahmKench
+    'Taliyah': '<:champ_Taliyah:YOUR_EMOJI_ID>',  # Taliyah
+    'Talon': '<:champ_Talon:YOUR_EMOJI_ID>',  # Talon
+    'Taric': '<:champ_Taric:YOUR_EMOJI_ID>',  # Taric
+    'Teemo': '<:champ_Teemo:YOUR_EMOJI_ID>',  # Teemo
+    'Thresh': '<:champ_Thresh:YOUR_EMOJI_ID>',  # Thresh
+    'Tristana': '<:champ_Tristana:YOUR_EMOJI_ID>',  # Tristana
+    'Trundle': '<:champ_Trundle:YOUR_EMOJI_ID>',  # Trundle
+    'Tryndamere': '<:champ_Tryndamere:YOUR_EMOJI_ID>',  # Tryndamere
+    'TwistedFate': '<:champ_TwistedFate:YOUR_EMOJI_ID>',  # TwistedFate
+    'Twitch': '<:champ_Twitch:YOUR_EMOJI_ID>',  # Twitch
+    'Udyr': '<:champ_Udyr:YOUR_EMOJI_ID>',  # Udyr
+    'Urgot': '<:champ_Urgot:YOUR_EMOJI_ID>',  # Urgot
+    'Varus': '<:champ_Varus:YOUR_EMOJI_ID>',  # Varus
+    'Vayne': '<:champ_Vayne:YOUR_EMOJI_ID>',  # Vayne
+    'Veigar': '<:champ_Veigar:YOUR_EMOJI_ID>',  # Veigar
+    'Velkoz': '<:champ_Velkoz:YOUR_EMOJI_ID>',  # Velkoz
+    'Vex': '<:champ_Vex:YOUR_EMOJI_ID>',  # Vex
+    'Vi': '<:champ_Vi:YOUR_EMOJI_ID>',  # Vi
+    'Viego': '<:champ_Viego:YOUR_EMOJI_ID>',  # Viego
+    'Viktor': '<:champ_Viktor:YOUR_EMOJI_ID>',  # Viktor
+    'Vladimir': '<:champ_Vladimir:YOUR_EMOJI_ID>',  # Vladimir
+    'Volibear': '<:champ_Volibear:YOUR_EMOJI_ID>',  # Volibear
+    'Warwick': '<:champ_Warwick:YOUR_EMOJI_ID>',  # Warwick
+    'Wukong': '<:champ_Wukong:YOUR_EMOJI_ID>',  # Wukong
+    'Xayah': '<:champ_Xayah:YOUR_EMOJI_ID>',  # Xayah
+    'Xerath': '<:champ_Xerath:YOUR_EMOJI_ID>',  # Xerath
+    'XinZhao': '<:champ_XinZhao:YOUR_EMOJI_ID>',  # XinZhao
+    'Yasuo': '<:champ_Yasuo:YOUR_EMOJI_ID>',  # Yasuo
+    'Yone': '<:champ_Yone:YOUR_EMOJI_ID>',  # Yone
+    'Yorick': '<:champ_Yorick:YOUR_EMOJI_ID>',  # Yorick
+    'Yunara': '<:champ_Yunara:YOUR_EMOJI_ID>',  # Yunara
+    'Yuumi': '<:champ_Yuumi:YOUR_EMOJI_ID>',  # Yuumi
+    'Zac': '<:champ_Zac:YOUR_EMOJI_ID>',  # Zac
+    'Zed': '<:champ_Zed:YOUR_EMOJI_ID>',  # Zed
+    'Zeri': '<:champ_Zeri:YOUR_EMOJI_ID>',  # Zeri
+    'Ziggs': '<:champ_Ziggs:YOUR_EMOJI_ID>',  # Ziggs
+    'Zilean': '<:champ_Zilean:YOUR_EMOJI_ID>',  # Zilean
+    'Zoe': '<:champ_Zoe:YOUR_EMOJI_ID>',  # Zoe
+    'Zyra': '<:champ_Zyra:YOUR_EMOJI_ID>',  # Zyra
+}
+
+RANK_EMOJIS = {
+    'IRON': '<:rank_Iron:YOUR_EMOJI_ID>',
+    'BRONZE': '<:rank_Bronze:YOUR_EMOJI_ID>',
+    'SILVER': '<:rank_Silver:YOUR_EMOJI_ID>',
+    'GOLD': '<:rank_Gold:YOUR_EMOJI_ID>',
+    'PLATINUM': '<:rank_Platinum:YOUR_EMOJI_ID>',
+    'EMERALD': '<:rank_Emerald:YOUR_EMOJI_ID>',
+    'DIAMOND': '<:rank_Diamond:YOUR_EMOJI_ID>',
+    'MASTER': '<:rank_Master:YOUR_EMOJI_ID>',
+    'GRANDMASTER': '<:rank_Grandmaster:YOUR_EMOJI_ID>',
+    'CHALLENGER': '<:rank_Challenger:YOUR_EMOJI_ID>',
+}

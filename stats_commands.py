@@ -17,6 +17,7 @@ import logging
 
 from database import get_db
 from riot_api import RiotAPI, CHAMPION_ID_TO_NAME
+from emoji_dict import get_champion_emoji
 
 logger = logging.getLogger('stats_commands')
 
@@ -150,9 +151,12 @@ class StatsCommands(commands.Cog):
         buf.seek(0)
         plt.close()
         
+        # Get champion emoji
+        champ_emoji = get_champion_emoji(champion_name)
+        
         # Create embed
         embed = discord.Embed(
-            title=f"📊 {champion_name} Statistics",
+            title=f"{champ_emoji} 📊 {champion_name} Statistics",
             description=f"Showing progression for {target.mention}",
             color=0x1F8EFA
         )
@@ -234,12 +238,15 @@ class StatsCommands(commands.Cog):
         
         champion_id, champion_name = champ_result
         
+        # Get champion emoji
+        champ_emoji = get_champion_emoji(champion_name)
+        
         # Get mastery stats
         stats = db.get_user_champion_stats(db_user['id'], champion_id)
         
         if not stats or not stats[0]:
             embed = discord.Embed(
-                title=f"{champion_name} Mastery",
+                title=f"{champ_emoji} {champion_name} Mastery",
                 description=f"{target.mention} has **0** mastery points on {champion_name}",
                 color=0x808080
             )
@@ -261,7 +268,7 @@ class StatsCommands(commands.Cog):
                 level_emoji = "💫"
             
             embed = discord.Embed(
-                title=f"{champion_name} Mastery",
+                title=f"{champ_emoji} {champion_name} Mastery",
                 description=f"{target.mention} has **{level_emoji} Level {level}**\n**{points:,}** mastery points",
                 color=0x1F8EFA
             )
@@ -333,9 +340,12 @@ class StatsCommands(commands.Cog):
         winner = user1 if points1 > points2 else user2 if points2 > points1 else None
         difference = abs(points1 - points2)
         
+        # Get champion emoji
+        champ_emoji = get_champion_emoji(champion_name)
+        
         # Create embed
         embed = discord.Embed(
-            title=f"{champion_name} Mastery Comparison",
+            title=f"{champ_emoji} {champion_name} Mastery Comparison",
             color=0x1F8EFA
         )
         

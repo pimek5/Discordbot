@@ -14,22 +14,12 @@ import logging
 
 from database import get_db
 from riot_api import RiotAPI, RIOT_REGIONS, get_champion_icon_url, get_rank_icon_url, CHAMPION_ID_TO_NAME
+from emoji_dict import get_champion_emoji, get_rank_emoji, RANK_EMOJIS as RANK_EMOJIS_NEW
 
 logger = logging.getLogger('profile_commands')
 
-# Custom rank emojis (add these to your server)
-RANK_EMOJIS = {
-    'IRON': '<:Iron:1321679259927969893>',
-    'BRONZE': '<:Bronze:1321679238159663208>',
-    'SILVER': '<:Silver:1321679217099935880>',
-    'GOLD': '<:Gold:1321679197344764027>',
-    'PLATINUM': '<:Platinum:1321679175043649640>',
-    'EMERALD': '<:Emerald:1321683772264939562>',
-    'DIAMOND': '<:Diamond:1321679135524917279>',
-    'MASTER': '<:Master:1321679107737649214>',
-    'GRANDMASTER': '<:Grandmaster:1321679024300359783>',
-    'CHALLENGER': '<:Challenger:1321679055250128987>'
-}
+# Use new Application Emojis
+RANK_EMOJIS = RANK_EMOJIS_NEW
 
 def generate_verification_code() -> str:
     """Generate a random 6-character verification code"""
@@ -493,7 +483,10 @@ class ProfileCommands(commands.Cog):
                 # Chest indicator
                 chest = "📦" if champ.get('chest_granted') else ""
                 
-                champ_lines.append(f"{level_emoji} **M{level}** {champ_name} - {points_str} {chest}")
+                # Get champion emoji
+                champ_emoji = get_champion_emoji(champ_name)
+                
+                champ_lines.append(f"{champ_emoji} {level_emoji} **M{level}** {champ_name} - {points_str} {chest}")
             
             embed.add_field(
                 name="🏆 Top Champions",
@@ -814,12 +807,15 @@ class ProfileCommands(commands.Cog):
             # Emoji
             result_emoji = "✅" if won else "❌"
             
+            # Champion emoji
+            champ_emoji = get_champion_emoji(champion)
+            
             # Account indicator
             account_short = f"{account['riot_id_game_name']}" if len(all_accounts) > 1 else ""
             
             # Add field
             field_name = f"{game_mode} {f'• {account_short}' if account_short else ''}"
-            field_value = f"{result_emoji} **{champion}** • {kda} KDA • {duration}m"
+            field_value = f"{result_emoji} {champ_emoji} **{champion}** • {kda} KDA • {duration}m"
             
             embed.add_field(
                 name=field_name,
