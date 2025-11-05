@@ -394,7 +394,7 @@ class LoldleButtonsView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)  # Buttons never expire
     
-    @discord.ui.button(label="Guess", style=discord.ButtonStyle.primary, emoji="🎮")
+    @discord.ui.button(label="Guess", style=discord.ButtonStyle.primary, emoji="🎮", custom_id="loldle_guess_button")
     async def guess_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Sends /guess command prompt to user"""
         await interaction.response.send_message(
@@ -403,7 +403,7 @@ class LoldleButtonsView(discord.ui.View):
             ephemeral=True
         )
     
-    @discord.ui.button(label="Report Issues", style=discord.ButtonStyle.danger, emoji="⚠️")
+    @discord.ui.button(label="Report Issues", style=discord.ButtonStyle.danger, emoji="⚠️", custom_id="loldle_report_button")
     async def report_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Report issues with Loldle game"""
         await interaction.response.send_message(
