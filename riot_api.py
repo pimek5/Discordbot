@@ -191,8 +191,9 @@ class RiotAPI:
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
                         if response.status == 200:
-                            logger.info(f"✅ Got summoner data from {platform}")
-                            return await response.json()
+                            data = await response.json()
+                            logger.info(f"✅ Got summoner data from {platform}: {data}")
+                            return data
                         elif response.status == 404:
                             logger.warning(f"❌ Summoner not found on {platform} (404)")
                             return None
