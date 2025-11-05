@@ -3707,6 +3707,11 @@ async def on_ready():
             await bot.add_cog(leaderboard_commands.LeaderboardCommands(bot, riot_api, GUILD_ID))
             print("✅ Orianna Bot commands registered")
             
+            # Sync Orianna commands to guild (after all cogs are loaded)
+            guild = discord.Object(id=GUILD_ID)
+            await bot.tree.sync(guild=guild)
+            print("✅ Orianna Bot commands synced to Discord")
+            
             orianna_initialized = True
             print("✅ Orianna Bot modules initialized successfully")
         except Exception as e:

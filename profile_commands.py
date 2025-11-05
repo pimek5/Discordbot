@@ -491,9 +491,6 @@ async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
     cog = ProfileCommands(bot, riot_api, guild_id)
     await bot.add_cog(cog)
     
-    # Sync commands to guild
-    guild = discord.Object(id=guild_id)
-    bot.tree.copy_global_to(guild=guild)
-    await bot.tree.sync(guild=guild)
-    
+    # Note: Commands are synced in bot.py setup_hook, not here
     logger.info("✅ Profile commands loaded")
+
