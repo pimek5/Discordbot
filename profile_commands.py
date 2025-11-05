@@ -916,8 +916,8 @@ class ProfileCommands(commands.Cog):
                 
                 # Account age
                 if combined_stats.get('first_game_timestamp'):
-                    first_game = datetime.fromtimestamp(combined_stats['first_game_timestamp'] / 1000)
-                    account_age = now - first_game
+                    first_game_dt = datetime.fromtimestamp(combined_stats['first_game_timestamp'] / 1000)
+                    account_age = now - first_game_dt
                     years = account_age.days // 365
                     days = account_age.days % 365
                     milestone_lines.append(f"**Account Age:** {years}y {days}d")
