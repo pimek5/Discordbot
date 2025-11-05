@@ -190,6 +190,19 @@ RANK_EMOJIS = {
     'SILVER': '<:rank_Silver:1435683038284615753>',
 }
 
+OTHER_EMOJIS = {
+    'mastery_10': '<:mastery_10:1435691564620841010>',
+    'mastery_5': '<:mastery_5:1435691566584037507>',
+    'mastery_7': '<:mastery_7:1435691569368928480>',
+}
+
+# Create MASTERY_EMOJIS for easier access
+MASTERY_EMOJIS = {
+    5: OTHER_EMOJIS['mastery_5'],
+    7: OTHER_EMOJIS['mastery_7'],
+    10: OTHER_EMOJIS['mastery_10'],
+}
+
 def get_champion_emoji(champion_name: str) -> str:
     """Get emoji for champion, return empty if not found"""
     return CHAMPION_EMOJIS.get(champion_name, "")
@@ -197,3 +210,13 @@ def get_champion_emoji(champion_name: str) -> str:
 def get_rank_emoji(rank: str) -> str:
     """Get emoji for rank, return empty if not found"""
     return RANK_EMOJIS.get(rank.upper(), "")
+
+def get_mastery_emoji(level: int) -> str:
+    """Get emoji for mastery level, return empty if not found"""
+    if level >= 10:
+        return MASTERY_EMOJIS[10]
+    elif level >= 7:
+        return MASTERY_EMOJIS[7]
+    elif level >= 5:
+        return MASTERY_EMOJIS[5]
+    return ""

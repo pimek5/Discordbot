@@ -14,7 +14,7 @@ import logging
 
 from database import get_db
 from riot_api import RiotAPI, RIOT_REGIONS, get_champion_icon_url, get_rank_icon_url, CHAMPION_ID_TO_NAME
-from emoji_dict import get_champion_emoji, get_rank_emoji, RANK_EMOJIS as RANK_EMOJIS_NEW
+from emoji_dict import get_champion_emoji, get_rank_emoji, get_mastery_emoji, RANK_EMOJIS as RANK_EMOJIS_NEW
 
 logger = logging.getLogger('profile_commands')
 
@@ -460,6 +460,7 @@ class ProfileCommands(commands.Cog):
             for i, champ in enumerate(top_champs, 1):
                 champ_name = CHAMPION_ID_TO_NAME.get(champ['champion_id'], f"Champion {champ['champion_id']}")
                 points = champ['score']
+                level = champ['level']
                 
                 # Format points
                 if points >= 1000000:
@@ -469,10 +470,11 @@ class ProfileCommands(commands.Cog):
                 else:
                     points_str = f"{points:,}"
                 
-                # Get champion emoji
+                # Get champion emoji and mastery emoji
                 champ_emoji = get_champion_emoji(champ_name)
+                mastery_emoji = get_mastery_emoji(level)
                 
-                champ_lines.append(f"{champ_emoji} **{champ_name} - {points_str}**")
+                champ_lines.append(f"{champ_emoji} {mastery_emoji} **{champ_name} - {points_str}**")
             
             embed.add_field(
                 name="Top Champions",
