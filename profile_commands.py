@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 import logging
 
@@ -24,6 +24,130 @@ RANK_EMOJIS = RANK_EMOJIS_NEW
 def generate_verification_code() -> str:
     """Generate a random 6-character verification code"""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+# ==================== STATISTICS HELPER FUNCTIONS ====================
+
+def calculate_match_stats(matches: list, puuid: str) -> dict:
+    """Calculate comprehensive statistics from match data"""
+    if not matches:
+        return {}
+    
+    stats = {
+        'total_games': 0,
+        'wins': 0,
+        'losses': 0,
+        'kills': 0,
+        'deaths': 0,
+        'assists': 0,
+        'cs': 0,
+        'vision_score': 0,
+        'game_duration': 0,
+        'roles': {},
+        'champions': {},
+        'game_modes': {},
+        'first_game_timestamp': None,
+        'ranked_games': [],
+    }
+    
+    for match in matches:
+        if not match or 'info' not in match:
+            continue
+        
+        info = match['info']
+        
+        # Find player in participants
+        player_data = None
+        for participant in info.get('participants', []):
+            if participant.get('puuid') == puuid:
+                player_data = participant
+                break
+        
+        if not player_data:
+            continue
+        
+        # Basic stats
+        stats['total_games'] += 1
+        if player_data.get('win'):
+            stats['wins'] += 1
+        else:
+            stats['losses'] += 1
+        
+        stats['kills'] += player_data.get('kills', 0)
+        stats['deaths'] += player_data.get('deaths', 0)
+        stats['assists'] += player_data.get('assists', 0)
+        stats['cs'] += player_data.get('totalMinionsKilled', 0) + player_data.get('neutralMinionsKilled', 0)
+        stats['vision_score'] += player_data.get('visionScore', 0)
+        
+        # Game duration in minutes
+        duration = info.get('gameDuration', 0)
+        if duration > 1000:  # Old format (milliseconds)
+            duration = duration / 1000
+        stats['game_duration'] += duration / 60
+        
+        # Role tracking
+        role = player_data.get('teamPosition', 'UTILITY')
+        if not role or role == '':
+            role = 'UTILITY'
+        stats['roles'][role] = stats['roles'].get(role, 0) + 1
+        
+        # Champion tracking
+        champ_id = player_data.get('championId')
+        if champ_id:
+            if champ_id not in stats['champions']:
+                stats['champions'][champ_id] = {'games': 0, 'wins': 0}
+            stats['champions'][champ_id]['games'] += 1
+            if player_data.get('win'):
+                stats['champions'][champ_id]['wins'] += 1
+        
+        # Game mode tracking
+        game_mode = info.get('gameMode', 'UNKNOWN')
+        queue_id = info.get('queueId', 0)
+        
+        # Categorize game modes
+        mode_category = 'Normal'
+        if queue_id in [420, 440]:  # Ranked Solo/Duo, Ranked Flex
+            mode_category = 'Ranked'
+            stats['ranked_games'].append({
+                'win': player_data.get('win'),
+                'timestamp': info.get('gameCreation', 0)
+            })
+        elif queue_id in [450]:  # ARAM
+            mode_category = 'ARAM'
+        elif queue_id in [1700, 1710]:  # Arena
+            mode_category = 'Arena'
+        
+        if mode_category not in stats['game_modes']:
+            stats['game_modes'][mode_category] = {'games': 0, 'wins': 0}
+        stats['game_modes'][mode_category]['games'] += 1
+        if player_data.get('win'):
+            stats['game_modes'][mode_category]['wins'] += 1
+        
+        # Track first game for account age
+        timestamp = info.get('gameCreation', 0)
+        if timestamp > 0:
+            if stats['first_game_timestamp'] is None or timestamp < stats['first_game_timestamp']:
+                stats['first_game_timestamp'] = timestamp
+    
+    return stats
+
+def format_kda(kills: int, deaths: int, assists: int) -> str:
+    """Format KDA with ratio"""
+    if deaths == 0:
+        ratio = kills + assists
+    else:
+        ratio = (kills + assists) / deaths
+    return f"{ratio:.1f} ({kills} / {deaths} / {assists})"
+
+def get_role_name(role: str) -> str:
+    """Convert role code to readable name"""
+    role_names = {
+        'TOP': 'Top',
+        'JUNGLE': 'Jungle',
+        'MIDDLE': 'Mid',
+        'BOTTOM': 'ADC',
+        'UTILITY': 'Support'
+    }
+    return role_names.get(role, role)
 
 class ProfileCommands(commands.Cog):
     def __init__(self, bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
@@ -423,28 +547,95 @@ class ProfileCommands(commands.Cog):
             summoner_level = account['summoner_level']
             profile_icon = account.get('profile_icon_id', 0)
         
-        # Get recently played champions (last 3 games from match history)
+        # Fetch match history from all accounts for comprehensive stats
+        all_match_details = []
         recently_played = []
+        
         try:
-            for acc in all_accounts[:2]:  # Check first 2 accounts for recent games
+            logger.info(f"📊 Fetching match history for {len(all_accounts)} accounts...")
+            for acc in all_accounts:
                 if not acc.get('verified'):
                     continue
-                match_ids = await self.riot_api.get_match_history(acc['puuid'], acc['region'], count=3)
+                
+                # Get last 50 matches for detailed stats
+                match_ids = await self.riot_api.get_match_history(acc['puuid'], acc['region'], count=50)
                 if match_ids:
-                    for match_id in match_ids[:3]:
+                    logger.info(f"  Found {len(match_ids)} matches for {acc['riot_id_game_name']}")
+                    for match_id in match_ids:
                         match_details = await self.riot_api.get_match_details(match_id, acc['region'])
                         if match_details:
+                            all_match_details.append({
+                                'match': match_details,
+                                'puuid': acc['puuid']
+                            })
+                        
+                        # Collect recently played for display (first 3 games)
+                        if len(recently_played) < 3 and match_details:
                             for participant in match_details['info']['participants']:
                                 if participant['puuid'] == acc['puuid']:
-                                    recently_played.append({
-                                        'champion': participant['championName'],
-                                        'time': 'Today'  # Could calculate actual time from gameCreation
-                                    })
+                                    champ_name = participant.get('championName', '')
+                                    if champ_name and champ_name not in [r['champion'] for r in recently_played]:
+                                        recently_played.append({
+                                            'champion': champ_name,
+                                            'time': 'Today'
+                                        })
                                     break
-                    if len(recently_played) >= 3:
-                        break
+                
+                # Limit to prevent too many API calls
+                if len(all_match_details) >= 100:
+                    break
+            
+            logger.info(f"✅ Fetched {len(all_match_details)} total match details")
         except Exception as e:
-            logger.error(f"Error fetching recent games: {e}")
+            logger.error(f"❌ Error fetching match history: {e}")
+        
+        # Calculate comprehensive statistics
+        combined_stats = {}
+        for match_data in all_match_details:
+            match = match_data['match']
+            puuid = match_data['puuid']
+            
+            stats = calculate_match_stats([match], puuid)
+            
+            # Merge stats
+            if not combined_stats:
+                combined_stats = stats
+            else:
+                combined_stats['total_games'] += stats['total_games']
+                combined_stats['wins'] += stats['wins']
+                combined_stats['losses'] += stats['losses']
+                combined_stats['kills'] += stats['kills']
+                combined_stats['deaths'] += stats['deaths']
+                combined_stats['assists'] += stats['assists']
+                combined_stats['cs'] += stats['cs']
+                combined_stats['vision_score'] += stats['vision_score']
+                combined_stats['game_duration'] += stats['game_duration']
+                
+                # Merge roles
+                for role, count in stats.get('roles', {}).items():
+                    combined_stats['roles'][role] = combined_stats['roles'].get(role, 0) + count
+                
+                # Merge champions
+                for champ_id, champ_data in stats.get('champions', {}).items():
+                    if champ_id not in combined_stats['champions']:
+                        combined_stats['champions'][champ_id] = {'games': 0, 'wins': 0}
+                    combined_stats['champions'][champ_id]['games'] += champ_data['games']
+                    combined_stats['champions'][champ_id]['wins'] += champ_data['wins']
+                
+                # Merge game modes
+                for mode, mode_data in stats.get('game_modes', {}).items():
+                    if mode not in combined_stats['game_modes']:
+                        combined_stats['game_modes'][mode] = {'games': 0, 'wins': 0}
+                    combined_stats['game_modes'][mode]['games'] += mode_data['games']
+                    combined_stats['game_modes'][mode]['wins'] += mode_data['wins']
+                
+                # Track earliest game
+                if stats.get('first_game_timestamp'):
+                    if not combined_stats.get('first_game_timestamp') or stats['first_game_timestamp'] < combined_stats['first_game_timestamp']:
+                        combined_stats['first_game_timestamp'] = stats['first_game_timestamp']
+                
+                # Merge ranked games
+                combined_stats['ranked_games'].extend(stats.get('ranked_games', []))
         
         # Create embed
         embed = discord.Embed(
@@ -523,6 +714,198 @@ class ProfileCommands(commands.Cog):
                 embed.add_field(
                     name="Recently Played",
                     value="No recent games",
+                    inline=True
+                )
+            
+            # === NEW STATISTICS SECTIONS ===
+            
+            # 1. RECENT PERFORMANCE (KDA, CS, Vision)
+            if combined_stats and combined_stats.get('total_games', 0) > 0:
+                total_games = combined_stats['total_games']
+                
+                # Calculate averages for recent 20 games (or less if fewer games)
+                recent_games_count = min(20, total_games)
+                avg_kills = combined_stats['kills'] / recent_games_count
+                avg_deaths = combined_stats['deaths'] / recent_games_count
+                avg_assists = combined_stats['assists'] / recent_games_count
+                avg_cs_per_min = combined_stats['cs'] / combined_stats['game_duration'] if combined_stats['game_duration'] > 0 else 0
+                avg_vision = combined_stats['vision_score'] / recent_games_count
+                
+                kda_str = format_kda(combined_stats['kills'], combined_stats['deaths'], combined_stats['assists'])
+                
+                perf_lines = [
+                    f"**KDA:** {kda_str}",
+                    f"**CS/min:** {avg_cs_per_min:.1f} • **Vision:** {avg_vision:.0f}"
+                ]
+                
+                embed.add_field(
+                    name=f"📊 Recent Performance ({recent_games_count} games)",
+                    value="\n".join(perf_lines),
+                    inline=True
+                )
+                
+                # 2. WIN RATE STATISTICS
+                overall_wr = (combined_stats['wins'] / total_games * 100) if total_games > 0 else 0
+                
+                # Recent 20 games winrate - use simple approach with available data
+                recent_20_count = min(20, total_games)
+                # If we have 20 or fewer games, use overall wins, otherwise approximate
+                if total_games <= 20:
+                    recent_wins = combined_stats['wins']
+                else:
+                    # Count wins in first 20 matches from our details
+                    recent_wins = 0
+                    for i, match_data in enumerate(all_match_details[:20]):
+                        match = match_data['match']
+                        puuid = match_data['puuid']
+                        for participant in match['info'].get('participants', []):
+                            if participant.get('puuid') == puuid and participant.get('win'):
+                                recent_wins += 1
+                                break
+                
+                recent_wr = (recent_wins / recent_20_count * 100) if recent_20_count > 0 else 0
+                
+                # Best champion winrate (min 5 games)
+                best_champ_wr = 0
+                best_champ_name = "N/A"
+                for champ_id, champ_data in combined_stats.get('champions', {}).items():
+                    if champ_data['games'] >= 5:
+                        wr = (champ_data['wins'] / champ_data['games'] * 100)
+                        if wr > best_champ_wr:
+                            best_champ_wr = wr
+                            best_champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f"Champion {champ_id}")
+                
+                wr_lines = [
+                    f"**Overall:** {overall_wr:.0f}% ({combined_stats['wins']}W/{combined_stats['losses']}L)",
+                    f"**Recent 20:** {recent_wr:.0f}% ({recent_wins}W/{recent_20_count-recent_wins}L)"
+                ]
+                
+                if best_champ_name != "N/A":
+                    champ_emoji = get_champion_emoji(best_champ_name)
+                    wr_lines.append(f"**Best:** {champ_emoji} {best_champ_name} {best_champ_wr:.0f}%")
+                
+                embed.add_field(
+                    name="🎯 Win Rate",
+                    value="\n".join(wr_lines),
+                    inline=True
+                )
+                
+                # 3. GAME ACTIVITY
+                # Calculate games today and this week
+                from datetime import datetime, timedelta
+                now = datetime.now()
+                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                week_start = now - timedelta(days=7)
+                
+                games_today = 0
+                games_week = 0
+                
+                for match_data in all_match_details:
+                    match = match_data['match']
+                    timestamp = match['info'].get('gameCreation', 0) / 1000  # Convert to seconds
+                    game_time = datetime.fromtimestamp(timestamp)
+                    
+                    if game_time >= today_start:
+                        games_today += 1
+                    if game_time >= week_start:
+                        games_week += 1
+                
+                # Average game time
+                avg_game_time = combined_stats['game_duration'] / total_games if total_games > 0 else 0
+                avg_minutes = int(avg_game_time)
+                avg_seconds = int((avg_game_time - avg_minutes) * 60)
+                
+                # Favorite role
+                fav_role = "Unknown"
+                if combined_stats.get('roles'):
+                    fav_role_code = max(combined_stats['roles'], key=combined_stats['roles'].get)
+                    fav_role = get_role_name(fav_role_code)
+                    role_count = combined_stats['roles'][fav_role_code]
+                    role_pct = (role_count / total_games * 100) if total_games > 0 else 0
+                    fav_role = f"{fav_role} ({role_pct:.0f}%)"
+                
+                activity_lines = [
+                    f"**Today:** {games_today} games • **Week:** {games_week} games",
+                    f"**Avg Time:** {avg_minutes}m {avg_seconds}s",
+                    f"**Fav Role:** {fav_role}"
+                ]
+                
+                embed.add_field(
+                    name="🎮 Activity",
+                    value="\n".join(activity_lines),
+                    inline=True
+                )
+                
+                # 4. CHAMPION POOL DIVERSITY
+                unique_champs_played = len(combined_stats.get('champions', {}))
+                
+                # One-trick score (% games on top 3 champions)
+                top_3_games = 0
+                if combined_stats.get('champions'):
+                    sorted_champs = sorted(combined_stats['champions'].items(), key=lambda x: x[1]['games'], reverse=True)[:3]
+                    top_3_games = sum(champ_data['games'] for _, champ_data in sorted_champs)
+                
+                one_trick_score = (top_3_games / total_games * 100) if total_games > 0 else 0
+                
+                pool_lines = [
+                    f"**Unique Champions:** {unique_champs_played}/{total_games} games",
+                    f"**One-Trick Score:** {one_trick_score:.0f}% (Top 3)"
+                ]
+                
+                embed.add_field(
+                    name="🏆 Champion Pool",
+                    value="\n".join(pool_lines),
+                    inline=True
+                )
+                
+                # 5. GAME MODES
+                if combined_stats.get('game_modes'):
+                    mode_lines = []
+                    for mode, mode_data in combined_stats['game_modes'].items():
+                        games = mode_data['games']
+                        wins = mode_data['wins']
+                        wr = (wins / games * 100) if games > 0 else 0
+                        mode_lines.append(f"**{mode}:** {games} games ({wr:.0f}% WR)")
+                    
+                    embed.add_field(
+                        name="🎲 Game Modes",
+                        value="\n".join(mode_lines[:3]) if mode_lines else "No data",
+                        inline=True
+                    )
+                
+                # 6. CAREER MILESTONES
+                milestone_lines = [f"**Total Games:** {total_games:,}"]
+                
+                # Account age
+                if combined_stats.get('first_game_timestamp'):
+                    first_game = datetime.fromtimestamp(combined_stats['first_game_timestamp'] / 1000)
+                    account_age = now - first_game
+                    years = account_age.days // 365
+                    days = account_age.days % 365
+                    milestone_lines.append(f"**Account Age:** {years}y {days}d")
+                
+                # Peak rank (from current rank data)
+                peak_rank = "Unranked"
+                if all_ranked_stats:
+                    rank_order = {
+                        'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
+                        'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
+                        'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
+                    }
+                    
+                    def get_rank_value(rank_data):
+                        tier_val = rank_order.get(rank_data['tier'], -1)
+                        rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
+                        return tier_val * 4 + rank_val
+                    
+                    highest = max(all_ranked_stats, key=get_rank_value)
+                    peak_rank = f"{highest['tier']} {highest.get('rank', '')}"
+                
+                milestone_lines.append(f"**Peak Rank:** {peak_rank}")
+                
+                embed.add_field(
+                    name="🏅 Career Milestones",
+                    value="\n".join(milestone_lines),
                     inline=True
                 )
 
