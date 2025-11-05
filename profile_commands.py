@@ -318,18 +318,34 @@ class ProfileCommands(commands.Cog):
         # Get ranked stats
         ranked_stats = db.get_user_ranks(db_user['id'])
         
-        # Create embed
+        # Fetch fresh summoner data
+        fresh_summoner = await self.riot_api.get_summoner_by_puuid(account['puuid'], account['region'])
+        if fresh_summoner:
+            summoner_level = fresh_summoner.get('summonerLevel', account['summoner_level'])
+            profile_icon = fresh_summoner.get('profileIconId', 0)
+        else:
+            summoner_level = account['summoner_level']
+            profile_icon = account.get('profile_icon_id', 0)
+        
+        # Create embed with better formatting
         embed = discord.Embed(
-            title=f"{target.display_name}'s Profile",
-            description=f"**{account['riot_id_game_name']}#{account['riot_id_tagline']}**\n{account['region'].upper()} • Level {account['summoner_level']}",
-            color=0x1F8EFA
+            color=0x0BC6E3  # LoL turquoise
         )
         
-        # Add top champions
-        if champ_stats:
-            top_champs = sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:3]
-            champ_text = []
+        # Profile header
+        embed.set_author(
+            name=f"{account['riot_id_game_name']}#{account['riot_id_tagline']}",
+            icon_url=f"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{profile_icon}.jpg"
+        )
+        
+        # Discord user info
+        embed.description = f"**{target.display_name}**'s League Profile\n{account['region'].upper()} • Level {summoner_level}"
+        
+        # Champion mastery section
+        if champ_stats and len(champ_stats) > 0:
+            top_champs = sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:5]
             
+            champ_lines = []
             for i, champ in enumerate(top_champs, 1):
                 champ_name = CHAMPION_ID_TO_NAME.get(champ['champion_id'], f"Champion {champ['champion_id']}")
                 points = champ['score']
@@ -337,57 +353,76 @@ class ProfileCommands(commands.Cog):
                 
                 # Format points
                 if points >= 1000000:
-                    points_str = f"{points/1000000:.1f}M"
+                    points_str = f"{points/1000000:.2f}M"
                 elif points >= 1000:
                     points_str = f"{points/1000:.0f}K"
                 else:
                     points_str = f"{points:,}"
                 
-                champ_text.append(f"**{i}.** {champ_name} - M{level} • {points_str} pts")
+                # Mastery level emoji
+                if level >= 10:
+                    level_emoji = "💎"
+                elif level >= 7:
+                    level_emoji = "⭐"
+                elif level >= 5:
+                    level_emoji = "🌟"
+                else:
+                    level_emoji = "•"
+                
+                # Chest indicator
+                chest = "📦" if champ.get('chest_granted') else ""
+                
+                champ_lines.append(f"{level_emoji} **M{level}** {champ_name} - {points_str} {chest}")
             
             embed.add_field(
-                name="⭐ Top Champions",
-                value="\n".join(champ_text),
-                inline=True
+                name="🏆 Top Champions",
+                value="\n".join(champ_lines),
+                inline=False
             )
             
-            # Add statistics
+            # Mastery statistics
+            total_champs = len(champ_stats)
             level_10_plus = sum(1 for c in champ_stats if c['level'] >= 10)
             level_7_plus = sum(1 for c in champ_stats if c['level'] >= 7)
             level_5_plus = sum(1 for c in champ_stats if c['level'] >= 5)
             total_points = sum(c['score'] for c in champ_stats)
-            avg_points = total_points / len(champ_stats) if champ_stats else 0
-            
-            stats_text = []
-            if level_10_plus > 0:
-                stats_text.append(f"🔟 **{level_10_plus}x** Level 10+")
-            if level_7_plus > 0:
-                stats_text.append(f"⭐ **{level_7_plus}x** Level 7+")
-            if level_5_plus > 0:
-                stats_text.append(f"💫 **{level_5_plus}x** Level 5+")
+            chests_earned = sum(1 for c in champ_stats if c.get('chest_granted'))
             
             if total_points >= 1000000:
                 total_str = f"{total_points/1000000:.2f}M"
             else:
                 total_str = f"{total_points:,}"
             
-            stats_text.append(f"📊 **{total_str}** total")
-            stats_text.append(f"📈 **{avg_points:,.0f}** avg")
+            mastery_lines = [
+                f"� **{level_10_plus}x** Mastery 10",
+                f"⭐ **{level_7_plus}x** Mastery 7+",
+                f"🌟 **{level_5_plus}x** Mastery 5+",
+                f"📊 **{total_str}** total points",
+                f"📦 **{chests_earned}/{total_champs}** chests"
+            ]
             
             embed.add_field(
-                name="📈 Statistics",
-                value="\n".join(stats_text),
+                name="📈 Mastery Stats",
+                value="\n".join(mastery_lines),
                 inline=True
             )
             
             # Set thumbnail to top champion
             if top_champs:
                 embed.set_thumbnail(url=get_champion_icon_url(top_champs[0]['champion_id']))
+        else:
+            embed.add_field(
+                name="📊 Champion Mastery",
+                value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
+                inline=False
+            )
         
-        # Add ranked stats
-        if ranked_stats:
+        # Ranked section
+        if ranked_stats and len(ranked_stats) > 0:
             solo_queue = next((r for r in ranked_stats if 'SOLO' in r['queue']), None)
             flex_queue = next((r for r in ranked_stats if 'FLEX' in r['queue']), None)
+            
+            ranked_lines = []
             
             if solo_queue:
                 tier = solo_queue['tier']
@@ -400,11 +435,14 @@ class ProfileCommands(commands.Cog):
                 
                 rank_emoji = RANK_EMOJIS.get(tier, '❓')
                 
-                embed.add_field(
-                    name="🏆 Solo/Duo",
-                    value=f"{rank_emoji} **{tier} {rank}** • {lp} LP\n**{wins}**W **{losses}**L ({wr}%)",
-                    inline=True
-                )
+                ranked_lines.append(f"**Solo/Duo**")
+                ranked_lines.append(f"{rank_emoji} {tier} {rank} • {lp} LP")
+                ranked_lines.append(f"{wins}W {losses}L • {wr}% WR")
+                
+                if solo_queue.get('hot_streak'):
+                    ranked_lines.append("🔥 On a hot streak!")
+            else:
+                ranked_lines.append("**Solo/Duo:** Unranked")
             
             if flex_queue:
                 tier = flex_queue['tier']
@@ -417,17 +455,75 @@ class ProfileCommands(commands.Cog):
                 
                 rank_emoji = RANK_EMOJIS.get(tier, '❓')
                 
-                embed.add_field(
-                    name="🎯 Flex",
-                    value=f"{rank_emoji} **{tier} {rank}** • {lp} LP\n**{wins}**W **{losses}**L ({wr}%)",
-                    inline=True
-                )
+                ranked_lines.append("")
+                ranked_lines.append(f"**Flex**")
+                ranked_lines.append(f"{rank_emoji} {tier} {rank} • {lp} LP")
+                ranked_lines.append(f"{wins}W {losses}L • {wr}% WR")
+            else:
+                ranked_lines.append("")
+                ranked_lines.append("**Flex:** Unranked")
+            
+            embed.add_field(
+                name="🏆 Ranked Stats",
+                value="\n".join(ranked_lines),
+                inline=True
+            )
         
-        # Verification status
+        # Account info footer
+        footer_parts = []
         if account.get('verified'):
-            embed.set_footer(text="✅ Verified Account")
+            footer_parts.append("✅ Verified")
+        if account.get('verified_at'):
+            from datetime import datetime
+            verified_date = account['verified_at']
+            if isinstance(verified_date, str):
+                verified_date = datetime.fromisoformat(verified_date.replace('Z', '+00:00'))
+            footer_parts.append(f"Since {verified_date.strftime('%b %d, %Y')}")
         
-        await interaction.followup.send(embed=embed)
+        if footer_parts:
+            embed.set_footer(text=" • ".join(footer_parts))
+        
+        # Add buttons for more info
+        from discord.ui import View, Button
+        
+        view = View(timeout=None)
+        
+        # Matches button
+        matches_button = Button(
+            label="Recent Matches",
+            style=discord.ButtonStyle.primary,
+            emoji="🎮"
+        )
+        
+        async def matches_callback(btn_interaction: discord.Interaction):
+            await btn_interaction.response.defer(ephemeral=True)
+            # Trigger /matches command programmatically
+            await btn_interaction.followup.send(
+                f"Use `/matches user:{target.mention}` to view recent matches!",
+                ephemeral=True
+            )
+        
+        matches_button.callback = matches_callback
+        view.add_item(matches_button)
+        
+        # Stats button
+        stats_button = Button(
+            label="Champion Stats",
+            style=discord.ButtonStyle.secondary,
+            emoji="📊"
+        )
+        
+        async def stats_callback(btn_interaction: discord.Interaction):
+            await btn_interaction.response.defer(ephemeral=True)
+            await btn_interaction.followup.send(
+                f"Use `/stats champion:<name> user:{target.mention}` to view detailed progression!",
+                ephemeral=True
+            )
+        
+        stats_button.callback = stats_callback
+        view.add_item(stats_button)
+        
+        await interaction.followup.send(embed=embed, view=view)
     
     @app_commands.command(name="unlink", description="Unlink your Riot account")
     async def unlink(self, interaction: discord.Interaction):
