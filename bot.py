@@ -2380,17 +2380,16 @@ async def addtweet(interaction: discord.Interaction, tweet_id: str):
                 if log_channel and log_channel != channel:
                     await log_channel.send(f"🔧 {interaction.user.mention} manually added tweet: {tweet_data['url']}")
                 
-                # Success response
-                success_embed = discord.Embed(
+                # Success response with the same embed
+                success_message = discord.Embed(
                     title="✅ Tweet Added Successfully",
+                    description=f"Posted to <#{TWEETS_CHANNEL_ID}>",
                     color=0x00FF00
                 )
-                success_embed.add_field(name="Tweet ID", value=clean_tweet_id, inline=True)
-                success_embed.add_field(name="Posted to", value=f"<#{TWEETS_CHANNEL_ID}>", inline=True)
-                success_embed.add_field(name="Tweet Text", value=tweet_data['text'][:200] + "..." if len(tweet_data['text']) > 200 else tweet_data['text'], inline=False)
-                success_embed.add_field(name="URL", value=tweet_data['url'], inline=False)
+                success_message.add_field(name="Tweet ID", value=clean_tweet_id, inline=True)
+                success_message.add_field(name="URL", value=f"[View Tweet]({tweet_data['url']})", inline=True)
                 
-                await interaction.edit_original_response(content="🐦 Tweet posted manually:", embed=success_embed)
+                await interaction.edit_original_response(content="🐦 Tweet posted manually:", embeds=[success_message, embed])
                 print(f"✅ Manually posted tweet: {clean_tweet_id}")
                 
             else:
