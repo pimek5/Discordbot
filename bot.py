@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 from discord import PermissionOverwrite, app_commands
+from typing import Optional
 import re
 import os
 import asyncio
@@ -96,6 +97,9 @@ loldle_data = {
     'embed_message_id': None,  # Stores message ID for persistent embed
     'recent_guesses': []  # Track recent guesses for display
 }
+
+# Global Loldle statistics tracking
+loldle_global_stats = {}  # {user_id: {'total_games': int, 'total_wins': int, 'total_guesses': int, 'best_streak': int, 'current_streak': int}}
 
 # Additional Loldle game modes
 loldle_quote_data = {
@@ -1709,12 +1713,12 @@ async def get_specific_tweet(tweet_id):
     print(f"❌ Could not fetch tweet {tweet_id} - tweet may be old, deleted, or from different user")
     return None
 
-async def get_twitter_user_tweets(username):
+async def get_twitter_user_tweets(username, max_results=5):
     """
     Fetch the latest tweets from a Twitter user using Nitter (free alternative)
     Twitter API requires expensive paid plan, so we use Nitter RSS feeds
     """
-    print(f"🔍 Starting tweet fetch for @{username}")
+    print(f"🔍 Starting tweet fetch for @{username} (max {max_results} tweets)")
     
     # Method 1: Try Nitter instances (primary method - no API key needed!)
     nitter_instances = [
@@ -1760,7 +1764,7 @@ async def get_twitter_user_tweets(username):
                     root = ET.fromstring(response.content)
                     
                     tweets = []
-                    for item in root.findall('.//item')[:5]:  # Get first 5 tweets
+                    for item in root.findall('.//item')[:max_results]:  # Get requested number of tweets
                         title = item.find('title')
                         link = item.find('link')
                         pub_date = item.find('pubDate')
@@ -2417,6 +2421,146 @@ async def addtweet(interaction: discord.Interaction, tweet_id: str):
         print(f"Error in add tweet by ID: {e}")
         await interaction.edit_original_response(content="💥 Error adding tweet:", embed=error_embed)
 
+@bot.tree.command(name="searchtweet", description="Search @p1mek tweets by keyword")
+@app_commands.describe(query="Keywords to search for")
+async def searchtweet(interaction: discord.Interaction, query: str):
+    """Search through recent tweets"""
+    await interaction.response.defer()
+    
+    try:
+        # Fetch last 50 tweets
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME, max_results=50)
+        
+        if not tweets:
+            await interaction.edit_original_response(content="❌ Could not fetch tweets.")
+            return
+        
+        # Search for matching tweets
+        query_lower = query.lower()
+        matching_tweets = [
+            tweet for tweet in tweets 
+            if query_lower in tweet['text'].lower()
+        ]
+        
+        if not matching_tweets:
+            embed = discord.Embed(
+                title="🔍 No Tweets Found",
+                description=f"No tweets found containing: **{query}**",
+                color=0xFF6B6B
+            )
+            embed.add_field(name="Searched", value=f"{len(tweets)} recent tweets", inline=True)
+            embed.set_footer(text="Try different keywords")
+            await interaction.edit_original_response(embed=embed)
+            return
+        
+        # Show first 5 matches
+        embed = discord.Embed(
+            title=f"🔍 Tweet Search Results",
+            description=f"Found **{len(matching_tweets)}** tweet(s) containing: **{query}**",
+            color=0x1DA1F2
+        )
+        
+        for i, tweet in enumerate(matching_tweets[:5], 1):
+            tweet_text = tweet['text']
+            if len(tweet_text) > 150:
+                tweet_text = tweet_text[:150] + "..."
+            
+            # Highlight the search term
+            highlighted = tweet_text.replace(query, f"**{query}**")
+            
+            embed.add_field(
+                name=f"#{i} • {tweet.get('created_at', 'Unknown date')}",
+                value=f"{highlighted}\n[View Tweet]({tweet['url']})",
+                inline=False
+            )
+        
+        if len(matching_tweets) > 5:
+            embed.set_footer(text=f"Showing 5 of {len(matching_tweets)} results • Use /addtweet to post specific tweets")
+        else:
+            embed.set_footer(text="Use /addtweet <ID> to post a specific tweet")
+        
+        await interaction.edit_original_response(embed=embed)
+        
+    except Exception as e:
+        print(f"Error searching tweets: {e}")
+        await interaction.edit_original_response(content=f"❌ Error searching tweets: {e}")
+
+@bot.tree.command(name="tweetstats", description="@p1mek Twitter analytics and statistics")
+async def tweetstats(interaction: discord.Interaction):
+    """Show Twitter statistics"""
+    await interaction.response.defer()
+    
+    try:
+        # Fetch last 50 tweets for analysis
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME, max_results=50)
+        
+        if not tweets:
+            await interaction.edit_original_response(content="❌ Could not fetch tweets.")
+            return
+        
+        # Calculate stats
+        total_tweets = len(tweets)
+        total_likes = sum(tweet.get('metrics', {}).get('like_count', 0) for tweet in tweets)
+        total_retweets = sum(tweet.get('metrics', {}).get('retweet_count', 0) for tweet in tweets)
+        total_replies = sum(tweet.get('metrics', {}).get('reply_count', 0) for tweet in tweets)
+        
+        avg_likes = total_likes / total_tweets if total_tweets > 0 else 0
+        avg_retweets = total_retweets / total_tweets if total_tweets > 0 else 0
+        
+        # Find most popular tweet
+        most_popular = max(tweets, key=lambda t: t.get('metrics', {}).get('like_count', 0))
+        most_popular_likes = most_popular.get('metrics', {}).get('like_count', 0)
+        
+        # Calculate posting frequency (tweets per day)
+        if len(tweets) >= 2:
+            from datetime import datetime
+            try:
+                # Simple estimate: assume 50 tweets span several days
+                posting_freq = "~Multiple times per day" if total_tweets >= 30 else "~Daily"
+            except:
+                posting_freq = "Unknown"
+        else:
+            posting_freq = "Insufficient data"
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"📊 @{TWITTER_USERNAME} Twitter Analytics",
+            description=f"Statistics from last {total_tweets} tweets",
+            color=0x1DA1F2
+        )
+        
+        embed.add_field(
+            name="📈 Engagement",
+            value=f"**Total Likes:** {total_likes:,}\n**Total Retweets:** {total_retweets:,}\n**Total Replies:** {total_replies:,}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📊 Averages",
+            value=f"**Avg Likes:** {avg_likes:.1f}\n**Avg Retweets:** {avg_retweets:.1f}\n**Posting:** {posting_freq}",
+            inline=True
+        )
+        
+        # Most popular tweet
+        most_popular_text = most_popular['text']
+        if len(most_popular_text) > 100:
+            most_popular_text = most_popular_text[:100] + "..."
+        
+        embed.add_field(
+            name="🔥 Most Popular Tweet",
+            value=f"❤️ {most_popular_likes:,} likes\n{most_popular_text}\n[View Tweet]({most_popular['url']})",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Analyzed {total_tweets} recent tweets")
+        embed.set_thumbnail(url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png")
+        
+        await interaction.edit_original_response(embed=embed)
+        
+    except Exception as e:
+        print(f"Error getting tweet stats: {e}")
+        await interaction.edit_original_response(content=f"❌ Error fetching statistics: {e}")
+
 # ================================
 #        OTHER EVENTS
 # ================================
@@ -2558,6 +2702,26 @@ async def guess(interaction: discord.Interaction, champion: str):
         )
         winner_embed.add_field(name="Attempts", value=f"{len(player_data['guesses'])} guess{'es' if len(player_data['guesses']) > 1 else ''}", inline=True)
         winner_embed.set_footer(text="New champion will be selected in 5 seconds...")
+        
+        # Update global stats
+        user_id = interaction.user.id
+        if user_id not in loldle_global_stats:
+            loldle_global_stats[user_id] = {
+                'total_games': 0,
+                'total_wins': 0,
+                'total_guesses': 0,
+                'best_streak': 0,
+                'current_streak': 0,
+                'last_win_date': None
+            }
+        
+        stats = loldle_global_stats[user_id]
+        stats['total_games'] += 1
+        stats['total_wins'] += 1
+        stats['total_guesses'] += len(player_data['guesses'])
+        stats['current_streak'] += 1
+        stats['best_streak'] = max(stats['best_streak'], stats['current_streak'])
+        stats['last_win_date'] = datetime.datetime.now().date()
         
         await interaction.response.send_message(embed=winner_embed)
         
@@ -2735,6 +2899,73 @@ async def loldlestats(interaction: discord.Interaction):
     embed.set_footer(text=f"Daily Challenge • {loldle_data['daily_date']}")
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="loldletop", description="View global LoLdle leaderboard")
+async def loldletop(interaction: discord.Interaction):
+    """Display global LoLdle leaderboard"""
+    
+    if not loldle_global_stats:
+        await interaction.response.send_message(
+            "📊 No one has played LoLdle yet! Be the first with `/guess`!",
+            ephemeral=True
+        )
+        return
+    
+    # Sort players by average guesses (lower is better)
+    sorted_players = sorted(
+        loldle_global_stats.items(),
+        key=lambda x: x[1]['total_guesses'] / x[1]['total_wins'] if x[1]['total_wins'] > 0 else 999,
+        reverse=False
+    )
+    
+    embed = discord.Embed(
+        title="🏆 LoLdle Leaderboard",
+        description="Top players ranked by average guesses per win",
+        color=0xFFD700
+    )
+    
+    # Top 10 players
+    for i, (user_id, stats) in enumerate(sorted_players[:10], 1):
+        try:
+            user = await bot.fetch_user(user_id)
+            username = user.name
+        except:
+            username = f"User {user_id}"
+        
+        avg_guesses = stats['total_guesses'] / stats['total_wins'] if stats['total_wins'] > 0 else 0
+        winrate = (stats['total_wins'] / stats['total_games'] * 100) if stats['total_games'] > 0 else 0
+        
+        # Medal emojis
+        medal = ""
+        if i == 1:
+            medal = "🥇 "
+        elif i == 2:
+            medal = "🥈 "
+        elif i == 3:
+            medal = "🥉 "
+        
+        # Streak indicator
+        streak_text = ""
+        if stats['current_streak'] >= 5:
+            streak_text = f" 🔥{stats['current_streak']}"
+        elif stats['current_streak'] >= 3:
+            streak_text = f" ⚡{stats['current_streak']}"
+        
+        value = (
+            f"**Avg:** {avg_guesses:.1f} guesses\n"
+            f"**W/L:** {stats['total_wins']}W - {stats['total_games'] - stats['total_wins']}L ({winrate:.0f}%)\n"
+            f"**Best Streak:** {stats['best_streak']}{streak_text}"
+        )
+        
+        embed.add_field(
+            name=f"{medal}#{i} {username}",
+            value=value,
+            inline=False
+        )
+    
+    embed.set_footer(text=f"Total players: {len(loldle_global_stats)}")
+    
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="loldlestart", description="Start a new LoLdle game")
 @app_commands.describe(mode="Choose game mode: classic, quote, emoji, ability")
@@ -3491,6 +3722,199 @@ async def ability(interaction: discord.Interaction, champion: str):
                 loldle_ability_data['embed_message_id'] = msg.id
             except:
                 pass
+
+# ================================
+#        ANALYTICS COMMANDS
+# ================================
+@bot.tree.command(name="serverstats", description="View server activity statistics")
+async def serverstats(interaction: discord.Interaction):
+    """Display server statistics"""
+    await interaction.response.defer()
+    
+    try:
+        guild = interaction.guild
+        
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        # Basic stats
+        total_members = guild.member_count
+        total_channels = len(guild.channels)
+        total_roles = len(guild.roles)
+        total_text_channels = len(guild.text_channels)
+        total_voice_channels = len(guild.voice_channels)
+        
+        # Count bots vs humans
+        bots = sum(1 for m in guild.members if m.bot)
+        humans = total_members - bots
+        
+        # Boost info
+        boost_level = guild.premium_tier
+        boost_count = guild.premium_subscription_count or 0
+        
+        # Server age
+        created_at = guild.created_at
+        age_days = (datetime.datetime.now(datetime.timezone.utc) - created_at).days
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"📊 {guild.name} Statistics",
+            color=0x5865F2
+        )
+        
+        # Set server icon
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        
+        # Members section
+        embed.add_field(
+            name="👥 Members",
+            value=f"**Total:** {total_members:,}\n**Humans:** {humans:,}\n**Bots:** {bots:,}",
+            inline=True
+        )
+        
+        # Channels section
+        embed.add_field(
+            name="💬 Channels",
+            value=f"**Total:** {total_channels}\n**Text:** {total_text_channels}\n**Voice:** {total_voice_channels}",
+            inline=True
+        )
+        
+        # Server info
+        embed.add_field(
+            name="📌 Info",
+            value=f"**Roles:** {total_roles}\n**Boosts:** {boost_count} (Lvl {boost_level})\n**Age:** {age_days:,} days",
+            inline=True
+        )
+        
+        # Owner info
+        embed.add_field(
+            name="👑 Owner",
+            value=f"{guild.owner.mention}",
+            inline=True
+        )
+        
+        # Created date
+        embed.add_field(
+            name="📅 Created",
+            value=f"<t:{int(created_at.timestamp())}:D>",
+            inline=True
+        )
+        
+        # Server ID
+        embed.add_field(
+            name="🆔 Server ID",
+            value=f"`{guild.id}`",
+            inline=True
+        )
+        
+        embed.set_footer(text=f"Requested by {interaction.user.name}")
+        
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        print(f"Error in serverstats: {e}")
+        await interaction.followup.send(f"❌ Error fetching stats: {e}", ephemeral=True)
+
+@bot.tree.command(name="activity", description="Check user activity statistics")
+@app_commands.describe(user="The user to check (defaults to yourself)")
+async def activity(interaction: discord.Interaction, user: Optional[discord.User] = None):
+    """Display user activity stats"""
+    target_user = user or interaction.user
+    
+    try:
+        guild = interaction.guild
+        
+        if not guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        member = guild.get_member(target_user.id)
+        
+        if not member:
+            await interaction.response.send_message(f"❌ {target_user.mention} is not in this server!", ephemeral=True)
+            return
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"📊 Activity Stats",
+            description=f"Statistics for {target_user.mention}",
+            color=member.color if member.color != discord.Color.default() else 0x5865F2
+        )
+        
+        # Set user avatar
+        embed.set_thumbnail(url=target_user.display_avatar.url)
+        
+        # Join info
+        joined_at = member.joined_at
+        joined_days = (datetime.datetime.now(datetime.timezone.utc) - joined_at).days if joined_at else 0
+        
+        # Account age
+        created_at = target_user.created_at
+        account_age = (datetime.datetime.now(datetime.timezone.utc) - created_at).days
+        
+        embed.add_field(
+            name="📅 Joined Server",
+            value=f"<t:{int(joined_at.timestamp())}:R>\n({joined_days:,} days ago)",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📅 Account Created",
+            value=f"<t:{int(created_at.timestamp())}:R>\n({account_age:,} days ago)",
+            inline=True
+        )
+        
+        # Roles
+        roles = [role.mention for role in member.roles if role.name != "@everyone"]
+        roles_text = ", ".join(roles[:10]) if roles else "No roles"
+        if len(roles) > 10:
+            roles_text += f" (+{len(roles) - 10} more)"
+        
+        embed.add_field(
+            name=f"🎭 Roles ({len(roles)})",
+            value=roles_text,
+            inline=False
+        )
+        
+        # Status
+        status_emoji = {
+            discord.Status.online: "🟢 Online",
+            discord.Status.idle: "🟡 Idle",
+            discord.Status.dnd: "🔴 Do Not Disturb",
+            discord.Status.offline: "⚫ Offline"
+        }
+        
+        embed.add_field(
+            name="📡 Status",
+            value=status_emoji.get(member.status, "❓ Unknown"),
+            inline=True
+        )
+        
+        # Top role
+        top_role = member.top_role
+        embed.add_field(
+            name="👑 Top Role",
+            value=top_role.mention if top_role.name != "@everyone" else "None",
+            inline=True
+        )
+        
+        # Permissions
+        if member.guild_permissions.administrator:
+            embed.add_field(
+                name="🔑 Permissions",
+                value="👑 Administrator",
+                inline=True
+            )
+        
+        embed.set_footer(text=f"User ID: {target_user.id}")
+        
+        await interaction.response.send_message(embed=embed)
+        
+    except Exception as e:
+        print(f"Error in activity command: {e}")
+        await interaction.response.send_message(f"❌ Error fetching activity: {e}", ephemeral=True)
 
 # ================================
 #        AUTO-SLOWMODE SYSTEM

@@ -332,3 +332,79 @@ class RiotAPI:
         
         logger.warning(f"⚠️ Failed to get mastery after {retries} attempts")
         return None
+    
+    async def get_match_history(self, puuid: str, region: str, 
+                                count: int = 10, retries: int = 5) -> Optional[List[str]]:
+        """Get match IDs for a player - uses routing endpoint"""
+        if not self.api_key:
+            return None
+        
+        routing = RIOT_REGIONS.get(region.lower(), 'europe')
+        url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?count={count}"
+        
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        elif response.status == 404:
+                            return None
+                        elif response.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ Timeout getting match history (attempt {attempt + 1}/{retries})")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except aiohttp.ClientError as e:
+                logger.warning(f"🌐 Network error getting match history (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except Exception as e:
+                logger.error(f"❌ Error getting match history: {e}")
+                return None
+        
+        logger.warning(f"⚠️ Failed to get match history after {retries} attempts")
+        return None
+    
+    async def get_match_details(self, match_id: str, region: str, 
+                               retries: int = 5) -> Optional[Dict]:
+        """Get detailed match data - uses routing endpoint"""
+        if not self.api_key:
+            return None
+        
+        routing = RIOT_REGIONS.get(region.lower(), 'europe')
+        url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/{match_id}"
+        
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        elif response.status == 404:
+                            return None
+                        elif response.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ Timeout getting match details (attempt {attempt + 1}/{retries})")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except aiohttp.ClientError as e:
+                logger.warning(f"🌐 Network error getting match details (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except Exception as e:
+                logger.error(f"❌ Error getting match details: {e}")
+                return None
+        
+        logger.warning(f"⚠️ Failed to get match details after {retries} attempts")
+        return None

@@ -460,6 +460,132 @@ class ProfileCommands(commands.Cog):
             f"✅ Unlinked account: **{account['riot_id_game_name']}#{account['riot_id_tagline']}**",
             ephemeral=True
         )
+    
+    @app_commands.command(name="matches", description="View recent match history")
+    @app_commands.describe(user="The user to view (defaults to yourself)")
+    async def matches(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
+        """View recent match history"""
+        target_user = user or interaction.user
+        await interaction.response.defer()
+        
+        db = get_db()
+        user_data = db.get_user_by_discord_id(target_user.id)
+        
+        if not user_data:
+            await interaction.followup.send(
+                f"❌ {target_user.mention} hasn't linked their account! Use `/link` first.",
+                ephemeral=True
+            )
+            return
+        
+        account = db.get_primary_account(user_data['id'])
+        
+        if not account:
+            await interaction.followup.send(
+                f"❌ {target_user.mention} has no linked account!",
+                ephemeral=True
+            )
+            return
+        
+        # Get match history
+        logger.info(f"🔍 Fetching match history for {account['riot_id_game_name']}#{account['riot_id_tagline']}")
+        
+        match_ids = await self.riot_api.get_match_history(
+            account['puuid'],
+            account['region'],
+            count=10
+        )
+        
+        if not match_ids:
+            await interaction.followup.send(
+                f"❌ Could not fetch match history for {account['riot_id_game_name']}#{account['riot_id_tagline']}",
+                ephemeral=True
+            )
+            return
+        
+        # Fetch details for last 5 matches
+        matches_data = []
+        for match_id in match_ids[:5]:
+            match_details = await self.riot_api.get_match_details(match_id, account['region'])
+            if match_details:
+                matches_data.append(match_details)
+        
+        if not matches_data:
+            await interaction.followup.send(
+                f"❌ Could not fetch match details",
+                ephemeral=True
+            )
+            return
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"🎮 Recent Matches",
+            description=f"**{account['riot_id_game_name']}#{account['riot_id_tagline']}** ({account['region'].upper()})",
+            color=0x1F8EFA
+        )
+        
+        wins = 0
+        losses = 0
+        total_kills = 0
+        total_deaths = 0
+        total_assists = 0
+        
+        for match in matches_data:
+            # Find player in match
+            player_data = None
+            for participant in match['info']['participants']:
+                if participant['puuid'] == account['puuid']:
+                    player_data = participant
+                    break
+            
+            if not player_data:
+                continue
+            
+            # Stats
+            won = player_data['win']
+            champion = player_data['championName']
+            kills = player_data['kills']
+            deaths = player_data['deaths']
+            assists = player_data['assists']
+            kda = f"{kills}/{deaths}/{assists}"
+            
+            if won:
+                wins += 1
+            else:
+                losses += 1
+            
+            total_kills += kills
+            total_deaths += deaths
+            total_assists += assists
+            
+            # Game mode and duration
+            game_mode = match['info']['gameMode']
+            duration = match['info']['gameDuration'] // 60
+            
+            # Emoji
+            result_emoji = "✅" if won else "❌"
+            
+            # Add field
+            field_value = f"{result_emoji} **{champion}** • {kda} KDA • {duration}m"
+            embed.add_field(
+                name=f"{game_mode}",
+                value=field_value,
+                inline=False
+            )
+        
+        # Summary stats
+        avg_kda = f"{total_kills/len(matches_data):.1f}/{total_deaths/len(matches_data):.1f}/{total_assists/len(matches_data):.1f}"
+        winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+        
+        embed.add_field(
+            name="📊 Stats",
+            value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%)\n**Avg KDA:** {avg_kda}",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Last {len(matches_data)} matches")
+        
+        await interaction.followup.send(embed=embed)
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
     """Setup profile commands"""
