@@ -2631,7 +2631,7 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
     
     return "🟥"  # Wrong
 
-@bot.tree.command(name="guess", description="Play daily LoL champion guessing game!")
+@loldle_group.command(name="classic", description="Play daily LoL champion guessing game!")
 @app_commands.describe(champion="Guess the champion name")
 async def guess(interaction: discord.Interaction, champion: str):
     """LoLdle - Guess the daily champion with persistent embed!"""
@@ -2872,7 +2872,7 @@ async def guess(interaction: discord.Interaction, champion: str):
             except:
                 pass
 
-@bot.tree.command(name="loldlestats", description="Check your LoLdle stats for today")
+@loldle_group.command(name="stats", description="Check your LoLdle stats for today")
 async def loldlestats(interaction: discord.Interaction):
     """Check your LoLdle progress"""
     
@@ -2906,7 +2906,7 @@ async def loldlestats(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="loldletop", description="View global LoLdle leaderboard")
+@loldle_group.command(name="leaderboard", description="View global LoLdle leaderboard")
 async def loldletop(interaction: discord.Interaction):
     """Display global LoLdle leaderboard"""
     
@@ -2973,7 +2973,7 @@ async def loldletop(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="loldlestart", description="Start a new LoLdle game")
+@loldle_group.command(name="start", description="Start a new LoLdle game")
 @app_commands.describe(mode="Choose game mode: classic, quote, emoji, ability")
 @app_commands.choices(mode=[
     app_commands.Choice(name="Classic (Attributes)", value="classic"),
@@ -3180,7 +3180,7 @@ def get_daily_quote_champion():
     
     return loldle_quote_data['daily_champion']
 
-@bot.tree.command(name="quote", description="Guess the champion by their quote!")
+@loldle_group.command(name="quote", description="Guess the champion by their quote!")
 @app_commands.describe(champion="Guess the champion name")
 async def quote(interaction: discord.Interaction, champion: str):
     """LoLdle Quote Mode - Guess by quote"""
@@ -3353,7 +3353,7 @@ def get_daily_emoji_champion():
     
     return loldle_emoji_data['daily_champion']
 
-@bot.tree.command(name="emoji", description="Guess the champion by emojis!")
+@loldle_group.command(name="emoji", description="Guess the champion by emojis!")
 @app_commands.describe(champion="Guess the champion name")
 async def emoji(interaction: discord.Interaction, champion: str):
     """LoLdle Emoji Mode - Guess by emoji"""
@@ -3543,7 +3543,7 @@ def get_daily_ability_champion():
     
     return loldle_ability_data['daily_champion']
 
-@bot.tree.command(name="ability", description="Guess the champion by their ability!")
+@loldle_group.command(name="ability", description="Guess the champion by their ability!")
 @app_commands.describe(champion="Guess the champion name")
 async def ability(interaction: discord.Interaction, champion: str):
     """LoLdle Ability Mode - Guess by ability description"""
@@ -3732,7 +3732,7 @@ async def ability(interaction: discord.Interaction, champion: str):
 # ================================
 #        ANALYTICS COMMANDS
 # ================================
-@bot.tree.command(name="serverstats", description="View server activity statistics")
+@server_group.command(name="stats", description="View server activity statistics")
 async def serverstats(interaction: discord.Interaction):
     """Display server statistics"""
     await interaction.response.defer()
@@ -3823,7 +3823,7 @@ async def serverstats(interaction: discord.Interaction):
         print(f"Error in serverstats: {e}")
         await interaction.followup.send(f"❌ Error fetching stats: {e}", ephemeral=True)
 
-@bot.tree.command(name="activity", description="Check user activity statistics")
+@server_group.command(name="activity", description="Check user activity statistics")
 @app_commands.describe(user="The user to check (defaults to yourself)")
 async def activity(interaction: discord.Interaction, user: Optional[discord.User] = None):
     """Display user activity stats"""
@@ -4023,7 +4023,7 @@ async def on_message(message):
     # Process commands (important for slash commands to work)
     await bot.process_commands(message)
 
-@bot.tree.command(name="autoslowmode", description="Enable/disable automatic slowmode for this channel")
+@mod_group.command(name="autoslowmode", description="Enable/disable automatic slowmode for this channel")
 @app_commands.describe(enabled="Enable or disable auto-slowmode")
 async def autoslowmode(interaction: discord.Interaction, enabled: bool):
     """Toggle auto-slowmode for the current channel"""
@@ -4064,7 +4064,7 @@ async def autoslowmode(interaction: discord.Interaction, enabled: bool):
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="slowmode", description="Manually set slowmode delay for current channel")
+@mod_group.command(name="slowmode", description="Manually set slowmode delay for current channel")
 @app_commands.describe(seconds="Slowmode delay in seconds (0 to disable, max 21600)")
 async def slowmode(interaction: discord.Interaction, seconds: int):
     """Set slowmode for the current channel"""
@@ -4118,7 +4118,7 @@ async def slowmode(interaction: discord.Interaction, seconds: int):
     except Exception as e:
         await interaction.edit_original_response(content=f"❌ Error setting slowmode: {e}")
 
-@bot.tree.command(name="slowmodeinfo", description="Check current slowmode settings")
+@mod_group.command(name="slowmodeinfo", description="Check current slowmode settings")
 async def slowmodeinfo(interaction: discord.Interaction):
     """Check slowmode status of current channel"""
     
