@@ -83,7 +83,8 @@ class RiotAPI:
             
             for attempt in range(retries):
                 try:
-                    timeout = aiohttp.ClientTimeout(total=15)
+                    # Use longer timeout for Railway network
+                    timeout = aiohttp.ClientTimeout(total=30, connect=10)
                     async with aiohttp.ClientSession(timeout=timeout) as session:
                         async with session.get(url, headers=self.headers) as response:
                             if response.status == 200:
