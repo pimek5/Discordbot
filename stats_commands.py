@@ -48,13 +48,13 @@ class StatsCommands(commands.Cog):
         self.riot_api = riot_api
         self.guild = discord.Object(id=guild_id)
     
-    @app_commands.command(name="stats", description="View mastery progression graph for a champion")
+    @app_commands.command(name="stats", description="View mastery progression graph (combined from all accounts)")
     @app_commands.describe(
         champion="The champion to view stats for",
         user="The user to check (defaults to yourself)"
     )
     async def stats(self, interaction: discord.Interaction, champion: str, user: Optional[discord.Member] = None):
-        """Show mastery progression with graph"""
+        """Show mastery progression with graph from all linked accounts"""
         await interaction.response.defer()
         
         target = user or interaction.user
@@ -89,7 +89,7 @@ class StatsCommands(commands.Cog):
         
         champion_id, champion_name = champ_result
         
-        # Get mastery history
+        # Get mastery history (this is aggregated by user_id across all accounts)
         history = db.get_mastery_history(db_user['id'], champion_id, days=180)
         
         if not history or len(history) < 2:
@@ -180,7 +180,15 @@ class StatsCommands(commands.Cog):
         )
         
         embed.set_image(url="attachment://stats.png")
-        embed.set_footer(text=f"Requested by {interaction.user.name}")
+        
+        # Get account info for footer
+        all_accounts = db.get_user_accounts(db_user['id'])
+        verified_accounts = [acc for acc in all_accounts if acc.get('verified')]
+        if len(verified_accounts) > 1:
+            account_names = ", ".join([f"{acc['riot_id_game_name']}" for acc in verified_accounts])
+            embed.set_footer(text=f"Combined data from: {account_names}")
+        else:
+            embed.set_footer(text=f"Requested by {interaction.user.name}")
         
         file = discord.File(buf, filename='stats.png')
         

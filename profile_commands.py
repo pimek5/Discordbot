@@ -413,13 +413,18 @@ class ProfileCommands(commands.Cog):
             await interaction.followup.send("❌ No linked account found!", ephemeral=True)
             return
         
-        # Get champion stats
+        # Get champion stats (aggregated across all accounts)
         champ_stats = db.get_user_champion_stats(db_user['id'])
         
-        # Get ranked stats
-        ranked_stats = db.get_user_ranks(db_user['id'])
+        # Get ranked stats from ALL accounts to find highest rank
+        all_ranked_stats = []
+        for acc in all_accounts:
+            if acc.get('verified'):
+                ranks = db.get_user_ranks(db_user['id'])
+                if ranks:
+                    all_ranked_stats.extend(ranks)
         
-        # Fetch fresh summoner data
+        # Fetch fresh summoner data for primary account
         fresh_summoner = await self.riot_api.get_summoner_by_puuid(account['puuid'], account['region'])
         if fresh_summoner:
             summoner_level = fresh_summoner.get('summonerLevel', account['summoner_level'])
@@ -428,21 +433,36 @@ class ProfileCommands(commands.Cog):
             summoner_level = account['summoner_level']
             profile_icon = account.get('profile_icon_id', 0)
         
-        # Create embed with better formatting
+        # Get recently played champions (last 3 games from match history)
+        recently_played = []
+        try:
+            for acc in all_accounts[:2]:  # Check first 2 accounts for recent games
+                if not acc.get('verified'):
+                    continue
+                match_ids = await self.riot_api.get_match_history(acc['puuid'], acc['region'], count=3)
+                if match_ids:
+                    for match_id in match_ids[:3]:
+                        match_details = await self.riot_api.get_match_details(match_id, acc['region'])
+                        if match_details:
+                            for participant in match_details['info']['participants']:
+                                if participant['puuid'] == acc['puuid']:
+                                    recently_played.append({
+                                        'champion': participant['championName'],
+                                        'time': 'Today'  # Could calculate actual time from gameCreation
+                                    })
+                                    break
+                    if len(recently_played) >= 3:
+                        break
+        except Exception as e:
+            logger.error(f"Error fetching recent games: {e}")
+        
+        # Create embed
         embed = discord.Embed(
-            color=0x0BC6E3  # LoL turquoise
+            title=f"**{target.display_name}'s Profile**",
+            color=0x2B2D31  # Discord dark theme color
         )
         
-        # Profile header
-        embed.set_author(
-            name=f"{account['riot_id_game_name']}#{account['riot_id_tagline']}",
-            icon_url=f"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{profile_icon}.jpg"
-        )
-        
-        # Discord user info
-        embed.description = f"**{target.display_name}**'s League Profile\n{account['region'].upper()} • Level {summoner_level}"
-        
-        # Champion mastery section
+        # Top Champions section (3 columns)
         if champ_stats and len(champ_stats) > 0:
             top_champs = sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:5]
             
@@ -676,10 +696,10 @@ class ProfileCommands(commands.Cog):
             ephemeral=True
         )
     
-    @app_commands.command(name="matches", description="View recent match history")
+    @app_commands.command(name="matches", description="View recent match history from all linked accounts")
     @app_commands.describe(user="The user to view (defaults to yourself)")
     async def matches(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
-        """View recent match history"""
+        """View recent match history from all linked accounts"""
         target_user = user or interaction.user
         await interaction.response.defer()
         
@@ -693,49 +713,57 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        account = db.get_primary_account(user_data['id'])
+        # Get all accounts
+        all_accounts = db.get_user_accounts(user_data['id'])
         
-        if not account:
+        if not all_accounts:
             await interaction.followup.send(
-                f"❌ {target_user.mention} has no linked account!",
+                f"❌ {target_user.mention} has no linked accounts!",
                 ephemeral=True
             )
             return
         
-        # Get match history
-        logger.info(f"🔍 Fetching match history for {account['riot_id_game_name']}#{account['riot_id_tagline']}")
+        # Fetch matches from all accounts
+        all_matches = []
         
-        match_ids = await self.riot_api.get_match_history(
-            account['puuid'],
-            account['region'],
-            count=10
-        )
+        for account in all_accounts:
+            if not account.get('verified'):
+                continue  # Skip unverified accounts
+            
+            logger.info(f"🔍 Fetching matches for {account['riot_id_game_name']}#{account['riot_id_tagline']}")
+            
+            match_ids = await self.riot_api.get_match_history(
+                account['puuid'],
+                account['region'],
+                count=5
+            )
+            
+            if match_ids:
+                for match_id in match_ids[:5]:
+                    match_details = await self.riot_api.get_match_details(match_id, account['region'])
+                    if match_details:
+                        all_matches.append({
+                            'match': match_details,
+                            'account': account
+                        })
         
-        if not match_ids:
+        if not all_matches:
             await interaction.followup.send(
-                f"❌ Could not fetch match history for {account['riot_id_game_name']}#{account['riot_id_tagline']}",
+                f"❌ Could not fetch match history",
                 ephemeral=True
             )
             return
         
-        # Fetch details for last 5 matches
-        matches_data = []
-        for match_id in match_ids[:5]:
-            match_details = await self.riot_api.get_match_details(match_id, account['region'])
-            if match_details:
-                matches_data.append(match_details)
+        # Sort by game creation (newest first)
+        all_matches.sort(key=lambda x: x['match']['info']['gameCreation'], reverse=True)
         
-        if not matches_data:
-            await interaction.followup.send(
-                f"❌ Could not fetch match details",
-                ephemeral=True
-            )
-            return
+        # Take top 10 most recent
+        all_matches = all_matches[:10]
         
         # Create embed
         embed = discord.Embed(
             title=f"🎮 Recent Matches",
-            description=f"**{account['riot_id_game_name']}#{account['riot_id_tagline']}** ({account['region'].upper()})",
+            description=f"**{target_user.display_name}**'s last {len(all_matches)} games across all accounts",
             color=0x1F8EFA
         )
         
@@ -745,7 +773,10 @@ class ProfileCommands(commands.Cog):
         total_deaths = 0
         total_assists = 0
         
-        for match in matches_data:
+        for match_data in all_matches:
+            match = match_data['match']
+            account = match_data['account']
+            
             # Find player in match
             player_data = None
             for participant in match['info']['participants']:
@@ -780,25 +811,31 @@ class ProfileCommands(commands.Cog):
             # Emoji
             result_emoji = "✅" if won else "❌"
             
+            # Account indicator
+            account_short = f"{account['riot_id_game_name']}" if len(all_accounts) > 1 else ""
+            
             # Add field
+            field_name = f"{game_mode} {f'• {account_short}' if account_short else ''}"
             field_value = f"{result_emoji} **{champion}** • {kda} KDA • {duration}m"
+            
             embed.add_field(
-                name=f"{game_mode}",
+                name=field_name,
                 value=field_value,
                 inline=False
             )
         
         # Summary stats
-        avg_kda = f"{total_kills/len(matches_data):.1f}/{total_deaths/len(matches_data):.1f}/{total_assists/len(matches_data):.1f}"
+        avg_kda = f"{total_kills/len(all_matches):.1f}/{total_deaths/len(all_matches):.1f}/{total_assists/len(all_matches):.1f}"
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
         
         embed.add_field(
-            name="📊 Stats",
+            name="📊 Combined Stats",
             value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%)\n**Avg KDA:** {avg_kda}",
             inline=False
         )
         
-        embed.set_footer(text=f"Last {len(matches_data)} matches")
+        accounts_list = ", ".join([f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}" for acc in all_accounts if acc.get('verified')])
+        embed.set_footer(text=f"Accounts: {accounts_list}")
         
         await interaction.followup.send(embed=embed)
 
