@@ -1052,7 +1052,8 @@ class ProfileCommands(commands.Cog):
             all_ranked_stats=all_ranked_stats
         )
         
-        await interaction.followup.send(embed=embed, view=view)
+        message = await interaction.followup.send(embed=embed, view=view)
+        view.message = message  # Store message for deletion on timeout
     
     @app_commands.command(name="unlink", description="Unlink your Riot account")
     async def unlink(self, interaction: discord.Interaction):
@@ -1442,7 +1443,7 @@ class ProfileView(discord.ui.View):
     def __init__(self, cog: 'ProfileCommands', target_user: discord.Member, 
                  user_data: dict, all_accounts: list, all_match_details: list,
                  combined_stats: dict, champ_stats: list, all_ranked_stats: list):
-        super().__init__(timeout=300)  # 5 minutes timeout
+        super().__init__(timeout=20)  # 20 seconds timeout
         self.cog = cog
         self.target_user = target_user
         self.user_data = user_data
@@ -1452,6 +1453,16 @@ class ProfileView(discord.ui.View):
         self.champ_stats = champ_stats
         self.all_ranked_stats = all_ranked_stats
         self.current_view = "profile"
+        self.message = None  # Will store the message to delete later
+    
+    async def on_timeout(self):
+        """Called when the view times out - delete the message"""
+        if self.message:
+            try:
+                await self.message.delete()
+                logger.info(f"🗑️ Deleted profile embed for {self.target_user.display_name} after timeout")
+            except Exception as e:
+                logger.error(f"❌ Failed to delete profile embed: {e}")
     
     async def create_profile_embed(self) -> discord.Embed:
         """Create the main profile embed (reuse existing logic)"""
