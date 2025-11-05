@@ -387,6 +387,37 @@ voting_data = {}
 mod_review_data = {}
 
 # ================================
+#        LOLDLE BUTTONS VIEW
+# ================================
+class LoldleButtonsView(discord.ui.View):
+    """View with Guess and Report Issues buttons"""
+    def __init__(self):
+        super().__init__(timeout=None)  # Buttons never expire
+    
+    @discord.ui.button(label="Guess", style=discord.ButtonStyle.primary, emoji="🎮")
+    async def guess_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Sends /guess command prompt to user"""
+        await interaction.response.send_message(
+            "💬 Type `/guess <champion_name>` in the chat to make your guess!\n"
+            "Example: `/guess Yasuo`",
+            ephemeral=True
+        )
+    
+    @discord.ui.button(label="Report Issues", style=discord.ButtonStyle.danger, emoji="⚠️")
+    async def report_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Report issues with Loldle game"""
+        await interaction.response.send_message(
+            "🐛 **Report an Issue**\n\n"
+            "Found a bug or error in the Loldle game?\n"
+            "Please describe the issue:\n"
+            "• What champion were you guessing?\n"
+            "• What went wrong?\n"
+            "• Any error messages?\n\n"
+            "Contact a moderator or admin with this information!",
+            ephemeral=True
+        )
+
+# ================================
 #        BOT INIT
 # ================================
 class MyBot(commands.Bot):
@@ -397,6 +428,9 @@ class MyBot(commands.Bot):
         # Add persistent views for Thread Manager
         self.add_view(VotingView(0))  # Dummy view for persistent buttons
         self.add_view(ModReviewView(0, 0))  # Dummy view for persistent buttons
+        
+        # Add persistent view for Loldle buttons
+        self.add_view(LoldleButtonsView())  # Persistent Loldle guess/report buttons
         
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
@@ -2399,34 +2433,6 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
             return "🟨"  # Partially correct
     
     return "🟥"  # Wrong
-
-class LoldleButtonsView(discord.ui.View):
-    """View with Guess and Report Issues buttons"""
-    def __init__(self):
-        super().__init__(timeout=None)  # Buttons never expire
-    
-    @discord.ui.button(label="Guess", style=discord.ButtonStyle.primary, emoji="🎮")
-    async def guess_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Sends /guess command prompt to user"""
-        await interaction.response.send_message(
-            "💬 Type `/guess <champion_name>` in the chat to make your guess!\n"
-            "Example: `/guess Yasuo`",
-            ephemeral=True
-        )
-    
-    @discord.ui.button(label="Report Issues", style=discord.ButtonStyle.danger, emoji="⚠️")
-    async def report_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Report issues with Loldle game"""
-        await interaction.response.send_message(
-            "🐛 **Report an Issue**\n\n"
-            "Found a bug or error in the Loldle game?\n"
-            "Please describe the issue:\n"
-            "• What champion were you guessing?\n"
-            "• What went wrong?\n"
-            "• Any error messages?\n\n"
-            "Contact a moderator or admin with this information!",
-            ephemeral=True
-        )
 
 @bot.tree.command(name="guess", description="Play daily LoL champion guessing game!")
 @app_commands.describe(champion="Guess the champion name")
