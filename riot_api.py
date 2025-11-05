@@ -113,25 +113,35 @@ class RiotAPI:
         return None
     
     async def find_summoner_region(self, puuid: str, retries: int = 2) -> Optional[str]:
-        """Auto-detect which region a summoner plays on"""
+        """Auto-detect which region a summoner plays on - uses routing endpoints"""
         if not self.api_key:
             return None
         
         logger.info(f"🔍 Auto-detecting region for PUUID: {puuid[:8]}...")
         
-        for region in RIOT_REGIONS.keys():
-            url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+        # Group regions by routing value for efficiency
+        routing_groups = {}
+        for region, routing in RIOT_REGIONS.items():
+            if routing not in routing_groups:
+                routing_groups[routing] = []
+            routing_groups[routing].append(region)
+        
+        # Try each routing endpoint
+        for routing, regions in routing_groups.items():
+            url = f"https://{routing}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
             
             for attempt in range(retries):
                 try:
-                    timeout = aiohttp.ClientTimeout(total=5)
+                    timeout = aiohttp.ClientTimeout(total=10)
                     async with aiohttp.ClientSession(timeout=timeout) as session:
                         async with session.get(url, headers=self.headers) as response:
                             if response.status == 200:
                                 data = await response.json()
                                 level = data.get('summonerLevel', 0)
                                 if level > 1:
-                                    logger.info(f"✅ Found summoner in {region} (Level {level})")
+                                    # Return first region from this routing group
+                                    region = regions[0]
+                                    logger.info(f"✅ Found summoner via {routing} (Level {level}), using region: {region}")
                                     return region
                             elif response.status == 404:
                                 break
@@ -145,15 +155,17 @@ class RiotAPI:
     
     async def get_summoner_by_puuid(self, puuid: str, region: str, 
                                    retries: int = 5) -> Optional[Dict]:
-        """Get summoner data by PUUID"""
+        """Get summoner data by PUUID - uses routing region for Railway compatibility"""
         if not self.api_key:
             return None
         
-        url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+        # Convert regional platform to routing value (e.g., 'eune' -> 'europe')
+        routing = RIOT_REGIONS.get(region.lower(), 'europe')
+        url = f"https://{routing}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
         
         for attempt in range(retries):
             try:
-                timeout = aiohttp.ClientTimeout(total=15)
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
                         if response.status == 200:
@@ -182,11 +194,12 @@ class RiotAPI:
     
     async def verify_third_party_code(self, summoner_id: str, region: str, 
                                      expected_code: str, retries: int = 3) -> bool:
-        """Verify League client 3rd party code"""
+        """Verify League client 3rd party code - uses routing endpoint"""
         if not self.api_key:
             return False
         
-        url = f"https://{region}.api.riotgames.com/lol/platform/v4/third-party-code/by-summoner/{summoner_id}"
+        routing = RIOT_REGIONS.get(region.lower(), 'europe')
+        url = f"https://{routing}.api.riotgames.com/lol/platform/v4/third-party-code/by-summoner/{summoner_id}"
         
         for attempt in range(retries):
             try:
@@ -212,15 +225,16 @@ class RiotAPI:
     
     async def get_ranked_stats(self, summoner_id: str, region: str, 
                               retries: int = 5) -> Optional[List[Dict]]:
-        """Get ranked statistics"""
+        """Get ranked statistics - uses routing endpoint"""
         if not self.api_key:
             return None
         
-        url = f"https://{region}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+        routing = RIOT_REGIONS.get(region.lower(), 'europe')
+        url = f"https://{routing}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
         
         for attempt in range(retries):
             try:
-                timeout = aiohttp.ClientTimeout(total=15)
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
                         if response.status == 200:
@@ -249,15 +263,16 @@ class RiotAPI:
     
     async def get_champion_mastery(self, puuid: str, region: str, 
                                    count: int = 200, retries: int = 5) -> Optional[List[Dict]]:
-        """Get top champion masteries"""
+        """Get top champion masteries - uses routing endpoint"""
         if not self.api_key:
             return None
         
-        url = f"https://{region}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top?count={count}"
+        routing = RIOT_REGIONS.get(region.lower(), 'europe')
+        url = f"https://{routing}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top?count={count}"
         
         for attempt in range(retries):
             try:
-                timeout = aiohttp.ClientTimeout(total=15)
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
                         if response.status == 200:
