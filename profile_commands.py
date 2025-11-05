@@ -117,56 +117,50 @@ class ProfileCommands(commands.Cog):
             return
         
         summoner_level = summoner_data.get('summonerLevel', 1)
+        current_icon = summoner_data.get('profileIconId', 0)
         
-        # Generate verification code
-        code = generate_verification_code()
+        # Generate random icon ID for verification (from common icons)
+        import random
+        verification_icon = random.choice([
+            588, 3379, 4568, 5143, 5360, 5377, 5893, 6070, 6104, 6111,
+            521, 4407, 5391, 29, 3273, 4909, 6, 7, 8, 9, 10
+        ])
         
         # Save to database (no longer need summoner_id)
         user_id = db.get_or_create_user(interaction.user.id)
         db.create_verification_code(
-            user_id, code, game_name, tag_line, 
-            detected_region, puuid, expires_minutes=5
+            user_id, str(verification_icon), game_name, tag_line, 
+            detected_region, puuid, expires_minutes=10
         )
         
         # Create embed
         embed = discord.Embed(
             title="🔗 Link Your Account",
-            description=f"To link **{game_name}#{tag_line}** ({detected_region.upper()}), follow these steps:",
+            description=f"To link **{game_name}#{tag_line}** ({detected_region.upper()}), change your profile icon:",
             color=0x1F8EFA
         )
         
         embed.add_field(
-            name="Step 1: Open League Client",
+            name="📌 Step 1: Open League Client",
             value="Make sure you're logged into the correct account",
             inline=False
         )
         
         embed.add_field(
-            name="Step 2: Go to Settings",
-            value="Click the gear icon ⚙️ in the top right",
+            name="🖼️ Step 2: Change Profile Icon",
+            value=f"Click your profile picture and set icon to: **#{verification_icon}**\n"
+                  f"[Preview Icon](https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{verification_icon}.jpg)",
             inline=False
         )
         
         embed.add_field(
-            name="Step 3: Verification",
-            value="Scroll down to **Verification** section",
+            name="✅ Step 3: Verify",
+            value=f"After changing your icon, use `/verify` within **10 minutes**",
             inline=False
         )
         
-        embed.add_field(
-            name="Step 4: Enter Code",
-            value=f"Enter this code: **`{code}`**",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="Step 5: Verify",
-            value=f"Come back here and use `/verify` within 5 minutes!",
-            inline=False
-        )
-        
-        embed.set_footer(text="Code expires in 5 minutes")
-        embed.set_thumbnail(url="https://static.wikia.nocookie.net/leagueoflegends/images/1/12/League_of_Legends_icon.png")
+        embed.set_footer(text=f"Your current icon: #{current_icon} | Verification expires in 10 minutes")
+        embed.set_thumbnail(url=f"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{verification_icon}.jpg")
         
         await interaction.followup.send(embed=embed, ephemeral=True)
     
@@ -200,25 +194,36 @@ class ProfileCommands(commands.Cog):
         if datetime.now() > verification['expires_at']:
             db.delete_verification_code(user['id'])
             await interaction.followup.send(
-                "❌ Verification code expired! Use `/link` to get a new code.",
+                "❌ Verification expired! Use `/link` to get a new icon.",
                 ephemeral=True
             )
             return
         
-        # Verify with Riot API
-        logger.info(f"🔐 Verifying code for {verification['riot_id_game_name']}#{verification['riot_id_tagline']}")
+        # Get current summoner data to check icon
+        logger.info(f"🔐 Verifying icon for {verification['riot_id_game_name']}#{verification['riot_id_tagline']}")
         
-        is_valid = await self.riot_api.verify_third_party_code(
+        summoner_data = await self.riot_api.get_summoner_by_puuid(
             verification['puuid'],
-            verification['region'],
-            verification['code']
+            verification['region']
         )
         
-        if not is_valid:
+        if not summoner_data:
+            await interaction.followup.send(
+                "❌ Could not fetch your profile. Try again later.",
+                ephemeral=True
+            )
+            return
+        
+        current_icon = summoner_data.get('profileIconId', 0)
+        expected_icon = int(verification['code'])  # Icon ID stored as code
+        
+        if current_icon != expected_icon:
             time_left = (verification['expires_at'] - datetime.now()).total_seconds() / 60
             await interaction.followup.send(
                 f"❌ Verification failed!\n\n"
-                f"Make sure you entered **`{verification['code']}`** in your League client.\n"
+                f"Your current icon: **#{current_icon}**\n"
+                f"Expected icon: **#{expected_icon}**\n\n"
+                f"Change your profile icon to **#{expected_icon}** and try again.\n"
                 f"Time remaining: **{int(time_left)}** minutes",
                 ephemeral=True
             )
@@ -255,43 +260,17 @@ class ProfileCommands(commands.Cog):
                 )
             logger.info(f"✅ Saved {len(mastery_data)} champion masteries")
         
-        # Get ranked stats
-        summoner_data = await self.riot_api.get_summoner_by_puuid(
-            verification['puuid'],
-            verification['region']
-        )
-        
-        if summoner_data:
-            ranked_stats = await self.riot_api.get_ranked_stats(
-                summoner_data['id'],
-                verification['region']
-            )
-            
-            if ranked_stats:
-                for queue in ranked_stats:
-                    db.update_ranked_stats(
-                        user['id'],
-                        queue['queueType'],
-                        queue.get('tier', 'UNRANKED'),
-                        queue.get('rank', ''),
-                        queue.get('leaguePoints', 0),
-                        queue.get('wins', 0),
-                        queue.get('losses', 0),
-                        queue.get('hotStreak', False),
-                        queue.get('veteran', False),
-                        queue.get('freshBlood', False)
-                    )
-        
         # Add to guild members
         if interaction.guild:
             db.add_guild_member(interaction.guild.id, user['id'])
         
-        # Delete verification code
+        # Clean up verification code
         db.delete_verification_code(user['id'])
         
         embed = discord.Embed(
             title="✅ Account Linked Successfully!",
-            description=f"**{verification['riot_id_game_name']}#{verification['riot_id_tagline']}** ({verification['region'].upper()})",
+            description=f"**{verification['riot_id_game_name']}#{verification['riot_id_tagline']}** ({verification['region'].upper()})\n\n"
+                       f"🎉 You can now change your icon back!",
             color=0x00FF00
         )
         
