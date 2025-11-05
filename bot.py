@@ -14,6 +14,33 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ================================
+#    ORIANNA BOT INTEGRATION
+# ================================
+import logging
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Import Orianna modules
+from database import initialize_database
+from riot_api import RiotAPI, load_champion_data
+import profile_commands
+import stats_commands
+import leaderboard_commands
+
+# Orianna configuration
+DATABASE_URL = os.getenv('DATABASE_URL')
+RIOT_API_KEY = os.getenv('RIOT_API_KEY', 'RGAPI-1e3fc1a2-2d4a-4c7f-bde6-3001fd12df09')
+GUILD_ID = 1153027935553454191  # Your server ID for slash commands
+
+# Global instances
+riot_api = None
+orianna_initialized = False
+
+# ================================
 #        INTENTS
 # ================================
 intents = discord.Intents.default()
@@ -3638,6 +3665,8 @@ async def slowmodeinfo(interaction: discord.Interaction):
 
 @bot.event
 async def on_ready():
+    global riot_api, orianna_initialized
+    
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     print('------')
     
@@ -3649,6 +3678,37 @@ async def on_ready():
     
     # Commands are already synced in setup_hook()
     print(f"✅ Bot is ready with synced commands")
+    
+    # Initialize Orianna Bot modules
+    if not orianna_initialized:
+        try:
+            print("🔄 Initializing Orianna Bot modules...")
+            
+            # Initialize database
+            db = initialize_database(DATABASE_URL)
+            if db:
+                print("✅ Database connection established")
+            else:
+                print("❌ Failed to connect to database")
+                
+            # Create Riot API instance
+            riot_api = RiotAPI(RIOT_API_KEY)
+            
+            # Load champion data from DDragon
+            await load_champion_data()
+            print("✅ Champion data loaded from DDragon")
+            
+            # Load command cogs
+            await bot.add_cog(profile_commands.ProfileCommands(bot, riot_api, GUILD_ID))
+            await bot.add_cog(stats_commands.StatsCommands(bot, riot_api, GUILD_ID))
+            await bot.add_cog(leaderboard_commands.LeaderboardCommands(bot, riot_api, GUILD_ID))
+            print("✅ Orianna Bot commands registered")
+            
+            orianna_initialized = True
+            print("✅ Orianna Bot modules initialized successfully")
+        except Exception as e:
+            print(f"❌ Error initializing Orianna Bot: {e}")
+            logging.error(f"Orianna initialization error: {e}", exc_info=True)
     
     # Start tweet monitoring
     if not check_for_new_tweets.is_running():

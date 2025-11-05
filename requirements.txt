@@ -6,3 +6,6 @@ py-cord==2.6.1
 tweepy
 beautifulsoup4
 lxml
+psycopg2-binary
+matplotlib
+pillow
