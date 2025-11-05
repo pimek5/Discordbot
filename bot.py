@@ -730,20 +730,6 @@ class FixedMessageView(discord.ui.View):
         if log_channel:
             await log_channel.send(f"🔧 {interaction.user.mention} clicked Issue? button.")
 
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
-
-    if message.channel.id == FIXES_CHANNEL_ID and re.search(r'\bfixed\b', message.content, re.IGNORECASE):
-        try:
-            await message.add_reaction("✅")
-            await message.add_reaction("❎")
-            await message.reply("🎯 Fixed detected!", view=FixedMessageView())
-        except Exception as e:
-            print(f"Error handling Fixed message: {e}")
-
-    await bot.process_commands(message)
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
@@ -3458,9 +3444,23 @@ async def ability(interaction: discord.Interaction, champion: str):
 # ================================
 @bot.event
 async def on_message(message):
-    """Monitor message frequency and apply auto-slowmode"""
-    # Ignore bot messages and DMs
-    if message.author.bot or not message.guild:
+    """Monitor message frequency, apply auto-slowmode, and handle fixes-posts"""
+    # Ignore bot messages
+    if message.author.bot:
+        return
+    
+    # Handle fixes-posts channel FIRST (before DM check)
+    if message.channel.id == FIXES_CHANNEL_ID and re.search(r'\bfixed\b', message.content, re.IGNORECASE):
+        try:
+            await message.add_reaction("✅")
+            await message.add_reaction("❎")
+            await message.reply("🎯 Fixed detected!", view=FixedMessageView())
+        except Exception as e:
+            print(f"Error handling Fixed message: {e}")
+    
+    # Ignore DMs after checking fixes
+    if not message.guild:
+        await bot.process_commands(message)
         return
     
     channel_id = message.channel.id
@@ -3536,6 +3536,9 @@ async def on_message(message):
                 print(f"❌ Missing permissions to set slowmode in #{message.channel.name}")
             except Exception as e:
                 print(f"❌ Error setting auto-slowmode: {e}")
+    
+    # Process commands (important for slash commands to work)
+    await bot.process_commands(message)
 
 @bot.tree.command(name="autoslowmode", description="Enable/disable automatic slowmode for this channel")
 @app_commands.describe(enabled="Enable or disable auto-slowmode")
