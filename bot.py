@@ -2287,12 +2287,21 @@ async def resettweets(interaction: discord.Interaction):
             last_tweet_id = None  # Reset tracking
             save_last_tweet_id("")  # Clear the file
             
+            latest_tweet = tweets[0]
+            tweet_text = latest_tweet.get('text', 'No text available')
+            tweet_url = f"https://twitter.com/{TWITTER_USERNAME}/status/{latest_tweet['id']}"
+            
+            # Truncate long tweets
+            if len(tweet_text) > 500:
+                tweet_text = tweet_text[:500] + "..."
+            
             embed = discord.Embed(
                 title="🔄 Tweet Tracking Reset",
+                description=f"**Latest Tweet:**\n{tweet_text}\n\n[View Tweet]({tweet_url})",
                 color=0x1DA1F2
             )
             embed.add_field(name="Previous ID", value=old_id or "None", inline=True)
-            embed.add_field(name="Current Latest Tweet", value=tweets[0]['id'], inline=True)
+            embed.add_field(name="Current Latest Tweet", value=latest_tweet['id'], inline=True)
             embed.add_field(name="Status", value="Tracking reset - next check will re-initialize", inline=False)
             embed.add_field(name="Next Action", value="Bot will now treat the latest tweet as baseline for future monitoring", inline=False)
             
