@@ -18,6 +18,67 @@ class SettingsCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
     
+    @app_commands.command(name="help", description="Show all available commands")
+    async def help_command(self, interaction: discord.Interaction):
+        """Show categorized list of bot commands"""
+        embed = discord.Embed(
+            title="📚 Bot Commands",
+            description="All available commands categorized by functionality",
+            color=0x1F8EFA
+        )
+        
+        # Profile & Accounts
+        profile_cmds = (
+            "`/link` - Link your Riot account\n"
+            "`/verify` - Verify account (change icon)\n"
+            "`/profile` - Interactive profile (Profile/Stats/Matches/LP)\n"
+            "`/setprimary` - Set primary account\n"
+            "`/unlink` - Unlink Riot account"
+        )
+        embed.add_field(name="👤 Profile & Accounts", value=profile_cmds, inline=False)
+        
+        # Statistics
+        stats_cmds = (
+            "`/stats <champion>` - Champion mastery graph\n"
+            "`/points <champion>` - Quick mastery check\n"
+            "`/lp` - Today's LP balance (ranked)"
+        )
+        embed.add_field(name="📊 Statistics", value=stats_cmds, inline=False)
+        
+        # Match History
+        matches_cmds = (
+            "`/matches` - Last 10 games (all accounts)"
+        )
+        embed.add_field(name="🎮 Match History", value=matches_cmds, inline=False)
+        
+        # Leaderboards
+        leaderboard_cmds = (
+            "`/leaderboard [champion]` - Top 10 by mastery\n"
+            "`/topchampions` - Most popular champions"
+        )
+        embed.add_field(name="🏆 Leaderboards", value=leaderboard_cmds, inline=False)
+        
+        # Loldle (separate - works everywhere)
+        loldle_cmds = (
+            "`/loldle` - Start Loldle game\n"
+            "`/loldlestats` - Your Loldle statistics\n"
+            "`/loldleleaderboard` - Top Loldle players"
+        )
+        embed.add_field(name="🎲 Loldle (Works in all channels)", value=loldle_cmds, inline=False)
+        
+        # Settings (Admin only)
+        settings_cmds = (
+            "`/settings addchannel` - Allow bot in channel\n"
+            "`/settings removechannel` - Disallow bot in channel\n"
+            "`/settings listchannels` - Show allowed channels\n"
+            "`/settings reset` - Remove all restrictions"
+        )
+        embed.add_field(name="⚙️ Settings (Admin)", value=settings_cmds, inline=False)
+        
+        embed.set_footer(text="Use /help to see this message again • Interactive profile buttons: 👤 📊 🎮 💰")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
     settings_group = app_commands.Group(name="settings", description="Bot settings (Admin only)")
     
     @settings_group.command(name="addchannel", description="Add a channel to allowed channels list")
