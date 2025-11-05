@@ -1,5 +1,5 @@
 """
-Database module for Orianna Bot
+Database module for Kassalytics
 Handles PostgreSQL connection and queries
 """
 

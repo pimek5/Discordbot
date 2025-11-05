@@ -1,5 +1,5 @@
 """
-Background Worker for Orianna Bot
+Background Worker for Kassalytics
 Updates all users' mastery and ranked stats periodically
 """
 

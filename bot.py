@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ================================
-#    ORIANNA BOT INTEGRATION
+#    KASSALYTICS INTEGRATION
 # ================================
 import logging
 
@@ -453,10 +453,10 @@ class MyBot(commands.Bot):
         # Add persistent view for Loldle buttons
         self.add_view(LoldleButtonsView())  # Persistent Loldle guess/report buttons
         
-        # Initialize Orianna Bot modules FIRST (before syncing commands)
+        # Initialize Kassalytics modules FIRST (before syncing commands)
         if not orianna_initialized:
             try:
-                print("🔄 Initializing Orianna Bot modules...")
+                print("🔄 Initializing Kassalytics modules...")
                 
                 # Initialize database
                 db = initialize_database(DATABASE_URL)
@@ -487,12 +487,12 @@ class MyBot(commands.Bot):
                 from settings_commands import SettingsCommands
                 await self.add_cog(SettingsCommands(self))
                 
-                print("✅ Orianna Bot commands registered")
+                print("✅ Kassalytics commands registered")
                 
                 orianna_initialized = True
-                print("✅ Orianna Bot modules initialized successfully")
+                print("✅ Kassalytics modules initialized successfully")
             except Exception as e:
-                print(f"❌ Error initializing Orianna Bot: {e}")
+                print(f"❌ Error initializing Kassalytics: {e}")
                 logging.error(f"Orianna initialization error: {e}", exc_info=True)
         
         # Add global check for Orianna commands (channel restrictions)

@@ -1,6 +1,7 @@
 """
 Settings Commands Module
 /settings - Manage bot settings (admin only)
+/commands - Interactive command list with category buttons
 """
 
 import discord
@@ -14,9 +15,240 @@ from database import get_db
 logger = logging.getLogger('settings_commands')
 
 
+class CommandsCategoryView(discord.ui.View):
+    """Interactive view for browsing commands by category"""
+    
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.current_category = "all"
+    
+    def create_embed(self, category: str) -> discord.Embed:
+        """Create embed for specific category"""
+        embed = discord.Embed(
+            title="📚 Kassalytics Commands",
+            color=0x1F8EFA
+        )
+        
+        if category == "all":
+            embed.description = "Click a button below to view commands by category"
+            
+            # Overview
+            embed.add_field(
+                name="👤 Profile & Accounts (5 commands)",
+                value="Manage your League accounts and view profiles",
+                inline=False
+            )
+            embed.add_field(
+                name="📊 Statistics (3 commands)",
+                value="View champion mastery and LP statistics",
+                inline=False
+            )
+            embed.add_field(
+                name="🎮 Match History (1 command)",
+                value="View recent match history",
+                inline=False
+            )
+            embed.add_field(
+                name="🏆 Leaderboards (2 commands)",
+                value="Server-wide rankings and leaderboards",
+                inline=False
+            )
+            embed.add_field(
+                name="🎲 Loldle (3 commands)",
+                value="Loldle mini-game (works in all channels)",
+                inline=False
+            )
+            embed.add_field(
+                name="⚙️ Settings (4 commands)",
+                value="Bot configuration (Admin only)",
+                inline=False
+            )
+            
+        elif category == "profile":
+            embed.description = "**👤 Profile & Accounts**\nManage your League accounts"
+            embed.add_field(
+                name="/link",
+                value="Link your Riot account to Discord\n`/link riot_id:Name#TAG region:euw`",
+                inline=False
+            )
+            embed.add_field(
+                name="/verify",
+                value="Verify account ownership by changing profile icon",
+                inline=False
+            )
+            embed.add_field(
+                name="/profile",
+                value="View interactive profile with buttons:\n• 👤 Profile - Main view\n• 📊 Statistics - Detailed stats\n• 🎮 Matches - Recent games\n• 💰 LP - Today's LP balance",
+                inline=False
+            )
+            embed.add_field(
+                name="/setprimary",
+                value="Set which account is your primary\n`/setprimary riot_id:Name#TAG`",
+                inline=False
+            )
+            embed.add_field(
+                name="/unlink",
+                value="Unlink your Riot account from Discord",
+                inline=False
+            )
+            
+        elif category == "stats":
+            embed.description = "**📊 Statistics**\nView champion mastery and performance"
+            embed.add_field(
+                name="/stats",
+                value="View champion mastery progression graph\n`/stats champion:Ahri [user:@someone]`",
+                inline=False
+            )
+            embed.add_field(
+                name="/points",
+                value="Quick mastery points lookup\n`/points champion:Yasuo [user:@someone]`",
+                inline=False
+            )
+            embed.add_field(
+                name="/lp",
+                value="Today's LP gains/losses from ranked games\n`/lp [user:@someone]`",
+                inline=False
+            )
+            
+        elif category == "matches":
+            embed.description = "**🎮 Match History**\nView recent game history"
+            embed.add_field(
+                name="/matches",
+                value="View last 10 games from all linked accounts\n`/matches [user:@someone]`\nShows: Champion, KDA, game mode, duration",
+                inline=False
+            )
+            
+        elif category == "leaderboards":
+            embed.description = "**🏆 Leaderboards**\nServer-wide rankings"
+            embed.add_field(
+                name="/leaderboard",
+                value="Top 10 players by champion mastery\n`/leaderboard [champion:Ahri]`\nWithout champion: shows overall top players",
+                inline=False
+            )
+            embed.add_field(
+                name="/topchampions",
+                value="Most popular champions in the server\nShows top 10 most played champions",
+                inline=False
+            )
+            
+        elif category == "loldle":
+            embed.description = "**🎲 Loldle Mini-Game**\nGuess the League champion! (Works in all channels)"
+            embed.add_field(
+                name="/loldle",
+                value="Start a new Loldle game\nGuess the champion based on clues",
+                inline=False
+            )
+            embed.add_field(
+                name="/loldlestats",
+                value="View your Loldle statistics\nWins, losses, win rate, streaks",
+                inline=False
+            )
+            embed.add_field(
+                name="/loldleleaderboard",
+                value="Top Loldle players in the server\nRanked by win rate and total wins",
+                inline=False
+            )
+            
+        elif category == "settings":
+            embed.description = "**⚙️ Settings (Admin Only)**\nManage bot configuration"
+            embed.add_field(
+                name="/settings addchannel",
+                value="Allow bot commands in a specific channel\n`/settings addchannel channel:#channel`",
+                inline=False
+            )
+            embed.add_field(
+                name="/settings removechannel",
+                value="Remove channel from allowed list\n`/settings removechannel channel:#channel`",
+                inline=False
+            )
+            embed.add_field(
+                name="/settings listchannels",
+                value="Show all channels where bot works",
+                inline=False
+            )
+            embed.add_field(
+                name="/settings reset",
+                value="Remove all channel restrictions (bot works everywhere)",
+                inline=False
+            )
+        
+        embed.set_footer(text=f"Category: {category.title()} • Kassalytics Bot")
+        return embed
+    
+    @discord.ui.button(label="All", style=discord.ButtonStyle.primary, emoji="📚", row=0)
+    async def all_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_category == "all":
+            await interaction.response.defer()
+            return
+        self.current_category = "all"
+        embed = self.create_embed("all")
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Profile", style=discord.ButtonStyle.secondary, emoji="👤", row=0)
+    async def profile_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_category == "profile":
+            await interaction.response.defer()
+            return
+        self.current_category = "profile"
+        embed = self.create_embed("profile")
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Stats", style=discord.ButtonStyle.secondary, emoji="📊", row=0)
+    async def stats_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_category == "stats":
+            await interaction.response.defer()
+            return
+        self.current_category = "stats"
+        embed = self.create_embed("stats")
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Matches", style=discord.ButtonStyle.secondary, emoji="🎮", row=0)
+    async def matches_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_category == "matches":
+            await interaction.response.defer()
+            return
+        self.current_category = "matches"
+        embed = self.create_embed("matches")
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Leaderboards", style=discord.ButtonStyle.secondary, emoji="🏆", row=1)
+    async def leaderboards_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_category == "leaderboards":
+            await interaction.response.defer()
+            return
+        self.current_category = "leaderboards"
+        embed = self.create_embed("leaderboards")
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Loldle", style=discord.ButtonStyle.secondary, emoji="🎲", row=1)
+    async def loldle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_category == "loldle":
+            await interaction.response.defer()
+            return
+        self.current_category = "loldle"
+        embed = self.create_embed("loldle")
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Settings", style=discord.ButtonStyle.secondary, emoji="⚙️", row=1)
+    async def settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_category == "settings":
+            await interaction.response.defer()
+            return
+        self.current_category = "settings"
+        embed = self.create_embed("settings")
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
 class SettingsCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+    
+    @app_commands.command(name="commands", description="Interactive command list with categories")
+    async def commands_list(self, interaction: discord.Interaction):
+        """Show interactive categorized command list"""
+        view = CommandsCategoryView()
+        embed = view.create_embed("all")
+        await interaction.response.send_message(embed=embed, view=view)
     
     @app_commands.command(name="help", description="Show all available commands")
     async def help_command(self, interaction: discord.Interaction):

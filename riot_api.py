@@ -1,5 +1,5 @@
 """
-Riot API Module for Orianna Bot
+Riot API Module for Kassalytics
 Handles all Riot Games API interactions with retry logic
 """
 
