@@ -551,25 +551,43 @@ class ProfileCommands(commands.Cog):
         all_match_details = []
         recently_played = []
         
+        import time
+        fetch_start = time.time()
+        
         try:
             logger.info(f"📊 Fetching match history for {len(all_accounts)} accounts...")
+            matches_fetched = 0
+            max_matches_per_account = 25  # Reduced from 50 for faster loading
+            max_total_matches = 50  # Reduced from 100
+            
             for acc in all_accounts:
                 if not acc.get('verified'):
                     continue
                 
-                # Get last 50 matches for detailed stats
-                match_ids = await self.riot_api.get_match_history(acc['puuid'], acc['region'], count=50)
+                # Stop if we already have enough matches
+                if matches_fetched >= max_total_matches:
+                    logger.info(f"⚠️ Reached max total matches ({max_total_matches}), stopping fetch")
+                    break
+                
+                # Get match IDs
+                match_ids = await self.riot_api.get_match_history(acc['puuid'], acc['region'], count=max_matches_per_account)
                 if match_ids:
-                    logger.info(f"  Found {len(match_ids)} matches for {acc['riot_id_game_name']}")
-                    for match_id in match_ids:
+                    logger.info(f"  Found {len(match_ids)} match IDs for {acc['riot_id_game_name']}")
+                    
+                    # Fetch details for each match (with limit)
+                    for i, match_id in enumerate(match_ids):
+                        if matches_fetched >= max_total_matches:
+                            break
+                        
                         match_details = await self.riot_api.get_match_details(match_id, acc['region'])
                         if match_details:
                             all_match_details.append({
                                 'match': match_details,
                                 'puuid': acc['puuid']
                             })
+                            matches_fetched += 1
                         
-                        # Collect recently played for display (first 3 games)
+                        # Collect recently played for display (first 3 unique games)
                         if len(recently_played) < 3 and match_details:
                             for participant in match_details['info']['participants']:
                                 if participant['puuid'] == acc['puuid']:
@@ -580,12 +598,9 @@ class ProfileCommands(commands.Cog):
                                             'time': 'Today'
                                         })
                                     break
-                
-                # Limit to prevent too many API calls
-                if len(all_match_details) >= 100:
-                    break
             
-            logger.info(f"✅ Fetched {len(all_match_details)} total match details")
+            fetch_time = time.time() - fetch_start
+            logger.info(f"✅ Fetched {len(all_match_details)} total match details in {fetch_time:.1f}s")
         except Exception as e:
             logger.error(f"❌ Error fetching match history: {e}")
         
