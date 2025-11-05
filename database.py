@@ -177,6 +177,34 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    def set_primary_account(self, user_id: int, account_id: int) -> bool:
+        """Set a specific account as primary for a user"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # First, set all accounts to not primary
+                cur.execute("""
+                    UPDATE league_accounts 
+                    SET primary_account = FALSE 
+                    WHERE user_id = %s
+                """, (user_id,))
+                
+                # Then set the specified account as primary
+                cur.execute("""
+                    UPDATE league_accounts 
+                    SET primary_account = TRUE 
+                    WHERE id = %s AND user_id = %s
+                """, (account_id, user_id))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error setting primary account: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+    
     # ==================== CHAMPION MASTERY OPERATIONS ====================
     
     def update_champion_mastery(self, user_id: int, champion_id: int, 

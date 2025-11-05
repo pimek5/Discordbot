@@ -279,6 +279,100 @@ class ProfileCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed, ephemeral=True)
     
+    @app_commands.command(name="setprimary", description="Set your primary Riot account")
+    @app_commands.describe(riot_id="Riot ID of the account to set as primary (Name#TAG)")
+    async def setprimary(self, interaction: discord.Interaction, riot_id: str):
+        """Set a primary account from your linked accounts"""
+        await interaction.response.defer(ephemeral=True)
+        
+        db = get_db()
+        
+        # Get user from database
+        db_user = db.get_user_by_discord_id(interaction.user.id)
+        
+        if not db_user:
+            await interaction.followup.send("❌ You don't have any linked accounts!", ephemeral=True)
+            return
+        
+        # Get all user accounts
+        all_accounts = db.get_user_accounts(db_user['id'])
+        
+        if not all_accounts or len(all_accounts) == 0:
+            await interaction.followup.send("❌ You don't have any linked accounts!", ephemeral=True)
+            return
+        
+        # Parse riot_id
+        if '#' not in riot_id:
+            await interaction.followup.send("❌ Invalid Riot ID format! Use `Name#TAG`", ephemeral=True)
+            return
+        
+        game_name, tagline = riot_id.split('#', 1)
+        
+        # Find matching account
+        target_account = None
+        for acc in all_accounts:
+            if acc['riot_id_game_name'].lower() == game_name.lower() and acc['riot_id_tagline'].lower() == tagline.lower():
+                target_account = acc
+                break
+        
+        if not target_account:
+            embed = discord.Embed(
+                title="❌ Account Not Found",
+                description=f"The account **{riot_id}** is not linked to your Discord account.",
+                color=0xFF0000
+            )
+            
+            if all_accounts:
+                account_list = "\n".join([
+                    f"• **{acc['riot_id_game_name']}#{acc['riot_id_tagline']}** ({acc['region'].upper()})"
+                    for acc in all_accounts
+                ])
+                embed.add_field(
+                    name="Your Linked Accounts",
+                    value=account_list,
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
+        # Check if account is verified
+        if not target_account.get('verified'):
+            await interaction.followup.send(
+                f"❌ The account **{riot_id}** must be verified before it can be set as primary!\n"
+                f"Use `/verify` to verify this account first.",
+                ephemeral=True
+            )
+            return
+        
+        # Set as primary
+        try:
+            success = db.set_primary_account(db_user['id'], target_account['id'])
+            
+            if not success:
+                await interaction.followup.send("❌ An error occurred while updating your primary account.", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="✅ Primary Account Updated!",
+                description=f"**{target_account['riot_id_game_name']}#{target_account['riot_id_tagline']}** ({target_account['region'].upper()}) is now your primary account.",
+                color=0x00FF00
+            )
+            
+            embed.add_field(
+                name="What does this mean?",
+                value="• This account will be shown in `/profile`\n"
+                      "• Stats commands will default to this account\n"
+                      "• You can still access other accounts by specifying them",
+                inline=False
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error setting primary account: {e}")
+            await interaction.followup.send("❌ An error occurred while updating your primary account.", ephemeral=True)
+    
     @app_commands.command(name="profile", description="View player profile and stats")
     @app_commands.describe(user="The user to view (defaults to yourself)")
     async def profile(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
