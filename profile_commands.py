@@ -538,89 +538,92 @@ class ProfileCommands(commands.Cog):
                 inline=False
             )
         
-        # Ranked section
-        if ranked_stats and len(ranked_stats) > 0:
-            solo_queue = next((r for r in ranked_stats if 'SOLO' in r['queue']), None)
-            flex_queue = next((r for r in ranked_stats if 'FLEX' in r['queue']), None)
+        # RANKED TIERS (shows highest rank from all accounts)
+        if all_ranked_stats and len(all_ranked_stats) > 0:
+            # Find highest solo queue rank
+            solo_queues = [r for r in all_ranked_stats if 'SOLO' in r['queue']]
+            flex_queues = [r for r in all_ranked_stats if 'FLEX' in r['queue']]
+            
+            # Rank order for comparison
+            rank_order = {
+                'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
+                'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
+                'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
+            }
+            
+            def get_rank_value(rank_data):
+                tier_val = rank_order.get(rank_data['tier'], -1)
+                rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
+                return tier_val * 4 + rank_val
+            
+            # Get highest ranks
+            highest_solo = max(solo_queues, key=get_rank_value) if solo_queues else None
+            highest_flex = max(flex_queues, key=get_rank_value) if flex_queues else None
             
             ranked_lines = []
             
-            if solo_queue:
-                tier = solo_queue['tier']
-                rank = solo_queue['rank']
-                lp = solo_queue['league_points']
-                wins = solo_queue['wins']
-                losses = solo_queue['losses']
-                total = wins + losses
-                wr = round(wins / total * 100, 1) if total > 0 else 0
-                
+            if highest_solo:
+                tier = highest_solo['tier']
+                rank = highest_solo['rank']
                 rank_emoji = RANK_EMOJIS.get(tier, '❓')
-                
-                ranked_lines.append(f"**Solo/Duo**")
-                ranked_lines.append(f"{rank_emoji} {tier} {rank} • {lp} LP")
-                ranked_lines.append(f"{wins}W {losses}L • {wr}% WR")
-                
-                if solo_queue.get('hot_streak'):
-                    ranked_lines.append("🔥 On a hot streak!")
+                ranked_lines.append(f"**Ranked Solo:** {rank_emoji} **{tier} {rank}**")
             else:
-                ranked_lines.append("**Solo/Duo:** Unranked")
+                ranked_lines.append("**Ranked Solo:** Unranked")
             
-            if flex_queue:
-                tier = flex_queue['tier']
-                rank = flex_queue['rank']
-                lp = flex_queue['league_points']
-                wins = flex_queue['wins']
-                losses = flex_queue['losses']
-                total = wins + losses
-                wr = round(wins / total * 100, 1) if total > 0 else 0
-                
+            if highest_flex:
+                tier = highest_flex['tier']
+                rank = highest_flex['rank']
                 rank_emoji = RANK_EMOJIS.get(tier, '❓')
-                
-                ranked_lines.append("")
-                ranked_lines.append(f"**Flex**")
-                ranked_lines.append(f"{rank_emoji} {tier} {rank} • {lp} LP")
-                ranked_lines.append(f"{wins}W {losses}L • {wr}% WR")
+                ranked_lines.append(f"**Ranked Flex:** {rank_emoji} **{tier} {rank}**")
             else:
-                ranked_lines.append("")
-                ranked_lines.append("**Flex:** Unranked")
+                ranked_lines.append("**Ranked Flex:** Unranked")
+            
+            ranked_lines.append(f"**Ranked TFT:** Unranked")
             
             embed.add_field(
-                name="🏆 Ranked Stats",
+                name="**Ranked Tiers**",
                 value="\n".join(ranked_lines),
+                inline=False
+            )
+        
+        # ACCOUNTS SECTION (list all linked accounts with regions)
+        account_lines = []
+        left_col = []
+        right_col = []
+        
+        for i, acc in enumerate(all_accounts):
+            verified_badge = "✅" if acc.get('verified') else "⏳"
+            is_primary = acc['puuid'] == account['puuid']
+            primary_badge = "⭐ " if is_primary else ""
+            
+            acc_text = f"{verified_badge} {primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
+            
+            # Split into two columns
+            if i % 2 == 0:
+                left_col.append(acc_text)
+            else:
+                right_col.append(acc_text)
+        
+        # Add accounts in two columns
+        embed.add_field(
+            name="**Accounts**",
+            value="\n".join(left_col) if left_col else "No accounts",
+            inline=True
+        )
+        
+        if right_col:
+            embed.add_field(
+                name="\u200b",  # Invisible character for spacing
+                value="\n".join(right_col),
                 inline=True
             )
         
-        # Account info footer
-        footer_parts = []
-        if account.get('verified'):
-            footer_parts.append("✅ Verified")
-        if account.get('verified_at'):
-            from datetime import datetime
-            verified_date = account['verified_at']
-            if isinstance(verified_date, str):
-                verified_date = datetime.fromisoformat(verified_date.replace('Z', '+00:00'))
-            footer_parts.append(f"Since {verified_date.strftime('%b %d, %Y')}")
+        # Footer with timestamp
+        from datetime import datetime
+        embed.set_footer(text=f"{target.display_name} • Today at {datetime.now().strftime('%I:%M %p')}")
         
-        if footer_parts:
-            embed.set_footer(text=" • ".join(footer_parts))
-        
-        # Multiple accounts section
-        if len(all_accounts) > 1:
-            account_lines = []
-            for acc in all_accounts:
-                is_primary = acc['puuid'] == account['puuid']
-                verified_badge = "✅" if acc.get('verified') else "⏳"
-                primary_badge = "⭐" if is_primary else "•"
-                
-                account_lines.append(
-                    f"{primary_badge} {verified_badge} **{acc['riot_id_game_name']}#{acc['riot_id_tagline']}** ({acc['region'].upper()})"
-                )
-            
-            embed.add_field(
-                name=f"🔗 Linked Accounts ({len(all_accounts)})",
-                value="\n".join(account_lines),
-                inline=False
-            )
+        # Account info footer (removed old section)
+        # Multiple accounts section (removed old section)
         
         # Add buttons for more info
         from discord.ui import View, Button
