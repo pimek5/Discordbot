@@ -305,6 +305,13 @@ class ProfileCommands(commands.Cog):
             await interaction.followup.send(embed=embed)
             return
         
+        # Get all accounts
+        all_accounts = db.get_user_accounts(db_user['id'])
+        
+        if not all_accounts or len(all_accounts) == 0:
+            await interaction.followup.send("❌ No linked account found!", ephemeral=True)
+            return
+        
         # Get primary account
         account = db.get_primary_account(db_user['id'])
         
@@ -482,6 +489,24 @@ class ProfileCommands(commands.Cog):
         
         if footer_parts:
             embed.set_footer(text=" • ".join(footer_parts))
+        
+        # Multiple accounts section
+        if len(all_accounts) > 1:
+            account_lines = []
+            for acc in all_accounts:
+                is_primary = acc['puuid'] == account['puuid']
+                verified_badge = "✅" if acc.get('verified') else "⏳"
+                primary_badge = "⭐" if is_primary else "•"
+                
+                account_lines.append(
+                    f"{primary_badge} {verified_badge} **{acc['riot_id_game_name']}#{acc['riot_id_tagline']}** ({acc['region'].upper()})"
+                )
+            
+            embed.add_field(
+                name=f"🔗 Linked Accounts ({len(all_accounts)})",
+                value="\n".join(account_lines),
+                inline=False
+            )
         
         # Add buttons for more info
         from discord.ui import View, Button
