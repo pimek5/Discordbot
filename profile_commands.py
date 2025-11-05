@@ -1786,6 +1786,134 @@ class ProfileView(discord.ui.View):
         
         return embed
     
+    async def create_lp_embed(self) -> discord.Embed:
+        """Create LP balance embed for today's ranked games"""
+        # Get today's date range
+        now = datetime.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_timestamp = int(today_start.timestamp() * 1000)
+        
+        # Fetch ranked matches from today
+        all_ranked_matches = []
+        
+        for match_data in self.all_match_details:
+            match = match_data['match']
+            puuid = match_data['puuid']
+            
+            # Check if match is from today
+            game_creation = match['info'].get('gameCreation', 0)
+            if game_creation < today_timestamp:
+                continue
+            
+            # Check if it's ranked
+            queue_id = match['info'].get('queueId', 0)
+            if queue_id not in [420, 440]:
+                continue
+            
+            # Find player data
+            player_data = None
+            for participant in match['info']['participants']:
+                if participant['puuid'] == puuid:
+                    player_data = participant
+                    break
+            
+            if player_data:
+                all_ranked_matches.append({
+                    'match': match,
+                    'player': player_data,
+                    'timestamp': game_creation
+                })
+        
+        if not all_ranked_matches:
+            embed = discord.Embed(
+                title=f"💰 LP Balance - Today",
+                description=f"**{self.target_user.display_name}** hasn't played any ranked games today.",
+                color=0x808080
+            )
+            embed.set_footer(text=f"Play some ranked to see your LP gains!")
+            return embed
+        
+        # Sort by timestamp
+        all_ranked_matches.sort(key=lambda x: x['timestamp'])
+        
+        # Calculate LP
+        total_lp_change = 0
+        wins = 0
+        losses = 0
+        match_details_list = []
+        
+        for match_info in all_ranked_matches:
+            player = match_info['player']
+            match = match_info['match']
+            
+            won = player['win']
+            champion = player.get('championName', 'Unknown')
+            kills = player['kills']
+            deaths = player['deaths']
+            assists = player['assists']
+            
+            if won:
+                lp_change = 22
+                wins += 1
+                total_lp_change += lp_change
+            else:
+                lp_change = -18
+                losses += 1
+                total_lp_change += lp_change
+            
+            queue_id = match['info']['queueId']
+            queue_name = "Solo/Duo" if queue_id == 420 else "Flex"
+            
+            champ_emoji = get_champion_emoji(champion)
+            lp_str = f"+{lp_change}" if lp_change > 0 else str(lp_change)
+            result_emoji = "✅" if won else "❌"
+            
+            match_details_list.append({
+                'emoji': result_emoji,
+                'champ_emoji': champ_emoji,
+                'champion': champion,
+                'kda': f"{kills}/{deaths}/{assists}",
+                'lp_change': lp_str,
+                'queue': queue_name
+            })
+        
+        # Create embed
+        if total_lp_change > 0:
+            embed_color = 0x00FF00
+            balance_emoji = "📈"
+        elif total_lp_change < 0:
+            embed_color = 0xFF0000
+            balance_emoji = "📉"
+        else:
+            embed_color = 0x808080
+            balance_emoji = "➖"
+        
+        embed = discord.Embed(
+            title=f"{balance_emoji} LP Balance - Today",
+            description=f"**{self.target_user.display_name}**'s ranked performance",
+            color=embed_color
+        )
+        
+        # Add matches
+        for i, match_info in enumerate(match_details_list, 1):
+            field_value = (
+                f"{match_info['emoji']} {match_info['champ_emoji']} **{match_info['champion']}** • "
+                f"{match_info['kda']} • **{match_info['lp_change']} LP** ({match_info['queue']})"
+            )
+            embed.add_field(name=f"Game {i}", value=field_value, inline=False)
+        
+        # Summary
+        lp_display = f"+{total_lp_change}" if total_lp_change > 0 else str(total_lp_change)
+        embed.add_field(
+            name="📊 Summary",
+            value=f"**Total:** {lp_display} LP\n**Record:** {wins}W - {losses}L\n**Games Played:** {wins + losses}",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"{self.target_user.display_name} • LP View")
+        
+        return embed
+    
     @discord.ui.button(label="Profile", style=discord.ButtonStyle.primary, emoji="👤")
     async def profile_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to profile view"""
@@ -1817,6 +1945,17 @@ class ProfileView(discord.ui.View):
         
         self.current_view = "matches"
         embed = await self.create_matches_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="LP", style=discord.ButtonStyle.secondary, emoji="💰")
+    async def lp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Switch to LP balance view"""
+        if self.current_view == "lp":
+            await interaction.response.defer()
+            return
+        
+        self.current_view = "lp"
+        embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
 
