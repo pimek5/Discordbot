@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger('riot_api')
 
-# Regional routing values
+# Regional routing values (for account-v1)
 RIOT_REGIONS = {
     'br': 'americas',
     'eune': 'europe',
@@ -23,6 +23,26 @@ RIOT_REGIONS = {
     'oce': 'sea',
     'tr': 'europe',
     'ru': 'europe'
+}
+
+# Platform routing values (for summoner/league/mastery endpoints)
+PLATFORM_ROUTES = {
+    'br': 'br1',
+    'eune': 'eun1',
+    'euw': 'euw1',
+    'jp': 'jp1',
+    'kr': 'kr',
+    'lan': 'la1',
+    'las': 'la2',
+    'na': 'na1',
+    'oce': 'oc1',
+    'tr': 'tr1',
+    'ru': 'ru',
+    'ph': 'ph2',
+    'sg': 'sg2',
+    'th': 'th2',
+    'tw': 'tw2',
+    'vn': 'vn2'
 }
 
 # DDragon for champion data
@@ -155,13 +175,13 @@ class RiotAPI:
     
     async def get_summoner_by_puuid(self, puuid: str, region: str, 
                                    retries: int = 5) -> Optional[Dict]:
-        """Get summoner data by PUUID - uses routing region for Railway compatibility"""
+        """Get summoner data by PUUID - uses platform endpoint"""
         if not self.api_key:
             return None
         
-        # Convert regional platform to routing value (e.g., 'eune' -> 'europe')
-        routing = RIOT_REGIONS.get(region.lower(), 'europe')
-        url = f"https://{routing}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+        # Convert region to platform (e.g., 'eune' -> 'eun1')
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        url = f"https://{platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
         
         for attempt in range(retries):
             try:
@@ -194,12 +214,12 @@ class RiotAPI:
     
     async def verify_third_party_code(self, summoner_id: str, region: str, 
                                      expected_code: str, retries: int = 3) -> bool:
-        """Verify League client 3rd party code - uses routing endpoint"""
+        """Verify League client 3rd party code - uses platform endpoint"""
         if not self.api_key:
             return False
         
-        routing = RIOT_REGIONS.get(region.lower(), 'europe')
-        url = f"https://{routing}.api.riotgames.com/lol/platform/v4/third-party-code/by-summoner/{summoner_id}"
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        url = f"https://{platform}.api.riotgames.com/lol/platform/v4/third-party-code/by-summoner/{summoner_id}"
         
         for attempt in range(retries):
             try:
@@ -225,12 +245,12 @@ class RiotAPI:
     
     async def get_ranked_stats(self, summoner_id: str, region: str, 
                               retries: int = 5) -> Optional[List[Dict]]:
-        """Get ranked statistics - uses routing endpoint"""
+        """Get ranked statistics - uses platform endpoint"""
         if not self.api_key:
             return None
         
-        routing = RIOT_REGIONS.get(region.lower(), 'europe')
-        url = f"https://{routing}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        url = f"https://{platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
         
         for attempt in range(retries):
             try:
@@ -263,12 +283,12 @@ class RiotAPI:
     
     async def get_champion_mastery(self, puuid: str, region: str, 
                                    count: int = 200, retries: int = 5) -> Optional[List[Dict]]:
-        """Get top champion masteries - uses routing endpoint"""
+        """Get top champion masteries - uses platform endpoint"""
         if not self.api_key:
             return None
         
-        routing = RIOT_REGIONS.get(region.lower(), 'europe')
-        url = f"https://{routing}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top?count={count}"
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        url = f"https://{platform}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top?count={count}"
         
         for attempt in range(retries):
             try:
