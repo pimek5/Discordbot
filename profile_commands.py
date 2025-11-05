@@ -452,46 +452,32 @@ class ProfileCommands(commands.Cog):
             color=0x2B2D31  # Discord dark theme color
         )
         
-        # Top Champions section (3 columns)
+        # Top Champions section (only top 3)
         if champ_stats and len(champ_stats) > 0:
-            top_champs = sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:5]
+            top_champs = sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:3]
             
             champ_lines = []
             for i, champ in enumerate(top_champs, 1):
                 champ_name = CHAMPION_ID_TO_NAME.get(champ['champion_id'], f"Champion {champ['champion_id']}")
                 points = champ['score']
-                level = champ['level']
                 
                 # Format points
                 if points >= 1000000:
-                    points_str = f"{points/1000000:.2f}M"
+                    points_str = f"{points/1000000:.2f}m"
                 elif points >= 1000:
-                    points_str = f"{points/1000:.0f}K"
+                    points_str = f"{points/1000:.0f}k"
                 else:
                     points_str = f"{points:,}"
-                
-                # Mastery level emoji
-                if level >= 10:
-                    level_emoji = "💎"
-                elif level >= 7:
-                    level_emoji = "⭐"
-                elif level >= 5:
-                    level_emoji = "🌟"
-                else:
-                    level_emoji = "•"
-                
-                # Chest indicator
-                chest = "📦" if champ.get('chest_granted') else ""
                 
                 # Get champion emoji
                 champ_emoji = get_champion_emoji(champ_name)
                 
-                champ_lines.append(f"{champ_emoji} {level_emoji} **M{level}** {champ_name} - {points_str} {chest}")
+                champ_lines.append(f"{champ_emoji} **{champ_name} - {points_str}**")
             
             embed.add_field(
-                name="🏆 Top Champions",
+                name="Top Champions",
                 value="\n".join(champ_lines),
-                inline=False
+                inline=True
             )
             
             # Mastery statistics
