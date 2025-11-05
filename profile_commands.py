@@ -149,6 +149,29 @@ def get_role_name(role: str) -> str:
     }
     return role_names.get(role, role)
 
+def get_queue_name(queue_id: int) -> str:
+    """Convert queue ID to readable game mode name"""
+    queue_names = {
+        0: 'Custom',
+        400: 'Normal Draft',
+        420: 'Ranked Solo/Duo',
+        430: 'Normal Blind',
+        440: 'Ranked Flex',
+        450: 'ARAM',
+        700: 'Clash',
+        830: 'Co-op vs AI Intro',
+        840: 'Co-op vs AI Beginner',
+        850: 'Co-op vs AI Intermediate',
+        900: 'URF',
+        1020: 'One for All',
+        1300: 'Nexus Blitz',
+        1400: 'Ultimate Spellbook',
+        1700: 'Arena',
+        1710: 'Arena',
+        1900: 'Pick URF'
+    }
+    return queue_names.get(queue_id, 'Normal')
+
 class ProfileCommands(commands.Cog):
     def __init__(self, bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
         self.bot = bot
@@ -1369,8 +1392,12 @@ class ProfileCommands(commands.Cog):
             total_assists += assists
             
             # Game mode and duration
-            game_mode = match['info']['gameMode']
-            duration = match['info']['gameDuration'] // 60
+            queue_id = match['info'].get('queueId', 0)
+            game_mode = get_queue_name(queue_id)
+            duration = match['info']['gameDuration']
+            if duration > 1000:
+                duration = duration / 1000
+            duration_min = int(duration / 60)
             
             # Emoji
             result_emoji = "✅" if won else "❌"
@@ -1383,7 +1410,7 @@ class ProfileCommands(commands.Cog):
             
             # Add field
             field_name = f"{game_mode} {f'• {account_short}' if account_short else ''}"
-            field_value = f"{result_emoji} {champ_emoji} **{champion}** • {kda} KDA • {duration}m"
+            field_value = f"{result_emoji} {champ_emoji} **{champion}** • {kda} KDA • {duration_min}m"
             
             embed.add_field(
                 name=field_name,
@@ -1724,7 +1751,8 @@ class ProfileView(discord.ui.View):
             result_emoji = "✅" if won else "❌"
             champ_emoji = get_champion_emoji(champion)
             
-            game_mode = match['info'].get('gameMode', 'CLASSIC')
+            queue_id = match['info'].get('queueId', 0)
+            game_mode = get_queue_name(queue_id)
             duration = match['info']['gameDuration']
             if duration > 1000:
                 duration = duration / 1000
