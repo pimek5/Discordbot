@@ -425,12 +425,45 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
+        global riot_api, orianna_initialized
+        
         # Add persistent views for Thread Manager
         self.add_view(VotingView(0))  # Dummy view for persistent buttons
         self.add_view(ModReviewView(0, 0))  # Dummy view for persistent buttons
         
         # Add persistent view for Loldle buttons
         self.add_view(LoldleButtonsView())  # Persistent Loldle guess/report buttons
+        
+        # Initialize Orianna Bot modules FIRST (before syncing commands)
+        if not orianna_initialized:
+            try:
+                print("🔄 Initializing Orianna Bot modules...")
+                
+                # Initialize database
+                db = initialize_database(DATABASE_URL)
+                if db:
+                    print("✅ Database connection established")
+                else:
+                    print("❌ Failed to connect to database")
+                    
+                # Create Riot API instance
+                riot_api = RiotAPI(RIOT_API_KEY)
+                
+                # Load champion data from DDragon
+                await load_champion_data()
+                print("✅ Champion data loaded from DDragon")
+                
+                # Load command cogs
+                await self.add_cog(profile_commands.ProfileCommands(self, riot_api, GUILD_ID))
+                await self.add_cog(stats_commands.StatsCommands(self, riot_api, GUILD_ID))
+                await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
+                print("✅ Orianna Bot commands registered")
+                
+                orianna_initialized = True
+                print("✅ Orianna Bot modules initialized successfully")
+            except Exception as e:
+                print(f"❌ Error initializing Orianna Bot: {e}")
+                logging.error(f"Orianna initialization error: {e}", exc_info=True)
         
         guild = discord.Object(id=1153027935553454191)
         self.tree.add_command(setup_create_panel, guild=guild)
@@ -455,7 +488,10 @@ class MyBot(commands.Bot):
         self.tree.add_command(quote, guild=guild)
         self.tree.add_command(emoji, guild=guild)
         self.tree.add_command(ability, guild=guild)
+        
+        # Sync ALL commands (main bot + Orianna) at once
         await self.tree.sync(guild=guild)
+        print("✅ All commands synced to Discord")
 
 bot = MyBot()
 
@@ -3687,42 +3723,6 @@ async def on_ready():
     
     # Commands are already synced in setup_hook()
     print(f"✅ Bot is ready with synced commands")
-    
-    # Initialize Orianna Bot modules
-    if not orianna_initialized:
-        try:
-            print("🔄 Initializing Orianna Bot modules...")
-            
-            # Initialize database
-            db = initialize_database(DATABASE_URL)
-            if db:
-                print("✅ Database connection established")
-            else:
-                print("❌ Failed to connect to database")
-                
-            # Create Riot API instance
-            riot_api = RiotAPI(RIOT_API_KEY)
-            
-            # Load champion data from DDragon
-            await load_champion_data()
-            print("✅ Champion data loaded from DDragon")
-            
-            # Load command cogs
-            await bot.add_cog(profile_commands.ProfileCommands(bot, riot_api, GUILD_ID))
-            await bot.add_cog(stats_commands.StatsCommands(bot, riot_api, GUILD_ID))
-            await bot.add_cog(leaderboard_commands.LeaderboardCommands(bot, riot_api, GUILD_ID))
-            print("✅ Orianna Bot commands registered")
-            
-            # Sync Orianna commands to guild (after all cogs are loaded)
-            guild = discord.Object(id=GUILD_ID)
-            await bot.tree.sync(guild=guild)
-            print("✅ Orianna Bot commands synced to Discord")
-            
-            orianna_initialized = True
-            print("✅ Orianna Bot modules initialized successfully")
-        except Exception as e:
-            print(f"❌ Error initializing Orianna Bot: {e}")
-            logging.error(f"Orianna initialization error: {e}", exc_info=True)
     
     # Start tweet monitoring
     if not check_for_new_tweets.is_running():
