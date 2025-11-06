@@ -487,6 +487,10 @@ class MyBot(commands.Bot):
                 from settings_commands import SettingsCommands
                 await self.add_cog(SettingsCommands(self))
                 
+                # Load voting commands
+                from vote_commands import VoteCommands
+                await self.add_cog(VoteCommands(self))
+                
                 print("✅ Kassalytics commands registered")
                 
                 orianna_initialized = True
@@ -504,6 +508,10 @@ class MyBot(commands.Bot):
             
             # Skip check for settings commands (admin only)
             if interaction.command and interaction.command.name == 'settings':
+                return True
+            
+            # Skip check for vote commands (they have their own thread restriction)
+            if interaction.command and interaction.command.name in ['vote', 'votestart', 'votestop']:
                 return True
             
             # Check if command is from Orianna cogs

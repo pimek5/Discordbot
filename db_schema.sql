@@ -102,6 +102,30 @@ CREATE TABLE IF NOT EXISTS allowed_channels (
     UNIQUE(guild_id, channel_id)
 );
 
+-- Voting sessions
+CREATE TABLE IF NOT EXISTS voting_sessions (
+    id SERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    message_id BIGINT,                 -- The embed message that gets updated
+    started_by BIGINT NOT NULL,        -- User who started the vote
+    started_at TIMESTAMP DEFAULT NOW(),
+    ended_at TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'active' -- 'active', 'ended'
+);
+
+-- Individual votes
+CREATE TABLE IF NOT EXISTS voting_votes (
+    id SERIAL PRIMARY KEY,
+    session_id INTEGER NOT NULL REFERENCES voting_sessions(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    champion_name VARCHAR(50) NOT NULL,
+    rank_position INTEGER NOT NULL,    -- 1-5 (position in user's top 5)
+    points INTEGER NOT NULL,           -- 1 or 2 based on booster status
+    voted_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(session_id, user_id, rank_position)
+);
+
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_snowflake ON users(snowflake);
 CREATE INDEX IF NOT EXISTS idx_league_accounts_user ON league_accounts(user_id);
@@ -113,3 +137,6 @@ CREATE INDEX IF NOT EXISTS idx_ranks_user ON user_ranks(user_id);
 CREATE INDEX IF NOT EXISTS idx_guild_members_guild ON guild_members(guild_id);
 CREATE INDEX IF NOT EXISTS idx_verification_expires ON verification_codes(expires_at);
 CREATE INDEX IF NOT EXISTS idx_allowed_channels_guild ON allowed_channels(guild_id);
+CREATE INDEX IF NOT EXISTS idx_voting_sessions_status ON voting_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_voting_votes_session ON voting_votes(session_id);
+CREATE INDEX IF NOT EXISTS idx_voting_votes_user ON voting_votes(user_id);

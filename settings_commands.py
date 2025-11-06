@@ -54,6 +54,11 @@ class CommandsCategoryView(discord.ui.View):
                 inline=False
             )
             embed.add_field(
+                name="🗳️ Voting (3 commands)",
+                value="Champion voting system (voting thread only)",
+                inline=False
+            )
+            embed.add_field(
                 name="🎲 Loldle (3 commands)",
                 value="Loldle mini-game (works in all channels)",
                 inline=False
@@ -171,6 +176,29 @@ class CommandsCategoryView(discord.ui.View):
                 value="Remove all channel restrictions (bot works everywhere)",
                 inline=False
             )
+            
+        elif category == "voting":
+            embed.description = "**🗳️ Champion Voting**\nVote for your favorite champions!\nVoting works only in <#1331546029023166464>"
+            embed.add_field(
+                name="/vote",
+                value="Vote for 5 champions\n`/vote champion1:Ahri champion2:Yasuo champion3:Jinx champion4:Lee Sin champion5:Thresh`\n\n"
+                      "• Server Boosters get 2 points per champion! 💎\n"
+                      "• Everyone else gets 1 point per champion\n"
+                      "• You can change your vote anytime during active session",
+                inline=False
+            )
+            embed.add_field(
+                name="/votestart",
+                value="**[ADMIN ONLY]** Start a new voting session\n"
+                      "Creates a live leaderboard that updates with each vote",
+                inline=False
+            )
+            embed.add_field(
+                name="/votestop",
+                value="**[ADMIN ONLY]** Stop the current voting session\n"
+                      "Shows final results with complete rankings",
+                inline=False
+            )
         
         embed.set_footer(text=f"Category: {category.title()} • Kassalytics Bot")
         return embed
@@ -220,7 +248,16 @@ class CommandsCategoryView(discord.ui.View):
         embed = self.create_embed("leaderboards")
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Loldle", style=discord.ButtonStyle.secondary, emoji="🎲", row=1)
+    @discord.ui.button(label="Voting", style=discord.ButtonStyle.secondary, emoji="🗳️", row=1)
+    async def voting_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_category == "voting":
+            await interaction.response.defer()
+            return
+        self.current_category = "voting"
+        embed = self.create_embed("voting")
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Loldle", style=discord.ButtonStyle.secondary, emoji="🎲", row=2)
     async def loldle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_category == "loldle":
             await interaction.response.defer()
@@ -229,7 +266,7 @@ class CommandsCategoryView(discord.ui.View):
         embed = self.create_embed("loldle")
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Settings", style=discord.ButtonStyle.secondary, emoji="⚙️", row=1)
+    @discord.ui.button(label="Settings", style=discord.ButtonStyle.secondary, emoji="⚙️", row=2)
     async def settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_category == "settings":
             await interaction.response.defer()

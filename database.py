@@ -487,6 +487,128 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    # ==================== VOTING OPERATIONS ====================
+    
+    def create_voting_session(self, guild_id: int, channel_id: int, started_by: int) -> int:
+        """Create a new voting session and return its ID"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO voting_sessions (guild_id, channel_id, started_by, status)
+                    VALUES (%s, %s, %s, 'active')
+                    RETURNING id
+                """, (guild_id, channel_id, started_by))
+                session_id = cur.fetchone()[0]
+                conn.commit()
+                return session_id
+        finally:
+            self.return_connection(conn)
+    
+    def get_active_voting_session(self, guild_id: int) -> Optional[Dict]:
+        """Get the active voting session for a guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM voting_sessions
+                    WHERE guild_id = %s AND status = 'active'
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                """, (guild_id,))
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+    
+    def update_voting_message_id(self, session_id: int, message_id: int):
+        """Update the message ID for a voting session"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE voting_sessions
+                    SET message_id = %s
+                    WHERE id = %s
+                """, (message_id, session_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def end_voting_session(self, session_id: int):
+        """End a voting session"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE voting_sessions
+                    SET status = 'ended', ended_at = NOW()
+                    WHERE id = %s
+                """, (session_id,))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def add_vote(self, session_id: int, user_id: int, champions: List[str], points: int) -> bool:
+        """Add or update user's votes (5 champions). Returns True if successful."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Delete existing votes for this user in this session
+                cur.execute("""
+                    DELETE FROM voting_votes
+                    WHERE session_id = %s AND user_id = %s
+                """, (session_id, user_id))
+                
+                # Insert new votes (5 champions with ranks 1-5)
+                for rank, champion_name in enumerate(champions, start=1):
+                    cur.execute("""
+                        INSERT INTO voting_votes (session_id, user_id, champion_name, rank_position, points)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (session_id, user_id, champion_name, rank, points))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error adding votes: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+    
+    def get_voting_results(self, session_id: int) -> List[Dict]:
+        """Get aggregated voting results for a session"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT 
+                        champion_name,
+                        SUM(points) as total_points,
+                        COUNT(DISTINCT user_id) as vote_count
+                    FROM voting_votes
+                    WHERE session_id = %s
+                    GROUP BY champion_name
+                    ORDER BY total_points DESC, champion_name ASC
+                """, (session_id,))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+    
+    def has_user_voted(self, session_id: int, user_id: int) -> bool:
+        """Check if user has already voted in this session"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT EXISTS(
+                        SELECT 1 FROM voting_votes
+                        WHERE session_id = %s AND user_id = %s
+                    )
+                """, (session_id, user_id))
+                return cur.fetchone()[0]
+        finally:
+            self.return_connection(conn)
+    
     # ==================== WORKER OPERATIONS ====================
     
     def get_all_users_with_accounts(self) -> List[Dict]:
