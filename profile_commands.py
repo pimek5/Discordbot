@@ -1031,17 +1031,18 @@ class ProfileCommands(commands.Cog):
             is_primary = acc['puuid'] == account['puuid']
             primary_badge = "⭐ " if is_primary else ""
             
-            # Get rank for this account
-            rank_text = ""
+            # Get rank emoji for this account
+            rank_display = ""
             if acc['puuid'] in account_ranks:
                 acc_rank_data = account_ranks[acc['puuid']]
                 if 'solo' in acc_rank_data:
                     solo_rank = acc_rank_data['solo']
                     tier = solo_rank.get('tier', 'UNRANKED')
                     rank = solo_rank.get('rank', '')
-                    rank_text = f" [{tier} {rank}]" if rank else f" [{tier}]"
+                    rank_emoji = get_rank_emoji(tier)
+                    rank_display = f" {rank_emoji} {tier} {rank}" if rank else f" {rank_emoji} {tier}"
             
-            acc_text = f"{primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}{rank_text}"
+            acc_text = f"{primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}{rank_display}"
             
             # Split into two columns
             if i % 2 == 0:
