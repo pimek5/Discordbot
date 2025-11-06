@@ -1092,8 +1092,26 @@ class ProfileCommands(commands.Cog):
     @app_commands.describe(
         user="The Discord user to link for",
         riot_id="Riot ID (GameName#TAG, e.g. Hide on bush#KR1)",
-        region="Region (eune, euw, na, kr, etc.)"
+        region="Region"
     )
+    @app_commands.choices(region=[
+        app_commands.Choice(name="EUNE", value="eune"),
+        app_commands.Choice(name="EUW", value="euw"),
+        app_commands.Choice(name="NA", value="na"),
+        app_commands.Choice(name="KR", value="kr"),
+        app_commands.Choice(name="BR", value="br"),
+        app_commands.Choice(name="JP", value="jp"),
+        app_commands.Choice(name="LAN", value="lan"),
+        app_commands.Choice(name="LAS", value="las"),
+        app_commands.Choice(name="OCE", value="oce"),
+        app_commands.Choice(name="TR", value="tr"),
+        app_commands.Choice(name="RU", value="ru"),
+        app_commands.Choice(name="PH", value="ph"),
+        app_commands.Choice(name="SG", value="sg"),
+        app_commands.Choice(name="TH", value="th"),
+        app_commands.Choice(name="TW", value="tw"),
+        app_commands.Choice(name="VN", value="vn"),
+    ])
     async def forcelink(self, interaction: discord.Interaction, user: discord.User, riot_id: str, region: str):
         """Force link an account without verification (owner only)"""
         
