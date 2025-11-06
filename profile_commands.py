@@ -594,48 +594,53 @@ class ProfileCommands(commands.Cog):
         
         try:
             logger.info(f"📊 Fetching match history for {len(all_accounts)} accounts...")
-            matches_fetched = 0
-            max_matches_per_account = 10  # Reduced from 25 for faster loading
-            max_total_matches = 20  # Reduced from 50
+            
+            # First, collect ALL match IDs from all accounts
+            all_match_ids_with_context = []  # [(match_id, puuid, region), ...]
             
             for acc in all_accounts:
                 if not acc.get('verified'):
                     continue
                 
-                # Stop if we already have enough matches
-                if matches_fetched >= max_total_matches:
-                    logger.info(f"⚠️ Reached max total matches ({max_total_matches}), stopping fetch")
-                    break
-                
-                # Get match IDs
-                match_ids = await self.riot_api.get_match_history(acc['puuid'], acc['region'], count=max_matches_per_account)
+                # Get match IDs for this account
+                match_ids = await self.riot_api.get_match_history(acc['puuid'], acc['region'], count=30)
                 if match_ids:
                     logger.info(f"  Found {len(match_ids)} match IDs for {acc['riot_id_game_name']}")
-                    
-                    # Fetch details for each match (with limit)
-                    for i, match_id in enumerate(match_ids):
-                        if matches_fetched >= max_total_matches:
-                            break
-                        
-                        match_details = await self.riot_api.get_match_details(match_id, acc['region'])
-                        if match_details:
-                            all_match_details.append({
-                                'match': match_details,
-                                'puuid': acc['puuid']
+                    for match_id in match_ids:
+                        all_match_ids_with_context.append((match_id, acc['puuid'], acc['region']))
+            
+            logger.info(f"📋 Total match IDs collected: {len(all_match_ids_with_context)}")
+            
+            # Fetch match details and sort by timestamp
+            temp_matches = []
+            for match_id, puuid, region in all_match_ids_with_context[:40]:  # Fetch up to 40 to ensure we get 20 valid ones
+                match_details = await self.riot_api.get_match_details(match_id, region)
+                if match_details:
+                    temp_matches.append({
+                        'match': match_details,
+                        'puuid': puuid,
+                        'timestamp': match_details['info']['gameCreation']
+                    })
+            
+            # Sort by timestamp (newest first) and take top 20
+            temp_matches.sort(key=lambda x: x['timestamp'], reverse=True)
+            all_match_details = temp_matches[:20]
+            
+            # Collect recently played champions (first 3 unique)
+            for match_data in all_match_details[:10]:
+                if len(recently_played) >= 3:
+                    break
+                match = match_data['match']
+                puuid = match_data['puuid']
+                for participant in match['info']['participants']:
+                    if participant['puuid'] == puuid:
+                        champ_name = participant.get('championName', '')
+                        if champ_name and champ_name not in [r['champion'] for r in recently_played]:
+                            recently_played.append({
+                                'champion': champ_name,
+                                'time': 'Today'
                             })
-                            matches_fetched += 1
-                        
-                        # Collect recently played for display (first 3 unique games)
-                        if len(recently_played) < 3 and match_details:
-                            for participant in match_details['info']['participants']:
-                                if participant['puuid'] == acc['puuid']:
-                                    champ_name = participant.get('championName', '')
-                                    if champ_name and champ_name not in [r['champion'] for r in recently_played]:
-                                        recently_played.append({
-                                            'champion': champ_name,
-                                            'time': 'Today'
-                                        })
-                                    break
+                        break
             
             fetch_time = time.time() - fetch_start
             logger.info(f"✅ Fetched {len(all_match_details)} total match details in {fetch_time:.1f}s")
