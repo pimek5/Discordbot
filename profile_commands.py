@@ -1587,11 +1587,8 @@ class ProfileView(discord.ui.View):
         self.champ_stats = champ_stats
         self.all_ranked_stats = all_ranked_stats
         self.current_view = "profile"
-        self.match_filter = "all"  # Filter for matches: all, soloq, flex, normals, other
+        self.queue_filter = "all"  # Filter for all views: all, soloq, flex, normals, other
         self.message = None  # Will store the message to delete later
-        
-        # Initialize button visibility (filters hidden by default since we start in "profile" view)
-        self.update_button_visibility()
     
     async def on_timeout(self):
         """Called when the view times out - delete the message"""
@@ -1602,12 +1599,46 @@ class ProfileView(discord.ui.View):
             except Exception as e:
                 logger.error(f"❌ Failed to delete profile embed: {e}")
     
+    def filter_matches_by_queue(self, matches: list) -> list:
+        """Filter matches based on current queue_filter setting"""
+        if self.queue_filter == 'all':
+            return matches
+        
+        filtered = []
+        for match_data in matches:
+            match = match_data['match']
+            queue_id = match['info'].get('queueId', 0)
+            
+            if self.queue_filter == 'soloq' and queue_id == 420:
+                filtered.append(match_data)
+            elif self.queue_filter == 'flex' and queue_id == 440:
+                filtered.append(match_data)
+            elif self.queue_filter == 'normals' and queue_id in [400, 430, 490]:
+                filtered.append(match_data)
+            elif self.queue_filter == 'other' and queue_id not in [420, 440, 400, 430, 490]:
+                filtered.append(match_data)
+        
+        return filtered
+    
     async def create_profile_embed(self) -> discord.Embed:
         """Create the main profile embed (same layout as /profile command)"""
         account = [acc for acc in self.all_accounts if acc.get('verified')][0] if self.all_accounts else None
         
+        # Filter matches based on queue selection
+        filtered_matches = self.filter_matches_by_queue(self.all_match_details)
+        
+        # Get filter label for title
+        filter_labels = {
+            'all': 'All Queues',
+            'soloq': 'Solo Queue',
+            'flex': 'Flex Queue',
+            'normals': 'Normals',
+            'other': 'Other'
+        }
+        filter_suffix = f" - {filter_labels[self.queue_filter]}" if self.queue_filter != 'all' else ""
+        
         embed = discord.Embed(
-            title=f"**{self.target_user.display_name}'s Profile**",
+            title=f"**{self.target_user.display_name}'s Profile{filter_suffix}**",
             color=0x2B2D31  # Discord dark theme color
         )
         
@@ -1662,7 +1693,7 @@ class ProfileView(discord.ui.View):
 
             # Recently Played
             recently_played = []
-            for match_data in self.all_match_details[:10]:
+            for match_data in filtered_matches[:10]:
                 match = match_data['match']
                 puuid = match_data['puuid']
                 for participant in match['info']['participants']:
@@ -2146,7 +2177,7 @@ class ProfileView(discord.ui.View):
             'normals': 'Normal Games',
             'other': 'Other Modes'
         }
-        filter_label = filter_labels.get(self.match_filter, 'All Matches')
+        filter_label = filter_labels.get(self.queue_filter, 'All Matches')
         
         embed = discord.Embed(
             title=f"🎮 **Recent Matches - {filter_label}**",
@@ -2158,22 +2189,8 @@ class ProfileView(discord.ui.View):
             embed.description = "No match data available"
             return embed
         
-        # Filter matches based on queue type
-        filtered_matches = []
-        for match_data in self.all_match_details:
-            match = match_data['match']
-            queue_id = match['info'].get('queueId', 0)
-            
-            if self.match_filter == 'all':
-                filtered_matches.append(match_data)
-            elif self.match_filter == 'soloq' and queue_id == 420:  # Ranked Solo/Duo
-                filtered_matches.append(match_data)
-            elif self.match_filter == 'flex' and queue_id == 440:  # Ranked Flex
-                filtered_matches.append(match_data)
-            elif self.match_filter == 'normals' and queue_id in [400, 430, 490]:  # Normal Draft/Blind/Quickplay
-                filtered_matches.append(match_data)
-            elif self.match_filter == 'other' and queue_id not in [420, 440, 400, 430, 490]:
-                filtered_matches.append(match_data)
+        # Use helper function to filter matches
+        filtered_matches = self.filter_matches_by_queue(self.all_match_details)
         
         if not filtered_matches:
             embed.description = f"No {filter_label.lower()} found"
@@ -2237,16 +2254,6 @@ class ProfileView(discord.ui.View):
         
         return embed
     
-    def update_button_visibility(self):
-        """Update visibility of filter buttons based on current view"""
-        # Filter buttons should only be visible in matches view
-        show_filters = (self.current_view == "matches")
-        
-        # Find all filter buttons (row=1)
-        for child in self.children:
-            if isinstance(child, discord.ui.Button) and child.row == 1:
-                child.disabled = not show_filters
-    
     async def create_lp_embed(self) -> discord.Embed:
         """Create LP balance embed for today's ranked games"""
         # Get today's date range
@@ -2266,10 +2273,21 @@ class ProfileView(discord.ui.View):
             if game_creation < today_timestamp:
                 continue
             
-            # Check if it's ranked
+            # Check if it's ranked (and apply queue filter)
             queue_id = match['info'].get('queueId', 0)
-            if queue_id not in [420, 440]:
+            
+            # Apply queue filter
+            if self.queue_filter == 'soloq' and queue_id != 420:
                 continue
+            elif self.queue_filter == 'flex' and queue_id != 440:
+                continue
+            elif self.queue_filter in ['normals', 'other']:
+                # Skip - LP only works for ranked
+                continue
+            elif self.queue_filter == 'all':
+                # Show both soloq and flex
+                if queue_id not in [420, 440]:
+                    continue
             
             # Find player data
             player_data = None
@@ -2383,7 +2401,6 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "profile"
-        self.update_button_visibility()
         embed = await self.create_profile_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2395,7 +2412,6 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "stats"
-        self.update_button_visibility()
         embed = await self.create_stats_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2407,8 +2423,6 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "matches"
-        self.match_filter = "all"  # Reset filter when switching to matches
-        self.update_button_visibility()
         embed = await self.create_matches_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2420,64 +2434,93 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "lp"
-        self.update_button_visibility()
         embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    # Match filter buttons (second row) - only visible when viewing matches
+    # Queue filter buttons (second row) - work for all views
     @discord.ui.button(label="All", style=discord.ButtonStyle.primary, emoji="📋", row=1)
     async def filter_all_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Show all matches"""
-        if self.current_view != "matches":
-            await interaction.response.defer()
-            return
+        """Show all queue types"""
+        self.queue_filter = "all"
         
-        self.match_filter = "all"
-        embed = await self.create_matches_embed()
+        # Refresh current view with new filter
+        if self.current_view == "profile":
+            embed = await self.create_profile_embed()
+        elif self.current_view == "stats":
+            embed = await self.create_stats_embed()
+        elif self.current_view == "matches":
+            embed = await self.create_matches_embed()
+        else:  # lp
+            embed = await self.create_lp_embed()
+        
         await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="Solo Q", style=discord.ButtonStyle.secondary, emoji="🏆", row=1)
     async def filter_soloq_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Show only ranked solo/duo matches"""
-        if self.current_view != "matches":
-            await interaction.response.defer()
-            return
+        """Show only ranked solo/duo"""
+        self.queue_filter = "soloq"
         
-        self.match_filter = "soloq"
-        embed = await self.create_matches_embed()
+        # Refresh current view with new filter
+        if self.current_view == "profile":
+            embed = await self.create_profile_embed()
+        elif self.current_view == "stats":
+            embed = await self.create_stats_embed()
+        elif self.current_view == "matches":
+            embed = await self.create_matches_embed()
+        else:  # lp
+            embed = await self.create_lp_embed()
+        
         await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="Flex", style=discord.ButtonStyle.secondary, emoji="👥", row=1)
     async def filter_flex_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Show only ranked flex matches"""
-        if self.current_view != "matches":
-            await interaction.response.defer()
-            return
+        """Show only ranked flex"""
+        self.queue_filter = "flex"
         
-        self.match_filter = "flex"
-        embed = await self.create_matches_embed()
+        # Refresh current view with new filter
+        if self.current_view == "profile":
+            embed = await self.create_profile_embed()
+        elif self.current_view == "stats":
+            embed = await self.create_stats_embed()
+        elif self.current_view == "matches":
+            embed = await self.create_matches_embed()
+        else:  # lp
+            embed = await self.create_lp_embed()
+        
         await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="Normals", style=discord.ButtonStyle.secondary, emoji="🎯", row=1)
     async def filter_normals_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Show only normal matches"""
-        if self.current_view != "matches":
-            await interaction.response.defer()
-            return
+        self.queue_filter = "normals"
         
-        self.match_filter = "normals"
-        embed = await self.create_matches_embed()
+        # Refresh current view with new filter
+        if self.current_view == "profile":
+            embed = await self.create_profile_embed()
+        elif self.current_view == "stats":
+            embed = await self.create_stats_embed()
+        elif self.current_view == "matches":
+            embed = await self.create_matches_embed()
+        else:  # lp
+            embed = await self.create_lp_embed()
+        
         await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="Other", style=discord.ButtonStyle.secondary, emoji="🎲", row=1)
     async def filter_other_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Show other game modes"""
-        if self.current_view != "matches":
-            await interaction.response.defer()
-            return
+        self.queue_filter = "other"
         
-        self.match_filter = "other"
-        embed = await self.create_matches_embed()
+        # Refresh current view with new filter
+        if self.current_view == "profile":
+            embed = await self.create_profile_embed()
+        elif self.current_view == "stats":
+            embed = await self.create_stats_embed()
+        elif self.current_view == "matches":
+            embed = await self.create_matches_embed()
+        else:  # lp
+            embed = await self.create_lp_embed()
+        
         await interaction.response.edit_message(embed=embed, view=self)
 
 
