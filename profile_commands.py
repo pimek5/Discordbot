@@ -1600,24 +1600,25 @@ class ProfileView(discord.ui.View):
                 logger.error(f"❌ Failed to delete profile embed: {e}")
     
     async def create_profile_embed(self) -> discord.Embed:
-        """Create the main profile embed (reuse existing logic)"""
+        """Create the main profile embed (same layout as /profile command)"""
         account = [acc for acc in self.all_accounts if acc.get('verified')][0] if self.all_accounts else None
         
         embed = discord.Embed(
             title=f"**{self.target_user.display_name}'s Profile**",
-            color=0x2B2D31
+            color=0x2B2D31  # Discord dark theme color
         )
         
-        # Top Champions
+        # Top Champions section (only top 3)
         if self.champ_stats and len(self.champ_stats) > 0:
             top_champs = sorted(self.champ_stats, key=lambda x: x['score'], reverse=True)[:3]
-            champ_lines = []
             
-            for champ in top_champs:
+            champ_lines = []
+            for i, champ in enumerate(top_champs, 1):
                 champ_name = CHAMPION_ID_TO_NAME.get(champ['champion_id'], f"Champion {champ['champion_id']}")
                 points = champ['score']
                 level = champ['level']
                 
+                # Format points
                 if points >= 1000000:
                     points_str = f"{points/1000000:.2f}m"
                 elif points >= 1000:
@@ -1625,26 +1626,38 @@ class ProfileView(discord.ui.View):
                 else:
                     points_str = f"{points:,}"
                 
+                # Get champion emoji and mastery emoji
                 champ_emoji = get_champion_emoji(champ_name)
                 mastery_emoji = get_mastery_emoji(level)
+                
                 champ_lines.append(f"{champ_emoji} {mastery_emoji} **{champ_name} - {points_str}**")
             
-            embed.add_field(name="Top Champions", value="\n".join(champ_lines), inline=True)
+            embed.add_field(
+                name="Top Champions",
+                value="\n".join(champ_lines),
+                inline=True
+            )
             
-            # Mastery Statistics
+            # Mastery statistics
             total_champs = len(self.champ_stats)
             level_10_plus = sum(1 for c in self.champ_stats if c['level'] >= 10)
             total_points = sum(c['score'] for c in self.champ_stats)
             avg_points = total_points // total_champs if total_champs > 0 else 0
             avg_str = f"{avg_points/1000:.1f}k" if avg_points >= 1000 else f"{avg_points:,}"
-            
+
+            mastery_lines = [
+                f"**{level_10_plus}x** Level 10+",
+                f"**{total_points:,}** Total Points",
+                f"**{avg_str}** Avg/Champ"
+            ]
+
             embed.add_field(
                 name="Mastery Statistics",
-                value=f"**{level_10_plus}x** Level 10+\n**{total_points:,}** Total Points\n**{avg_str}** Avg/Champ",
+                value="\n".join(mastery_lines),
                 inline=True
             )
-            
-            # Recently Played (from match details)
+
+            # Recently Played
             recently_played = []
             for match_data in self.all_match_details[:10]:
                 match = match_data['match']
@@ -1652,7 +1665,7 @@ class ProfileView(discord.ui.View):
                 for participant in match['info']['participants']:
                     if participant['puuid'] == puuid:
                         champ = participant.get('championName', '')
-                        if champ and champ not in [r['champion'] for r in recently_played]:
+                        if champ and champ not in [r.get('champion') for r in recently_played]:
                             recently_played.append({'champion': champ})
                         break
                 if len(recently_played) >= 3:
@@ -1669,13 +1682,215 @@ class ProfileView(discord.ui.View):
                 inline=True
             )
             
+            # === STATISTICS SECTIONS ===
+            
+            # 1. RECENT PERFORMANCE (KDA, CS, Vision)
+            if self.combined_stats and self.combined_stats.get('total_games', 0) > 0:
+                total_games = self.combined_stats['total_games']
+                
+                # Calculate averages for recent 20 games (or less if fewer games)
+                recent_games_count = min(20, total_games)
+                avg_kills = self.combined_stats['kills'] / recent_games_count
+                avg_deaths = self.combined_stats['deaths'] / recent_games_count
+                avg_assists = self.combined_stats['assists'] / recent_games_count
+                avg_cs_per_min = self.combined_stats['cs'] / self.combined_stats['game_duration'] if self.combined_stats['game_duration'] > 0 else 0
+                avg_vision = self.combined_stats['vision_score'] / recent_games_count
+                
+                kda_str = format_kda(self.combined_stats['kills'], self.combined_stats['deaths'], self.combined_stats['assists'])
+                
+                perf_lines = [
+                    f"**KDA:** {kda_str}",
+                    f"**CS/min:** {avg_cs_per_min:.1f} • **Vision:** {avg_vision:.0f}"
+                ]
+                
+                embed.add_field(
+                    name=f"📊 Recent Performance ({recent_games_count} games)",
+                    value="\n".join(perf_lines),
+                    inline=True
+                )
+                
+                # 2. WIN RATE STATISTICS
+                overall_wr = (self.combined_stats['wins'] / total_games * 100) if total_games > 0 else 0
+                
+                # Recent 20 games winrate
+                recent_20_count = min(20, total_games)
+                if total_games <= 20:
+                    recent_wins = self.combined_stats['wins']
+                else:
+                    # Count wins in first 20 matches
+                    recent_wins = 0
+                    for i, match_data in enumerate(self.all_match_details[:20]):
+                        match = match_data['match']
+                        puuid = match_data['puuid']
+                        for participant in match['info'].get('participants', []):
+                            if participant.get('puuid') == puuid and participant.get('win'):
+                                recent_wins += 1
+                                break
+                
+                recent_wr = (recent_wins / recent_20_count * 100) if recent_20_count > 0 else 0
+                
+                # Best champion winrate (min 5 games)
+                best_champ_wr = 0
+                best_champ_name = "N/A"
+                for champ_id, champ_data in self.combined_stats.get('champions', {}).items():
+                    if champ_data['games'] >= 5:
+                        wr = (champ_data['wins'] / champ_data['games'] * 100)
+                        if wr > best_champ_wr:
+                            best_champ_wr = wr
+                            best_champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f"Champion {champ_id}")
+                
+                wr_lines = [
+                    f"**Overall:** {overall_wr:.0f}% ({self.combined_stats['wins']}W/{self.combined_stats['losses']}L)",
+                    f"**Recent 20:** {recent_wr:.0f}% ({recent_wins}W/{recent_20_count-recent_wins}L)"
+                ]
+                
+                if best_champ_name != "N/A":
+                    champ_emoji = get_champion_emoji(best_champ_name)
+                    wr_lines.append(f"**Best:** {champ_emoji} {best_champ_name} {best_champ_wr:.0f}%")
+                
+                embed.add_field(
+                    name="🎯 Win Rate",
+                    value="\n".join(wr_lines),
+                    inline=True
+                )
+                
+                # 3. GAME ACTIVITY
+                from datetime import datetime, timedelta
+                now = datetime.now()
+                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                week_start = now - timedelta(days=7)
+                
+                games_today = 0
+                games_week = 0
+                
+                for match_data in self.all_match_details:
+                    match = match_data['match']
+                    timestamp = match['info'].get('gameCreation', 0) / 1000
+                    game_time = datetime.fromtimestamp(timestamp)
+                    
+                    if game_time >= today_start:
+                        games_today += 1
+                    if game_time >= week_start:
+                        games_week += 1
+                
+                # Average game time
+                avg_game_time = self.combined_stats['game_duration'] / total_games if total_games > 0 else 0
+                avg_minutes = int(avg_game_time)
+                avg_seconds = int((avg_game_time - avg_minutes) * 60)
+                
+                # Favorite role
+                fav_role = "Unknown"
+                if self.combined_stats.get('roles'):
+                    fav_role_code = max(self.combined_stats['roles'], key=self.combined_stats['roles'].get)
+                    fav_role = get_role_name(fav_role_code)
+                    role_count = self.combined_stats['roles'][fav_role_code]
+                    role_pct = (role_count / total_games * 100) if total_games > 0 else 0
+                    fav_role = f"{fav_role} ({role_pct:.0f}%)"
+                
+                activity_lines = [
+                    f"**Today:** {games_today} games • **Week:** {games_week} games",
+                    f"**Avg Time:** {avg_minutes}m {avg_seconds}s",
+                    f"**Fav Role:** {fav_role}"
+                ]
+                
+                embed.add_field(
+                    name="🎮 Activity",
+                    value="\n".join(activity_lines),
+                    inline=True
+                )
+                
+                # 4. CHAMPION POOL DIVERSITY
+                unique_champs_played = len(self.combined_stats.get('champions', {}))
+                
+                # One-trick score (% games on top 3 champions)
+                top_3_games = 0
+                if self.combined_stats.get('champions'):
+                    sorted_champs = sorted(self.combined_stats['champions'].items(), key=lambda x: x[1]['games'], reverse=True)[:3]
+                    top_3_games = sum(champ_data['games'] for _, champ_data in sorted_champs)
+                
+                one_trick_score = (top_3_games / total_games * 100) if total_games > 0 else 0
+                
+                pool_lines = [
+                    f"**Unique Champions:** {unique_champs_played}/{total_games} games",
+                    f"**One-Trick Score:** {one_trick_score:.0f}% (Top 3)"
+                ]
+                
+                embed.add_field(
+                    name="🏆 Champion Pool",
+                    value="\n".join(pool_lines),
+                    inline=True
+                )
+                
+                # 5. GAME MODES
+                if self.combined_stats.get('game_modes'):
+                    mode_lines = []
+                    for mode, mode_data in self.combined_stats['game_modes'].items():
+                        games = mode_data['games']
+                        wins = mode_data['wins']
+                        wr = (wins / games * 100) if games > 0 else 0
+                        mode_lines.append(f"**{mode}:** {games} games ({wr:.0f}% WR)")
+                    
+                    embed.add_field(
+                        name="🎲 Game Modes",
+                        value="\n".join(mode_lines[:3]) if mode_lines else "No data",
+                        inline=True
+                    )
+                
+                # 6. CAREER MILESTONES
+                milestone_lines = [f"**Total Games:** {total_games:,}"]
+                
+                # Account age
+                if self.combined_stats.get('first_game_timestamp'):
+                    first_game_dt = datetime.fromtimestamp(self.combined_stats['first_game_timestamp'] / 1000)
+                    account_age = now - first_game_dt
+                    years = account_age.days // 365
+                    days = account_age.days % 365
+                    milestone_lines.append(f"**Account Age:** {years}y {days}d")
+                
+                # Peak rank (from current rank data)
+                peak_rank = "Unranked"
+                if self.all_ranked_stats:
+                    rank_order = {
+                        'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
+                        'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
+                        'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
+                    }
+                    
+                    def get_rank_value(rank_data):
+                        tier_val = rank_order.get(rank_data.get('tier', 'IRON'), -1)
+                        rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
+                        return tier_val * 4 + rank_val
+                    
+                    highest = max(self.all_ranked_stats, key=get_rank_value)
+                    tier = highest.get('tier', 'UNRANKED')
+                    rank = highest.get('rank', '')
+                    peak_rank = f"{tier} {rank}" if rank else tier
+                
+                milestone_lines.append(f"**Peak Rank:** {peak_rank}")
+                
+                embed.add_field(
+                    name="🏅 Career Milestones",
+                    value="\n".join(milestone_lines),
+                    inline=True
+                )
+
+            
+            # Set thumbnail to bot avatar GIF
             embed.set_thumbnail(url="https://cdn.discordapp.com/avatars/1274276113660645389/a_445fd12821cb7e77b1258cc379f07da7.gif?size=1024")
+        else:
+            embed.add_field(
+                name="📊 Champion Mastery",
+                value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
+                inline=False
+            )
         
-        # Ranked Tiers
-        if self.all_ranked_stats:
+        # RANKED TIERS (shows highest rank from all accounts)
+        if self.all_ranked_stats and len(self.all_ranked_stats) > 0:
+            # Find highest solo queue rank
             solo_queues = [r for r in self.all_ranked_stats if 'SOLO' in r.get('queueType', '')]
             flex_queues = [r for r in self.all_ranked_stats if 'FLEX' in r.get('queueType', '')]
             
+            # Rank order for comparison
             rank_order = {
                 'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
                 'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
@@ -1687,30 +1902,37 @@ class ProfileView(discord.ui.View):
                 rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
                 return tier_val * 4 + rank_val
             
+            # Get highest ranks
             highest_solo = max(solo_queues, key=get_rank_value) if solo_queues else None
             highest_flex = max(flex_queues, key=get_rank_value) if flex_queues else None
             
             ranked_lines = []
+            
             if highest_solo:
-                rank_emoji = get_rank_emoji(highest_solo.get('tier', 'UNRANKED'))
                 tier = highest_solo.get('tier', 'UNRANKED')
                 rank = highest_solo.get('rank', '')
+                rank_emoji = get_rank_emoji(tier)
                 ranked_lines.append(f"**Ranked Solo:** {rank_emoji} **{tier} {rank}**")
             else:
                 ranked_lines.append("**Ranked Solo:** Unranked")
             
             if highest_flex:
-                rank_emoji = get_rank_emoji(highest_flex.get('tier', 'UNRANKED'))
                 tier = highest_flex.get('tier', 'UNRANKED')
                 rank = highest_flex.get('rank', '')
+                rank_emoji = get_rank_emoji(tier)
                 ranked_lines.append(f"**Ranked Flex:** {rank_emoji} **{tier} {rank}**")
             else:
                 ranked_lines.append("**Ranked Flex:** Unranked")
             
-            ranked_lines.append("**Ranked TFT:** Unranked")
-            embed.add_field(name="**Ranked Tiers**", value="\n".join(ranked_lines), inline=False)
+            ranked_lines.append(f"**Ranked TFT:** Unranked")
+            
+            embed.add_field(
+                name="**Ranked Tiers**",
+                value="\n".join(ranked_lines),
+                inline=False
+            )
         
-        # Accounts section (no checkmarks, only primary star and rank)
+        # ACCOUNTS SECTION (list all linked accounts with regions and ranks)
         left_col = []
         right_col = []
         primary_puuid = account['puuid'] if account else None
@@ -1731,15 +1953,27 @@ class ProfileView(discord.ui.View):
             
             acc_text = f"{primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}{rank_display}"
             
+            # Split into two columns
             if i % 2 == 0:
                 left_col.append(acc_text)
             else:
                 right_col.append(acc_text)
         
-        embed.add_field(name="Accounts", value="\n".join(left_col) if left_col else "No accounts", inline=True)
-        if right_col:
-            embed.add_field(name="\u200b", value="\n".join(right_col), inline=True)
+        # Add accounts in two columns
+        embed.add_field(
+            name="Accounts",
+            value="\n".join(left_col) if left_col else "No accounts",
+            inline=True
+        )
         
+        if right_col:
+            embed.add_field(
+                name="\u200b",  # Invisible character for spacing
+                value="\n".join(right_col),
+                inline=True
+            )
+        
+        # Footer with timestamp
         embed.set_footer(text=f"{self.target_user.display_name} • Today at {datetime.now().strftime('%I:%M %p')}")
         
         return embed
