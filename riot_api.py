@@ -254,18 +254,14 @@ class RiotAPI:
         
         return False
     
-    async def get_ranked_stats(self, puuid: str, region: str, 
+    async def get_ranked_stats(self, summoner_id: str, region: str, 
                               retries: int = 5) -> Optional[List[Dict]]:
-        """Get ranked statistics - uses platform endpoint with PUUID"""
+        """Get ranked statistics using summoner ID - uses platform endpoint"""
         if not self.api_key:
             return None
         
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
-        # NOTE: league-v4 still uses summoner ID, not PUUID
-        # We need to get summoner data first to get the ID
-        logger.warning(f"⚠️ get_ranked_stats requires summoner_id which is no longer in API response")
-        logger.warning(f"⚠️ This endpoint needs refactoring - ranked stats may not work")
-        return None
+        url = f"https://{platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
         
         for attempt in range(retries):
             try:
@@ -275,7 +271,7 @@ class RiotAPI:
                         if response.status == 200:
                             return await response.json()
                         elif response.status == 404:
-                            return None
+                            return []  # No ranked data found
                         elif response.status == 429:
                             await asyncio.sleep(2)
                             continue

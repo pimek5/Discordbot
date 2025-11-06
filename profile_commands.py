@@ -553,15 +553,30 @@ class ProfileCommands(commands.Cog):
         # Get champion stats (aggregated across all accounts)
         champ_stats = db.get_user_champion_stats(db_user['id'])
         
-        # Get ranked stats from ALL accounts to find highest rank
+        # Fetch fresh summoner data and rank info for ALL accounts
         all_ranked_stats = []
+        account_ranks = {}  # Store rank per account: {puuid: {solo: {...}, flex: {...}}}
+        
         for acc in all_accounts:
-            if acc.get('verified'):
-                ranks = db.get_user_ranks(db_user['id'])
+            if not acc.get('verified'):
+                continue
+            
+            # Fetch fresh summoner data to get summoner ID
+            summoner_data = await self.riot_api.get_summoner_by_puuid(acc['puuid'], acc['region'])
+            if summoner_data and 'id' in summoner_data:
+                # Fetch ranked stats using summoner ID
+                ranks = await self.riot_api.get_ranked_stats(summoner_data['id'], acc['region'])
                 if ranks:
                     all_ranked_stats.extend(ranks)
+                    # Store per account
+                    account_ranks[acc['puuid']] = {}
+                    for rank_data in ranks:
+                        if 'SOLO' in rank_data.get('queueType', ''):
+                            account_ranks[acc['puuid']]['solo'] = rank_data
+                        elif 'FLEX' in rank_data.get('queueType', ''):
+                            account_ranks[acc['puuid']]['flex'] = rank_data
         
-        # Fetch fresh summoner data for primary account
+        # Fetch fresh summoner data for primary account (for display)
         fresh_summoner = await self.riot_api.get_summoner_by_puuid(account['puuid'], account['region'])
         if fresh_summoner:
             summoner_level = fresh_summoner.get('summonerLevel', account['summoner_level'])
@@ -932,12 +947,14 @@ class ProfileCommands(commands.Cog):
                     }
                     
                     def get_rank_value(rank_data):
-                        tier_val = rank_order.get(rank_data['tier'], -1)
+                        tier_val = rank_order.get(rank_data.get('tier', 'IRON'), -1)
                         rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
                         return tier_val * 4 + rank_val
                     
                     highest = max(all_ranked_stats, key=get_rank_value)
-                    peak_rank = f"{highest['tier']} {highest.get('rank', '')}"
+                    tier = highest.get('tier', 'UNRANKED')
+                    rank = highest.get('rank', '')
+                    peak_rank = f"{tier} {rank}" if rank else tier
                 
                 milestone_lines.append(f"**Peak Rank:** {peak_rank}")
                 
@@ -960,8 +977,8 @@ class ProfileCommands(commands.Cog):
         # RANKED TIERS (shows highest rank from all accounts)
         if all_ranked_stats and len(all_ranked_stats) > 0:
             # Find highest solo queue rank
-            solo_queues = [r for r in all_ranked_stats if 'SOLO' in r['queue']]
-            flex_queues = [r for r in all_ranked_stats if 'FLEX' in r['queue']]
+            solo_queues = [r for r in all_ranked_stats if 'SOLO' in r.get('queueType', '')]
+            flex_queues = [r for r in all_ranked_stats if 'FLEX' in r.get('queueType', '')]
             
             # Rank order for comparison
             rank_order = {
@@ -971,7 +988,7 @@ class ProfileCommands(commands.Cog):
             }
             
             def get_rank_value(rank_data):
-                tier_val = rank_order.get(rank_data['tier'], -1)
+                tier_val = rank_order.get(rank_data.get('tier', 'IRON'), -1)
                 rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
                 return tier_val * 4 + rank_val
             
@@ -982,16 +999,16 @@ class ProfileCommands(commands.Cog):
             ranked_lines = []
             
             if highest_solo:
-                tier = highest_solo['tier']
-                rank = highest_solo['rank']
+                tier = highest_solo.get('tier', 'UNRANKED')
+                rank = highest_solo.get('rank', '')
                 rank_emoji = RANK_EMOJIS.get(tier, '❓')
                 ranked_lines.append(f"**Ranked Solo:** {rank_emoji} **{tier} {rank}**")
             else:
                 ranked_lines.append("**Ranked Solo:** Unranked")
             
             if highest_flex:
-                tier = highest_flex['tier']
-                rank = highest_flex['rank']
+                tier = highest_flex.get('tier', 'UNRANKED')
+                rank = highest_flex.get('rank', '')
                 rank_emoji = RANK_EMOJIS.get(tier, '❓')
                 ranked_lines.append(f"**Ranked Flex:** {rank_emoji} **{tier} {rank}**")
             else:
@@ -1005,17 +1022,26 @@ class ProfileCommands(commands.Cog):
                 inline=False
             )
         
-        # ACCOUNTS SECTION (list all linked accounts with regions)
+        # ACCOUNTS SECTION (list all linked accounts with regions and ranks)
         account_lines = []
         left_col = []
         right_col = []
         
         for i, acc in enumerate(all_accounts):
-            verified_badge = "✅" if acc.get('verified') else "⏳"
             is_primary = acc['puuid'] == account['puuid']
             primary_badge = "⭐ " if is_primary else ""
             
-            acc_text = f"{verified_badge} {primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
+            # Get rank for this account
+            rank_text = ""
+            if acc['puuid'] in account_ranks:
+                acc_rank_data = account_ranks[acc['puuid']]
+                if 'solo' in acc_rank_data:
+                    solo_rank = acc_rank_data['solo']
+                    tier = solo_rank.get('tier', 'UNRANKED')
+                    rank = solo_rank.get('rank', '')
+                    rank_text = f" [{tier} {rank}]" if rank else f" [{tier}]"
+            
+            acc_text = f"{primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}{rank_text}"
             
             # Split into two columns
             if i % 2 == 0:
@@ -1634,8 +1660,8 @@ class ProfileView(discord.ui.View):
         
         # Ranked Tiers
         if self.all_ranked_stats:
-            solo_queues = [r for r in self.all_ranked_stats if 'SOLO' in r['queue']]
-            flex_queues = [r for r in self.all_ranked_stats if 'FLEX' in r['queue']]
+            solo_queues = [r for r in self.all_ranked_stats if 'SOLO' in r.get('queueType', '')]
+            flex_queues = [r for r in self.all_ranked_stats if 'FLEX' in r.get('queueType', '')]
             
             rank_order = {
                 'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
@@ -1644,7 +1670,7 @@ class ProfileView(discord.ui.View):
             }
             
             def get_rank_value(rank_data):
-                tier_val = rank_order.get(rank_data['tier'], -1)
+                tier_val = rank_order.get(rank_data.get('tier', 'IRON'), -1)
                 rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
                 return tier_val * 4 + rank_val
             
@@ -1653,29 +1679,32 @@ class ProfileView(discord.ui.View):
             
             ranked_lines = []
             if highest_solo:
-                rank_emoji = get_rank_emoji(highest_solo['tier'])
-                ranked_lines.append(f"**Ranked Solo:** {rank_emoji} **{highest_solo['tier']} {highest_solo['rank']}**")
+                rank_emoji = get_rank_emoji(highest_solo.get('tier', 'UNRANKED'))
+                tier = highest_solo.get('tier', 'UNRANKED')
+                rank = highest_solo.get('rank', '')
+                ranked_lines.append(f"**Ranked Solo:** {rank_emoji} **{tier} {rank}**")
             else:
                 ranked_lines.append("**Ranked Solo:** Unranked")
             
             if highest_flex:
-                rank_emoji = get_rank_emoji(highest_flex['tier'])
-                ranked_lines.append(f"**Ranked Flex:** {rank_emoji} **{highest_flex['tier']} {highest_flex['rank']}**")
+                rank_emoji = get_rank_emoji(highest_flex.get('tier', 'UNRANKED'))
+                tier = highest_flex.get('tier', 'UNRANKED')
+                rank = highest_flex.get('rank', '')
+                ranked_lines.append(f"**Ranked Flex:** {rank_emoji} **{tier} {rank}**")
             else:
                 ranked_lines.append("**Ranked Flex:** Unranked")
             
             ranked_lines.append("**Ranked TFT:** Unranked")
             embed.add_field(name="**Ranked Tiers**", value="\n".join(ranked_lines), inline=False)
         
-        # Accounts section
+        # Accounts section (no checkmarks, only primary star and rank)
         left_col = []
         right_col = []
         primary_puuid = account['puuid'] if account else None
         
         for i, acc in enumerate(self.all_accounts):
-            verified_badge = "✅" if acc.get('verified') else "⏳"
             primary_badge = "⭐ " if acc['puuid'] == primary_puuid else ""
-            acc_text = f"{verified_badge} {primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
+            acc_text = f"{primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
             
             if i % 2 == 0:
                 left_col.append(acc_text)
@@ -1802,12 +1831,14 @@ class ProfileView(discord.ui.View):
             }
             
             def get_rank_value(rank_data):
-                tier_val = rank_order.get(rank_data['tier'], -1)
+                tier_val = rank_order.get(rank_data.get('tier', 'IRON'), -1)
                 rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
                 return tier_val * 4 + rank_val
             
             highest = max(self.all_ranked_stats, key=get_rank_value)
-            peak_rank = f"{highest['tier']} {highest.get('rank', '')}"
+            tier = highest.get('tier', 'UNRANKED')
+            rank = highest.get('rank', '')
+            peak_rank = f"{tier} {rank}" if rank else tier
         
         milestone_lines.append(f"**Peak Rank:** {peak_rank}")
         embed.add_field(name="🏅 Career Milestones", value="\n".join(milestone_lines), inline=True)
