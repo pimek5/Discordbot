@@ -56,6 +56,23 @@ class Database:
                 cur.execute(schema_sql)
                 conn.commit()
                 logger.info("✅ Database tables created/verified")
+                
+                # Run voting exclusions migration
+                try:
+                    cur.execute("""
+                        ALTER TABLE voting_sessions 
+                        ADD COLUMN IF NOT EXISTS excluded_champions TEXT[]
+                    """)
+                    cur.execute("""
+                        ALTER TABLE voting_sessions 
+                        ADD COLUMN IF NOT EXISTS auto_exclude_previous BOOLEAN DEFAULT TRUE
+                    """)
+                    conn.commit()
+                    logger.info("✅ Voting exclusions migration applied")
+                except Exception as migration_error:
+                    logger.warning(f"⚠️ Migration already applied or error: {migration_error}")
+                    conn.rollback()
+                    
         except Exception as e:
             conn.rollback()
             logger.error(f"❌ Error creating tables: {e}")
