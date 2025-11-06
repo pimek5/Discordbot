@@ -1097,10 +1097,12 @@ class ProfileCommands(commands.Cog):
     async def forcelink(self, interaction: discord.Interaction, user: discord.User, riot_id: str, region: str):
         """Force link an account without verification (owner only)"""
         
-        # Check if user is bot owner
-        OWNER_ID = 287271716544307200  # Your Discord ID
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ This command is owner-only!", ephemeral=True)
+        # Check if user has admin role
+        ADMIN_ROLE_ID = 1153030265782927501
+        has_admin = any(role.id == ADMIN_ROLE_ID for role in interaction.user.roles) if hasattr(interaction.user, 'roles') else False
+        
+        if not has_admin:
+            await interaction.response.send_message("❌ This command requires admin role!", ephemeral=True)
             return
         
         await interaction.response.defer(ephemeral=True)
