@@ -1088,6 +1088,81 @@ class ProfileCommands(commands.Cog):
             ephemeral=True
         )
     
+    @app_commands.command(name="forcelink", description="[OWNER ONLY] Force link a Riot account without verification")
+    @app_commands.describe(
+        user="The Discord user to link for",
+        riot_id="Riot ID (GameName#TAG, e.g. Hide on bush#KR1)",
+        region="Region (eune, euw, na, kr, etc.)"
+    )
+    async def forcelink(self, interaction: discord.Interaction, user: discord.User, riot_id: str, region: str):
+        """Force link an account without verification (owner only)"""
+        
+        # Check if user is bot owner
+        OWNER_ID = 287271716544307200  # Your Discord ID
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ This command is owner-only!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Parse Riot ID
+        if '#' not in riot_id:
+            await interaction.followup.send("❌ Invalid format! Use: GameName#TAG", ephemeral=True)
+            return
+        
+        game_name, tagline = riot_id.split('#', 1)
+        region = region.lower()
+        
+        # Validate region
+        valid_regions = ['br', 'eune', 'euw', 'jp', 'kr', 'lan', 'las', 'na', 'oce', 'tr', 'ru', 'ph', 'sg', 'th', 'tw', 'vn']
+        if region not in valid_regions:
+            await interaction.followup.send(f"❌ Invalid region! Valid: {', '.join(valid_regions)}", ephemeral=True)
+            return
+        
+        # Get account data from Riot API
+        account_data = await self.riot_api.get_account_by_riot_id(game_name, tagline, region)
+        
+        if not account_data:
+            await interaction.followup.send(f"❌ Account not found: {game_name}#{tagline}", ephemeral=True)
+            return
+        
+        puuid = account_data['puuid']
+        
+        # Get summoner data
+        summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, region)
+        
+        if not summoner_data:
+            await interaction.followup.send(f"❌ Could not fetch summoner data for {game_name}#{tagline}", ephemeral=True)
+            return
+        
+        # Get or create user in database
+        db = get_db()
+        db_user = db.get_user_by_discord_id(user.id)
+        
+        if not db_user:
+            db_user_id = db.create_user(user.id)
+        else:
+            db_user_id = db_user['id']
+        
+        # Add account directly as verified (skip verification step)
+        db.add_riot_account(
+            user_id=db_user_id,
+            region=region,
+            riot_id_game_name=game_name,
+            riot_id_tagline=tagline,
+            puuid=puuid,
+            summoner_id=summoner_data['id'],
+            summoner_level=summoner_data['summonerLevel'],
+            profile_icon_id=summoner_data.get('profileIconId', 0),
+            verified=True  # Force verified
+        )
+        
+        await interaction.followup.send(
+            f"✅ Force-linked **{game_name}#{tagline}** ({region.upper()}) to {user.mention}\n"
+            f"Level: {summoner_data['summonerLevel']} • PUUID: {puuid[:20]}...",
+            ephemeral=True
+        )
+    
     @app_commands.command(name="lp", description="View today's LP gains/losses")
     @app_commands.describe(user="The user to view (defaults to yourself)")
     async def lp(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
