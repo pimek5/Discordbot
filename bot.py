@@ -4202,6 +4202,71 @@ async def slowmodeinfo(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+async def auto_migrate_puuids():
+    """Auto-migrate encrypted PUUIDs on bot startup"""
+    global riot_api
+    
+    if not riot_api:
+        print("⚠️ Riot API not initialized, skipping PUUID migration")
+        return
+    
+    # Wait a bit for bot to fully start
+    await asyncio.sleep(5)
+    
+    print("🔄 Starting automatic PUUID migration...")
+    
+    try:
+        db = get_db()
+        cursor = db.conn.cursor()
+        
+        # Get all accounts with riot_id info
+        cursor.execute("""
+            SELECT id, riot_id_game_name, riot_id_tagline, region, puuid 
+            FROM riot_accounts 
+            WHERE riot_id_game_name IS NOT NULL 
+            AND riot_id_tagline IS NOT NULL
+        """)
+        accounts = cursor.fetchall()
+        
+        if not accounts:
+            print("ℹ️  No accounts to migrate")
+            return
+        
+        print(f"📊 Found {len(accounts)} accounts to check")
+        
+        updated = 0
+        failed = 0
+        
+        for account in accounts:
+            account_id, game_name, tagline, region, old_puuid = account
+            
+            # Fetch fresh PUUID
+            account_data = await riot_api.get_account_by_riot_id(game_name, tagline, region)
+            
+            if account_data and 'puuid' in account_data:
+                new_puuid = account_data['puuid']
+                
+                # Update if different
+                if new_puuid != old_puuid:
+                    cursor.execute("""
+                        UPDATE riot_accounts 
+                        SET puuid = %s 
+                        WHERE id = %s
+                    """, (new_puuid, account_id))
+                    db.conn.commit()
+                    updated += 1
+                    print(f"   ✅ Updated {game_name}#{tagline}")
+            else:
+                failed += 1
+            
+            # Rate limit protection
+            await asyncio.sleep(0.5)
+        
+        print(f"✅ PUUID Migration complete: {updated} updated, {failed} failed")
+        
+    except Exception as e:
+        print(f"❌ Error during PUUID migration: {e}")
+
 @bot.event
 async def on_ready():
     global riot_api, orianna_initialized
@@ -4217,6 +4282,9 @@ async def on_ready():
     
     # Commands are already synced in setup_hook()
     print(f"✅ Bot is ready with synced commands")
+    
+    # Auto-migrate encrypted PUUIDs (run once on startup)
+    asyncio.create_task(auto_migrate_puuids())
     
     # Start tweet monitoring
     if not check_for_new_tweets.is_running():
