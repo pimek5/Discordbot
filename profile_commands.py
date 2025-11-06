@@ -1038,6 +1038,7 @@ class ProfileCommands(commands.Cog):
             )
         
         # Footer with timestamp
+        from datetime import datetime
         embed.set_footer(text=f"{target.display_name} • Today at {datetime.now().strftime('%I:%M %p')}")
         
         # Create interactive view with buttons
