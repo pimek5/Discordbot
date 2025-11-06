@@ -1589,6 +1589,9 @@ class ProfileView(discord.ui.View):
         self.current_view = "profile"
         self.match_filter = "all"  # Filter for matches: all, soloq, flex, normals, other
         self.message = None  # Will store the message to delete later
+        
+        # Initialize button visibility (filters hidden by default since we start in "profile" view)
+        self.update_button_visibility()
     
     async def on_timeout(self):
         """Called when the view times out - delete the message"""
@@ -2234,6 +2237,16 @@ class ProfileView(discord.ui.View):
         
         return embed
     
+    def update_button_visibility(self):
+        """Update visibility of filter buttons based on current view"""
+        # Filter buttons should only be visible in matches view
+        show_filters = (self.current_view == "matches")
+        
+        # Find all filter buttons (row=1)
+        for child in self.children:
+            if isinstance(child, discord.ui.Button) and child.row == 1:
+                child.disabled = not show_filters
+    
     async def create_lp_embed(self) -> discord.Embed:
         """Create LP balance embed for today's ranked games"""
         # Get today's date range
@@ -2370,6 +2383,7 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "profile"
+        self.update_button_visibility()
         embed = await self.create_profile_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2381,6 +2395,7 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "stats"
+        self.update_button_visibility()
         embed = await self.create_stats_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2393,6 +2408,7 @@ class ProfileView(discord.ui.View):
         
         self.current_view = "matches"
         self.match_filter = "all"  # Reset filter when switching to matches
+        self.update_button_visibility()
         embed = await self.create_matches_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2404,6 +2420,7 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "lp"
+        self.update_button_visibility()
         embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
