@@ -1,6 +1,6 @@
 """
 Vote Commands Module
-/vote, /vote start, /vote stop
+/vote, /votestart, /votestop, /voteexclude, /voteinclude
 """
 
 import discord
@@ -11,6 +11,7 @@ import logging
 
 from database import get_db
 from riot_api import CHAMPION_ID_TO_NAME
+from champion_aliases import normalize_champion_name
 
 logger = logging.getLogger('vote_commands')
 
@@ -49,9 +50,9 @@ class VoteCommands(commands.Cog):
         """Get points multiplier based on user roles (2 for boosters, 1 for others)"""
         return 2 if self.is_booster(interaction) else 1
     
-    def validate_champions(self, champion_names: List[str]) -> tuple[bool, Optional[str], List[str]]:
+    def validate_champions(self, champion_names: List[str], excluded_champions: List[str] = None) -> tuple[bool, Optional[str], List[str]]:
         """
-        Validate champion names.
+        Validate champion names using aliases.
         Returns: (is_valid, error_message, normalized_names)
         """
         if len(champion_names) != 5:
@@ -59,18 +60,22 @@ class VoteCommands(commands.Cog):
         
         # Get all valid champion names (values from CHAMPION_ID_TO_NAME)
         valid_champions = set(CHAMPION_ID_TO_NAME.values())
+        excluded_set = set(excluded_champions or [])
         
         # Normalize and validate each champion
         normalized = []
         for name in champion_names:
-            # Find matching champion (case-insensitive)
-            name_lower = name.lower()
-            matching = [c for c in valid_champions if c.lower() == name_lower]
+            # Use alias system to normalize name
+            champion = normalize_champion_name(name, valid_champions)
             
-            if not matching:
-                return False, f"❌ Invalid champion name: **{name}**\nPlease use exact champion names from League of Legends.", []
+            if not champion:
+                return False, f"❌ Invalid champion name: **{name}**\nTry using full names or common abbreviations (e.g., 'asol' for Aurelion Sol, 'mf' for Miss Fortune)", []
             
-            normalized.append(matching[0])
+            # Check if champion is excluded
+            if champion in excluded_set:
+                return False, f"❌ **{champion}** is excluded from this voting session!", []
+            
+            normalized.append(champion)
         
         # Check for duplicates
         if len(set(normalized)) != 5:
@@ -78,7 +83,7 @@ class VoteCommands(commands.Cog):
         
         return True, None, normalized
     
-    def create_voting_embed(self, results: List[dict], session_id: int) -> discord.Embed:
+    def create_voting_embed(self, results: List[dict], session_id: int, excluded_champions: List[str] = None) -> discord.Embed:
         """Create the voting results embed with top 5 and others"""
         embed = discord.Embed(
             title="🗳️ Champion Voting - Live Results",
@@ -86,6 +91,17 @@ class VoteCommands(commands.Cog):
                        "Server Boosters get 2 points per champion! 💎",
             color=0x0099ff
         )
+        
+        # Show excluded champions if any
+        if excluded_champions:
+            excluded_text = ", ".join(excluded_champions[:10])
+            if len(excluded_champions) > 10:
+                excluded_text += f" and {len(excluded_champions) - 10} more"
+            embed.add_field(
+                name="🚫 Excluded Champions",
+                value=excluded_text,
+                inline=False
+            )
         
         # Top 5 podium
         podium_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
@@ -167,14 +183,15 @@ class VoteCommands(commands.Cog):
         if not session:
             await interaction.response.send_message(
                 "❌ There is no active voting session!\n"
-                "An admin must use `/vote start` to begin voting.",
+                "An admin must use `/votestart` to begin voting.",
                 ephemeral=True
             )
             return
         
-        # Validate champions
+        # Validate champions (with exclusions)
         champion_names = [champion1, champion2, champion3, champion4, champion5]
-        is_valid, error_msg, normalized_names = self.validate_champions(champion_names)
+        excluded = session.get('excluded_champions') or []
+        is_valid, error_msg, normalized_names = self.validate_champions(champion_names, excluded)
         
         if not is_valid:
             await interaction.response.send_message(error_msg, ephemeral=True)
@@ -198,7 +215,8 @@ class VoteCommands(commands.Cog):
         results = db.get_voting_results(session['id'])
         
         # Update the voting embed
-        embed = self.create_voting_embed(results, session['id'])
+        excluded = session.get('excluded_champions') or []
+        embed = self.create_voting_embed(results, session['id'], excluded)
         
         # Update the message
         try:
@@ -246,29 +264,45 @@ class VoteCommands(commands.Cog):
         if existing_session:
             await interaction.response.send_message(
                 "❌ There is already an active voting session!\n"
-                "Use `/vote stop` to end it first.",
+                "Use `/votestop` to end it first.",
                 ephemeral=True
             )
             return
         
-        # Create new voting session
+        # Get winners from previous session to auto-exclude
+        previous_winners = db.get_previous_session_winners(interaction.guild_id, limit=5)
+        
+        # Create new voting session with exclusions
         session_id = db.create_voting_session(
             interaction.guild_id,
             interaction.channel_id,
-            interaction.user.id
+            interaction.user.id,
+            excluded_champions=previous_winners
         )
         
         # Create initial embed
-        embed = self.create_voting_embed([], session_id)
+        embed = self.create_voting_embed([], session_id, previous_winners)
         
-        # Send the embed
-        await interaction.response.send_message(embed=embed)
+        # Send confirmation and embed
+        if previous_winners:
+            confirmation_msg = (
+                f"✅ Voting session started!\n"
+                f"🚫 Auto-excluded top 5 from last session: {', '.join(previous_winners)}"
+            )
+        else:
+            confirmation_msg = "✅ Voting session started!"
         
-        # Get the message and store its ID
-        message = await interaction.original_response()
+        # Send the confirmation first
+        await interaction.response.send_message(confirmation_msg, ephemeral=True)
+        
+        # Send the embed to the channel
+        channel = self.bot.get_channel(interaction.channel_id)
+        message = await channel.send(embed=embed)
+        
+        # Store message ID
         db.update_voting_message_id(session_id, message.id)
         
-        logger.info(f"Voting session {session_id} started by {interaction.user.name}")
+        logger.info(f"Voting session {session_id} started by {interaction.user.name} with {len(previous_winners)} exclusions")
     
     @app_commands.command(name="votestop", description="[ADMIN] Stop the current voting session")
     async def vote_stop(self, interaction: discord.Interaction):
@@ -372,6 +406,167 @@ class VoteCommands(commands.Cog):
         )
         
         logger.info(f"Voting session {session['id']} ended by {interaction.user.name}")
+    
+    @app_commands.command(name="voteexclude", description="[ADMIN] Exclude champions from voting")
+    @app_commands.describe(
+        champions="Champion names to exclude (comma-separated, e.g., 'Ahri, Yasuo, asol')"
+    )
+    async def vote_exclude(self, interaction: discord.Interaction, champions: str):
+        """Exclude champions from current voting session (admin only)"""
+        # Check if command is used in voting thread
+        if not self.is_voting_thread(interaction):
+            await interaction.response.send_message(
+                f"❌ This command can only be used in <#{VOTING_THREAD_ID}>!",
+                ephemeral=True
+            )
+            return
+        
+        # Check admin permissions
+        if not self.has_admin_role(interaction):
+            await interaction.response.send_message(
+                "❌ You don't have permission to manage exclusions!",
+                ephemeral=True
+            )
+            return
+        
+        # Check if there's an active session
+        db = get_db()
+        session = db.get_active_voting_session(interaction.guild_id)
+        
+        if not session:
+            await interaction.response.send_message(
+                "❌ There is no active voting session!",
+                ephemeral=True
+            )
+            return
+        
+        # Parse and validate champion names
+        champion_list = [c.strip() for c in champions.split(',')]
+        valid_champions = set(CHAMPION_ID_TO_NAME.values())
+        
+        normalized_champions = []
+        invalid_champions = []
+        
+        for champ in champion_list:
+            normalized = normalize_champion_name(champ, valid_champions)
+            if normalized:
+                normalized_champions.append(normalized)
+            else:
+                invalid_champions.append(champ)
+        
+        if invalid_champions:
+            await interaction.response.send_message(
+                f"❌ Invalid champion names: {', '.join(invalid_champions)}",
+                ephemeral=True
+            )
+            return
+        
+        # Add to exclusion list
+        db.add_excluded_champions(session['id'], normalized_champions)
+        
+        # Update the embed
+        results = db.get_voting_results(session['id'])
+        # Refresh session data to get updated exclusions
+        session = db.get_active_voting_session(interaction.guild_id)
+        excluded = session.get('excluded_champions') or []
+        embed = self.create_voting_embed(results, session['id'], excluded)
+        
+        # Update the message
+        try:
+            if session['message_id']:
+                channel = self.bot.get_channel(session['channel_id'])
+                if channel:
+                    message = await channel.fetch_message(session['message_id'])
+                    await message.edit(embed=embed)
+        except Exception as e:
+            logger.error(f"Failed to update voting embed: {e}")
+        
+        await interaction.response.send_message(
+            f"✅ Excluded: {', '.join(normalized_champions)}",
+            ephemeral=True
+        )
+        
+        logger.info(f"Champions excluded by {interaction.user.name}: {normalized_champions}")
+    
+    @app_commands.command(name="voteinclude", description="[ADMIN] Remove champion from exclusion list")
+    @app_commands.describe(
+        champion="Champion name to include back"
+    )
+    async def vote_include(self, interaction: discord.Interaction, champion: str):
+        """Remove a champion from the exclusion list (admin only)"""
+        # Check if command is used in voting thread
+        if not self.is_voting_thread(interaction):
+            await interaction.response.send_message(
+                f"❌ This command can only be used in <#{VOTING_THREAD_ID}>!",
+                ephemeral=True
+            )
+            return
+        
+        # Check admin permissions
+        if not self.has_admin_role(interaction):
+            await interaction.response.send_message(
+                "❌ You don't have permission to manage exclusions!",
+                ephemeral=True
+            )
+            return
+        
+        # Check if there's an active session
+        db = get_db()
+        session = db.get_active_voting_session(interaction.guild_id)
+        
+        if not session:
+            await interaction.response.send_message(
+                "❌ There is no active voting session!",
+                ephemeral=True
+            )
+            return
+        
+        # Validate champion name
+        valid_champions = set(CHAMPION_ID_TO_NAME.values())
+        normalized = normalize_champion_name(champion, valid_champions)
+        
+        if not normalized:
+            await interaction.response.send_message(
+                f"❌ Invalid champion name: {champion}",
+                ephemeral=True
+            )
+            return
+        
+        # Check if champion is actually excluded
+        excluded = session.get('excluded_champions') or []
+        if normalized not in excluded:
+            await interaction.response.send_message(
+                f"❌ **{normalized}** is not in the exclusion list!",
+                ephemeral=True
+            )
+            return
+        
+        # Remove from exclusion list
+        db.remove_excluded_champion(session['id'], normalized)
+        
+        # Update the embed
+        results = db.get_voting_results(session['id'])
+        # Refresh session data to get updated exclusions
+        session = db.get_active_voting_session(interaction.guild_id)
+        excluded = session.get('excluded_champions') or []
+        embed = self.create_voting_embed(results, session['id'], excluded)
+        
+        # Update the message
+        try:
+            if session['message_id']:
+                channel = self.bot.get_channel(session['channel_id'])
+                if channel:
+                    message = await channel.fetch_message(session['message_id'])
+                    await message.edit(embed=embed)
+        except Exception as e:
+            logger.error(f"Failed to update voting embed: {e}")
+        
+        await interaction.response.send_message(
+            f"✅ **{normalized}** is now allowed for voting!",
+            ephemeral=True
+        )
+        
+        logger.info(f"Champion {normalized} included back by {interaction.user.name}")
 
 async def setup(bot):
     await bot.add_cog(VoteCommands(bot))

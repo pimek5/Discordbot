@@ -511,7 +511,7 @@ class MyBot(commands.Bot):
                 return True
             
             # Skip check for vote commands (they have their own thread restriction)
-            if interaction.command and interaction.command.name in ['vote', 'votestart', 'votestop']:
+            if interaction.command and interaction.command.name in ['vote', 'votestart', 'votestop', 'voteexclude', 'voteinclude']:
                 return True
             
             # Check if command is from Orianna cogs

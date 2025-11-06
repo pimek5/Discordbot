@@ -489,16 +489,16 @@ class Database:
     
     # ==================== VOTING OPERATIONS ====================
     
-    def create_voting_session(self, guild_id: int, channel_id: int, started_by: int) -> int:
+    def create_voting_session(self, guild_id: int, channel_id: int, started_by: int, excluded_champions: List[str] = None) -> int:
         """Create a new voting session and return its ID"""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO voting_sessions (guild_id, channel_id, started_by, status)
-                    VALUES (%s, %s, %s, 'active')
+                    INSERT INTO voting_sessions (guild_id, channel_id, started_by, status, excluded_champions)
+                    VALUES (%s, %s, %s, 'active', %s)
                     RETURNING id
-                """, (guild_id, channel_id, started_by))
+                """, (guild_id, channel_id, started_by, excluded_champions or []))
                 session_id = cur.fetchone()[0]
                 conn.commit()
                 return session_id
@@ -606,6 +606,65 @@ class Database:
                     )
                 """, (session_id, user_id))
                 return cur.fetchone()[0]
+        finally:
+            self.return_connection(conn)
+    
+    def add_excluded_champions(self, session_id: int, champions: List[str]):
+        """Add champions to the exclusion list for a session"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE voting_sessions
+                    SET excluded_champions = array_cat(COALESCE(excluded_champions, ARRAY[]::TEXT[]), %s::TEXT[])
+                    WHERE id = %s
+                """, (champions, session_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def remove_excluded_champion(self, session_id: int, champion: str):
+        """Remove a champion from the exclusion list"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE voting_sessions
+                    SET excluded_champions = array_remove(excluded_champions, %s)
+                    WHERE id = %s
+                """, (champion, session_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def get_previous_session_winners(self, guild_id: int, limit: int = 5) -> List[str]:
+        """Get top N champions from the last ended session"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Get the last ended session
+                cur.execute("""
+                    SELECT id FROM voting_sessions
+                    WHERE guild_id = %s AND status = 'ended'
+                    ORDER BY ended_at DESC
+                    LIMIT 1
+                """, (guild_id,))
+                
+                last_session = cur.fetchone()
+                if not last_session:
+                    return []
+                
+                # Get top champions from that session
+                cur.execute("""
+                    SELECT champion_name
+                    FROM voting_votes
+                    WHERE session_id = %s
+                    GROUP BY champion_name
+                    ORDER BY SUM(points) DESC
+                    LIMIT %s
+                """, (last_session['id'], limit))
+                
+                return [row['champion_name'] for row in cur.fetchall()]
         finally:
             self.return_connection(conn)
     

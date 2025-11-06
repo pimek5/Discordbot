@@ -111,7 +111,9 @@ CREATE TABLE IF NOT EXISTS voting_sessions (
     started_by BIGINT NOT NULL,        -- User who started the vote
     started_at TIMESTAMP DEFAULT NOW(),
     ended_at TIMESTAMP,
-    status VARCHAR(20) DEFAULT 'active' -- 'active', 'ended'
+    status VARCHAR(20) DEFAULT 'active', -- 'active', 'ended'
+    excluded_champions TEXT[],         -- Array of excluded champion names
+    auto_exclude_previous BOOLEAN DEFAULT TRUE -- Auto-exclude winners from previous session
 );
 
 -- Individual votes

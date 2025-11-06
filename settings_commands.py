@@ -54,7 +54,7 @@ class CommandsCategoryView(discord.ui.View):
                 inline=False
             )
             embed.add_field(
-                name="🗳️ Voting (3 commands)",
+                name="🗳️ Voting (5 commands)",
                 value="Champion voting system (voting thread only)",
                 inline=False
             )
@@ -184,19 +184,35 @@ class CommandsCategoryView(discord.ui.View):
                 value="Vote for 5 champions\n`/vote champion1:Ahri champion2:Yasuo champion3:Jinx champion4:Lee Sin champion5:Thresh`\n\n"
                       "• Server Boosters get 2 points per champion! 💎\n"
                       "• Everyone else gets 1 point per champion\n"
-                      "• You can change your vote anytime during active session",
+                      "• You can change your vote anytime during active session\n"
+                      "• Supports aliases: asol, mf, lb, tf, etc.",
                 inline=False
             )
             embed.add_field(
                 name="/votestart",
                 value="**[ADMIN ONLY]** Start a new voting session\n"
-                      "Creates a live leaderboard that updates with each vote",
+                      "• Creates a live leaderboard that updates with each vote\n"
+                      "• Auto-excludes top 5 winners from previous session",
                 inline=False
             )
             embed.add_field(
                 name="/votestop",
                 value="**[ADMIN ONLY]** Stop the current voting session\n"
                       "Shows final results with complete rankings",
+                inline=False
+            )
+            embed.add_field(
+                name="/voteexclude",
+                value="**[ADMIN ONLY]** Exclude champions from voting\n"
+                      "`/voteexclude champions:Ahri, Yasuo, Zed`\n"
+                      "Champions cannot be voted for during current session",
+                inline=False
+            )
+            embed.add_field(
+                name="/voteinclude",
+                value="**[ADMIN ONLY]** Remove champion from exclusion list\n"
+                      "`/voteinclude champion:Ahri`\n"
+                      "Allow previously excluded champion to be voted for",
                 inline=False
             )
         

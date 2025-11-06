@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS voting_sessions (
     started_by BIGINT NOT NULL,
     started_at TIMESTAMP DEFAULT NOW(),
     ended_at TIMESTAMP,
-    status VARCHAR(20) DEFAULT 'active'
+    status VARCHAR(20) DEFAULT 'active',
+    excluded_champions TEXT[],
+    auto_exclude_previous BOOLEAN DEFAULT TRUE
 );
 
 -- Individual votes
