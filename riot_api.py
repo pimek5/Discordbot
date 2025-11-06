@@ -183,7 +183,7 @@ class RiotAPI:
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
         url = f"https://{platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
         
-        logger.info(f"🔍 Fetching summoner from platform: {platform}")
+        logger.info(f"🔍 Fetching summoner from platform: {platform} with PUUID: {puuid[:10]}...")
         
         for attempt in range(retries):
             try:
@@ -202,7 +202,8 @@ class RiotAPI:
                             await asyncio.sleep(2)
                             continue
                         else:
-                            logger.error(f"❌ Unexpected status {response.status} from {platform}")
+                            error_text = await response.text()
+                            logger.error(f"❌ Unexpected status {response.status} from {platform}: {error_text[:200]}")
                             return None
             except asyncio.TimeoutError:
                 logger.warning(f"⏱️ Timeout getting summoner from {platform} (attempt {attempt + 1}/{retries})")
