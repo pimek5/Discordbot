@@ -1716,198 +1716,226 @@ class ProfileView(discord.ui.View):
                 inline=True
             )
             
-            # === STATISTICS SECTIONS ===
+            # === UNIQUE PROFILE STATISTICS ===
             
-            # 1. RECENT PERFORMANCE (KDA, CS, Vision)
+            # 1. CURRENT SEASON PROGRESS
+            if self.all_ranked_stats:
+                rank_order = {
+                    'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
+                    'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
+                    'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
+                }
+                
+                def get_rank_value(rank_data):
+                    tier_val = rank_order.get(rank_data.get('tier', 'IRON'), -1)
+                    rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
+                    return tier_val * 4 + rank_val
+                
+                # Get highest current rank
+                highest = max(self.all_ranked_stats, key=get_rank_value)
+                tier = highest.get('tier', 'UNRANKED')
+                rank = highest.get('rank', '')
+                lp = highest.get('leaguePoints', 0)
+                wins = highest.get('wins', 0)
+                losses = highest.get('losses', 0)
+                queue_type = "Solo/Duo" if 'SOLO' in highest.get('queueType', '') else "Flex"
+                
+                # Calculate LP to next division
+                if tier in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
+                    lp_needed = "—"
+                    progress_bar = ""
+                elif rank:
+                    rank_lp_map = {'IV': 0, 'III': 100, 'II': 200, 'I': 300}
+                    next_rank_lp = rank_lp_map.get(rank, 0) + 100
+                    lp_needed = next_rank_lp - (rank_lp_map.get(rank, 0) + lp)
+                    
+                    # Progress bar
+                    progress = int((lp / 100) * 10)
+                    progress_bar = f"\n`[{'█' * progress}{'░' * (10 - progress)}]` {lp}/100 LP"
+                else:
+                    lp_needed = "—"
+                    progress_bar = ""
+                
+                rank_emoji = get_rank_emoji(tier)
+                
+                progress_lines = [
+                    f"{rank_emoji} **{tier} {rank}** • {lp} LP ({queue_type})",
+                    f"**W/L:** {wins}W - {losses}L"
+                ]
+                
+                if lp_needed != "—":
+                    progress_lines.append(f"**To next rank:** {lp_needed} LP{progress_bar}")
+                
+                embed.add_field(
+                    name="🎖️ Current Season Progress",
+                    value="\n".join(progress_lines),
+                    inline=True
+                )
+            
+            # 2. IMPROVEMENT TREND (Last 10 vs Previous 10)
+            if self.combined_stats and len(filtered_matches) >= 10:
+                # Last 10 games
+                last_10 = filtered_matches[:10]
+                last_10_wins = 0
+                last_10_kills = 0
+                last_10_deaths = 0
+                last_10_assists = 0
+                
+                for match_data in last_10:
+                    match = match_data['match']
+                    puuid = match_data['puuid']
+                    for participant in match['info']['participants']:
+                        if participant['puuid'] == puuid:
+                            if participant['win']:
+                                last_10_wins += 1
+                            last_10_kills += participant['kills']
+                            last_10_deaths += participant['deaths']
+                            last_10_assists += participant['assists']
+                            break
+                
+                last_10_kda = (last_10_kills + last_10_assists) / max(last_10_deaths, 1)
+                last_10_wr = (last_10_wins / 10 * 100)
+                
+                # Previous 10 games
+                if len(filtered_matches) >= 20:
+                    prev_10 = filtered_matches[10:20]
+                    prev_10_wins = 0
+                    prev_10_kills = 0
+                    prev_10_deaths = 0
+                    prev_10_assists = 0
+                    
+                    for match_data in prev_10:
+                        match = match_data['match']
+                        puuid = match_data['puuid']
+                        for participant in match['info']['participants']:
+                            if participant['puuid'] == puuid:
+                                if participant['win']:
+                                    prev_10_wins += 1
+                                prev_10_kills += participant['kills']
+                                prev_10_deaths += participant['deaths']
+                                prev_10_assists += participant['assists']
+                                break
+                    
+                    prev_10_kda = (prev_10_kills + prev_10_assists) / max(prev_10_deaths, 1)
+                    prev_10_wr = (prev_10_wins / 10 * 100)
+                    
+                    # Calculate trends
+                    kda_diff = last_10_kda - prev_10_kda
+                    wr_diff = last_10_wr - prev_10_wr
+                    
+                    kda_trend = "📈" if kda_diff > 0.5 else "📉" if kda_diff < -0.5 else "➖"
+                    wr_trend = "📈" if wr_diff > 10 else "📉" if wr_diff < -10 else "➖"
+                    
+                    trend_lines = [
+                        f"**Last 10:** {last_10_wr:.0f}% WR • {last_10_kda:.2f} KDA",
+                        f"**Prev 10:** {prev_10_wr:.0f}% WR • {prev_10_kda:.2f} KDA",
+                        f"{wr_trend} WR: {wr_diff:+.0f}% • {kda_trend} KDA: {kda_diff:+.2f}"
+                    ]
+                else:
+                    trend_lines = [
+                        f"**Last 10:** {last_10_wr:.0f}% WR • {last_10_kda:.2f} KDA",
+                        f"*Need 20+ games for comparison*"
+                    ]
+                
+                embed.add_field(
+                    name="📈 Improvement Trend",
+                    value="\n".join(trend_lines),
+                    inline=True
+                )
+            
+            # 3. PLAYSTYLE ANALYSIS
+            if self.combined_stats and self.combined_stats.get('total_games', 0) > 0:
+                total_games = self.combined_stats['total_games']
+                avg_kills = self.combined_stats['kills'] / total_games
+                avg_deaths = self.combined_stats['deaths'] / total_games
+                avg_assists = self.combined_stats['assists'] / total_games
+                
+                # Calculate playstyle score
+                kda_ratio = (self.combined_stats['kills'] + self.combined_stats['assists']) / max(self.combined_stats['deaths'], 1)
+                kill_participation = avg_kills / max(avg_kills + avg_assists, 1)
+                
+                # Determine playstyle
+                if kda_ratio >= 4.0:
+                    if kill_participation > 0.6:
+                        playstyle = "🗡️ **Hyper Aggressive**"
+                        desc = "High kills, dominant presence"
+                    else:
+                        playstyle = "🛡️ **Strategic Support**"
+                        desc = "High KDA, team-focused"
+                elif kda_ratio >= 3.0:
+                    if kill_participation > 0.5:
+                        playstyle = "⚔️ **Aggressive Carry**"
+                        desc = "Kill-focused, high impact"
+                    else:
+                        playstyle = "🤝 **Team Player**"
+                        desc = "Balanced, assist-oriented"
+                elif kda_ratio >= 2.0:
+                    playstyle = "⚖️ **Balanced**"
+                    desc = "Moderate aggression"
+                else:
+                    if avg_deaths > 7:
+                        playstyle = "💥 **Aggressive Int**"
+                        desc = "High risk, high death count"
+                    else:
+                        playstyle = "🐢 **Passive**"
+                        desc = "Low impact, safe play"
+                
+                playstyle_lines = [
+                    playstyle,
+                    f"*{desc}*",
+                    f"**KDA:** {avg_kills:.1f}/{avg_deaths:.1f}/{avg_assists:.1f}"
+                ]
+                
+                embed.add_field(
+                    name="� Playstyle",
+                    value="\n".join(playstyle_lines),
+                    inline=True
+                )
+            
+            # 4. GOLD EFFICIENCY
             if self.combined_stats and self.combined_stats.get('total_games', 0) > 0:
                 total_games = self.combined_stats['total_games']
                 
-                # Calculate averages for recent 20 games (or less if fewer games)
-                recent_games_count = min(20, total_games)
-                avg_kills = self.combined_stats['kills'] / recent_games_count
-                avg_deaths = self.combined_stats['deaths'] / recent_games_count
-                avg_assists = self.combined_stats['assists'] / recent_games_count
-                avg_cs_per_min = self.combined_stats['cs'] / self.combined_stats['game_duration'] if self.combined_stats['game_duration'] > 0 else 0
-                avg_vision = self.combined_stats['vision_score'] / recent_games_count
+                # Calculate from recent matches
+                total_gold = 0
+                total_duration = 0
+                gold_games_counted = 0
                 
-                kda_str = format_kda(self.combined_stats['kills'], self.combined_stats['deaths'], self.combined_stats['assists'])
-                
-                perf_lines = [
-                    f"**KDA:** {kda_str}",
-                    f"**CS/min:** {avg_cs_per_min:.1f} • **Vision:** {avg_vision:.0f}"
-                ]
-                
-                embed.add_field(
-                    name=f"📊 Recent Performance ({recent_games_count} games)",
-                    value="\n".join(perf_lines),
-                    inline=True
-                )
-                
-                # 2. WIN RATE STATISTICS
-                overall_wr = (self.combined_stats['wins'] / total_games * 100) if total_games > 0 else 0
-                
-                # Recent 20 games winrate
-                recent_20_count = min(20, total_games)
-                if total_games <= 20:
-                    recent_wins = self.combined_stats['wins']
-                else:
-                    # Count wins in first 20 matches
-                    recent_wins = 0
-                    for i, match_data in enumerate(self.all_match_details[:20]):
-                        match = match_data['match']
-                        puuid = match_data['puuid']
-                        for participant in match['info'].get('participants', []):
-                            if participant.get('puuid') == puuid and participant.get('win'):
-                                recent_wins += 1
-                                break
-                
-                recent_wr = (recent_wins / recent_20_count * 100) if recent_20_count > 0 else 0
-                
-                # Best champion winrate (min 5 games)
-                best_champ_wr = 0
-                best_champ_name = "N/A"
-                for champ_id, champ_data in self.combined_stats.get('champions', {}).items():
-                    if champ_data['games'] >= 5:
-                        wr = (champ_data['wins'] / champ_data['games'] * 100)
-                        if wr > best_champ_wr:
-                            best_champ_wr = wr
-                            best_champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f"Champion {champ_id}")
-                
-                wr_lines = [
-                    f"**Overall:** {overall_wr:.0f}% ({self.combined_stats['wins']}W/{self.combined_stats['losses']}L)",
-                    f"**Recent 20:** {recent_wr:.0f}% ({recent_wins}W/{recent_20_count-recent_wins}L)"
-                ]
-                
-                if best_champ_name != "N/A":
-                    champ_emoji = get_champion_emoji(best_champ_name)
-                    wr_lines.append(f"**Best:** {champ_emoji} {best_champ_name} {best_champ_wr:.0f}%")
-                
-                embed.add_field(
-                    name="🎯 Win Rate",
-                    value="\n".join(wr_lines),
-                    inline=True
-                )
-                
-                # 3. GAME ACTIVITY
-                from datetime import datetime, timedelta
-                now = datetime.now()
-                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                week_start = now - timedelta(days=7)
-                
-                games_today = 0
-                games_week = 0
-                
-                for match_data in self.all_match_details:
+                for match_data in filtered_matches[:20]:
                     match = match_data['match']
-                    timestamp = match['info'].get('gameCreation', 0) / 1000
-                    game_time = datetime.fromtimestamp(timestamp)
+                    puuid = match_data['puuid']
+                    for participant in match['info']['participants']:
+                        if participant['puuid'] == puuid:
+                            total_gold += participant.get('goldEarned', 0)
+                            total_duration += match['info']['gameDuration'] / 60  # Convert to minutes
+                            gold_games_counted += 1
+                            break
+                
+                if gold_games_counted > 0:
+                    avg_gold_per_min = total_gold / total_duration if total_duration > 0 else 0
+                    avg_gold_per_game = total_gold / gold_games_counted
                     
-                    if game_time >= today_start:
-                        games_today += 1
-                    if game_time >= week_start:
-                        games_week += 1
-                
-                # Average game time
-                avg_game_time = self.combined_stats['game_duration'] / total_games if total_games > 0 else 0
-                avg_minutes = int(avg_game_time)
-                avg_seconds = int((avg_game_time - avg_minutes) * 60)
-                
-                # Favorite role
-                fav_role = "Unknown"
-                if self.combined_stats.get('roles'):
-                    fav_role_code = max(self.combined_stats['roles'], key=self.combined_stats['roles'].get)
-                    fav_role = get_role_name(fav_role_code)
-                    role_count = self.combined_stats['roles'][fav_role_code]
-                    role_pct = (role_count / total_games * 100) if total_games > 0 else 0
-                    fav_role = f"{fav_role} ({role_pct:.0f}%)"
-                
-                activity_lines = [
-                    f"**Today:** {games_today} games • **Week:** {games_week} games",
-                    f"**Avg Time:** {avg_minutes}m {avg_seconds}s",
-                    f"**Fav Role:** {fav_role}"
-                ]
-                
-                embed.add_field(
-                    name="🎮 Activity",
-                    value="\n".join(activity_lines),
-                    inline=True
-                )
-                
-                # 4. CHAMPION POOL DIVERSITY
-                unique_champs_played = len(self.combined_stats.get('champions', {}))
-                
-                # One-trick score (% games on top 3 champions)
-                top_3_games = 0
-                if self.combined_stats.get('champions'):
-                    sorted_champs = sorted(self.combined_stats['champions'].items(), key=lambda x: x[1]['games'], reverse=True)[:3]
-                    top_3_games = sum(champ_data['games'] for _, champ_data in sorted_champs)
-                
-                one_trick_score = (top_3_games / total_games * 100) if total_games > 0 else 0
-                
-                pool_lines = [
-                    f"**Unique Champions:** {unique_champs_played}/{total_games} games",
-                    f"**One-Trick Score:** {one_trick_score:.0f}% (Top 3)"
-                ]
-                
-                embed.add_field(
-                    name="🏆 Champion Pool",
-                    value="\n".join(pool_lines),
-                    inline=True
-                )
-                
-                # 5. GAME MODES
-                if self.combined_stats.get('game_modes'):
-                    mode_lines = []
-                    for mode, mode_data in self.combined_stats['game_modes'].items():
-                        games = mode_data['games']
-                        wins = mode_data['wins']
-                        wr = (wins / games * 100) if games > 0 else 0
-                        mode_lines.append(f"**{mode}:** {games} games ({wr:.0f}% WR)")
+                    # Gold efficiency rating
+                    if avg_gold_per_min >= 400:
+                        efficiency = "💎 **Excellent**"
+                    elif avg_gold_per_min >= 350:
+                        efficiency = "💰 **Good**"
+                    elif avg_gold_per_min >= 300:
+                        efficiency = "🪙 **Average**"
+                    else:
+                        efficiency = "🥉 **Below Average**"
+                    
+                    gold_lines = [
+                        f"{efficiency}",
+                        f"**{avg_gold_per_min:.0f}** gold/min",
+                        f"**{avg_gold_per_game/1000:.1f}k** avg/game"
+                    ]
                     
                     embed.add_field(
-                        name="🎲 Game Modes",
-                        value="\n".join(mode_lines[:3]) if mode_lines else "No data",
+                        name="💰 Gold Efficiency",
+                        value="\n".join(gold_lines),
                         inline=True
                     )
-                
-                # 6. CAREER MILESTONES
-                milestone_lines = [f"**Total Games:** {total_games:,}"]
-                
-                # Account age
-                if self.combined_stats.get('first_game_timestamp'):
-                    first_game_dt = datetime.fromtimestamp(self.combined_stats['first_game_timestamp'] / 1000)
-                    account_age = now - first_game_dt
-                    years = account_age.days // 365
-                    days = account_age.days % 365
-                    milestone_lines.append(f"**Account Age:** {years}y {days}d")
-                
-                # Peak rank (from current rank data)
-                peak_rank = "Unranked"
-                if self.all_ranked_stats:
-                    rank_order = {
-                        'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
-                        'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
-                        'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
-                    }
-                    
-                    def get_rank_value(rank_data):
-                        tier_val = rank_order.get(rank_data.get('tier', 'IRON'), -1)
-                        rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
-                        return tier_val * 4 + rank_val
-                    
-                    highest = max(self.all_ranked_stats, key=get_rank_value)
-                    tier = highest.get('tier', 'UNRANKED')
-                    rank = highest.get('rank', '')
-                    peak_rank = f"{tier} {rank}" if rank else tier
-                
-                milestone_lines.append(f"**Peak Rank:** {peak_rank}")
-                
-                embed.add_field(
-                    name="🏅 Career Milestones",
-                    value="\n".join(milestone_lines),
-                    inline=True
-                )
-
             
             # Set thumbnail to bot avatar GIF
             embed.set_thumbnail(url="https://cdn.discordapp.com/avatars/1274276113660645389/a_445fd12821cb7e77b1258cc379f07da7.gif?size=1024")
