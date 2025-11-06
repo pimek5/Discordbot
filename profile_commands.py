@@ -1757,7 +1757,7 @@ class ProfileView(discord.ui.View):
         
         total_games = self.combined_stats['total_games']
         
-        # Performance stats
+        # === PERFORMANCE STATS ===
         avg_kills = self.combined_stats['kills'] / total_games
         avg_deaths = self.combined_stats['deaths'] / total_games
         avg_assists = self.combined_stats['assists'] / total_games
@@ -1767,32 +1767,71 @@ class ProfileView(discord.ui.View):
         avg_vision = self.combined_stats['vision_score'] / total_games
         
         embed.add_field(
-            name=f"📊 Recent Performance ({min(20, total_games)} games)",
-            value=f"**KDA:** {kda_str}\n**CS/min:** {avg_cs_per_min:.1f} • **Vision:** {avg_vision:.0f}",
-            inline=True
+            name=f"⚔️ **Combat Stats** ({min(20, total_games)} games)",
+            value=(
+                f"**Average KDA:** {avg_kills:.1f} / {avg_deaths:.1f} / {avg_assists:.1f}\n"
+                f"**KDA Ratio:** {kda_str}\n"
+                f"**CS/min:** {avg_cs_per_min:.1f}\n"
+                f"**Vision Score:** {avg_vision:.1f}/game"
+            ),
+            inline=False
         )
         
-        # Win Rate
+        # Spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        
+        # === WIN RATE ===
         overall_wr = (self.combined_stats['wins'] / total_games * 100) if total_games > 0 else 0
-        wr_lines = [f"**Overall:** {overall_wr:.0f}% ({self.combined_stats['wins']}W/{self.combined_stats['losses']}L)"]
         
         # Best champion
         best_champ_wr = 0
         best_champ_name = "N/A"
+        best_champ_games = 0
         for champ_id, champ_data in self.combined_stats.get('champions', {}).items():
-            if champ_data['games'] >= 5:
+            if champ_data['games'] >= 3:  # Lower threshold to 3 games
                 wr = (champ_data['wins'] / champ_data['games'] * 100)
-                if wr > best_champ_wr:
+                if wr > best_champ_wr or (wr == best_champ_wr and champ_data['games'] > best_champ_games):
                     best_champ_wr = wr
+                    best_champ_games = champ_data['games']
                     best_champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f"Champion {champ_id}")
         
+        wr_text = f"**Overall:** {self.combined_stats['wins']}W - {self.combined_stats['losses']}L ({overall_wr:.0f}%)\n"
         if best_champ_name != "N/A":
             champ_emoji = get_champion_emoji(best_champ_name)
-            wr_lines.append(f"**Best:** {champ_emoji} {best_champ_name} {best_champ_wr:.0f}%")
+            wr_text += f"**Best Champion:** {champ_emoji} {best_champ_name} ({best_champ_wr:.0f}% in {best_champ_games} games)"
         
-        embed.add_field(name="🎯 Win Rate", value="\n".join(wr_lines), inline=True)
+        embed.add_field(name="🎯 **Win Rate**", value=wr_text, inline=False)
         
-        # Activity
+        # Spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        
+        # === CHAMPION POOL ===
+        unique_champs = len(self.combined_stats.get('champions', {}))
+        top_3_games = 0
+        top_3_list = []
+        if self.combined_stats.get('champions'):
+            sorted_champs = sorted(self.combined_stats['champions'].items(), key=lambda x: x[1]['games'], reverse=True)[:3]
+            top_3_games = sum(champ_data['games'] for _, champ_data in sorted_champs)
+            for champ_id, champ_data in sorted_champs:
+                champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f"Champion {champ_id}")
+                champ_emoji = get_champion_emoji(champ_name)
+                wr = (champ_data['wins'] / champ_data['games'] * 100) if champ_data['games'] > 0 else 0
+                top_3_list.append(f"{champ_emoji} {champ_name}: {champ_data['games']} games ({wr:.0f}%)")
+        
+        one_trick_score = (top_3_games / total_games * 100) if total_games > 0 else 0
+        
+        pool_text = (
+            f"**Unique Champions:** {unique_champs}\n"
+            f"**One-Trick Score:** {one_trick_score:.0f}% (Top 3 champs)\n\n"
+            f"**Most Played:**\n" + "\n".join(top_3_list) if top_3_list else f"**Unique Champions:** {unique_champs}"
+        )
+        
+        embed.add_field(name="🏆 **Champion Pool**", value=pool_text, inline=False)
+        
+        # Spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        
+        # === GAME MODES & ACTIVITY ===
         avg_game_time = self.combined_stats['game_duration'] / total_games if total_games > 0 else 0
         avg_minutes = int(avg_game_time)
         avg_seconds = int((avg_game_time - avg_minutes) * 60)
@@ -1805,40 +1844,26 @@ class ProfileView(discord.ui.View):
             role_pct = (role_count / total_games * 100)
             fav_role = f"{fav_role} ({role_pct:.0f}%)"
         
-        embed.add_field(
-            name="🎮 Activity",
-            value=f"**Total Games:** {total_games}\n**Avg Time:** {avg_minutes}m {avg_seconds}s\n**Fav Role:** {fav_role}",
-            inline=True
-        )
-        
-        # Champion Pool
-        unique_champs = len(self.combined_stats.get('champions', {}))
-        top_3_games = 0
-        if self.combined_stats.get('champions'):
-            sorted_champs = sorted(self.combined_stats['champions'].items(), key=lambda x: x[1]['games'], reverse=True)[:3]
-            top_3_games = sum(champ_data['games'] for _, champ_data in sorted_champs)
-        
-        one_trick_score = (top_3_games / total_games * 100) if total_games > 0 else 0
-        
-        embed.add_field(
-            name="🏆 Champion Pool",
-            value=f"**Unique Champions:** {unique_champs}/{total_games} games\n**One-Trick Score:** {one_trick_score:.0f}% (Top 3)",
-            inline=True
-        )
+        activity_text = f"**Total Games:** {total_games}\n**Avg Game Time:** {avg_minutes}m {avg_seconds}s\n**Favorite Role:** {fav_role}"
         
         # Game Modes
+        mode_text = ""
         if self.combined_stats.get('game_modes'):
             mode_lines = []
             for mode, mode_data in self.combined_stats['game_modes'].items():
                 games = mode_data['games']
                 wins = mode_data['wins']
                 wr = (wins / games * 100) if games > 0 else 0
-                mode_lines.append(f"**{mode}:** {games} games ({wr:.0f}% WR)")
-            
-            embed.add_field(name="🎲 Game Modes", value="\n".join(mode_lines[:3]), inline=True)
+                mode_lines.append(f"• {mode}: {games}G ({wr:.0f}% WR)")
+            mode_text = "\n\n**Queue Types:**\n" + "\n".join(mode_lines[:3])
         
-        # Career Milestones
-        milestone_lines = [f"**Total Games:** {total_games:,}"]
+        embed.add_field(name="� **Activity & Queues**", value=activity_text + mode_text, inline=False)
+        
+        # Spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        
+        # === CAREER MILESTONES ===
+        milestone_lines = []
         
         if self.combined_stats.get('first_game_timestamp'):
             first_game = datetime.fromtimestamp(self.combined_stats['first_game_timestamp'] / 1000)
@@ -1863,10 +1888,12 @@ class ProfileView(discord.ui.View):
             highest = max(self.all_ranked_stats, key=get_rank_value)
             tier = highest.get('tier', 'UNRANKED')
             rank = highest.get('rank', '')
-            peak_rank = f"{tier} {rank}" if rank else tier
+            rank_emoji = get_rank_emoji(tier)
+            peak_rank = f"{rank_emoji} {tier} {rank}" if rank else f"{rank_emoji} {tier}"
         
         milestone_lines.append(f"**Peak Rank:** {peak_rank}")
-        embed.add_field(name="🏅 Career Milestones", value="\n".join(milestone_lines), inline=True)
+        
+        embed.add_field(name="🏅 **Career Milestones**", value="\n".join(milestone_lines), inline=False)
         
         embed.set_footer(text=f"{self.target_user.display_name} • Statistics View")
         
