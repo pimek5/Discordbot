@@ -595,8 +595,8 @@ class ProfileCommands(commands.Cog):
         try:
             logger.info(f"📊 Fetching match history for {len(all_accounts)} accounts...")
             matches_fetched = 0
-            max_matches_per_account = 25  # Reduced from 50 for faster loading
-            max_total_matches = 50  # Reduced from 100
+            max_matches_per_account = 10  # Reduced from 25 for faster loading
+            max_total_matches = 20  # Reduced from 50
             
             for acc in all_accounts:
                 if not acc.get('verified'):
@@ -1077,7 +1077,8 @@ class ProfileCommands(commands.Cog):
             all_match_details=all_match_details,
             combined_stats=combined_stats,
             champ_stats=champ_stats,
-            all_ranked_stats=all_ranked_stats
+            all_ranked_stats=all_ranked_stats,
+            account_ranks=account_ranks
         )
         
         message = await interaction.followup.send(embed=embed, view=view)
@@ -1565,7 +1566,8 @@ class ProfileView(discord.ui.View):
     
     def __init__(self, cog: 'ProfileCommands', target_user: discord.Member, 
                  user_data: dict, all_accounts: list, all_match_details: list,
-                 combined_stats: dict, champ_stats: list, all_ranked_stats: list):
+                 combined_stats: dict, champ_stats: list, all_ranked_stats: list,
+                 account_ranks: dict = None):
         super().__init__(timeout=20)  # 20 seconds timeout
         self.cog = cog
         self.target_user = target_user
@@ -1573,6 +1575,7 @@ class ProfileView(discord.ui.View):
         self.all_accounts = all_accounts
         self.all_match_details = all_match_details
         self.combined_stats = combined_stats
+        self.account_ranks = account_ranks or {}
         self.champ_stats = champ_stats
         self.all_ranked_stats = all_ranked_stats
         self.current_view = "profile"
@@ -1705,7 +1708,19 @@ class ProfileView(discord.ui.View):
         
         for i, acc in enumerate(self.all_accounts):
             primary_badge = "⭐ " if acc['puuid'] == primary_puuid else ""
-            acc_text = f"{primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
+            
+            # Get rank emoji for this account
+            rank_display = ""
+            if acc['puuid'] in self.account_ranks:
+                acc_rank_data = self.account_ranks[acc['puuid']]
+                if 'solo' in acc_rank_data:
+                    solo_rank = acc_rank_data['solo']
+                    tier = solo_rank.get('tier', 'UNRANKED')
+                    rank = solo_rank.get('rank', '')
+                    rank_emoji = get_rank_emoji(tier)
+                    rank_display = f" {rank_emoji} {tier} {rank}" if rank else f" {rank_emoji} {tier}"
+            
+            acc_text = f"{primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}{rank_display}"
             
             if i % 2 == 0:
                 left_col.append(acc_text)
