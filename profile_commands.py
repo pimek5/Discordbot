@@ -1768,11 +1768,15 @@ class ProfileView(discord.ui.View):
             duration = match['info']['gameDuration']
             if duration > 1000:
                 duration = duration / 1000
-            duration_min = int(duration / 60)
+            
+            # Format duration as MM:SS
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+            duration_str = f"{minutes}:{seconds:02d}"
             
             embed.add_field(
                 name=f"{game_mode}",
-                value=f"{result_emoji} {champ_emoji} **{champion}** • {kills}/{deaths}/{assists} • {duration_min}m",
+                value=f"{result_emoji} {champ_emoji} **{champion}** • {kills}/{deaths}/{assists} • {duration_str}",
                 inline=False
             )
         
