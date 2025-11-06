@@ -552,6 +552,9 @@ class ProfileCommands(commands.Cog):
         
         # Get champion stats (aggregated across all accounts)
         champ_stats = db.get_user_champion_stats(db_user['id'])
+        logger.info(f"📊 Champion stats count: {len(champ_stats) if champ_stats else 0}")
+        if champ_stats:
+            logger.info(f"   Top 3 champions: {[(CHAMPION_ID_TO_NAME.get(c['champion_id'], 'Unknown'), c['level'], c['score']) for c in sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:3]]}")
         
         # Fetch fresh summoner data and rank info for ALL accounts
         all_ranked_stats = []
@@ -1006,7 +1009,7 @@ class ProfileCommands(commands.Cog):
             if highest_solo:
                 tier = highest_solo.get('tier', 'UNRANKED')
                 rank = highest_solo.get('rank', '')
-                rank_emoji = RANK_EMOJIS.get(tier, '❓')
+                rank_emoji = get_rank_emoji(tier)
                 ranked_lines.append(f"**Ranked Solo:** {rank_emoji} **{tier} {rank}**")
             else:
                 ranked_lines.append("**Ranked Solo:** Unranked")
@@ -1014,7 +1017,7 @@ class ProfileCommands(commands.Cog):
             if highest_flex:
                 tier = highest_flex.get('tier', 'UNRANKED')
                 rank = highest_flex.get('rank', '')
-                rank_emoji = RANK_EMOJIS.get(tier, '❓')
+                rank_emoji = get_rank_emoji(tier)
                 ranked_lines.append(f"**Ranked Flex:** {rank_emoji} **{tier} {rank}**")
             else:
                 ranked_lines.append("**Ranked Flex:** Unranked")
