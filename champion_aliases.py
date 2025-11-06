@@ -65,6 +65,9 @@ CHAMPION_ALIASES = {
     'hec': 'Hecarim', 'heimer': 'Heimerdinger', 'blitz': 'Blitzcrank', 'gp': 'Gangplank',
     'yumi': 'Yuumi', 'vel': 'Velkoz',
     
+    # Newer champions (additional aliases)
+    'mel': 'Mel', 'yunara': 'Yunara', 'ambessa': 'Ambessa',
+    
     # With spaces/apostrophes
     'aurelion sol': 'AurelionSol', 'dr mundo': 'DrMundo', 'dr. mundo': 'DrMundo',
     'jarvan iv': 'JarvanIV', 'lee sin': 'LeeSin', 'master yi': 'MasterYi',
