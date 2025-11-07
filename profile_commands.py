@@ -1960,39 +1960,33 @@ class ProfileView(discord.ui.View):
                     inline=True
                 )
         
-        # Top Champions section (from recent matches, not mastery DB)
-        if filtered_matches:
-            # Count champion plays
-            champion_plays = {}
-            for match_data in filtered_matches[:20]:  # Last 20 games
-                match = match_data['match']
-                puuid = match_data['puuid']
-                for participant in match['info']['participants']:
-                    if participant['puuid'] == puuid:
-                        champ_name = participant.get('championName', '')
-                        if champ_name:
-                            if champ_name not in champion_plays:
-                                champion_plays[champ_name] = {'games': 0, 'wins': 0}
-                            champion_plays[champ_name]['games'] += 1
-                            if participant.get('win'):
-                                champion_plays[champ_name]['wins'] += 1
-                        break
-            
-            # Sort by games played
-            top_champs = sorted(champion_plays.items(), key=lambda x: x[1]['games'], reverse=True)[:3]
+        # Top Champions section (by mastery points from database)
+        if self.champ_stats and len(self.champ_stats) > 0:
+            top_champs = sorted(self.champ_stats, key=lambda x: x['score'], reverse=True)[:3]
             
             champ_lines = []
-            for champ_name, stats in top_champs:
-                games = stats['games']
-                wins = stats['wins']
-                winrate = (wins / games * 100) if games > 0 else 0
+            for champ in top_champs:
+                champ_name = CHAMPION_ID_TO_NAME.get(champ['champion_id'], f"Champion {champ['champion_id']}")
+                points = champ['score']
+                level = champ['level']
                 
+                # Format points
+                if points >= 1000000:
+                    points_str = f"{points/1000000:.2f}M"
+                elif points >= 1000:
+                    points_str = f"{points/1000:.0f}K"
+                else:
+                    points_str = f"{points:,}"
+                
+                # Get champion emoji and mastery emoji
                 champ_emoji = get_champion_emoji(champ_name)
-                champ_lines.append(f"{champ_emoji} **{champ_name}** • {games}G {winrate:.0f}% WR")
+                mastery_emoji = get_mastery_emoji(level)
+                
+                champ_lines.append(f"{champ_emoji} {mastery_emoji} **{champ_name}** • {points_str}")
             
             embed.add_field(
-                name="🎮 Most Played",
-                value="\n".join(champ_lines) if champ_lines else "No games",
+                name="⭐ Top Champions",
+                value="\n".join(champ_lines),
                 inline=True
             )
             
