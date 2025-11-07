@@ -1786,6 +1786,90 @@ class ProfileView(discord.ui.View):
             except Exception as e:
                 logger.error(f"❌ Failed to delete profile embed: {e}")
     
+    async def create_ranks_embed(self) -> discord.Embed:
+        """Create embed showing ranks for all accounts grouped by region"""
+        embed = discord.Embed(
+            title=f"🏆 **Ranked Overview**",
+            description=f"**{self.target_user.display_name}**'s ranks across all accounts",
+            color=0xF1C40F  # Gold color
+        )
+        
+        # Group accounts by region
+        accounts_by_region = {}
+        for acc in self.all_accounts:
+            region = acc['region'].upper()
+            if region not in accounts_by_region:
+                accounts_by_region[region] = []
+            accounts_by_region[region].append(acc)
+        
+        # Display each region
+        for region, accounts in sorted(accounts_by_region.items()):
+            region_lines = []
+            
+            for acc in accounts:
+                account_name = f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
+                
+                # Get rank data for this account
+                account_ranks = self.account_ranks.get(acc['puuid'], {})
+                solo_rank = account_ranks.get('solo')
+                flex_rank = account_ranks.get('flex')
+                
+                # Display Solo/Duo rank (primary)
+                if solo_rank:
+                    tier = solo_rank.get('tier', 'UNRANKED')
+                    rank = solo_rank.get('rank', '')
+                    lp = solo_rank.get('leaguePoints', 0)
+                    wins = solo_rank.get('wins', 0)
+                    losses = solo_rank.get('losses', 0)
+                    total = wins + losses
+                    winrate = (wins / total * 100) if total > 0 else 0
+                    
+                    rank_emoji = get_rank_emoji(tier)
+                    rank_display = f"{tier.title()} {rank}" if rank else tier.title()
+                    
+                    region_lines.append(
+                        f"{rank_emoji} **{account_name}**\n"
+                        f"└ Solo/Duo: **{rank_display}** • {lp} LP • {winrate:.0f}% WR ({wins}W-{losses}L)"
+                    )
+                elif flex_rank:
+                    # Show flex if no solo rank
+                    tier = flex_rank.get('tier', 'UNRANKED')
+                    rank = flex_rank.get('rank', '')
+                    lp = flex_rank.get('leaguePoints', 0)
+                    wins = flex_rank.get('wins', 0)
+                    losses = flex_rank.get('losses', 0)
+                    total = wins + losses
+                    winrate = (wins / total * 100) if total > 0 else 0
+                    
+                    rank_emoji = get_rank_emoji(tier)
+                    rank_display = f"{tier.title()} {rank}" if rank else tier.title()
+                    
+                    region_lines.append(
+                        f"{rank_emoji} **{account_name}**\n"
+                        f"└ Flex: **{rank_display}** • {lp} LP • {winrate:.0f}% WR ({wins}W-{losses}L)"
+                    )
+                else:
+                    # Unranked
+                    rank_emoji = "⭐"
+                    region_lines.append(
+                        f"{rank_emoji} **{account_name}**\n"
+                        f"└ Unranked this season"
+                    )
+            
+            if region_lines:
+                embed.add_field(
+                    name=f"📍 {region}",
+                    value="\n".join(region_lines),
+                    inline=False
+                )
+        
+        # Footer with account count
+        visible_count = sum(1 for acc in self.all_accounts if acc.get('show_in_profile', True))
+        total_count = len(self.all_accounts)
+        embed.set_footer(text=f"Showing {total_count} account(s) • {visible_count} visible in stats")
+        
+        return embed
+    
     def filter_matches_by_queue(self, matches: list) -> list:
         """Filter matches based on current queue_filter setting"""
         if self.queue_filter == 'all':
@@ -1876,54 +1960,57 @@ class ProfileView(discord.ui.View):
                     inline=True
                 )
         
-        # Top Champions section (only top 3)
-        if self.champ_stats and len(self.champ_stats) > 0:
-            top_champs = sorted(self.champ_stats, key=lambda x: x['score'], reverse=True)[:3]
+        # Top Champions section (from recent matches, not mastery DB)
+        if filtered_matches:
+            # Count champion plays
+            champion_plays = {}
+            for match_data in filtered_matches[:20]:  # Last 20 games
+                match = match_data['match']
+                puuid = match_data['puuid']
+                for participant in match['info']['participants']:
+                    if participant['puuid'] == puuid:
+                        champ_name = participant.get('championName', '')
+                        if champ_name:
+                            if champ_name not in champion_plays:
+                                champion_plays[champ_name] = {'games': 0, 'wins': 0}
+                            champion_plays[champ_name]['games'] += 1
+                            if participant.get('win'):
+                                champion_plays[champ_name]['wins'] += 1
+                        break
+            
+            # Sort by games played
+            top_champs = sorted(champion_plays.items(), key=lambda x: x[1]['games'], reverse=True)[:3]
             
             champ_lines = []
-            for i, champ in enumerate(top_champs, 1):
-                champ_name = CHAMPION_ID_TO_NAME.get(champ['champion_id'], f"Champion {champ['champion_id']}")
-                points = champ['score']
-                level = champ['level']
+            for champ_name, stats in top_champs:
+                games = stats['games']
+                wins = stats['wins']
+                winrate = (wins / games * 100) if games > 0 else 0
                 
-                # Format points
-                if points >= 1000000:
-                    points_str = f"{points/1000000:.2f}m"
-                elif points >= 1000:
-                    points_str = f"{points/1000:.0f}k"
-                else:
-                    points_str = f"{points:,}"
-                
-                # Get champion emoji and mastery emoji
                 champ_emoji = get_champion_emoji(champ_name)
-                mastery_emoji = get_mastery_emoji(level)
+                champ_lines.append(f"{champ_emoji} **{champ_name}** • {games}G {winrate:.0f}% WR")
+            
+            embed.add_field(
+                name="🎮 Most Played",
+                value="\n".join(champ_lines) if champ_lines else "No games",
+                inline=True
+            )
+            
+            # Total Mastery (simplified)
+            if self.champ_stats:
+                total_champs = len(self.champ_stats)
+                total_points = sum(c['score'] for c in self.champ_stats)
                 
-                champ_lines.append(f"{champ_emoji} {mastery_emoji} **{champ_name} - {points_str}**")
-            
-            embed.add_field(
-                name="Top Champions",
-                value="\n".join(champ_lines),
-                inline=True
-            )
-            
-            # Mastery statistics
-            total_champs = len(self.champ_stats)
-            level_10_plus = sum(1 for c in self.champ_stats if c['level'] >= 10)
-            total_points = sum(c['score'] for c in self.champ_stats)
-            avg_points = total_points // total_champs if total_champs > 0 else 0
-            avg_str = f"{avg_points/1000:.1f}k" if avg_points >= 1000 else f"{avg_points:,}"
-
-            mastery_lines = [
-                f"**{level_10_plus}x** Level 10+",
-                f"**{total_points:,}** Total Points",
-                f"**{avg_str}** Avg/Champ"
-            ]
-
-            embed.add_field(
-                name="Mastery Statistics",
-                value="\n".join(mastery_lines),
-                inline=True
-            )
+                if total_points >= 1000000:
+                    points_str = f"{total_points/1000000:.1f}M"
+                else:
+                    points_str = f"{total_points/1000:.0f}K"
+                
+                embed.add_field(
+                    name="📈 Total Mastery",
+                    value=f"**{points_str}** points\n**{total_champs}** champions",
+                    inline=True
+                )
 
             # Recently Played
             recently_played = []
@@ -2847,6 +2934,17 @@ class ProfileView(discord.ui.View):
         embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
+    @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, emoji="🏆", row=0)
+    async def ranks_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Switch to ranks view showing all accounts"""
+        if self.current_view == "ranks":
+            await interaction.response.defer()
+            return
+        
+        self.current_view = "ranks"
+        embed = await self.create_ranks_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
     # Queue filter buttons (second row) - work for all views
     @discord.ui.button(label="All", style=discord.ButtonStyle.primary, emoji="📋", row=1)
     async def filter_all_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2860,8 +2958,10 @@ class ProfileView(discord.ui.View):
             embed = await self.create_stats_embed()
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
-        else:  # lp
+        elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        else:  # ranks
+            embed = await self.create_ranks_embed()
         
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2877,8 +2977,10 @@ class ProfileView(discord.ui.View):
             embed = await self.create_stats_embed()
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
-        else:  # lp
+        elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        else:  # ranks
+            embed = await self.create_ranks_embed()
         
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2894,8 +2996,10 @@ class ProfileView(discord.ui.View):
             embed = await self.create_stats_embed()
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
-        else:  # lp
+        elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        else:  # ranks
+            embed = await self.create_ranks_embed()
         
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2911,8 +3015,10 @@ class ProfileView(discord.ui.View):
             embed = await self.create_stats_embed()
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
-        else:  # lp
+        elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        else:  # ranks
+            embed = await self.create_ranks_embed()
         
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -2928,8 +3034,10 @@ class ProfileView(discord.ui.View):
             embed = await self.create_stats_embed()
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
-        else:  # lp
+        elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        else:  # ranks
+            embed = await self.create_ranks_embed()
         
         await interaction.response.edit_message(embed=embed, view=self)
 
