@@ -1565,6 +1565,158 @@ class ProfileCommands(commands.Cog):
         embed.set_footer(text=f"Accounts: {accounts_list}")
         
         await interaction.followup.send(embed=embed)
+    
+    @app_commands.command(name="ingame", description="Check if a player is currently in game")
+    @app_commands.describe(user="Discord user to check (leave empty for yourself)")
+    async def ingame_command(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        """Check if player is currently in an active game"""
+        await interaction.response.defer()
+        
+        target_user = user or interaction.user
+        
+        # Get user's linked accounts
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+            SELECT puuid, region, riot_id_game_name, riot_id_tagline, verified
+            FROM league_accounts
+            WHERE discord_id = ?
+        ''', (target_user.id,))
+        accounts = cursor.fetchall()
+        
+        if not accounts:
+            await interaction.followup.send(
+                f"❌ {target_user.mention} has no linked Riot accounts. Use `/link` to link an account.",
+                ephemeral=True
+            )
+            return
+        
+        # Convert to dict
+        accounts = [
+            {
+                'puuid': acc[0],
+                'region': acc[1],
+                'riot_id_game_name': acc[2],
+                'riot_id_tagline': acc[3],
+                'verified': bool(acc[4])
+            }
+            for acc in accounts
+        ]
+        
+        # Check each account for active game
+        active_game = None
+        active_account = None
+        
+        for account in accounts:
+            if not account['verified']:
+                continue
+            
+            game_data = await self.riot_api.get_active_game(
+                account['puuid'],
+                account['region']
+            )
+            
+            if game_data:
+                active_game = game_data
+                active_account = account
+                break
+        
+        # Create embed
+        if active_game:
+            # Check if streamer mode is enabled
+            participants = active_game.get('participants', [])
+            player_data = None
+            for p in participants:
+                if p.get('puuid') == active_account['puuid']:
+                    player_data = p
+                    break
+            
+            # Check for streamer mode (gameCustomization includes "clientSideToggleASolution")
+            is_streamer_mode = False
+            if player_data:
+                customization = player_data.get('gameCustomization', {})
+                if 'clientSideToggleASolution' in str(customization):
+                    is_streamer_mode = True
+            
+            if is_streamer_mode:
+                embed = discord.Embed(
+                    title=f"🎮 {target_user.display_name} is in game",
+                    description=f"**{active_account['riot_id_game_name']}#{active_account['riot_id_tagline']}**\n\n🔒 **Streamer Mode: ON**\n*Game details hidden*",
+                    color=0xFF6B6B
+                )
+            else:
+                # Get game info
+                game_mode = active_game.get('gameMode', 'Unknown')
+                game_type = active_game.get('gameType', 'Unknown')
+                game_queue_id = active_game.get('gameQueueConfigId', 0)
+                game_length = active_game.get('gameLength', 0) // 60  # Convert to minutes
+                
+                # Map queue ID to name
+                queue_names = {
+                    420: "Ranked Solo/Duo",
+                    440: "Ranked Flex",
+                    400: "Normal Draft",
+                    430: "Normal Blind",
+                    450: "ARAM",
+                    490: "Quickplay",
+                    700: "Clash",
+                    1700: "Arena"
+                }
+                queue_name = queue_names.get(game_queue_id, game_mode)
+                
+                # Get champion
+                champion_id = player_data.get('championId', 0) if player_data else 0
+                champion_name = CHAMPION_ID_TO_NAME.get(champion_id, f"Champion {champion_id}")
+                champ_emoji = get_champion_emoji(champion_name)
+                
+                embed = discord.Embed(
+                    title=f"🎮 {target_user.display_name} is in game!",
+                    description=f"**{active_account['riot_id_game_name']}#{active_account['riot_id_tagline']}**",
+                    color=0x00FF00
+                )
+                
+                embed.add_field(
+                    name="Game Info",
+                    value=f"**Mode:** {queue_name}\n**Champion:** {champ_emoji} {champion_name}\n**Duration:** {game_length} minutes",
+                    inline=False
+                )
+                
+                # Team composition (simplified)
+                team_id = player_data.get('teamId', 0) if player_data else 0
+                teammates = [p for p in participants if p.get('teamId') == team_id and p.get('puuid') != active_account['puuid']]
+                
+                if teammates:
+                    teammate_champs = []
+                    for tm in teammates[:4]:  # Show max 4 teammates
+                        tm_champ_id = tm.get('championId', 0)
+                        tm_champ_name = CHAMPION_ID_TO_NAME.get(tm_champ_id, f"Champion {tm_champ_id}")
+                        tm_emoji = get_champion_emoji(tm_champ_name)
+                        teammate_champs.append(f"{tm_emoji} {tm_champ_name}")
+                    
+                    embed.add_field(
+                        name="Team",
+                        value="\n".join(teammate_champs),
+                        inline=True
+                    )
+        else:
+            # Not in game
+            embed = discord.Embed(
+                title=f"💤 {target_user.display_name} is not in game",
+                description=f"Currently offline or in lobby",
+                color=0x808080
+            )
+            
+            verified_accounts = [acc for acc in accounts if acc['verified']]
+            if verified_accounts:
+                accounts_text = "\n".join([f"• {acc['riot_id_game_name']}#{acc['riot_id_tagline']} ({acc['region'].upper()})" for acc in verified_accounts])
+                embed.add_field(
+                    name="Checked Accounts",
+                    value=accounts_text,
+                    inline=False
+                )
+        
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.followup.send(embed=embed)
 
 
 # ==================== INTERACTIVE PROFILE VIEW ====================
