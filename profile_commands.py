@@ -11,6 +11,7 @@ import string
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
+import asyncio
 
 from database import get_db
 from riot_api import RiotAPI, RIOT_REGIONS, get_champion_icon_url, get_rank_icon_url, CHAMPION_ID_TO_NAME
@@ -1425,7 +1426,15 @@ class ProfileCommands(commands.Cog):
         else:
             embed.set_footer(text=f"{target_user.display_name} • Today's LP gains")
         
-        await interaction.followup.send(embed=embed)
+        message = await interaction.followup.send(embed=embed)
+        
+        # Auto-delete after 2 minutes
+        await asyncio.sleep(120)
+        try:
+            await message.delete()
+            logger.info(f"🗑️ Auto-deleted LP embed for {target_user.display_name} after 2 minutes")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not delete LP embed: {e}")
     
     @app_commands.command(name="matches", description="View recent match history from all linked accounts")
     @app_commands.describe(user="The user to view (defaults to yourself)")
@@ -1575,7 +1584,15 @@ class ProfileCommands(commands.Cog):
         accounts_list = ", ".join([f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}" for acc in all_accounts if acc.get('verified')])
         embed.set_footer(text=f"Accounts: {accounts_list}")
         
-        await interaction.followup.send(embed=embed)
+        message = await interaction.followup.send(embed=embed)
+        
+        # Auto-delete after 2 minutes
+        await asyncio.sleep(120)
+        try:
+            await message.delete()
+            logger.info(f"🗑️ Auto-deleted Matches embed for {target_user.display_name} after 2 minutes")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not delete Matches embed: {e}")
 
 
 # ==================== INTERACTIVE PROFILE VIEW ====================
@@ -1587,7 +1604,7 @@ class ProfileView(discord.ui.View):
                  user_data: dict, all_accounts: list, all_match_details: list,
                  combined_stats: dict, champ_stats: list, all_ranked_stats: list,
                  account_ranks: dict = None, active_game: dict = None):
-        super().__init__(timeout=20)  # 20 seconds timeout
+        super().__init__(timeout=120)  # 2 minutes timeout
         self.cog = cog
         self.target_user = target_user
         self.user_data = user_data
