@@ -2006,25 +2006,43 @@ class ProfileView(discord.ui.View):
                     inline=True
                 )
         
-        # Recently Played (unique champions from last 10 filtered matches)
+        # Recently Played (unique champions from last matches with timestamp)
         if filtered_matches:
             recently_played = []
             for match_data in filtered_matches[:20]:  # Check last 20 games
                 match = match_data['match']
                 puuid = match_data['puuid']
+                game_timestamp = match['info'].get('gameCreation', 0)
+                
                 for participant in match['info']['participants']:
                     if participant['puuid'] == puuid:
                         champ = participant.get('championName', '')
-                        if champ and champ not in recently_played:
-                            recently_played.append(champ)
+                        if champ and champ not in [r['champion'] for r in recently_played]:
+                            recently_played.append({
+                                'champion': champ,
+                                'timestamp': game_timestamp
+                            })
                         break
                 if len(recently_played) >= 3:
                     break
             
             recent_lines = []
-            for champ_name in recently_played[:3]:
-                champ_emoji = get_champion_emoji(champ_name)
-                recent_lines.append(f"{champ_emoji} **{champ_name}**")
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            
+            for game in recently_played[:3]:
+                champ_emoji = get_champion_emoji(game['champion'])
+                game_time = datetime.fromtimestamp(game['timestamp'] / 1000)
+                time_diff = now - game_time
+                
+                if time_diff < timedelta(hours=1):
+                    time_str = f"{int(time_diff.total_seconds() / 60)}m ago"
+                elif time_diff < timedelta(days=1):
+                    time_str = f"{int(time_diff.total_seconds() / 3600)}h ago"
+                else:
+                    time_str = f"{time_diff.days}d ago"
+                
+                recent_lines.append(f"{champ_emoji} **{game['champion']}** • {time_str}")
             
             embed.add_field(
                 name="🕐 Recently Played",
