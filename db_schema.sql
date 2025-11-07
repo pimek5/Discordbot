@@ -128,6 +128,17 @@ CREATE TABLE IF NOT EXISTS voting_votes (
     UNIQUE(session_id, user_id, rank_position)
 );
 
+-- Permanent help embed (survives bot restarts)
+CREATE TABLE IF NOT EXISTS help_embed (
+    id SERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    message_id BIGINT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    last_updated TIMESTAMP DEFAULT NOW(),
+    UNIQUE(guild_id, channel_id)
+);
+
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_snowflake ON users(snowflake);
 CREATE INDEX IF NOT EXISTS idx_league_accounts_user ON league_accounts(user_id);
@@ -142,3 +153,4 @@ CREATE INDEX IF NOT EXISTS idx_allowed_channels_guild ON allowed_channels(guild_
 CREATE INDEX IF NOT EXISTS idx_voting_sessions_status ON voting_sessions(status);
 CREATE INDEX IF NOT EXISTS idx_voting_votes_session ON voting_votes(session_id);
 CREATE INDEX IF NOT EXISTS idx_voting_votes_user ON voting_votes(user_id);
+CREATE INDEX IF NOT EXISTS idx_help_embed_guild ON help_embed(guild_id);

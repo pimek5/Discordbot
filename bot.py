@@ -491,6 +491,10 @@ class MyBot(commands.Bot):
                 from vote_commands import VoteCommands
                 await self.add_cog(VoteCommands(self))
                 
+                # Load help commands
+                import help_commands
+                await help_commands.setup(self, GUILD_ID)
+                
                 print("✅ Kassalytics commands registered")
                 
                 orianna_initialized = True
