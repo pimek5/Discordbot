@@ -572,16 +572,28 @@ class ProfileCommands(commands.Cog):
         all_ranked_stats = []
         account_ranks = {}  # Store rank per account: {puuid: {solo: {...}, flex: {...}}}
         
+        logger.info(f"🔍 Fetching ranks for {len(all_accounts)} total accounts")
+        
         for acc in all_accounts:
             if not acc.get('verified'):
+                logger.info(f"⏭️ Skipping unverified account: {acc['riot_id_game_name']}#{acc['riot_id_tagline']}")
                 continue
+            
+            logger.info(f"🔍 Fetching ranks for {acc['riot_id_game_name']}#{acc['riot_id_tagline']} ({acc['region'].upper()})")
             
             # Fetch fresh summoner data to get summoner ID
             summoner_data = await self.riot_api.get_summoner_by_puuid(acc['puuid'], acc['region'])
             if summoner_data and 'id' in summoner_data:
+                logger.info(f"✅ Got summoner ID: {summoner_data['id'][:20]}...")
+                
                 # Fetch ranked stats using summoner ID
                 ranks = await self.riot_api.get_ranked_stats(summoner_data['id'], acc['region'])
+                
                 if ranks:
+                    logger.info(f"✅ Got {len(ranks)} rank entries for {acc['riot_id_game_name']}")
+                    for rank_data in ranks:
+                        logger.info(f"   - Queue: {rank_data.get('queueType')} | {rank_data.get('tier')} {rank_data.get('rank')}")
+                    
                     # Only add to all_ranked_stats if account is visible (for stats calculation)
                     if acc in visible_accounts:
                         all_ranked_stats.extend(ranks)
@@ -591,8 +603,14 @@ class ProfileCommands(commands.Cog):
                     for rank_data in ranks:
                         if 'SOLO' in rank_data.get('queueType', ''):
                             account_ranks[acc['puuid']]['solo'] = rank_data
+                            logger.info(f"   ✅ Stored Solo/Duo rank for {acc['riot_id_game_name']}")
                         elif 'FLEX' in rank_data.get('queueType', ''):
                             account_ranks[acc['puuid']]['flex'] = rank_data
+                            logger.info(f"   ✅ Stored Flex rank for {acc['riot_id_game_name']}")
+                else:
+                    logger.warning(f"⚠️ No ranks returned for {acc['riot_id_game_name']}")
+            else:
+                logger.error(f"❌ Failed to get summoner data for {acc['riot_id_game_name']}#{acc['riot_id_tagline']}")
         
         # Fetch fresh summoner data for primary account (for display)
         fresh_summoner = await self.riot_api.get_summoner_by_puuid(account['puuid'], account['region'])
@@ -1791,6 +1809,10 @@ class ProfileView(discord.ui.View):
     
     async def create_ranks_embed(self) -> discord.Embed:
         """Create embed showing ranks for all accounts grouped by region"""
+        logger.info(f"📊 Creating Ranks embed for {self.target_user.display_name}")
+        logger.info(f"   Total accounts: {len(self.all_accounts)}")
+        logger.info(f"   Accounts with rank data: {len(self.account_ranks)}")
+        
         embed = discord.Embed(
             title=f"🏆 **Ranked Overview**",
             description=f"**{self.target_user.display_name}**'s ranks across all accounts",
@@ -1816,6 +1838,12 @@ class ProfileView(discord.ui.View):
                 account_ranks = self.account_ranks.get(acc['puuid'], {})
                 solo_rank = account_ranks.get('solo')
                 flex_rank = account_ranks.get('flex')
+                
+                logger.info(f"   📊 {account_name}: Solo={bool(solo_rank)}, Flex={bool(flex_rank)}")
+                if solo_rank:
+                    logger.info(f"      Solo: {solo_rank.get('tier')} {solo_rank.get('rank')} {solo_rank.get('leaguePoints')}LP")
+                if flex_rank:
+                    logger.info(f"      Flex: {flex_rank.get('tier')} {flex_rank.get('rank')} {flex_rank.get('leaguePoints')}LP")
                 
                 # Display Solo/Duo rank (primary)
                 if solo_rank:
