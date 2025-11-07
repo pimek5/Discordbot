@@ -157,6 +157,20 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    def get_visible_user_accounts(self, user_id: int) -> List[Dict]:
+        """Get only visible League accounts for a user (for profile stats)"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM league_accounts 
+                    WHERE user_id = %s AND show_in_profile = TRUE
+                    ORDER BY primary_account DESC, created_at ASC
+                """, (user_id,))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+    
     def get_primary_account(self, user_id: int) -> Optional[Dict]:
         """Get primary League account for a user"""
         conn = self.get_connection()

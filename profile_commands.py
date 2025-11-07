@@ -537,11 +537,22 @@ class ProfileCommands(commands.Cog):
             await interaction.followup.send(embed=embed)
             return
         
-        # Get all accounts
+        # Get all accounts (including hidden ones for /accounts command)
         all_accounts = db.get_user_accounts(db_user['id'])
         
         if not all_accounts or len(all_accounts) == 0:
             await interaction.followup.send("❌ No linked account found!", ephemeral=True)
+            return
+        
+        # Get only VISIBLE accounts for stats calculation
+        visible_accounts = db.get_visible_user_accounts(db_user['id'])
+        
+        if not visible_accounts or len(visible_accounts) == 0:
+            await interaction.followup.send(
+                "❌ No visible accounts! All your accounts are hidden.\n"
+                "Use `/accounts` to make at least one account visible.",
+                ephemeral=True
+            )
             return
         
         # Get primary account
@@ -557,11 +568,11 @@ class ProfileCommands(commands.Cog):
         if champ_stats:
             logger.info(f"   Top 3 champions: {[(CHAMPION_ID_TO_NAME.get(c['champion_id'], 'Unknown'), c['level'], c['score']) for c in sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:3]]}")
         
-        # Fetch fresh summoner data and rank info for ALL accounts
+        # Fetch fresh summoner data and rank info for VISIBLE accounts
         all_ranked_stats = []
         account_ranks = {}  # Store rank per account: {puuid: {solo: {...}, flex: {...}}}
         
-        for acc in all_accounts:
+        for acc in visible_accounts:
             if not acc.get('verified'):
                 continue
             
@@ -589,7 +600,7 @@ class ProfileCommands(commands.Cog):
             summoner_level = account['summoner_level']
             profile_icon = account.get('profile_icon_id', 0)
         
-        # Fetch match history from all accounts for comprehensive stats
+        # Fetch match history from VISIBLE accounts for comprehensive stats
         all_match_details = []
         recently_played = []
         
@@ -597,12 +608,12 @@ class ProfileCommands(commands.Cog):
         fetch_start = time.time()
         
         try:
-            logger.info(f"📊 Fetching match history for {len(all_accounts)} accounts...")
+            logger.info(f"📊 Fetching match history for {len(visible_accounts)} visible accounts...")
             
-            # First, collect ALL match IDs from all accounts
+            # First, collect ALL match IDs from visible accounts
             all_match_ids_with_context = []  # [(match_id, puuid, region), ...]
             
-            for acc in all_accounts:
+            for acc in visible_accounts:
                 if not acc.get('verified'):
                     continue
                 
@@ -1248,12 +1259,13 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        # Get all accounts
-        all_accounts = db.get_user_accounts(user_data['id'])
+        # Get visible accounts for LP calculation
+        all_accounts = db.get_visible_user_accounts(user_data['id'])
         
         if not all_accounts or not any(acc.get('verified') for acc in all_accounts):
             await interaction.followup.send(
-                f"❌ {target_user.mention} has no verified accounts!",
+                f"❌ {target_user.mention} has no visible verified accounts!\n"
+                "Use `/accounts` to make accounts visible.",
                 ephemeral=True
             )
             return
@@ -1453,12 +1465,13 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        # Get all accounts
-        all_accounts = db.get_user_accounts(user_data['id'])
+        # Get visible accounts for matches
+        all_accounts = db.get_visible_user_accounts(user_data['id'])
         
         if not all_accounts:
             await interaction.followup.send(
-                f"❌ {target_user.mention} has no linked accounts!",
+                f"❌ {target_user.mention} has no visible accounts!\n"
+                "Use `/accounts` to make accounts visible.",
                 ephemeral=True
             )
             return
@@ -1593,6 +1606,151 @@ class ProfileCommands(commands.Cog):
             logger.info(f"🗑️ Auto-deleted Matches embed for {target_user.display_name} after 2 minutes")
         except Exception as e:
             logger.warning(f"⚠️ Could not delete Matches embed: {e}")
+    
+    @app_commands.command(name="accounts", description="Manage visibility of your linked League accounts")
+    async def accounts(self, interaction: discord.Interaction):
+        """Manage which accounts are visible in /profile statistics"""
+        await interaction.response.defer(ephemeral=True)
+        
+        db = get_db()
+        user_data = db.get_user_by_discord_id(interaction.user.id)
+        
+        if not user_data:
+            await interaction.followup.send(
+                "❌ You don't have any linked accounts! Use `/link` first.",
+                ephemeral=True
+            )
+            return
+        
+        # Get all accounts
+        all_accounts = db.get_user_accounts(user_data['id'])
+        
+        if not all_accounts:
+            await interaction.followup.send(
+                "❌ You don't have any linked accounts! Use `/link` first.",
+                ephemeral=True
+            )
+            return
+        
+        # Create view with toggle buttons
+        view = AccountVisibilityView(db, user_data['id'], all_accounts)
+        embed = view.create_embed()
+        
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+
+# ==================== ACCOUNT VISIBILITY VIEW ====================
+
+class AccountVisibilityView(discord.ui.View):
+    """Interactive view for managing account visibility"""
+    
+    def __init__(self, db, user_id: int, accounts: list):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.db = db
+        self.user_id = user_id
+        self.accounts = accounts
+        
+        # Add toggle button for each account
+        for account in accounts:
+            button = discord.ui.Button(
+                label=f"{account['riot_id_game_name']}#{account['riot_id_tagline']}",
+                style=discord.ButtonStyle.success if account.get('show_in_profile', True) else discord.ButtonStyle.secondary,
+                emoji="👁️" if account.get('show_in_profile', True) else "🚫",
+                custom_id=f"toggle_{account['id']}"
+            )
+            button.callback = self.create_callback(account['id'])
+            self.add_item(button)
+    
+    def create_callback(self, account_id: int):
+        """Create callback for specific account button"""
+        async def callback(interaction: discord.Interaction):
+            # Toggle visibility
+            conn = self.db.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    # Get current state
+                    cur.execute("""
+                        SELECT show_in_profile FROM league_accounts 
+                        WHERE id = %s AND user_id = %s
+                    """, (account_id, self.user_id))
+                    result = cur.fetchone()
+                    
+                    if not result:
+                        await interaction.response.send_message("❌ Account not found!", ephemeral=True)
+                        return
+                    
+                    current_state = result[0]
+                    new_state = not current_state
+                    
+                    # Update state
+                    cur.execute("""
+                        UPDATE league_accounts 
+                        SET show_in_profile = %s, last_updated = NOW()
+                        WHERE id = %s AND user_id = %s
+                    """, (new_state, account_id, self.user_id))
+                    conn.commit()
+                    
+                    # Update local accounts list
+                    for acc in self.accounts:
+                        if acc['id'] == account_id:
+                            acc['show_in_profile'] = new_state
+                            break
+                    
+                    # Recreate view with updated buttons
+                    new_view = AccountVisibilityView(self.db, self.user_id, self.accounts)
+                    embed = new_view.create_embed()
+                    
+                    await interaction.response.edit_message(embed=embed, view=new_view)
+                    
+            finally:
+                self.db.return_connection(conn)
+        
+        return callback
+    
+    def create_embed(self) -> discord.Embed:
+        """Create embed showing account visibility status"""
+        embed = discord.Embed(
+            title="⚙️ Account Visibility Settings",
+            description="Toggle which accounts are included in `/profile` statistics.\n"
+                       "👁️ = **Visible** (included in stats)\n"
+                       "🚫 = **Hidden** (excluded from stats)",
+            color=discord.Color.blue()
+        )
+        
+        visible_accounts = []
+        hidden_accounts = []
+        
+        for acc in self.accounts:
+            account_name = f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
+            region_display = acc['region'].upper()
+            display = f"**{account_name}** ({region_display})"
+            
+            if acc.get('show_in_profile', True):
+                visible_accounts.append(display)
+            else:
+                hidden_accounts.append(display)
+        
+        if visible_accounts:
+            embed.add_field(
+                name="👁️ Visible Accounts",
+                value="\n".join(visible_accounts),
+                inline=False
+            )
+        
+        if hidden_accounts:
+            embed.add_field(
+                name="🚫 Hidden Accounts",
+                value="\n".join(hidden_accounts),
+                inline=False
+            )
+        
+        embed.set_footer(text="Click account buttons below to toggle visibility")
+        return embed
+    
+    async def on_timeout(self):
+        """Disable buttons when view times out"""
+        for item in self.children:
+            item.disabled = True
 
 
 # ==================== INTERACTIVE PROFILE VIEW ====================
