@@ -2341,12 +2341,10 @@ class ProfileView(discord.ui.View):
                     if team['teamId'] == player_team_id:
                         objectives = team.get('objectives', {})
                         
-                        # Dragons by type
+                        # Dragons (total count - API doesn't provide types)
                         dragon_obj = objectives.get('dragon', {})
-                        for drake in dragon_obj.get('kills', []):
-                            drake_type = drake.get('type', 'UNKNOWN')
-                            if drake_type in dragons:
-                                dragons[drake_type] += 1
+                        dragon_kills = dragon_obj.get('kills', 0)
+                        dragons['total'] = dragons.get('total', 0) + dragon_kills
                         
                         # Barons
                         baron_obj = objectives.get('baron', {})
@@ -2361,11 +2359,10 @@ class ProfileView(discord.ui.View):
                 obj_games += 1
         
         if obj_games > 0:
-            total_drakes = sum(dragons.values())
-            top_drake = max(dragons, key=dragons.get) if total_drakes > 0 else "None"
+            total_drakes = dragons.get('total', 0)
             
             obj_text = (
-                f"**Dragons:** {total_drakes} ({top_drake.title()}: {dragons.get(top_drake, 0)})\n"
+                f"**Dragons:** {total_drakes}\n"
                 f"**Barons:** {barons} • **Heralds:** {heralds}\n"
                 f"**Towers:** {towers} • **Inhibitors:** {inhibs}"
             )
