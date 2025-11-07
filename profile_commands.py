@@ -2776,60 +2776,61 @@ class ProfileView(discord.ui.View):
         
         wins = 0
         losses = 0
-        
+
+        # Show newest matches first (top of embed)
         for match_data in filtered_matches[:10]:
             match = match_data['match']
             puuid = match_data['puuid']
-            
+
             player_data = None
             for participant in match['info']['participants']:
                 if participant['puuid'] == puuid:
                     player_data = participant
                     break
-            
+
             if not player_data:
                 continue
-            
+
             won = player_data['win']
             champion = player_data.get('championName', 'Unknown')
             kills = player_data['kills']
             deaths = player_data['deaths']
             assists = player_data['assists']
-            
+
             if won:
                 wins += 1
             else:
                 losses += 1
-            
+
             result_emoji = "✅" if won else "❌"
             champ_emoji = get_champion_emoji(champion)
-            
+
             queue_id = match['info'].get('queueId', 0)
             game_mode = get_queue_name(queue_id)
             duration = match['info']['gameDuration']
             if duration > 1000:
                 duration = duration / 1000
-            
+
             # Format duration as MM:SS
             minutes = int(duration // 60)
             seconds = int(duration % 60)
             duration_str = f"{minutes}:{seconds:02d}"
-            
+
             embed.add_field(
                 name=f"{game_mode}",
                 value=f"{result_emoji} {champ_emoji} **{champion}** • {kills}/{deaths}/{assists} • {duration_str}",
                 inline=False
             )
-        
+
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
         embed.add_field(
             name="📊 Summary",
             value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%) • {len(filtered_matches)} total games",
             inline=False
         )
-        
+
         embed.set_footer(text=f"{self.target_user.display_name} • Matches View")
-        
+
         return embed
     
     async def create_lp_embed(self) -> discord.Embed:
