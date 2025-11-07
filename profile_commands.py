@@ -568,11 +568,11 @@ class ProfileCommands(commands.Cog):
         if champ_stats:
             logger.info(f"   Top 3 champions: {[(CHAMPION_ID_TO_NAME.get(c['champion_id'], 'Unknown'), c['level'], c['score']) for c in sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:3]]}")
         
-        # Fetch fresh summoner data and rank info for VISIBLE accounts
+        # Fetch fresh summoner data and rank info for ALL accounts (for Ranks tab)
         all_ranked_stats = []
         account_ranks = {}  # Store rank per account: {puuid: {solo: {...}, flex: {...}}}
         
-        for acc in visible_accounts:
+        for acc in all_accounts:
             if not acc.get('verified'):
                 continue
             
@@ -582,8 +582,11 @@ class ProfileCommands(commands.Cog):
                 # Fetch ranked stats using summoner ID
                 ranks = await self.riot_api.get_ranked_stats(summoner_data['id'], acc['region'])
                 if ranks:
-                    all_ranked_stats.extend(ranks)
-                    # Store per account
+                    # Only add to all_ranked_stats if account is visible (for stats calculation)
+                    if acc in visible_accounts:
+                        all_ranked_stats.extend(ranks)
+                    
+                    # But store rank data for ALL accounts (for Ranks tab)
                     account_ranks[acc['puuid']] = {}
                     for rank_data in ranks:
                         if 'SOLO' in rank_data.get('queueType', ''):
@@ -1849,8 +1852,8 @@ class ProfileView(discord.ui.View):
                         f"└ Flex: **{rank_display}** • {lp} LP • {winrate:.0f}% WR ({wins}W-{losses}L)"
                     )
                 else:
-                    # Unranked
-                    rank_emoji = "⭐"
+                    # Unranked - use IRON emoji as placeholder
+                    rank_emoji = get_rank_emoji('IRON')
                     region_lines.append(
                         f"{rank_emoji} **{account_name}**\n"
                         f"└ Unranked this season"
