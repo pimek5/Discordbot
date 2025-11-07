@@ -562,11 +562,48 @@ class ProfileCommands(commands.Cog):
             await interaction.followup.send("❌ No linked account found!", ephemeral=True)
             return
         
-        # Get champion stats (aggregated across all accounts)
-        champ_stats = db.get_user_champion_stats(db_user['id'])
-        logger.info(f"📊 Champion stats count: {len(champ_stats) if champ_stats else 0}")
+        # Get FRESH champion mastery data from Riot API (not from database)
+        logger.info(f"🔍 Fetching fresh mastery data from Riot API for {len(visible_accounts)} visible accounts")
+        champ_stats = []
+        
+        for acc in visible_accounts:
+            if not acc.get('verified'):
+                continue
+            
+            logger.info(f"   Fetching mastery for {acc['riot_id_game_name']}#{acc['riot_id_tagline']} ({acc['region'].upper()})")
+            mastery_data = await self.riot_api.get_champion_mastery(acc['puuid'], acc['region'], count=200)
+            
+            if mastery_data:
+                logger.info(f"   ✅ Got {len(mastery_data)} champions for {acc['riot_id_game_name']}")
+                # Convert to same format as DB data
+                for mastery in mastery_data:
+                    champ_stats.append({
+                        'champion_id': mastery.get('championId'),
+                        'score': mastery.get('championPoints', 0),
+                        'level': mastery.get('championLevel', 0)
+                    })
+            else:
+                logger.warning(f"   ⚠️ No mastery data for {acc['riot_id_game_name']}")
+        
+        # Aggregate mastery across accounts (sum points for same champions)
+        aggregated_stats = {}
+        for stat in champ_stats:
+            champ_id = stat['champion_id']
+            if champ_id not in aggregated_stats:
+                aggregated_stats[champ_id] = {
+                    'champion_id': champ_id,
+                    'score': 0,
+                    'level': 0
+                }
+            aggregated_stats[champ_id]['score'] += stat['score']
+            aggregated_stats[champ_id]['level'] = max(aggregated_stats[champ_id]['level'], stat['level'])
+        
+        champ_stats = list(aggregated_stats.values())
+        
+        logger.info(f"📊 Total champion stats after aggregation: {len(champ_stats)}")
         if champ_stats:
-            logger.info(f"   Top 3 champions: {[(CHAMPION_ID_TO_NAME.get(c['champion_id'], 'Unknown'), c['level'], c['score']) for c in sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:3]]}")
+            top_3 = sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:3]
+            logger.info(f"   Top 3 champions: {[(CHAMPION_ID_TO_NAME.get(c['champion_id'], 'Unknown'), c['level'], c['score']) for c in top_3]}")
         
         # Fetch fresh summoner data and rank info for ALL accounts (for Ranks tab)
         all_ranked_stats = []
