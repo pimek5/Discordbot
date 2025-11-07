@@ -1076,6 +1076,16 @@ class ProfileCommands(commands.Cog):
         from datetime import datetime
         embed.set_footer(text=f"{target.display_name} • Today at {datetime.now().strftime('%I:%M %p')}")
         
+        # Check if player is in active game
+        active_game = None
+        for acc in all_accounts:
+            if not acc.get('verified'):
+                continue
+            game_data = await self.riot_api.get_active_game(acc['puuid'], acc['region'])
+            if game_data:
+                active_game = {'game': game_data, 'account': acc}
+                break
+        
         # Create interactive view with buttons
         view = ProfileView(
             cog=self,
@@ -1086,7 +1096,8 @@ class ProfileCommands(commands.Cog):
             combined_stats=combined_stats,
             champ_stats=champ_stats,
             all_ranked_stats=all_ranked_stats,
-            account_ranks=account_ranks
+            account_ranks=account_ranks,
+            active_game=active_game
         )
         
         message = await interaction.followup.send(embed=embed, view=view)
@@ -1565,158 +1576,6 @@ class ProfileCommands(commands.Cog):
         embed.set_footer(text=f"Accounts: {accounts_list}")
         
         await interaction.followup.send(embed=embed)
-    
-    @app_commands.command(name="ingame", description="Check if a player is currently in game")
-    @app_commands.describe(user="Discord user to check (leave empty for yourself)")
-    async def ingame_command(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
-        """Check if player is currently in an active game"""
-        await interaction.response.defer()
-        
-        target_user = user or interaction.user
-        
-        # Get user's linked accounts
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('''
-            SELECT puuid, region, riot_id_game_name, riot_id_tagline, verified
-            FROM league_accounts
-            WHERE discord_id = ?
-        ''', (target_user.id,))
-        accounts = cursor.fetchall()
-        
-        if not accounts:
-            await interaction.followup.send(
-                f"❌ {target_user.mention} has no linked Riot accounts. Use `/link` to link an account.",
-                ephemeral=True
-            )
-            return
-        
-        # Convert to dict
-        accounts = [
-            {
-                'puuid': acc[0],
-                'region': acc[1],
-                'riot_id_game_name': acc[2],
-                'riot_id_tagline': acc[3],
-                'verified': bool(acc[4])
-            }
-            for acc in accounts
-        ]
-        
-        # Check each account for active game
-        active_game = None
-        active_account = None
-        
-        for account in accounts:
-            if not account['verified']:
-                continue
-            
-            game_data = await self.riot_api.get_active_game(
-                account['puuid'],
-                account['region']
-            )
-            
-            if game_data:
-                active_game = game_data
-                active_account = account
-                break
-        
-        # Create embed
-        if active_game:
-            # Check if streamer mode is enabled
-            participants = active_game.get('participants', [])
-            player_data = None
-            for p in participants:
-                if p.get('puuid') == active_account['puuid']:
-                    player_data = p
-                    break
-            
-            # Check for streamer mode (gameCustomization includes "clientSideToggleASolution")
-            is_streamer_mode = False
-            if player_data:
-                customization = player_data.get('gameCustomization', {})
-                if 'clientSideToggleASolution' in str(customization):
-                    is_streamer_mode = True
-            
-            if is_streamer_mode:
-                embed = discord.Embed(
-                    title=f"🎮 {target_user.display_name} is in game",
-                    description=f"**{active_account['riot_id_game_name']}#{active_account['riot_id_tagline']}**\n\n🔒 **Streamer Mode: ON**\n*Game details hidden*",
-                    color=0xFF6B6B
-                )
-            else:
-                # Get game info
-                game_mode = active_game.get('gameMode', 'Unknown')
-                game_type = active_game.get('gameType', 'Unknown')
-                game_queue_id = active_game.get('gameQueueConfigId', 0)
-                game_length = active_game.get('gameLength', 0) // 60  # Convert to minutes
-                
-                # Map queue ID to name
-                queue_names = {
-                    420: "Ranked Solo/Duo",
-                    440: "Ranked Flex",
-                    400: "Normal Draft",
-                    430: "Normal Blind",
-                    450: "ARAM",
-                    490: "Quickplay",
-                    700: "Clash",
-                    1700: "Arena"
-                }
-                queue_name = queue_names.get(game_queue_id, game_mode)
-                
-                # Get champion
-                champion_id = player_data.get('championId', 0) if player_data else 0
-                champion_name = CHAMPION_ID_TO_NAME.get(champion_id, f"Champion {champion_id}")
-                champ_emoji = get_champion_emoji(champion_name)
-                
-                embed = discord.Embed(
-                    title=f"🎮 {target_user.display_name} is in game!",
-                    description=f"**{active_account['riot_id_game_name']}#{active_account['riot_id_tagline']}**",
-                    color=0x00FF00
-                )
-                
-                embed.add_field(
-                    name="Game Info",
-                    value=f"**Mode:** {queue_name}\n**Champion:** {champ_emoji} {champion_name}\n**Duration:** {game_length} minutes",
-                    inline=False
-                )
-                
-                # Team composition (simplified)
-                team_id = player_data.get('teamId', 0) if player_data else 0
-                teammates = [p for p in participants if p.get('teamId') == team_id and p.get('puuid') != active_account['puuid']]
-                
-                if teammates:
-                    teammate_champs = []
-                    for tm in teammates[:4]:  # Show max 4 teammates
-                        tm_champ_id = tm.get('championId', 0)
-                        tm_champ_name = CHAMPION_ID_TO_NAME.get(tm_champ_id, f"Champion {tm_champ_id}")
-                        tm_emoji = get_champion_emoji(tm_champ_name)
-                        teammate_champs.append(f"{tm_emoji} {tm_champ_name}")
-                    
-                    embed.add_field(
-                        name="Team",
-                        value="\n".join(teammate_champs),
-                        inline=True
-                    )
-        else:
-            # Not in game
-            embed = discord.Embed(
-                title=f"💤 {target_user.display_name} is not in game",
-                description=f"Currently offline or in lobby",
-                color=0x808080
-            )
-            
-            verified_accounts = [acc for acc in accounts if acc['verified']]
-            if verified_accounts:
-                accounts_text = "\n".join([f"• {acc['riot_id_game_name']}#{acc['riot_id_tagline']} ({acc['region'].upper()})" for acc in verified_accounts])
-                embed.add_field(
-                    name="Checked Accounts",
-                    value=accounts_text,
-                    inline=False
-                )
-        
-        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
-        await interaction.followup.send(embed=embed)
 
 
 # ==================== INTERACTIVE PROFILE VIEW ====================
@@ -1727,7 +1586,7 @@ class ProfileView(discord.ui.View):
     def __init__(self, cog: 'ProfileCommands', target_user: discord.Member, 
                  user_data: dict, all_accounts: list, all_match_details: list,
                  combined_stats: dict, champ_stats: list, all_ranked_stats: list,
-                 account_ranks: dict = None):
+                 account_ranks: dict = None, active_game: dict = None):
         super().__init__(timeout=20)  # 20 seconds timeout
         self.cog = cog
         self.target_user = target_user
@@ -1738,6 +1597,7 @@ class ProfileView(discord.ui.View):
         self.account_ranks = account_ranks or {}
         self.champ_stats = champ_stats
         self.all_ranked_stats = all_ranked_stats
+        self.active_game = active_game  # Active game data (if in game)
         self.current_view = "profile"
         self.queue_filter = "all"  # Filter for all views: all, soloq, flex, normals, other
         self.message = None  # Will store the message to delete later
@@ -1793,6 +1653,53 @@ class ProfileView(discord.ui.View):
             title=f"**{self.target_user.display_name}'s Profile{filter_suffix}**",
             color=0x2B2D31  # Discord dark theme color
         )
+        
+        # === LIVE STATUS (if in game) ===
+        if self.active_game:
+            game_data = self.active_game['game']
+            game_account = self.active_game['account']
+            participants = game_data.get('participants', [])
+            
+            # Find player data
+            player_data = None
+            for p in participants:
+                if p.get('puuid') == game_account['puuid']:
+                    player_data = p
+                    break
+            
+            # Check streamer mode
+            is_streamer_mode = False
+            if player_data:
+                customization = player_data.get('gameCustomization', {})
+                if 'clientSideToggleASolution' in str(customization):
+                    is_streamer_mode = True
+            
+            if is_streamer_mode:
+                embed.add_field(
+                    name="🎮 Live Status",
+                    value=f"🔴 **IN GAME**\n🔒 Streamer Mode: ON",
+                    inline=True
+                )
+            else:
+                game_queue_id = game_data.get('gameQueueConfigId', 0)
+                game_length = game_data.get('gameLength', 0) // 60
+                
+                queue_names = {
+                    420: "Ranked Solo", 440: "Ranked Flex", 400: "Normal Draft",
+                    430: "Normal Blind", 450: "ARAM", 490: "Quickplay",
+                    700: "Clash", 1700: "Arena"
+                }
+                queue_name = queue_names.get(game_queue_id, "Custom")
+                
+                champion_id = player_data.get('championId', 0) if player_data else 0
+                champion_name = CHAMPION_ID_TO_NAME.get(champion_id, f"Champion {champion_id}")
+                champ_emoji = get_champion_emoji(champion_name)
+                
+                embed.add_field(
+                    name="🎮 Live Status",
+                    value=f"🔴 **IN GAME** ({game_length} min)\n**Mode:** {queue_name}\n{champ_emoji} **{champion_name}**",
+                    inline=True
+                )
         
         # Top Champions section (only top 3)
         if self.champ_stats and len(self.champ_stats) > 0:
@@ -2342,6 +2249,157 @@ class ProfileView(discord.ui.View):
         milestone_lines.append(f"**Peak Rank:** {peak_rank}")
         
         embed.add_field(name="🏅 **Career Milestones**", value="\n".join(milestone_lines), inline=False)
+        
+        # Spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        
+        # === DAMAGE BREAKDOWN (from recent 20 matches) ===
+        total_damage = 0
+        total_physical = 0
+        total_magic = 0
+        total_true = 0
+        total_to_champs = 0
+        total_to_objectives = 0
+        total_mitigated = 0
+        damage_games = 0
+        
+        for match_data in self.all_match_details[:20]:
+            match = match_data['match']
+            puuid = match_data['puuid']
+            for participant in match['info']['participants']:
+                if participant['puuid'] == puuid:
+                    total_damage += participant.get('totalDamageDealtToChampions', 0)
+                    total_physical += participant.get('physicalDamageDealtToChampions', 0)
+                    total_magic += participant.get('magicDamageDealtToChampions', 0)
+                    total_true += participant.get('trueDamageDealtToChampions', 0)
+                    total_to_champs += participant.get('totalDamageDealtToChampions', 0)
+                    total_to_objectives += participant.get('damageDealtToObjectives', 0)
+                    total_mitigated += participant.get('damageSelfMitigated', 0)
+                    damage_games += 1
+                    break
+        
+        if damage_games > 0:
+            avg_damage = total_damage / damage_games
+            phys_pct = (total_physical / total_damage * 100) if total_damage > 0 else 0
+            magic_pct = (total_magic / total_damage * 100) if total_damage > 0 else 0
+            true_pct = (total_true / total_damage * 100) if total_damage > 0 else 0
+            avg_to_obj = total_to_objectives / damage_games
+            avg_mitigated = total_mitigated / damage_games
+            
+            damage_text = (
+                f"**Avg Damage:** {avg_damage:,.0f}/game\n"
+                f"**Breakdown:** {phys_pct:.0f}% Phys • {magic_pct:.0f}% Magic • {true_pct:.0f}% True\n"
+                f"**To Objectives:** {avg_to_obj:,.0f}/game\n"
+                f"**Mitigated:** {avg_mitigated:,.0f}/game"
+            )
+            embed.add_field(name="💎 **Damage Breakdown**", value=damage_text, inline=False)
+        
+        # Spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        
+        # === OBJECTIVE CONTROL (from recent 20 matches) ===
+        dragons = {'CHEMTECH': 0, 'HEXTECH': 0, 'INFERNAL': 0, 'MOUNTAIN': 0, 'OCEAN': 0, 'CLOUD': 0, 'ELDER': 0}
+        barons = 0
+        heralds = 0
+        towers = 0
+        inhibs = 0
+        obj_games = 0
+        
+        for match_data in self.all_match_details[:20]:
+            match = match_data['match']
+            puuid = match_data['puuid']
+            
+            # Find player's team
+            player_team_id = None
+            for participant in match['info']['participants']:
+                if participant['puuid'] == puuid:
+                    player_team_id = participant['teamId']
+                    towers += participant.get('turretKills', 0)
+                    inhibs += participant.get('inhibitorKills', 0)
+                    break
+            
+            if player_team_id:
+                # Count team objectives
+                for team in match['info'].get('teams', []):
+                    if team['teamId'] == player_team_id:
+                        objectives = team.get('objectives', {})
+                        
+                        # Dragons by type
+                        dragon_obj = objectives.get('dragon', {})
+                        for drake in dragon_obj.get('kills', []):
+                            drake_type = drake.get('type', 'UNKNOWN')
+                            if drake_type in dragons:
+                                dragons[drake_type] += 1
+                        
+                        # Barons
+                        baron_obj = objectives.get('baron', {})
+                        barons += baron_obj.get('kills', 0)
+                        
+                        # Heralds
+                        herald_obj = objectives.get('riftHerald', {})
+                        heralds += herald_obj.get('kills', 0)
+                        
+                        break
+                
+                obj_games += 1
+        
+        if obj_games > 0:
+            total_drakes = sum(dragons.values())
+            top_drake = max(dragons, key=dragons.get) if total_drakes > 0 else "None"
+            
+            obj_text = (
+                f"**Dragons:** {total_drakes} ({top_drake.title()}: {dragons.get(top_drake, 0)})\n"
+                f"**Barons:** {barons} • **Heralds:** {heralds}\n"
+                f"**Towers:** {towers} • **Inhibitors:** {inhibs}"
+            )
+            embed.add_field(name="🎯 **Objective Control**", value=obj_text, inline=False)
+        
+        # Spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        
+        # === MATCH TIMELINE ANALYSIS (gold diff @10, @15, @20) ===
+        gold_at_10 = []
+        gold_at_15 = []
+        gold_at_20 = []
+        
+        for match_data in self.all_match_details[:10]:  # Last 10 games only
+            match = match_data['match']
+            puuid = match_data['puuid']
+            
+            for participant in match['info']['participants']:
+                if participant['puuid'] == puuid:
+                    # Gold per minute checkpoints
+                    gold_per_min = participant.get('goldEarned', 0) / (match['info']['gameDuration'] / 60)
+                    
+                    # Approximate gold at intervals (simplified)
+                    gold_at_10.append(gold_per_min * 10)
+                    gold_at_15.append(gold_per_min * 15)
+                    gold_at_20.append(gold_per_min * 20)
+                    break
+        
+        if gold_at_10:
+            avg_10 = sum(gold_at_10) / len(gold_at_10)
+            avg_15 = sum(gold_at_15) / len(gold_at_15)
+            avg_20 = sum(gold_at_20) / len(gold_at_20)
+            
+            timeline_text = (
+                f"**@10min:** {avg_10:,.0f}g\n"
+                f"**@15min:** {avg_15:,.0f}g\n"
+                f"**@20min:** {avg_20:,.0f}g"
+            )
+            embed.add_field(name="📊 **Gold Timeline**", value=timeline_text, inline=True)
+            
+            # Early game performance
+            if avg_10 >= 4000:
+                early_rating = "💎 Excellent"
+            elif avg_10 >= 3500:
+                early_rating = "💰 Good"
+            elif avg_10 >= 3000:
+                early_rating = "🪙 Average"
+            else:
+                early_rating = "🥉 Below Average"
+            
+            embed.add_field(name="⏱️ **Early Game**", value=f"{early_rating}\nGold lead at 10min", inline=True)
         
         embed.set_footer(text=f"{self.target_user.display_name} • Statistics View")
         
