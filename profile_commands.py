@@ -2005,28 +2005,29 @@ class ProfileView(discord.ui.View):
                     value=f"**{points_str}** points\n**{total_champs}** champions",
                     inline=True
                 )
-
-            # Recently Played
+        
+        # Recently Played (unique champions from last 10 filtered matches)
+        if filtered_matches:
             recently_played = []
-            for match_data in filtered_matches[:10]:
+            for match_data in filtered_matches[:20]:  # Check last 20 games
                 match = match_data['match']
                 puuid = match_data['puuid']
                 for participant in match['info']['participants']:
                     if participant['puuid'] == puuid:
                         champ = participant.get('championName', '')
-                        if champ and champ not in [r.get('champion') for r in recently_played]:
-                            recently_played.append({'champion': champ})
+                        if champ and champ not in recently_played:
+                            recently_played.append(champ)
                         break
                 if len(recently_played) >= 3:
                     break
             
             recent_lines = []
-            for game in recently_played[:3]:
-                champ_emoji = get_champion_emoji(game['champion'])
-                recent_lines.append(f"{champ_emoji} **{game['champion']} - Today**")
+            for champ_name in recently_played[:3]:
+                champ_emoji = get_champion_emoji(champ_name)
+                recent_lines.append(f"{champ_emoji} **{champ_name}**")
             
             embed.add_field(
-                name="Recently Played",
+                name="🕐 Recently Played",
                 value="\n".join(recent_lines) if recent_lines else "No recent games",
                 inline=True
             )
