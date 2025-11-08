@@ -1362,176 +1362,176 @@ class ProfileCommands(commands.Cog):
                 )
                 return
         
-        # Get today's date range
-        from datetime import datetime, timedelta
-        now = datetime.now()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_timestamp = int(today_start.timestamp() * 1000)
+            # Get today's date range
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_timestamp = int(today_start.timestamp() * 1000)
         
-        # Fetch ranked matches from today
-        all_ranked_matches = []
+            # Fetch ranked matches from today
+            all_ranked_matches = []
         
-        for account in all_accounts:
-            if not account.get('verified'):
-                continue
+            for account in all_accounts:
+                if not account.get('verified'):
+                    continue
             
-            logger.info(f"🔍 Fetching LP data for {account['riot_id_game_name']}#{account['riot_id_tagline']}")
+                logger.info(f"🔍 Fetching LP data for {account['riot_id_game_name']}#{account['riot_id_tagline']}")
             
-            # Get recent matches (last 20)
-            match_ids = await self.riot_api.get_match_history(
-                account['puuid'],
-                account['region'],
-                count=20
-            )
+                # Get recent matches (last 20)
+                match_ids = await self.riot_api.get_match_history(
+                    account['puuid'],
+                    account['region'],
+                    count=20
+                )
             
-            if match_ids:
-                for match_id in match_ids:
-                    match_details = await self.riot_api.get_match_details(match_id, account['region'])
+                if match_ids:
+                    for match_id in match_ids:
+                        match_details = await self.riot_api.get_match_details(match_id, account['region'])
                     
-                    if not match_details:
-                        continue
+                        if not match_details:
+                            continue
                     
-                    # Check if match is from today
-                    game_creation = match_details['info'].get('gameCreation', 0)
-                    if game_creation < today_timestamp:
-                        continue  # Skip matches before today
+                        # Check if match is from today
+                        game_creation = match_details['info'].get('gameCreation', 0)
+                        if game_creation < today_timestamp:
+                            continue  # Skip matches before today
                     
-                    # Check if it's a ranked match (queue ID 420 = Ranked Solo, 440 = Ranked Flex)
-                    queue_id = match_details['info'].get('queueId', 0)
-                    if queue_id not in [420, 440]:
-                        continue  # Skip non-ranked matches
+                        # Check if it's a ranked match (queue ID 420 = Ranked Solo, 440 = Ranked Flex)
+                        queue_id = match_details['info'].get('queueId', 0)
+                        if queue_id not in [420, 440]:
+                            continue  # Skip non-ranked matches
                     
-                    # Find player data
-                    player_data = None
-                    for participant in match_details['info']['participants']:
-                        if participant['puuid'] == account['puuid']:
-                            player_data = participant
-                            break
+                        # Find player data
+                        player_data = None
+                        for participant in match_details['info']['participants']:
+                            if participant['puuid'] == account['puuid']:
+                                player_data = participant
+                                break
                     
-                    if player_data:
-                        all_ranked_matches.append({
-                            'match': match_details,
-                            'player': player_data,
-                            'account': account,
-                            'timestamp': game_creation
-                        })
+                        if player_data:
+                            all_ranked_matches.append({
+                                'match': match_details,
+                                'player': player_data,
+                                'account': account,
+                                'timestamp': game_creation
+                            })
         
-        if not all_ranked_matches:
-            noted_emoji = get_other_emoji('noted')
-            embed = discord.Embed(
-                title=f"{noted_emoji} LP Balance - Today",
-                description=f"**{target_user.display_name}** hasn't played any ranked games today.",
-                color=0x808080
-            )
-            embed.set_footer(text=f"Play some ranked to see your LP gains!")
-            await interaction.followup.send(embed=embed)
-            return
+            if not all_ranked_matches:
+                noted_emoji = get_other_emoji('noted')
+                embed = discord.Embed(
+                    title=f"{noted_emoji} LP Balance - Today",
+                    description=f"**{target_user.display_name}** hasn't played any ranked games today.",
+                    color=0x808080
+                )
+                embed.set_footer(text=f"Play some ranked to see your LP gains!")
+                await interaction.followup.send(embed=embed)
+                return
         
-        # Sort by timestamp (oldest first)
-        all_ranked_matches.sort(key=lambda x: x['timestamp'])
+            # Sort by timestamp (oldest first)
+            all_ranked_matches.sort(key=lambda x: x['timestamp'])
         
-        # Calculate LP changes (approximate)
-        # Wins typically give +20-25 LP, losses -15-20 LP
-        # We'll estimate based on win/loss
-        total_lp_change = 0
-        wins = 0
-        losses = 0
-        match_details_list = []
+            # Calculate LP changes (approximate)
+            # Wins typically give +20-25 LP, losses -15-20 LP
+            # We'll estimate based on win/loss
+            total_lp_change = 0
+            wins = 0
+            losses = 0
+            match_details_list = []
         
-        for match_data in all_ranked_matches:
-            player = match_data['player']
-            match = match_data['match']
-            account = match_data['account']
+            for match_data in all_ranked_matches:
+                player = match_data['player']
+                match = match_data['match']
+                account = match_data['account']
             
-            won = player['win']
-            champion = player.get('championName', 'Unknown')
-            kills = player['kills']
-            deaths = player['deaths']
-            assists = player['assists']
+                won = player['win']
+                champion = player.get('championName', 'Unknown')
+                kills = player['kills']
+                deaths = player['deaths']
+                assists = player['assists']
             
-            # Estimate LP change (typical values)
-            if won:
-                lp_change = 22  # Average win LP
-                wins += 1
-                total_lp_change += lp_change
+                # Estimate LP change (typical values)
+                if won:
+                    lp_change = 22  # Average win LP
+                    wins += 1
+                    total_lp_change += lp_change
+                else:
+                    lp_change = -18  # Average loss LP
+                    losses += 1
+                    total_lp_change += lp_change
+            
+                # Get queue type
+                queue_id = match['info']['queueId']
+                queue_name = "Solo/Duo" if queue_id == 420 else "Flex"
+            
+                # Champion emoji
+                champ_emoji = get_champion_emoji(champion)
+            
+                # Format LP change
+                lp_str = f"+{lp_change}" if lp_change > 0 else str(lp_change)
+                result_emoji = get_other_emoji('win') if won else get_other_emoji('loss')
+            
+                match_details_list.append({
+                    'emoji': result_emoji,
+                    'champ_emoji': champ_emoji,
+                    'champion': champion,
+                    'kda': f"{kills}/{deaths}/{assists}",
+                    'lp_change': lp_str,
+                    'queue': queue_name,
+                    'won': won
+                })
+        
+            # Create embed
+            if total_lp_change > 0:
+                embed_color = 0x00FF00  # Green for positive
+                balance_emoji = "📈"
+            elif total_lp_change < 0:
+                embed_color = 0xFF0000  # Red for negative
+                balance_emoji = "📉"
             else:
-                lp_change = -18  # Average loss LP
-                losses += 1
-                total_lp_change += lp_change
-            
-            # Get queue type
-            queue_id = match['info']['queueId']
-            queue_name = "Solo/Duo" if queue_id == 420 else "Flex"
-            
-            # Champion emoji
-            champ_emoji = get_champion_emoji(champion)
-            
-            # Format LP change
-            lp_str = f"+{lp_change}" if lp_change > 0 else str(lp_change)
-            result_emoji = get_other_emoji('win') if won else get_other_emoji('loss')
-            
-            match_details_list.append({
-                'emoji': result_emoji,
-                'champ_emoji': champ_emoji,
-                'champion': champion,
-                'kda': f"{kills}/{deaths}/{assists}",
-                'lp_change': lp_str,
-                'queue': queue_name,
-                'won': won
-            })
+                embed_color = 0x808080  # Gray for neutral
+                balance_emoji = "➖"
         
-        # Create embed
-        if total_lp_change > 0:
-            embed_color = 0x00FF00  # Green for positive
-            balance_emoji = "📈"
-        elif total_lp_change < 0:
-            embed_color = 0xFF0000  # Red for negative
-            balance_emoji = "📉"
-        else:
-            embed_color = 0x808080  # Gray for neutral
-            balance_emoji = "➖"
-        
-        embed = discord.Embed(
-            title=f"{balance_emoji} LP Balance - Today",
-            description=f"**{target_user.display_name}**'s ranked performance",
-            color=embed_color
-        )
-        
-        # Add match details
-        for i, match_info in enumerate(match_details_list, 1):
-            field_value = (
-                f"{match_info['emoji']} {match_info['champ_emoji']} **{match_info['champion']}** • "
-                f"{match_info['kda']} • **{match_info['lp_change']} LP** ({match_info['queue']})"
+            embed = discord.Embed(
+                title=f"{balance_emoji} LP Balance - Today",
+                description=f"**{target_user.display_name}**'s ranked performance",
+                color=embed_color
             )
+        
+            # Add match details
+            for i, match_info in enumerate(match_details_list, 1):
+                field_value = (
+                    f"{match_info['emoji']} {match_info['champ_emoji']} **{match_info['champion']}** • "
+                    f"{match_info['kda']} • **{match_info['lp_change']} LP** ({match_info['queue']})"
+                )
             
+                embed.add_field(
+                    name=f"Game {i}",
+                    value=field_value,
+                    inline=False
+                )
+        
+            # Summary
+            lp_display = f"+{total_lp_change}" if total_lp_change > 0 else str(total_lp_change)
+            summary_text = (
+                f"**Total:** {lp_display} LP\n"
+                f"**Record:** {wins}W - {losses}L\n"
+                f"**Games Played:** {wins + losses}"
+            )
+        
             embed.add_field(
-                name=f"Game {i}",
-                value=field_value,
+                name=f"{get_other_emoji('noted')} Summary",
+                value=summary_text,
                 inline=False
             )
         
-        # Summary
-        lp_display = f"+{total_lp_change}" if total_lp_change > 0 else str(total_lp_change)
-        summary_text = (
-            f"**Total:** {lp_display} LP\n"
-            f"**Record:** {wins}W - {losses}L\n"
-            f"**Games Played:** {wins + losses}"
-        )
+            # Footer
+            if len(all_accounts) > 1:
+                accounts_list = ", ".join([f"{acc['riot_id_game_name']}" for acc in all_accounts if acc.get('verified')])
+                embed.set_footer(text=f"Combined from: {accounts_list}")
+            else:
+                embed.set_footer(text=f"{target_user.display_name} • Today's LP gains")
         
-        embed.add_field(
-            name=f"{get_other_emoji('noted')} Summary",
-            value=summary_text,
-            inline=False
-        )
-        
-        # Footer
-        if len(all_accounts) > 1:
-            accounts_list = ", ".join([f"{acc['riot_id_game_name']}" for acc in all_accounts if acc.get('verified')])
-            embed.set_footer(text=f"Combined from: {accounts_list}")
-        else:
-            embed.set_footer(text=f"{target_user.display_name} • Today's LP gains")
-        
-        message = await interaction.followup.send(embed=embed)
+            message = await interaction.followup.send(embed=embed)
         
             # Auto-delete after 2 minutes
             await asyncio.sleep(120)
