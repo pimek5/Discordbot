@@ -4286,52 +4286,58 @@ async def auto_migrate_puuids():
     
     try:
         db = get_db()
-        cursor = db.conn.cursor()
+        conn = db.get_connection()
         
-        # Get all accounts with riot_id info
-        cursor.execute("""
-            SELECT id, riot_id_game_name, riot_id_tagline, region, puuid 
-            FROM riot_accounts 
-            WHERE riot_id_game_name IS NOT NULL 
-            AND riot_id_tagline IS NOT NULL
-        """)
-        accounts = cursor.fetchall()
-        
-        if not accounts:
-            print("ℹ️  No accounts to migrate")
-            return
-        
-        print(f"📊 Found {len(accounts)} accounts to check")
-        
-        updated = 0
-        failed = 0
-        
-        for account in accounts:
-            account_id, game_name, tagline, region, old_puuid = account
+        try:
+            cursor = conn.cursor()
             
-            # Fetch fresh PUUID
-            account_data = await riot_api.get_account_by_riot_id(game_name, tagline, region)
+            # Get all accounts with riot_id info
+            cursor.execute("""
+                SELECT id, riot_id_game_name, riot_id_tagline, region, puuid 
+                FROM riot_accounts 
+                WHERE riot_id_game_name IS NOT NULL 
+                AND riot_id_tagline IS NOT NULL
+            """)
+            accounts = cursor.fetchall()
             
-            if account_data and 'puuid' in account_data:
-                new_puuid = account_data['puuid']
+            if not accounts:
+                print("ℹ️  No accounts to migrate")
+                return
+            
+            print(f"📊 Found {len(accounts)} accounts to check")
+            
+            updated = 0
+            failed = 0
+            
+            for account in accounts:
+                account_id, game_name, tagline, region, old_puuid = account
                 
-                # Update if different
-                if new_puuid != old_puuid:
-                    cursor.execute("""
-                        UPDATE riot_accounts 
-                        SET puuid = %s 
-                        WHERE id = %s
-                    """, (new_puuid, account_id))
-                    db.conn.commit()
-                    updated += 1
-                    print(f"   ✅ Updated {game_name}#{tagline}")
-            else:
-                failed += 1
+                # Fetch fresh PUUID
+                account_data = await riot_api.get_account_by_riot_id(game_name, tagline, region)
+                
+                if account_data and 'puuid' in account_data:
+                    new_puuid = account_data['puuid']
+                    
+                    # Update if different
+                    if new_puuid != old_puuid:
+                        cursor.execute("""
+                            UPDATE riot_accounts 
+                            SET puuid = %s 
+                            WHERE id = %s
+                        """, (new_puuid, account_id))
+                        conn.commit()
+                        updated += 1
+                        print(f"   ✅ Updated {game_name}#{tagline}")
+                else:
+                    failed += 1
+                
+                # Rate limit protection
+                await asyncio.sleep(0.5)
             
-            # Rate limit protection
-            await asyncio.sleep(0.5)
+            print(f"✅ PUUID Migration complete: {updated} updated, {failed} failed")
         
-        print(f"✅ PUUID Migration complete: {updated} updated, {failed} failed")
+        finally:
+            db.return_connection(conn)
         
     except Exception as e:
         print(f"❌ Error during PUUID migration: {e}")
