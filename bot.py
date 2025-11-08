@@ -4326,5 +4326,23 @@ async def on_ready():
         check_threads_for_runeforge.start()
         print(f"🔥 Started monitoring threads for RuneForge mods")
 
-bot.run(os.getenv("BOT_TOKEN"))
+# Run bot with retry logic for connection issues
+import time
 
+def run_bot_with_retry(max_retries=3, delay=5):
+    """Run bot with automatic retry on connection failures"""
+    for attempt in range(max_retries):
+        try:
+            print(f"🚀 Starting bot (attempt {attempt + 1}/{max_retries})...")
+            bot.run(os.getenv("BOT_TOKEN"))
+            break  # If successful, exit loop
+        except (ConnectionError, TimeoutError, Exception) as e:
+            print(f"❌ Bot connection failed: {e}")
+            if attempt < max_retries - 1:
+                print(f"⏳ Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                print(f"❌ Failed to start bot after {max_retries} attempts")
+                raise
+
+run_bot_with_retry()
