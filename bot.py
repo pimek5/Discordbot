@@ -4393,11 +4393,48 @@ async def on_ready():
 
 # Run bot - simple approach, let Docker/hosting service handle restarts
 import sys
+import socket
+
+async def diagnose_network():
+    """Diagnose network connectivity before connecting to Discord"""
+    print("🔍 Running network diagnostics...")
+    
+    # Test DNS resolution
+    try:
+        discord_ip = socket.gethostbyname("discord.com")
+        print(f"✅ DNS working - discord.com resolves to {discord_ip}")
+    except socket.gaierror as e:
+        print(f"❌ DNS FAILED - Cannot resolve discord.com: {e}")
+        print(f"💡 Railway may have DNS issues. Try redeploying or contact Railway support.")
+        return False
+    
+    # Test basic connectivity to Discord
+    try:
+        import aiohttp
+        timeout = aiohttp.ClientTimeout(total=10, connect=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get("https://discord.com", allow_redirects=True) as response:
+                print(f"✅ HTTP connectivity working - discord.com returned {response.status}")
+    except Exception as e:
+        print(f"❌ HTTP connectivity FAILED: {e}")
+        print(f"💡 Railway may be blocking outbound connections. Check Railway network settings.")
+        return False
+    
+    print("✅ Network diagnostics passed!")
+    return True
 
 async def run_bot_with_retry():
     """Run bot with connection retry logic"""
     max_retries = 5  # Zwiększone z 3 do 5
     retry_delay = 10  # Zwiększone z 5 do 10 sekund
+    
+    # Run network diagnostics first
+    print("=" * 60)
+    network_ok = await diagnose_network()
+    print("=" * 60)
+    
+    if not network_ok:
+        print("⚠️ Network diagnostics failed - attempting connection anyway...")
     
     for attempt in range(1, max_retries + 1):
         try:
