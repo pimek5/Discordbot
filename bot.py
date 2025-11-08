@@ -580,20 +580,16 @@ class MyBot(commands.Bot):
         
         # Note: COG commands (ProfileCommands, StatsCommands, LeaderboardCommands) 
         # are automatically added to the tree when we call add_cog()
-        # We don't need to manually register them or clear them
         
-        # Register standalone command groups GLOBALLY (available on all servers)
+        # Note: Commands defined with @bot.tree.command() decorator are 
+        # automatically registered (invite, diagnose, addthread, checkruneforge, setup_create_panel)
+        
+        # Only add command GROUPS (not individual commands)
+        # Groups need to be explicitly added to the tree
         self.tree.add_command(twitter_group)
         self.tree.add_command(loldle_group)
         self.tree.add_command(mod_group)
         self.tree.add_command(server_group)
-        
-        # Standalone commands GLOBALLY (general use)
-        self.tree.add_command(setup_create_panel)
-        self.tree.add_command(invite)
-        self.tree.add_command(addthread)
-        self.tree.add_command(diagnose)
-        self.tree.add_command(checkruneforge)
         
         print("✅ Command groups registered globally")
         
