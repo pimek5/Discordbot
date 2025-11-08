@@ -157,6 +157,114 @@ class LeaderboardCommands(commands.Cog):
         embed.set_footer(text=f"Requested by {interaction.user.name}")
         
         await interaction.followup.send(embed=embed)
+    
+    @app_commands.command(name="ranktop", description="View ranked leaderboard for this server")
+    @app_commands.describe(
+        queue="Queue type (default: Solo/Duo)"
+    )
+    @app_commands.choices(queue=[
+        app_commands.Choice(name="Solo/Duo", value="RANKED_SOLO_5x5"),
+        app_commands.Choice(name="Flex", value="RANKED_FLEX_SR"),
+    ])
+    async def ranktop(self, interaction: discord.Interaction, 
+                     queue: str = "RANKED_SOLO_5x5"):
+        """Show top ranked players on this server"""
+        await interaction.response.defer()
+        
+        # Must be in a guild
+        if not interaction.guild:
+            await interaction.followup.send(
+                "❌ This command can only be used in a server!",
+                ephemeral=True
+            )
+            return
+        
+        db = get_db()
+        
+        # Get leaderboard for this server only
+        leaderboard = db.get_rank_leaderboard(guild_id=interaction.guild.id, queue=queue, limit=10)
+        
+        if not leaderboard:
+            queue_name = "Solo/Duo" if queue == "RANKED_SOLO_5x5" else "Flex"
+            await interaction.followup.send(
+                f"❌ No ranked data recorded for **{queue_name}** on this server!",
+                ephemeral=True
+            )
+            return
+        
+        # Create embed
+        queue_name = "Solo/Duo" if queue == "RANKED_SOLO_5x5" else "Flex"
+        embed = discord.Embed(
+            title=f"🏆 Ranked Leaderboard - {queue_name}",
+            description=f"Top players on **{interaction.guild.name}**",
+            color=0xC89B3C  # Gold color
+        )
+        
+        # Medal emojis for top 3
+        medals = ["🥇", "🥈", "🥉"]
+        
+        # Tier emojis
+        tier_emojis = {
+            'CHALLENGER': '<:Challenger:1303474959832182825>',
+            'GRANDMASTER': '<:Grandmaster:1303474958221070467>',
+            'MASTER': '<:Master:1303474956694536284>',
+            'DIAMOND': '<:Diamond:1303474954568044685>',
+            'EMERALD': '<:Emerald:1303474952793546753>',
+            'PLATINUM': '<:Platinum:1303474950394519562>',
+            'GOLD': '<:Gold:1303474948683968513>',
+            'SILVER': '<:Silver:1303474946985635860>',
+            'BRONZE': '<:Bronze:1303474943231127655>',
+            'IRON': '<:Iron:1303474941075697734>'
+        }
+        
+        for i, entry in enumerate(leaderboard):
+            position = i + 1
+            
+            # Get Discord user
+            try:
+                user = await self.bot.fetch_user(entry['snowflake'])
+                username = user.display_name
+            except:
+                username = f"{entry['riot_id_game_name']}#{entry['riot_id_tagline']}"
+            
+            tier = entry['tier']
+            rank = entry.get('rank', '')  # Master+ doesn't have rank
+            lp = entry['league_points']
+            wins = entry['wins']
+            losses = entry['losses']
+            
+            # Calculate winrate
+            total_games = wins + losses
+            winrate = (wins / total_games * 100) if total_games > 0 else 0
+            
+            # Get tier emoji
+            tier_emoji = tier_emojis.get(tier, '🎮')
+            
+            # Format rank text
+            if tier in ['CHALLENGER', 'GRANDMASTER', 'MASTER']:
+                rank_text = f"{tier_emoji} **{tier.capitalize()}**"
+            else:
+                rank_text = f"{tier_emoji} **{tier.capitalize()} {rank}**"
+            
+            # Position emoji
+            if position <= 3:
+                pos_emoji = medals[position - 1]
+            else:
+                pos_emoji = f"**{position}.**"
+            
+            # Field value with stats
+            value = f"{rank_text} • **{lp} LP**\n"
+            value += f"📊 {wins}W {losses}L ({winrate:.1f}% WR)"
+            
+            embed.add_field(
+                name=f"{pos_emoji} {username}",
+                value=value,
+                inline=False
+            )
+        
+        embed.set_footer(text=f"Requested by {interaction.user.name}")
+        
+        await interaction.followup.send(embed=embed)
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
     """Setup leaderboard commands"""

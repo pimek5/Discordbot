@@ -391,6 +391,94 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    def get_rank_leaderboard(self, guild_id: Optional[int] = None, 
+                            queue: str = 'RANKED_SOLO_5x5', limit: int = 10) -> List[Dict]:
+        """Get top ranked players by LP
+        
+        Rank order (higher to lower):
+        CHALLENGER > GRANDMASTER > MASTER > DIAMOND > EMERALD > PLATINUM > GOLD > SILVER > BRONZE > IRON
+        Within each tier: I > II > III > IV
+        """
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Define tier ordering (higher = better)
+                tier_order = """
+                    CASE tier
+                        WHEN 'CHALLENGER' THEN 9
+                        WHEN 'GRANDMASTER' THEN 8
+                        WHEN 'MASTER' THEN 7
+                        WHEN 'DIAMOND' THEN 6
+                        WHEN 'EMERALD' THEN 5
+                        WHEN 'PLATINUM' THEN 4
+                        WHEN 'GOLD' THEN 3
+                        WHEN 'SILVER' THEN 2
+                        WHEN 'BRONZE' THEN 1
+                        WHEN 'IRON' THEN 0
+                        ELSE -1
+                    END
+                """
+                
+                # Define rank ordering within tier (I = 4, II = 3, III = 2, IV = 1)
+                rank_order = """
+                    CASE rank
+                        WHEN 'I' THEN 4
+                        WHEN 'II' THEN 3
+                        WHEN 'III' THEN 2
+                        WHEN 'IV' THEN 1
+                        ELSE 0
+                    END
+                """
+                
+                if guild_id:
+                    # Server-only leaderboard
+                    cur.execute(f"""
+                        SELECT 
+                            u.snowflake, 
+                            ur.tier, 
+                            ur.rank, 
+                            ur.league_points, 
+                            ur.wins, 
+                            ur.losses,
+                            la.riot_id_game_name, 
+                            la.riot_id_tagline
+                        FROM user_ranks ur
+                        JOIN users u ON ur.user_id = u.id
+                        JOIN guild_members gm ON u.id = gm.user_id
+                        JOIN league_accounts la ON u.id = la.user_id AND la.primary_account = TRUE
+                        WHERE gm.guild_id = %s AND ur.queue = %s
+                        ORDER BY 
+                            {tier_order} DESC,
+                            {rank_order} DESC,
+                            ur.league_points DESC
+                        LIMIT %s
+                    """, (guild_id, queue, limit))
+                else:
+                    # Global leaderboard
+                    cur.execute(f"""
+                        SELECT 
+                            u.snowflake, 
+                            ur.tier, 
+                            ur.rank, 
+                            ur.league_points, 
+                            ur.wins, 
+                            ur.losses,
+                            la.riot_id_game_name, 
+                            la.riot_id_tagline
+                        FROM user_ranks ur
+                        JOIN users u ON ur.user_id = u.id
+                        JOIN league_accounts la ON u.id = la.user_id AND la.primary_account = TRUE
+                        WHERE ur.queue = %s
+                        ORDER BY 
+                            {tier_order} DESC,
+                            {rank_order} DESC,
+                            ur.league_points DESC
+                        LIMIT %s
+                    """, (queue, limit))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+    
     # ==================== GUILD OPERATIONS ====================
     
     def add_guild_member(self, guild_id: int, user_id: int):
