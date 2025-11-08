@@ -51,6 +51,10 @@ intents.voice_states = True
 intents.messages = True
 intents.message_content = True
 
+# Increase timeouts for slow connections
+import aiohttp
+DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=30, sock_read=30)
+
 # ================================
 #        CONFIG
 # ================================
@@ -442,13 +446,16 @@ server_group = app_commands.Group(name="server", description="Server information
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
+        print("🤖 Bot instance created")
 
     async def setup_hook(self):
         global riot_api, orianna_initialized
         
         print("🔧 Starting setup_hook...")
+        print(f"⏰ Current time: {datetime.datetime.now()}")
         
         # Add persistent views for Thread Manager
+        print("📋 Adding persistent views...")
         self.add_view(VotingView(0))  # Dummy view for persistent buttons
         self.add_view(ModReviewView(0, 0))  # Dummy view for persistent buttons
         
@@ -461,6 +468,7 @@ class MyBot(commands.Bot):
         if not orianna_initialized:
             try:
                 print("🔄 Initializing Kassalytics modules...")
+                print(f"⏰ Kassalytics init start: {datetime.datetime.now()}")
                 
                 # Initialize database
                 db = initialize_database(DATABASE_URL)
