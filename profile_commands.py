@@ -1041,7 +1041,7 @@ class ProfileCommands(commands.Cog):
             embed.set_thumbnail(url="https://cdn.discordapp.com/avatars/1274276113660645389/a_445fd12821cb7e77b1258cc379f07da7.gif?size=1024")
         else:
             embed.add_field(
-                name="📊 Champion Mastery",
+                name=f"{get_other_emoji('noted')} Champion Mastery",
                 value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
                 inline=False
             )
@@ -1427,7 +1427,7 @@ class ProfileCommands(commands.Cog):
             
             # Format LP change
             lp_str = f"+{lp_change}" if lp_change > 0 else str(lp_change)
-            result_emoji = "✅" if won else "❌"
+            result_emoji = get_other_emoji('win') if won else get_other_emoji('loss')
             
             match_details_list.append({
                 'emoji': result_emoji,
@@ -1478,7 +1478,7 @@ class ProfileCommands(commands.Cog):
         )
         
         embed.add_field(
-            name="📊 Summary",
+            name=f"{get_other_emoji('noted')} Summary",
             value=summary_text,
             inline=False
         )
@@ -2339,7 +2339,7 @@ class ProfileView(discord.ui.View):
             embed.set_thumbnail(url="https://cdn.discordapp.com/avatars/1274276113660645389/a_445fd12821cb7e77b1258cc379f07da7.gif?size=1024")
         else:
             embed.add_field(
-                name="📊 Champion Mastery",
+                name=f"{get_other_emoji('noted')} Champion Mastery",
                 value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
                 inline=False
             )
@@ -2441,7 +2441,7 @@ class ProfileView(discord.ui.View):
     async def create_stats_embed(self) -> discord.Embed:
         """Create statistics embed with detailed performance data"""
         embed = discord.Embed(
-            title=f"📊 **{self.target_user.display_name}'s Statistics**",
+            title=f"{get_other_emoji('noted')} **{self.target_user.display_name}'s Statistics**",
             color=0x1F8EFA
         )
         
@@ -2723,7 +2723,7 @@ class ProfileView(discord.ui.View):
                 f"**@15min:** {avg_15:,.0f}g\n"
                 f"**@20min:** {avg_20:,.0f}g"
             )
-            embed.add_field(name="📊 **Gold Timeline**", value=timeline_text, inline=True)
+            embed.add_field(name=f"{get_other_emoji('noted')} **Gold Timeline**", value=timeline_text, inline=True)
             
             # Early game performance
             if avg_10 >= 4000:
@@ -2798,7 +2798,7 @@ class ProfileView(discord.ui.View):
             else:
                 losses += 1
 
-            result_emoji = "✅" if won else "❌"
+            result_emoji = get_other_emoji('win') if won else get_other_emoji('loss')
             champ_emoji = get_champion_emoji(champion)
 
             queue_id = match['info'].get('queueId', 0)
@@ -2820,7 +2820,7 @@ class ProfileView(discord.ui.View):
 
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
         embed.add_field(
-            name="📊 Summary",
+            name=f"{get_other_emoji('noted')} Summary",
             value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%) • {len(filtered_matches)} total games",
             inline=False
         )
@@ -2879,8 +2879,9 @@ class ProfileView(discord.ui.View):
                 })
         
         if not all_ranked_matches:
+            lp_emoji = get_other_emoji('lp')
             embed = discord.Embed(
-                title=f"💰 LP Balance - Today",
+                title=f"{lp_emoji} LP Balance - Today",
                 description=f"**{self.target_user.display_name}** hasn't played any ranked games today.",
                 color=0x808080
             )
@@ -2920,7 +2921,7 @@ class ProfileView(discord.ui.View):
             
             champ_emoji = get_champion_emoji(champion)
             lp_str = f"+{lp_change}" if lp_change > 0 else str(lp_change)
-            result_emoji = "✅" if won else "❌"
+            result_emoji = get_other_emoji('win') if won else get_other_emoji('loss')
             
             match_details_list.append({
                 'emoji': result_emoji,
@@ -2959,7 +2960,7 @@ class ProfileView(discord.ui.View):
         # Summary
         lp_display = f"+{total_lp_change}" if total_lp_change > 0 else str(total_lp_change)
         embed.add_field(
-            name="📊 Summary",
+            name=f"{get_other_emoji('noted')} Summary",
             value=f"**Total:** {lp_display} LP\n**Record:** {wins}W - {losses}L\n**Games Played:** {wins + losses}",
             inline=False
         )
@@ -2979,9 +2980,12 @@ class ProfileView(discord.ui.View):
         embed = await self.create_profile_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Statistics", style=discord.ButtonStyle.secondary, emoji="📊", row=0)
+    @discord.ui.button(label="Statistics", style=discord.ButtonStyle.secondary, row=0)
     async def stats_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to statistics view"""
+        # Set custom emoji dynamically
+        button.emoji = discord.PartialEmoji(name="Noted", id=1436595827748634634)
+        
         if self.current_view == "stats":
             await interaction.response.defer()
             return
@@ -3016,9 +3020,13 @@ class ProfileView(discord.ui.View):
         embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, emoji="🏆", row=0)
+    @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, row=0)
     async def ranks_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to ranks view showing all accounts"""
+        # Set custom emoji if not already set
+        if not button.emoji or str(button.emoji) != "Challenger:1435683026792353792":
+            button.emoji = discord.PartialEmoji(name="Challenger", id=1435683026792353792)
+        
         if self.current_view == "ranks":
             await interaction.response.defer()
             return
