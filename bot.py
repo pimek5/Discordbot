@@ -4307,7 +4307,7 @@ async def auto_migrate_puuids():
             # Get all accounts with riot_id info
             cursor.execute("""
                 SELECT id, riot_id_game_name, riot_id_tagline, region, puuid 
-                FROM riot_accounts 
+                FROM league_accounts 
                 WHERE riot_id_game_name IS NOT NULL 
                 AND riot_id_tagline IS NOT NULL
             """)
@@ -4334,7 +4334,7 @@ async def auto_migrate_puuids():
                     # Update if different
                     if new_puuid != old_puuid:
                         cursor.execute("""
-                            UPDATE riot_accounts 
+                            UPDATE league_accounts 
                             SET puuid = %s 
                             WHERE id = %s
                         """, (new_puuid, account_id))
