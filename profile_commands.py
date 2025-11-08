@@ -1282,15 +1282,14 @@ class ProfileCommands(commands.Cog):
             db_user_id = db_user['id']
         
         # Add account directly as verified (skip verification step)
-        db.add_riot_account(
+        db.add_league_account(
             user_id=db_user_id,
             region=region,
-            riot_id_game_name=game_name,
-            riot_id_tagline=tagline,
+            game_name=game_name,
+            tagline=tagline,
             puuid=puuid,
             summoner_id=summoner_data['id'],
             summoner_level=summoner_data['summonerLevel'],
-            profile_icon_id=summoner_data.get('profileIconId', 0),
             verified=True  # Force verified
         )
         
@@ -1871,10 +1870,10 @@ class ProfileView(discord.ui.View):
             for acc in accounts:
                 account_name = f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
                 
-                # Get rank data for this account
-                account_ranks = self.account_ranks.get(acc['puuid'], {})
-                solo_rank = account_ranks.get('solo')
-                flex_rank = account_ranks.get('flex')
+                # Get rank data for this account from self.account_ranks
+                acc_rank_data = self.account_ranks.get(acc['puuid'], {})
+                solo_rank = acc_rank_data.get('solo')
+                flex_rank = acc_rank_data.get('flex')
                 
                 logger.info(f"   📊 {account_name}: Solo={bool(solo_rank)}, Flex={bool(flex_rank)}")
                 if solo_rank:
