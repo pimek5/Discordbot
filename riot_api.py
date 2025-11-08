@@ -272,26 +272,52 @@ class RiotAPI:
     
     async def get_ranked_stats_by_puuid(self, puuid: str, region: str, 
                                        retries: int = 5) -> Optional[List[Dict]]:
-        """Get ranked statistics using PUUID - first gets summoner data, then ranked stats"""
+        """Get ranked statistics using PUUID directly - NEW METHOD"""
         if not self.api_key:
             return None
         
-        # First, get summoner data which includes the encrypted summoner ID
-        summoner_data = await self.get_summoner_by_puuid(puuid, region, retries)
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        # Try new PUUID-based endpoint first
+        url = f"https://{platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
         
-        if not summoner_data:
-            logger.warning(f"⚠️ Could not get summoner data for PUUID {puuid[:10]}...")
-            return []
+        logger.info(f"🔍 Fetching ranked stats directly with PUUID from {platform}")
         
-        # Check if we have the 'id' field (encrypted summoner ID)
-        summoner_id = summoner_data.get('id')
-        if not summoner_id:
-            logger.error(f"❌ Summoner data missing 'id' field: {summoner_data}")
-            return []
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            ranked_data = await response.json()
+                            logger.info(f"✅ Got ranked stats via PUUID: {len(ranked_data)} entries")
+                            return ranked_data
+                        elif response.status == 404:
+                            logger.info(f"📭 No ranked data found (404) - player may be unranked")
+                            return []  # No ranked data found
+                        elif response.status == 429:
+                            logger.warning(f"⏳ Rate limited (attempt {attempt + 1}/{retries})")
+                            await asyncio.sleep(2)
+                            continue
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"❌ Unexpected status {response.status}: {error_text[:200]}")
+                            return []
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ Timeout getting ranked stats (attempt {attempt + 1}/{retries})")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except aiohttp.ClientError as e:
+                logger.warning(f"🌐 Network error getting ranked stats (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except Exception as e:
+                logger.error(f"❌ Error getting ranked stats: {e}")
+                return []
         
-        # Now get ranked stats using the summoner ID
-        logger.info(f"🔍 Fetching ranked stats for summoner ID: {summoner_id[:20]}...")
-        return await self.get_ranked_stats(summoner_id, region, retries)
+        logger.warning(f"⚠️ Failed to get ranked stats after {retries} attempts")
+        return []
     
     async def get_ranked_stats(self, summoner_id: str, region: str, 
                               retries: int = 5) -> Optional[List[Dict]]:
