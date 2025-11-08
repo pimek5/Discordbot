@@ -446,12 +446,16 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         global riot_api, orianna_initialized
         
+        print("🔧 Starting setup_hook...")
+        
         # Add persistent views for Thread Manager
         self.add_view(VotingView(0))  # Dummy view for persistent buttons
         self.add_view(ModReviewView(0, 0))  # Dummy view for persistent buttons
         
         # Add persistent view for Loldle buttons
         self.add_view(LoldleButtonsView())  # Persistent Loldle guess/report buttons
+        
+        print("✅ Persistent views added")
         
         # Initialize Kassalytics modules FIRST (before syncing commands)
         if not orianna_initialized:
@@ -473,27 +477,38 @@ class MyBot(commands.Bot):
                     
                 # Create Riot API instance
                 riot_api = RiotAPI(RIOT_API_KEY)
+                print("✅ Riot API instance created")
                 
                 # Load champion data from DDragon
                 await load_champion_data()
                 print("✅ Champion data loaded from DDragon")
                 
                 # Load command cogs
+                print("🔄 Loading command cogs...")
                 await self.add_cog(profile_commands.ProfileCommands(self, riot_api, GUILD_ID))
+                print("  ✅ ProfileCommands loaded")
                 await self.add_cog(stats_commands.StatsCommands(self, riot_api, GUILD_ID))
+                print("  ✅ StatsCommands loaded")
                 await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
+                print("  ✅ LeaderboardCommands loaded")
                 
                 # Load settings commands
+                print("🔄 Loading SettingsCommands...")
                 from settings_commands import SettingsCommands
                 await self.add_cog(SettingsCommands(self))
+                print("  ✅ SettingsCommands loaded")
                 
                 # Load voting commands
+                print("🔄 Loading VoteCommands...")
                 from vote_commands import VoteCommands
                 await self.add_cog(VoteCommands(self))
+                print("  ✅ VoteCommands loaded")
                 
                 # Load help commands
+                print("🔄 Loading help commands...")
                 import help_commands
                 await help_commands.setup(self, GUILD_ID)
+                print("  ✅ Help commands loaded")
                 
                 print("✅ Kassalytics commands registered")
                 
@@ -502,6 +517,9 @@ class MyBot(commands.Bot):
             except Exception as e:
                 print(f"❌ Error initializing Kassalytics: {e}")
                 logging.error(f"Orianna initialization error: {e}", exc_info=True)
+                import traceback
+                traceback.print_exc()
+                raise  # Re-raise to see the full error
         
         # Add global check for Orianna commands (channel restrictions)
         async def orianna_check(interaction: discord.Interaction) -> bool:
@@ -541,6 +559,8 @@ class MyBot(commands.Bot):
         
         self.tree.interaction_check = orianna_check
         
+        print("🔧 Registering command groups...")
+        
         guild = discord.Object(id=1153027935553454191)
         
         # Register command groups
@@ -556,12 +576,18 @@ class MyBot(commands.Bot):
         self.tree.add_command(diagnose, guild=guild)
         self.tree.add_command(checkruneforge, guild=guild)
         
+        print("✅ Command groups registered")
+        
         # Copy global commands (from Orianna Cogs) to guild
+        print("🔧 Copying global commands to guild...")
         self.tree.copy_global_to(guild=guild)
+        print("✅ Global commands copied")
         
         # Sync ALL commands to guild (fast, instant update)
+        print("🔧 Syncing commands to guild...")
         synced_guild = await self.tree.sync(guild=guild)
         print(f"✅ Synced {len(synced_guild)} commands to guild")
+        print("🎉 setup_hook completed successfully!")
 
 bot = MyBot()
 
