@@ -6,6 +6,7 @@ from typing import Optional
 import re
 import os
 import asyncio
+import aiohttp
 import requests 
 import json
 import datetime
@@ -4378,13 +4379,43 @@ async def on_ready():
         print(f"🔥 Started monitoring threads for RuneForge mods")
 
 # Run bot - simple approach, let Docker/hosting service handle restarts
+import sys
+
+async def run_bot_with_retry():
+    """Run bot with connection retry logic"""
+    max_retries = 3
+    retry_delay = 5  # seconds
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"🚀 Starting Discord bot (attempt {attempt}/{max_retries})...")
+            await bot.start(os.getenv("BOT_TOKEN"))
+            break  # If successful, exit loop
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError, aiohttp.client_exceptions.ConnectionTimeoutError) as e:
+            print(f"⚠️ Connection error on attempt {attempt}/{max_retries}: {e}")
+            if attempt < max_retries:
+                print(f"⏳ Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                print(f"❌ Failed to connect after {max_retries} attempts")
+                raise
+        except KeyboardInterrupt:
+            print("👋 Bot shutdown requested")
+            break
+        except Exception as e:
+            print(f"❌ Fatal error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
 try:
-    print("🚀 Starting Discord bot...")
-    bot.run(os.getenv("BOT_TOKEN"))
+    # Use asyncio.run() with timeout
+    asyncio.run(run_bot_with_retry())
 except KeyboardInterrupt:
     print("👋 Bot shutdown requested")
+    sys.exit(0)
 except Exception as e:
-    print(f"❌ Fatal error: {e}")
-    import traceback
-    traceback.print_exc()
+    print(f"❌ Fatal error during bot startup: {e}")
+    sys.exit(1)
     raise
