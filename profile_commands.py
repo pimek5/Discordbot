@@ -862,9 +862,9 @@ class ProfileCommands(commands.Cog):
                     f"**CS/min:** {avg_cs_per_min:.1f} • **Vision:** {avg_vision:.0f}"
                 ]
                 
-                stats_emoji = get_other_emoji('stats')
+                noted_emoji = get_other_emoji('noted')
                 embed.add_field(
-                    name=f"{stats_emoji} Recent Performance ({recent_games_count} games)",
+                    name=f"{noted_emoji} Recent Performance ({recent_games_count} games)",
                     value="\n".join(perf_lines),
                     inline=True
                 )
@@ -1376,8 +1376,9 @@ class ProfileCommands(commands.Cog):
                         })
         
         if not all_ranked_matches:
+            noted_emoji = get_other_emoji('noted')
             embed = discord.Embed(
-                title=f"📊 LP Balance - Today",
+                title=f"{noted_emoji} LP Balance - Today",
                 description=f"**{target_user.display_name}** hasn't played any ranked games today.",
                 color=0x808080
             )
@@ -1636,13 +1637,13 @@ class ProfileCommands(commands.Cog):
                 inline=False
             )
         
-        # Summary stats - use custom stats emoji
+        # Summary stats - use custom noted emoji
         avg_kda = f"{total_kills/len(all_matches):.1f}/{total_deaths/len(all_matches):.1f}/{total_assists/len(all_matches):.1f}"
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
         
-        stats_emoji = get_other_emoji('stats')
+        noted_emoji = get_other_emoji('noted')
         embed.add_field(
-            name=f"{stats_emoji} Combined Stats",
+            name=f"{noted_emoji} Combined Stats",
             value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%)\n**Avg KDA:** {avg_kda}",
             inline=False
         )
@@ -3000,9 +3001,13 @@ class ProfileView(discord.ui.View):
         embed = await self.create_matches_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="LP", style=discord.ButtonStyle.secondary, emoji="💰", row=0)
+    @discord.ui.button(label="LP", style=discord.ButtonStyle.secondary, row=0)
     async def lp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to LP balance view"""
+        # Set custom emoji if not already set
+        if not button.emoji or str(button.emoji) != "LP:1436591112025407590":
+            button.emoji = discord.PartialEmoji(name="LP", id=1436591112025407590)
+        
         if self.current_view == "lp":
             await interaction.response.defer()
             return
