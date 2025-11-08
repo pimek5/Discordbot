@@ -1188,6 +1188,7 @@ class ProfileCommands(commands.Cog):
             message = await interaction.followup.send(embed=embed, view=view)
             view.message = message  # Store message for deletion on timeout
         
+        finally:
             # Cancel keep-alive task once we've sent the final response
             keep_alive_task.cancel()
     
@@ -1532,16 +1533,17 @@ class ProfileCommands(commands.Cog):
         
         message = await interaction.followup.send(embed=embed)
         
-        # Cancel keep-alive task
-        keep_alive_task.cancel()
+            # Auto-delete after 2 minutes
+            await asyncio.sleep(120)
+            try:
+                await message.delete()
+                logger.info(f"🗑️ Auto-deleted LP embed for {target_user.display_name} after 2 minutes")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not delete LP embed: {e}")
         
-        # Auto-delete after 2 minutes
-        await asyncio.sleep(120)
-        try:
-            await message.delete()
-            logger.info(f"🗑️ Auto-deleted LP embed for {target_user.display_name} after 2 minutes")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not delete LP embed: {e}")
+        finally:
+            # Cancel keep-alive task
+            keep_alive_task.cancel()
     
     @app_commands.command(name="matches", description="View recent match history from all linked accounts")
     @app_commands.describe(user="The user to view (defaults to yourself)")
