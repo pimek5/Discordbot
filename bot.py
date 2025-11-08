@@ -907,6 +907,153 @@ async def diagnose(interaction: discord.Interaction):
     await interaction.edit_original_response(embed=embed)
 
 # ================================
+#        ADMIN COMMANDS
+# ================================
+@bot.tree.command(name="sync", description="Sync bot commands to Discord (Admin only)")
+async def sync_commands(interaction: discord.Interaction):
+    """Manually sync slash commands"""
+    # Check permissions
+    if not has_admin_permissions(interaction):
+        await interaction.response.send_message(
+            "❌ You need Administrator permission or Admin role to use this command!",
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Sync commands
+        synced = await bot.tree.sync()
+        
+        embed = discord.Embed(
+            title="✅ Commands Synced",
+            description=f"Successfully synced **{len(synced)}** commands to Discord.",
+            color=0x00FF00
+        )
+        embed.add_field(
+            name="ℹ️ Note",
+            value="Global command sync can take up to 1 hour to propagate across all servers.",
+            inline=False
+        )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        print(f"✅ Commands manually synced by {interaction.user.name}: {len(synced)} commands")
+        
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Error syncing commands: {str(e)}",
+            ephemeral=True
+        )
+        print(f"❌ Error syncing commands: {e}")
+
+@bot.tree.command(name="update_mastery", description="Update mastery data for all users (Admin only)")
+async def update_mastery(interaction: discord.Interaction):
+    """Manually update mastery data for all users"""
+    # Check permissions
+    if not has_admin_permissions(interaction):
+        await interaction.response.send_message(
+            "❌ You need Administrator permission or Admin role to use this command!",
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        from database import get_db
+        db = get_db()
+        
+        # Get all users with linked accounts
+        conn = db.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT DISTINCT u.id, u.snowflake
+                    FROM users u
+                    JOIN league_accounts la ON u.id = la.user_id
+                    WHERE la.puuid IS NOT NULL
+                """)
+                users = cur.fetchall()
+        finally:
+            db.return_connection(conn)
+        
+        if not users:
+            await interaction.followup.send(
+                "ℹ️ No users with linked accounts found.",
+                ephemeral=True
+            )
+            return
+        
+        # Update mastery for each user
+        updated = 0
+        failed = 0
+        
+        for user_id, snowflake in users:
+            try:
+                # Get user's primary account
+                conn = db.get_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            SELECT puuid, region
+                            FROM league_accounts
+                            WHERE user_id = %s AND primary_account = TRUE
+                            LIMIT 1
+                        """, (user_id,))
+                        account = cur.fetchone()
+                finally:
+                    db.return_connection(conn)
+                
+                if account:
+                    puuid, region = account
+                    # Fetch mastery from Riot API
+                    from riot_api import RiotAPI
+                    import os
+                    riot_api = RiotAPI(os.getenv('RIOT_API_KEY'))
+                    mastery_data = await riot_api.get_champion_mastery(puuid, region)
+                    
+                    if mastery_data:
+                        # Update in database
+                        for champ in mastery_data:
+                            db.update_champion_stats(
+                                user_id,
+                                champ['championId'],
+                                champ['championPoints'],
+                                champ['championLevel'],
+                                champ.get('chestGranted', False),
+                                champ.get('tokensEarned', 0),
+                                champ.get('lastPlayTime', 0)
+                            )
+                        updated += 1
+                    else:
+                        failed += 1
+                else:
+                    failed += 1
+                    
+            except Exception as e:
+                print(f"Error updating mastery for user {snowflake}: {e}")
+                failed += 1
+        
+        embed = discord.Embed(
+            title="✅ Mastery Update Complete",
+            color=0x00FF00
+        )
+        embed.add_field(name="✅ Updated", value=str(updated), inline=True)
+        embed.add_field(name="❌ Failed", value=str(failed), inline=True)
+        embed.add_field(name="📊 Total", value=str(len(users)), inline=True)
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        print(f"✅ Mastery updated by {interaction.user.name}: {updated} success, {failed} failed")
+        
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Error updating mastery: {str(e)}",
+            ephemeral=True
+        )
+        print(f"❌ Error updating mastery: {e}")
+
+# ================================
 #        FIXED MESSAGES
 # ================================
 class FixedMessageView(discord.ui.View):
