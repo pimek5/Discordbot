@@ -452,7 +452,7 @@ class MyBot(commands.Bot):
         super().__init__(
             command_prefix="!", 
             intents=intents,
-            timeout=aiohttp.ClientTimeout(total=60, connect=30)  # Zwiększone timeouty
+            timeout=aiohttp.ClientTimeout(total=120, connect=60, sock_read=60)  # Bardzo długie timeouty dla Railway
         )
         print("🤖 Bot instance created with extended timeouts for Railway")
 
@@ -4566,8 +4566,8 @@ async def diagnose_network():
 
 async def run_bot_with_retry():
     """Run bot with connection retry logic"""
-    max_retries = 5  # Zwiększone z 3 do 5
-    retry_delay = 10  # Zwiększone z 5 do 10 sekund
+    max_retries = 10  # Zwiększone z 5 do 10
+    retry_delay = 15  # Zwiększone z 10 do 15 sekund
     
     # Run network diagnostics first
     print("=" * 60)
@@ -4585,9 +4585,9 @@ async def run_bot_with_retry():
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError, aiohttp.client_exceptions.ConnectionTimeoutError) as e:
             print(f"⚠️ Connection error on attempt {attempt}/{max_retries}: {e}")
             if attempt < max_retries:
-                print(f"⏳ Retrying in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 1.5, 60)  # Exponential backoff, max 60s
+                wait_time = min(retry_delay * (1.5 ** (attempt - 1)), 120)  # Exponential backoff, max 2min
+                print(f"⏳ Retrying in {wait_time:.0f} seconds...")
+                await asyncio.sleep(wait_time)
             else:
                 print(f"❌ Failed to connect after {max_retries} attempts")
                 print(f"💡 This may be a Railway network issue. Check Railway status or try redeploying.")
