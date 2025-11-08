@@ -56,16 +56,27 @@ async def load_champion_data():
     """Load champion data from DDragon"""
     global CHAMPION_ID_TO_NAME
     try:
-        async with aiohttp.ClientSession() as session:
+        print("🔄 Loading champion data from DDragon...")
+        timeout = aiohttp.ClientTimeout(total=10)  # 10 second timeout
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             url = f"{DDRAGON_BASE}/data/en_US/champion.json"
+            print(f"📡 Fetching: {url}")
             async with session.get(url) as response:
+                print(f"📡 Response status: {response.status}")
                 if response.status == 200:
                     data = await response.json()
                     for champ_name, champ_data in data['data'].items():
                         champ_id = int(champ_data['key'])
                         CHAMPION_ID_TO_NAME[champ_id] = champ_name
+                    print(f"✅ Loaded {len(CHAMPION_ID_TO_NAME)} champions from DDragon")
                     logger.info(f"✅ Loaded {len(CHAMPION_ID_TO_NAME)} champions from DDragon")
+                else:
+                    print(f"⚠️ DDragon returned status {response.status}")
+    except asyncio.TimeoutError:
+        print("❌ Timeout loading champion data from DDragon")
+        logger.error("❌ Timeout loading champion data from DDragon")
     except Exception as e:
+        print(f"❌ Error loading champion data: {e}")
         logger.error(f"❌ Error loading champion data: {e}")
 
 def get_champion_icon_url(champion_id: int) -> str:

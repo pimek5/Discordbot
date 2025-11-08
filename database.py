@@ -21,17 +21,23 @@ class Database:
     def initialize(self):
         """Initialize connection pool"""
         try:
+            print("🔄 Creating database connection pool...")
             self.connection_pool = pool.ThreadedConnectionPool(
                 minconn=1,
                 maxconn=10,
-                dsn=self.database_url
+                dsn=self.database_url,
+                connect_timeout=10  # 10 second timeout
             )
+            print("✅ Database connection pool created")
             logger.info("✅ Database connection pool created")
             
             # Create tables if they don't exist
+            print("🔄 Creating/verifying database tables...")
             self.create_tables()
+            print("✅ Database tables created/verified")
             
         except Exception as e:
+            print(f"❌ Failed to create connection pool: {e}")
             logger.error(f"❌ Failed to create connection pool: {e}")
             raise
     
