@@ -561,6 +561,9 @@ class MyBot(commands.Bot):
         
         print("🔧 Registering command groups...")
         
+        # Primary guild for instant updates
+        primary_guild = discord.Object(id=1153027935553454191)
+        
         # Register command groups GLOBALLY (available on all servers)
         self.tree.add_command(twitter_group)
         self.tree.add_command(loldle_group)
@@ -576,11 +579,18 @@ class MyBot(commands.Bot):
         
         print("✅ Command groups registered globally")
         
-        # Sync ALL commands globally (slower, but works on all servers)
+        # Sync to primary guild FIRST (instant update for main server)
+        print(f"🔧 Syncing commands to primary guild {primary_guild.id}...")
+        self.tree.copy_global_to(guild=primary_guild)
+        synced_guild = await self.tree.sync(guild=primary_guild)
+        print(f"✅ Synced {len(synced_guild)} commands to primary guild (instant)")
+        
+        # Then sync globally (for all other servers)
         print("🔧 Syncing commands globally...")
         synced_global = await self.tree.sync()
         print(f"✅ Synced {len(synced_global)} commands globally (available on all servers)")
-        print("⚠️ Note: Global command sync can take up to 1 hour to propagate to all servers")
+        print("⚠️ Note: Global command sync can take up to 1 hour to propagate to other servers")
+        print(f"✅ Primary guild {primary_guild.id} has instant access to all commands")
         print("🎉 setup_hook completed successfully!")
 
 bot = MyBot()
