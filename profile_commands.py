@@ -520,6 +520,27 @@ class ProfileCommands(commands.Cog):
         target = user or interaction.user
         db = get_db()
         
+        # Keep interaction alive with periodic updates
+        async def keep_alive():
+            """Update the interaction periodically to prevent timeout"""
+            messages = [
+                "⏳ Loading player data...",
+                "📊 Fetching match history...",
+                "🏆 Calculating statistics...",
+                "🎮 Preparing profile..."
+            ]
+            for i, msg in enumerate(messages):
+                if i > 0:  # Don't wait before first message
+                    await asyncio.sleep(3)
+                try:
+                    await interaction.edit_original_response(content=msg)
+                except:
+                    break  # Stop if interaction is no longer valid
+        
+        # Start keep-alive task
+        keep_alive_task = asyncio.create_task(keep_alive())
+        
+        try:
         # Get user from database
         db_user = db.get_user_by_discord_id(target.id)
         
@@ -1166,6 +1187,9 @@ class ProfileCommands(commands.Cog):
         
         message = await interaction.followup.send(embed=embed, view=view)
         view.message = message  # Store message for deletion on timeout
+        
+        # Cancel keep-alive task once we've sent the final response
+        keep_alive_task.cancel()
     
     @app_commands.command(name="unlink", description="Unlink your Riot account")
     async def unlink(self, interaction: discord.Interaction):
@@ -1300,26 +1324,42 @@ class ProfileCommands(commands.Cog):
         target_user = user or interaction.user
         await interaction.response.defer()
         
-        db = get_db()
-        user_data = db.get_user_by_discord_id(target_user.id)
+        # Keep interaction alive
+        async def keep_alive():
+            messages = ["⏳ Fetching LP data...", "📊 Calculating LP gains..."]
+            for i, msg in enumerate(messages):
+                if i > 0:
+                    await asyncio.sleep(3)
+                try:
+                    await interaction.edit_original_response(content=msg)
+                except:
+                    break
         
-        if not user_data:
-            await interaction.followup.send(
-                f"❌ {target_user.mention} hasn't linked their account! Use `/link` first.",
-                ephemeral=True
-            )
-            return
+        keep_alive_task = asyncio.create_task(keep_alive())
         
-        # Get visible accounts for LP calculation
-        all_accounts = db.get_visible_user_accounts(user_data['id'])
-        
-        if not all_accounts or not any(acc.get('verified') for acc in all_accounts):
-            await interaction.followup.send(
-                f"❌ {target_user.mention} has no visible verified accounts!\n"
-                "Use `/accounts` to make accounts visible.",
-                ephemeral=True
-            )
-            return
+        try:
+            db = get_db()
+            user_data = db.get_user_by_discord_id(target_user.id)
+            
+            if not user_data:
+                keep_alive_task.cancel()
+                await interaction.followup.send(
+                    f"❌ {target_user.mention} hasn't linked their account! Use `/link` first.",
+                    ephemeral=True
+                )
+                return
+            
+            # Get visible accounts for LP calculation
+            all_accounts = db.get_visible_user_accounts(user_data['id'])
+            
+            if not all_accounts or not any(acc.get('verified') for acc in all_accounts):
+                keep_alive_task.cancel()
+                await interaction.followup.send(
+                    f"❌ {target_user.mention} has no visible verified accounts!\n"
+                    "Use `/accounts` to make accounts visible.",
+                    ephemeral=True
+                )
+                return
         
         # Get today's date range
         from datetime import datetime, timedelta
@@ -1491,6 +1531,9 @@ class ProfileCommands(commands.Cog):
             embed.set_footer(text=f"{target_user.display_name} • Today's LP gains")
         
         message = await interaction.followup.send(embed=embed)
+        
+        # Cancel keep-alive task
+        keep_alive_task.cancel()
         
         # Auto-delete after 2 minutes
         await asyncio.sleep(120)

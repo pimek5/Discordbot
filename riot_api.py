@@ -204,11 +204,6 @@ class RiotAPI:
                         if response.status == 200:
                             data = await response.json()
                             logger.info(f"✅ Got summoner data from {platform}: {data}")
-                            
-                            # Check if 'id' field exists
-                            if 'id' not in data:
-                                logger.error(f"⚠️ CRITICAL: Summoner data missing 'id' field! Full response: {data}")
-                            
                             return data
                         elif response.status == 404:
                             logger.warning(f"❌ Summoner not found on {platform} (404)")
