@@ -9,7 +9,7 @@ from discord.ext import commands
 import logging
 
 from database import get_db
-from bot import has_admin_permissions
+from permissions import has_admin_permissions
 
 logger = logging.getLogger('help_commands')
 
