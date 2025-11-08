@@ -15,7 +15,7 @@ import asyncio
 
 from database import get_db
 from riot_api import RiotAPI, RIOT_REGIONS, get_champion_icon_url, get_rank_icon_url, CHAMPION_ID_TO_NAME
-from emoji_dict import get_champion_emoji, get_rank_emoji, get_mastery_emoji, RANK_EMOJIS as RANK_EMOJIS_NEW
+from emoji_dict import get_champion_emoji, get_rank_emoji, get_mastery_emoji, get_other_emoji, RANK_EMOJIS as RANK_EMOJIS_NEW
 
 logger = logging.getLogger('profile_commands')
 
@@ -862,8 +862,9 @@ class ProfileCommands(commands.Cog):
                     f"**CS/min:** {avg_cs_per_min:.1f} • **Vision:** {avg_vision:.0f}"
                 ]
                 
+                stats_emoji = get_other_emoji('stats')
                 embed.add_field(
-                    name=f"📊 Recent Performance ({recent_games_count} games)",
+                    name=f"{stats_emoji} Recent Performance ({recent_games_count} games)",
                     value="\n".join(perf_lines),
                     inline=True
                 )
@@ -1614,9 +1615,10 @@ class ProfileCommands(commands.Cog):
             if duration > 1000:
                 duration = duration / 1000
             duration_min = int(duration / 60)
+            duration_sec = int(duration % 60)
             
-            # Emoji
-            result_emoji = "✅" if won else "❌"
+            # Emoji - use custom win/loss emojis
+            result_emoji = get_other_emoji('win') if won else get_other_emoji('loss')
             
             # Champion emoji
             champ_emoji = get_champion_emoji(champion)
@@ -1626,7 +1628,7 @@ class ProfileCommands(commands.Cog):
             
             # Add field
             field_name = f"{game_mode} {f'• {account_short}' if account_short else ''}"
-            field_value = f"{result_emoji} {champ_emoji} **{champion}** • {kda} KDA • {duration_min}m"
+            field_value = f"{result_emoji} {champ_emoji} **{champion}** • {kda} KDA • {duration_min}:{duration_sec:02d}"
             
             embed.add_field(
                 name=field_name,
@@ -1634,12 +1636,13 @@ class ProfileCommands(commands.Cog):
                 inline=False
             )
         
-        # Summary stats
+        # Summary stats - use custom stats emoji
         avg_kda = f"{total_kills/len(all_matches):.1f}/{total_deaths/len(all_matches):.1f}/{total_assists/len(all_matches):.1f}"
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
         
+        stats_emoji = get_other_emoji('stats')
         embed.add_field(
-            name="📊 Combined Stats",
+            name=f"{stats_emoji} Combined Stats",
             value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%)\n**Avg KDA:** {avg_kda}",
             inline=False
         )

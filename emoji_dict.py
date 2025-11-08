@@ -194,6 +194,10 @@ OTHER_EMOJIS = {
     'mastery_10': '<:mastery_10:1435691564620841010>',
     'mastery_5': '<:mastery_5:1435691566584037507>',
     'mastery_7': '<:mastery_7:1435691569368928480>',
+    'money': '<:money:1436591112025407590>',
+    'win': '<:win:1436594132255768668>',
+    'loss': '<:loss:1436594096524234763>',
+    'stats': '<:stats:1436595827748634634>',
 }
 
 # Create MASTERY_EMOJIS for easier access
@@ -220,3 +224,7 @@ def get_mastery_emoji(level: int) -> str:
     elif level >= 5:
         return MASTERY_EMOJIS[5]
     return ""
+
+def get_other_emoji(name: str) -> str:
+    """Get other emoji by name (money, win, loss, stats)"""
+    return OTHER_EMOJIS.get(name, "")
