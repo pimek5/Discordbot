@@ -578,12 +578,11 @@ class MyBot(commands.Bot):
         # Primary guild for instant updates
         primary_guild = discord.Object(id=1153027935553454191)
         
-        # Clear existing commands to prevent duplicate registration
-        self.tree.clear_commands(guild=None)  # Clear global
-        self.tree.clear_commands(guild=primary_guild)  # Clear guild
-        print("✅ Cleared existing commands")
+        # Note: COG commands (ProfileCommands, StatsCommands, LeaderboardCommands) 
+        # are automatically added to the tree when we call add_cog()
+        # We don't need to manually register them or clear them
         
-        # Register command groups GLOBALLY (available on all servers)
+        # Register standalone command groups GLOBALLY (available on all servers)
         self.tree.add_command(twitter_group)
         self.tree.add_command(loldle_group)
         self.tree.add_command(mod_group)
