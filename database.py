@@ -393,135 +393,93 @@ class Database:
     
     def get_rank_leaderboard(self, guild_id: Optional[int] = None, 
                             queue: str = 'RANKED_SOLO_5x5', limit: int = 10) -> List[Dict]:
-        """Get top ranked players by LP
-        
-        Rank order (higher to lower):
-        CHALLENGER > GRANDMASTER > MASTER > DIAMOND > EMERALD > PLATINUM > GOLD > SILVER > BRONZE > IRON
-        Within each tier: I > II > III > IV
-        """
+        """Get top ranked players - shows best rank per user with their summoner name"""
         conn = self.get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Define tier ordering (higher = better)
-                tier_order = """
-                    CASE tier
-                        WHEN 'CHALLENGER' THEN 9
-                        WHEN 'GRANDMASTER' THEN 8
-                        WHEN 'MASTER' THEN 7
-                        WHEN 'DIAMOND' THEN 6
-                        WHEN 'EMERALD' THEN 5
-                        WHEN 'PLATINUM' THEN 4
-                        WHEN 'GOLD' THEN 3
-                        WHEN 'SILVER' THEN 2
-                        WHEN 'BRONZE' THEN 1
-                        WHEN 'IRON' THEN 0
-                        ELSE -1
-                    END
-                """
-                
-                # Define rank ordering within tier (I = 4, II = 3, III = 2, IV = 1)
-                rank_order = """
-                    CASE rank
-                        WHEN 'I' THEN 4
-                        WHEN 'II' THEN 3
-                        WHEN 'III' THEN 2
-                        WHEN 'IV' THEN 1
-                        ELSE 0
-                    END
-                """
-                
-                if guild_id:
-                    # Server-only leaderboard - show best rank per user
-                    cur.execute(f"""
-                        WITH best_ranks AS (
-                            SELECT 
-                                u.id,
-                                u.snowflake, 
-                                ur.tier, 
-                                ur.rank, 
-                                ur.league_points, 
-                                ur.wins, 
-                                ur.losses,
-                                ROW_NUMBER() OVER (
-                                    PARTITION BY u.id 
-                                    ORDER BY 
-                                        {tier_order} DESC,
-                                        {rank_order} DESC,
-                                        ur.league_points DESC
-                                ) as rn
-                            FROM user_ranks ur
-                            JOIN users u ON ur.user_id = u.id
-                            WHERE ur.queue = %s
-                        )
+                # Simple query - get best rank per user with their account name
+                cur.execute("""
+                    WITH user_best_ranks AS (
                         SELECT 
-                            br.snowflake, 
-                            br.tier, 
-                            br.rank, 
-                            br.league_points, 
-                            br.wins, 
-                            br.losses,
-                            COALESCE(
-                                (SELECT riot_id_game_name FROM league_accounts WHERE user_id = br.id AND primary_account = TRUE LIMIT 1),
-                                (SELECT riot_id_game_name FROM league_accounts WHERE user_id = br.id LIMIT 1)
-                            ) as riot_id_game_name,
-                            COALESCE(
-                                (SELECT riot_id_tagline FROM league_accounts WHERE user_id = br.id AND primary_account = TRUE LIMIT 1),
-                                (SELECT riot_id_tagline FROM league_accounts WHERE user_id = br.id LIMIT 1)
-                            ) as riot_id_tagline
-                        FROM best_ranks br
-                        WHERE br.rn = 1
-                        ORDER BY 
-                            {tier_order} DESC,
-                            {rank_order} DESC,
-                            br.league_points DESC
-                        LIMIT %s
-                    """, (queue, limit))
-                else:
-                    # Global leaderboard - show best rank per user
-                    cur.execute(f"""
-                        WITH best_ranks AS (
-                            SELECT 
-                                u.id,
-                                u.snowflake, 
-                                ur.tier, 
-                                ur.rank, 
-                                ur.league_points, 
-                                ur.wins, 
-                                ur.losses,
-                                ROW_NUMBER() OVER (
-                                    PARTITION BY u.id 
-                                    ORDER BY 
-                                        {tier_order} DESC,
-                                        {rank_order} DESC,
-                                        ur.league_points DESC
-                                ) as rn
-                            FROM user_ranks ur
-                            JOIN users u ON ur.user_id = u.id
-                            WHERE ur.queue = %s
-                        )
-                        SELECT 
-                            br.snowflake, 
-                            br.tier, 
-                            br.rank, 
-                            br.league_points, 
-                            br.wins, 
-                            br.losses,
-                            COALESCE(
-                                (SELECT riot_id_game_name FROM league_accounts WHERE user_id = br.id AND primary_account = TRUE LIMIT 1),
-                                (SELECT riot_id_game_name FROM league_accounts WHERE user_id = br.id LIMIT 1)
-                            ) as riot_id_game_name,
-                            COALESCE(
-                                (SELECT riot_id_tagline FROM league_accounts WHERE user_id = br.id AND primary_account = TRUE LIMIT 1),
-                                (SELECT riot_id_tagline FROM league_accounts WHERE user_id = br.id LIMIT 1)
-                            ) as riot_id_tagline
-                        FROM best_ranks br
-                        WHERE br.rn = 1
-                        ORDER BY 
-                            {tier_order} DESC,
-                            {rank_order} DESC,
-                            br.league_points DESC
-                        LIMIT %s
-                    """, (queue, limit))
+                            ur.user_id,
+                            ur.tier,
+                            ur.rank,
+                            ur.league_points,
+                            ur.wins,
+                            ur.losses,
+                            CASE ur.tier
+                                WHEN 'CHALLENGER' THEN 9
+                                WHEN 'GRANDMASTER' THEN 8
+                                WHEN 'MASTER' THEN 7
+                                WHEN 'DIAMOND' THEN 6
+                                WHEN 'EMERALD' THEN 5
+                                WHEN 'PLATINUM' THEN 4
+                                WHEN 'GOLD' THEN 3
+                                WHEN 'SILVER' THEN 2
+                                WHEN 'BRONZE' THEN 1
+                                WHEN 'IRON' THEN 0
+                                ELSE -1
+                            END as tier_value,
+                            CASE ur.rank
+                                WHEN 'I' THEN 4
+                                WHEN 'II' THEN 3
+                                WHEN 'III' THEN 2
+                                WHEN 'IV' THEN 1
+                                ELSE 0
+                            END as rank_value,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY ur.user_id 
+                                ORDER BY 
+                                    CASE ur.tier
+                                        WHEN 'CHALLENGER' THEN 9
+                                        WHEN 'GRANDMASTER' THEN 8
+                                        WHEN 'MASTER' THEN 7
+                                        WHEN 'DIAMOND' THEN 6
+                                        WHEN 'EMERALD' THEN 5
+                                        WHEN 'PLATINUM' THEN 4
+                                        WHEN 'GOLD' THEN 3
+                                        WHEN 'SILVER' THEN 2
+                                        WHEN 'BRONZE' THEN 1
+                                        WHEN 'IRON' THEN 0
+                                        ELSE -1
+                                    END DESC,
+                                    CASE ur.rank
+                                        WHEN 'I' THEN 4
+                                        WHEN 'II' THEN 3
+                                        WHEN 'III' THEN 2
+                                        WHEN 'IV' THEN 1
+                                        ELSE 0
+                                    END DESC,
+                                    ur.league_points DESC
+                            ) as rn
+                        FROM user_ranks ur
+                        WHERE ur.queue = %s
+                    )
+                    SELECT 
+                        u.snowflake,
+                        ubr.tier,
+                        ubr.rank,
+                        ubr.league_points,
+                        ubr.wins,
+                        ubr.losses,
+                        la.riot_id_game_name,
+                        la.riot_id_tagline
+                    FROM user_best_ranks ubr
+                    JOIN users u ON ubr.user_id = u.id
+                    LEFT JOIN league_accounts la ON u.id = la.user_id 
+                        AND (la.primary_account = TRUE OR la.id = (
+                            SELECT id FROM league_accounts 
+                            WHERE user_id = u.id 
+                            ORDER BY primary_account DESC, id ASC 
+                            LIMIT 1
+                        ))
+                    WHERE ubr.rn = 1
+                    ORDER BY 
+                        ubr.tier_value DESC,
+                        ubr.rank_value DESC,
+                        ubr.league_points DESC
+                    LIMIT %s
+                """, (queue, limit))
                 return cur.fetchall()
         finally:
             self.return_connection(conn)
