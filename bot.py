@@ -593,21 +593,7 @@ class MyBot(commands.Bot):
         
         print("✅ Command groups registered globally")
         
-        # Sync to primary guild FIRST (instant update for main server)
-        print(f"🔧 Syncing commands to primary guild {primary_guild.id}...")
-        try:
-            self.tree.copy_global_to(guild=primary_guild)
-            synced_guild = await asyncio.wait_for(
-                self.tree.sync(guild=primary_guild),
-                timeout=30.0  # 30 second timeout
-            )
-            print(f"✅ Synced {len(synced_guild)} commands to primary guild (instant)")
-        except asyncio.TimeoutError:
-            print("⚠️ Timeout syncing to primary guild - continuing anyway")
-        except Exception as e:
-            print(f"⚠️ Error syncing to primary guild: {e}")
-        
-        # Then sync globally (for all other servers)
+        # Sync globally (all commands available on all servers)
         print("🔧 Syncing commands globally...")
         try:
             synced_global = await asyncio.wait_for(
@@ -615,9 +601,11 @@ class MyBot(commands.Bot):
                 timeout=30.0  # 30 second timeout
             )
             print(f"✅ Synced {len(synced_global)} commands globally (available on all servers)")
+            print("⚠️ Note: Global command sync can take up to 1 hour to propagate to all servers")
         except asyncio.TimeoutError:
             print("⚠️ Timeout syncing globally - will retry next restart")
         except Exception as e:
+            print(f"⚠️ Error syncing globally: {e}")
             print(f"⚠️ Error syncing globally: {e}")
         print("⚠️ Note: Global command sync can take up to 1 hour to propagate to other servers")
         print(f"✅ Primary guild {primary_guild.id} has instant access to all commands")
