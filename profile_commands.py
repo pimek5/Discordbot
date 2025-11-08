@@ -618,36 +618,29 @@ class ProfileCommands(commands.Cog):
             
             logger.info(f"🔍 Fetching ranks for {acc['riot_id_game_name']}#{acc['riot_id_tagline']} ({acc['region'].upper()})")
             
-            # Fetch fresh summoner data to get summoner ID
-            summoner_data = await self.riot_api.get_summoner_by_puuid(acc['puuid'], acc['region'])
-            if summoner_data and 'id' in summoner_data:
-                logger.info(f"✅ Got summoner ID: {summoner_data['id'][:20]}...")
+            # Fetch ranked stats using PUUID directly (new API method)
+            ranks = await self.riot_api.get_ranked_stats_by_puuid(acc['puuid'], acc['region'])
+            
+            if ranks and len(ranks) > 0:
+                logger.info(f"✅ Got {len(ranks)} rank entries for {acc['riot_id_game_name']}")
+                for rank_data in ranks:
+                    logger.info(f"   - Queue: {rank_data.get('queueType')} | {rank_data.get('tier')} {rank_data.get('rank')}")
                 
-                # Fetch ranked stats using summoner ID
-                ranks = await self.riot_api.get_ranked_stats(summoner_data['id'], acc['region'])
+                # Only add to all_ranked_stats if account is visible (for stats calculation)
+                if acc in visible_accounts:
+                    all_ranked_stats.extend(ranks)
                 
-                if ranks:
-                    logger.info(f"✅ Got {len(ranks)} rank entries for {acc['riot_id_game_name']}")
-                    for rank_data in ranks:
-                        logger.info(f"   - Queue: {rank_data.get('queueType')} | {rank_data.get('tier')} {rank_data.get('rank')}")
-                    
-                    # Only add to all_ranked_stats if account is visible (for stats calculation)
-                    if acc in visible_accounts:
-                        all_ranked_stats.extend(ranks)
-                    
-                    # But store rank data for ALL accounts (for Ranks tab)
-                    account_ranks[acc['puuid']] = {}
-                    for rank_data in ranks:
-                        if 'SOLO' in rank_data.get('queueType', ''):
-                            account_ranks[acc['puuid']]['solo'] = rank_data
-                            logger.info(f"   ✅ Stored Solo/Duo rank for {acc['riot_id_game_name']}")
-                        elif 'FLEX' in rank_data.get('queueType', ''):
-                            account_ranks[acc['puuid']]['flex'] = rank_data
-                            logger.info(f"   ✅ Stored Flex rank for {acc['riot_id_game_name']}")
-                else:
-                    logger.warning(f"⚠️ No ranks returned for {acc['riot_id_game_name']}")
+                # But store rank data for ALL accounts (for Ranks tab)
+                account_ranks[acc['puuid']] = {}
+                for rank_data in ranks:
+                    if 'SOLO' in rank_data.get('queueType', ''):
+                        account_ranks[acc['puuid']]['solo'] = rank_data
+                        logger.info(f"   ✅ Stored Solo/Duo rank for {acc['riot_id_game_name']}")
+                    elif 'FLEX' in rank_data.get('queueType', ''):
+                        account_ranks[acc['puuid']]['flex'] = rank_data
+                        logger.info(f"   ✅ Stored Flex rank for {acc['riot_id_game_name']}")
             else:
-                logger.error(f"❌ Failed to get summoner data for {acc['riot_id_game_name']}#{acc['riot_id_tagline']}")
+                logger.info(f"📭 No ranks found for {acc['riot_id_game_name']} (unranked or API issue)")
         
         # Fetch fresh summoner data for primary account (for display)
         fresh_summoner = await self.riot_api.get_summoner_by_puuid(account['puuid'], account['region'])

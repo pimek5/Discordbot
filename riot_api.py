@@ -193,6 +193,11 @@ class RiotAPI:
                         if response.status == 200:
                             data = await response.json()
                             logger.info(f"✅ Got summoner data from {platform}: {data}")
+                            
+                            # Check if 'id' field exists
+                            if 'id' not in data:
+                                logger.error(f"⚠️ CRITICAL: Summoner data missing 'id' field! Full response: {data}")
+                            
                             return data
                         elif response.status == 404:
                             logger.warning(f"❌ Summoner not found on {platform} (404)")
@@ -254,9 +259,32 @@ class RiotAPI:
         
         return False
     
+    async def get_ranked_stats_by_puuid(self, puuid: str, region: str, 
+                                       retries: int = 5) -> Optional[List[Dict]]:
+        """Get ranked statistics using PUUID - first gets summoner data, then ranked stats"""
+        if not self.api_key:
+            return None
+        
+        # First, get summoner data which includes the encrypted summoner ID
+        summoner_data = await self.get_summoner_by_puuid(puuid, region, retries)
+        
+        if not summoner_data:
+            logger.warning(f"⚠️ Could not get summoner data for PUUID {puuid[:10]}...")
+            return []
+        
+        # Check if we have the 'id' field (encrypted summoner ID)
+        summoner_id = summoner_data.get('id')
+        if not summoner_id:
+            logger.error(f"❌ Summoner data missing 'id' field: {summoner_data}")
+            return []
+        
+        # Now get ranked stats using the summoner ID
+        logger.info(f"🔍 Fetching ranked stats for summoner ID: {summoner_id[:20]}...")
+        return await self.get_ranked_stats(summoner_id, region, retries)
+    
     async def get_ranked_stats(self, summoner_id: str, region: str, 
                               retries: int = 5) -> Optional[List[Dict]]:
-        """Get ranked statistics using summoner ID - uses platform endpoint"""
+        """Get ranked statistics using summoner ID - DEPRECATED, use get_ranked_stats_by_puuid instead"""
         if not self.api_key:
             return None
         
