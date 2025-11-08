@@ -1885,9 +1885,15 @@ async def get_twitter_user_tweets(username, max_results=5):
                             tweet_id = link.text.split('/')[-1].split('#')[0]
                             tweet_text = title.text if title.text else ''
                             
-                            # Clean RT prefix
+                            # FILTER OUT RETWEETS - Skip tweets that start with "RT by"
                             if tweet_text.startswith('RT by'):
-                                tweet_text = tweet_text.split(': ', 1)[-1] if ': ' in tweet_text else tweet_text
+                                print(f"⏭️ Skipping retweet: {tweet_text[:80]}...")
+                                continue
+                            
+                            # FILTER OUT REPLIES - Check if link contains reply indicator
+                            if '#m' in link.text:  # Nitter marks replies with #m
+                                print(f"⏭️ Skipping reply: {tweet_text[:80]}...")
+                                continue
                             
                             # Convert Nitter URL to Twitter URL
                             twitter_url = f'https://twitter.com/{username}/status/{tweet_id}'
@@ -2182,8 +2188,8 @@ async def check_for_new_tweets():
     global last_tweet_id
     
     try:
-        print(f"🔄 Checking for new tweets from @{TWITTER_USERNAME}...")
-        tweets = await get_twitter_user_tweets(TWITTER_USERNAME)
+        print(f"🔄 [{datetime.datetime.now().strftime('%H:%M:%S')}] Checking for new tweets from @{TWITTER_USERNAME}...")
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME, max_results=1)  # Only get latest tweet
         
         if not tweets:
             print("⚠️ No tweets fetched, monitoring will continue...")
@@ -2207,6 +2213,14 @@ async def check_for_new_tweets():
         if current_tweet_id != last_tweet_id:
             # New tweet found!
             print(f"🆕 NEW TWEET DETECTED! ID: {current_tweet_id}")
+            
+            # Update last_tweet_id IMMEDIATELY to prevent duplicate posts
+            old_tweet_id = last_tweet_id
+            last_tweet_id = current_tweet_id
+            save_last_tweet_id(current_tweet_id)
+            print(f"🔒 Updated last_tweet_id from {old_tweet_id} to {current_tweet_id}")
+            
+            # Now post the tweet
             channel = bot.get_channel(TWEETS_CHANNEL_ID)
             if channel:
                 embed = await create_tweet_embed(latest_tweet)
@@ -2218,8 +2232,6 @@ async def check_for_new_tweets():
                     await log_channel.send(f"🐦 Posted new tweet from @{TWITTER_USERNAME}: {latest_tweet['url']}")
                 
                 print(f"✅ Posted new tweet: {current_tweet_id}")
-                last_tweet_id = current_tweet_id
-                save_last_tweet_id(current_tweet_id)
             else:
                 print(f"❌ Channel {TWEETS_CHANNEL_ID} not found!")
         else:
@@ -2236,7 +2248,7 @@ async def before_tweet_check():
     """Wait for bot to be ready before starting the tweet check loop"""
     await bot.wait_until_ready()
     load_last_tweet_id()  # Load saved tweet ID from file
-    print("Tweet monitoring started!")
+    print(f"🐦 Tweet monitoring initialized! Last known tweet ID: {last_tweet_id or 'None (will initialize on first check)'}")
 
 # Manual tweet posting command (for testing)
 @twitter_group.command(name="post", description="Manually post the latest tweet from @p1mek")
@@ -2266,9 +2278,15 @@ async def toggletweets(interaction: discord.Interaction):
     if check_for_new_tweets.is_running():
         check_for_new_tweets.stop()
         await interaction.response.send_message("🛑 Tweet monitoring stopped.", ephemeral=True)
+        print("🛑 Tweet monitoring manually stopped via /twitter toggle")
     else:
-        check_for_new_tweets.start()
-        await interaction.response.send_message("▶️ Tweet monitoring started.", ephemeral=True)
+        try:
+            check_for_new_tweets.start()
+            await interaction.response.send_message("▶️ Tweet monitoring started.", ephemeral=True)
+            print("▶️ Tweet monitoring manually started via /twitter toggle")
+        except RuntimeError as e:
+            await interaction.response.send_message(f"⚠️ Tweet monitoring is already running!", ephemeral=True)
+            print(f"⚠️ Attempted to start already running task: {e}")
 
 # Command to start tweet monitoring
 @twitter_group.command(name="start", description="Start automatic tweet monitoring")
@@ -2277,8 +2295,13 @@ async def starttweets(interaction: discord.Interaction):
     if check_for_new_tweets.is_running():
         await interaction.response.send_message("ℹ️ Tweet monitoring is already running.", ephemeral=True)
     else:
-        check_for_new_tweets.start()
-        await interaction.response.send_message("▶️ Tweet monitoring started successfully!", ephemeral=True)
+        try:
+            check_for_new_tweets.start()
+            await interaction.response.send_message("▶️ Tweet monitoring started successfully!", ephemeral=True)
+            print("▶️ Tweet monitoring manually started via /twitter start")
+        except RuntimeError as e:
+            await interaction.response.send_message(f"⚠️ Error starting tweet monitoring: {e}", ephemeral=True)
+            print(f"⚠️ Error starting tweet monitoring: {e}")
 
 # Command to check tweet monitoring status
 @twitter_group.command(name="status", description="Check if tweet monitoring is currently active")
