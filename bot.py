@@ -446,18 +446,11 @@ server_group = app_commands.Group(name="server", description="Server information
 # ================================
 class MyBot(commands.Bot):
     def __init__(self):
-        # Zwiększone timeouty dla Railway
+        # Zwiększone timeouty dla Railway (bez TCPConnector - wymaga event loop)
         import aiohttp
-        connector = aiohttp.TCPConnector(
-            limit=100,
-            ttl_dns_cache=300,
-            force_close=False,
-            enable_cleanup_closed=True
-        )
         super().__init__(
             command_prefix="!", 
             intents=intents,
-            connector=connector,
             timeout=aiohttp.ClientTimeout(total=60, connect=30)  # Zwiększone timeouty
         )
         print("🤖 Bot instance created with extended timeouts for Railway")
