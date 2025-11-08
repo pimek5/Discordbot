@@ -601,9 +601,10 @@ class MyBot(commands.Bot):
         
         print("✅ Command groups registered globally")
         
-        # Sync to primary guild FIRST (instant)
-        print(f"🔧 Syncing commands to primary guild {GUILD_ID}...")
+        # Copy global commands to primary guild for instant access
+        print(f"🔧 Copying global commands to primary guild {GUILD_ID}...")
         try:
+            self.tree.copy_global_to(guild=primary_guild)
             synced_guild = await asyncio.wait_for(
                 self.tree.sync(guild=primary_guild),
                 timeout=30.0
