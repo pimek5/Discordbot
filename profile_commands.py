@@ -2980,12 +2980,9 @@ class ProfileView(discord.ui.View):
         embed = await self.create_profile_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Statistics", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Statistics", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="Noted", id=1436595827748634634), row=0)
     async def stats_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to statistics view"""
-        # Set custom emoji dynamically
-        button.emoji = discord.PartialEmoji(name="Noted", id=1436595827748634634)
-        
         if self.current_view == "stats":
             await interaction.response.defer()
             return
@@ -3005,13 +3002,9 @@ class ProfileView(discord.ui.View):
         embed = await self.create_matches_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="LP", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="LP", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="LP", id=1436591112025407590), row=0)
     async def lp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to LP balance view"""
-        # Set custom emoji if not already set
-        if not button.emoji or str(button.emoji) != "LP:1436591112025407590":
-            button.emoji = discord.PartialEmoji(name="LP", id=1436591112025407590)
-        
         if self.current_view == "lp":
             await interaction.response.defer()
             return
@@ -3020,13 +3013,9 @@ class ProfileView(discord.ui.View):
         embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="Challenger", id=1435683026792353792), row=0)
     async def ranks_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to ranks view showing all accounts"""
-        # Set custom emoji if not already set
-        if not button.emoji or str(button.emoji) != "Challenger:1435683026792353792":
-            button.emoji = discord.PartialEmoji(name="Challenger", id=1435683026792353792)
-        
         if self.current_view == "ranks":
             await interaction.response.defer()
             return
