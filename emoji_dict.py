@@ -197,7 +197,7 @@ OTHER_EMOJIS = {
     'lp': '<:LP:1436591112025407590>',
     'win': '<:Win:1436594132255768668>',
     'loss': '<:Lose:1436594096524234763>',
-    'noted': '<:noted:1436595827748634634>',
+    'noted': '<:Noted:1436595827748634634>',
 }
 
 # Create MASTERY_EMOJIS for easier access
