@@ -37,6 +37,7 @@ import leaderboard_commands
 DATABASE_URL = os.getenv('DATABASE_URL')
 RIOT_API_KEY = os.getenv('RIOT_API_KEY', 'RGAPI-1e3fc1a2-2d4a-4c7f-bde6-3001fd12df09')
 GUILD_ID = 1153027935553454191  # Your server ID for slash commands
+ADMIN_ROLE_ID = 318104006385729538  # Admin role ID for permissions
 
 # Global instances
 riot_api = None
@@ -357,6 +358,25 @@ LOLDLE_EXTENDED = {
         'emoji': '⚔️💔'
     }
 }
+
+# ================================
+#    PERMISSION HELPERS
+# ================================
+def has_admin_permissions(interaction: discord.Interaction) -> bool:
+    """Check if user has admin permissions (Administrator permission OR specific admin role)"""
+    if not interaction.guild:
+        return False
+    
+    member = interaction.guild.get_member(interaction.user.id)
+    if not member:
+        return False
+    
+    # Check for Administrator permission
+    if member.guild_permissions.administrator:
+        return True
+    
+    # Check for specific admin role
+    return any(role.id == ADMIN_ROLE_ID for role in member.roles)
 
 # Load extended data from JSON if available
 def load_loldle_extended_data():

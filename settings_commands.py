@@ -11,6 +11,7 @@ from typing import Optional
 import logging
 
 from database import get_db
+from bot import has_admin_permissions
 
 logger = logging.getLogger('settings_commands')
 
@@ -368,9 +369,16 @@ class SettingsCommands(commands.Cog):
     
     @settings_group.command(name="addchannel", description="Add a channel to allowed channels list")
     @app_commands.describe(channel="The channel to allow bot commands in")
-    @app_commands.checks.has_permissions(administrator=True)
     async def addchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         """Add a channel to the allowed list"""
+        # Check permissions
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission or Admin role to use this command!",
+                ephemeral=True
+            )
+            return
+        
         db = get_db()
         
         # Add channel to database
@@ -386,9 +394,16 @@ class SettingsCommands(commands.Cog):
     
     @settings_group.command(name="removechannel", description="Remove a channel from allowed channels list")
     @app_commands.describe(channel="The channel to remove")
-    @app_commands.checks.has_permissions(administrator=True)
     async def removechannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         """Remove a channel from the allowed list"""
+        # Check permissions
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission or Admin role to use this command!",
+                ephemeral=True
+            )
+            return
+        
         db = get_db()
         
         # Remove channel from database
@@ -403,9 +418,16 @@ class SettingsCommands(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @settings_group.command(name="listchannels", description="List all allowed channels")
-    @app_commands.checks.has_permissions(administrator=True)
     async def listchannels(self, interaction: discord.Interaction):
         """List all allowed channels"""
+        # Check permissions
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission or Admin role to use this command!",
+                ephemeral=True
+            )
+            return
+        
         db = get_db()
         
         channel_ids = db.get_allowed_channels(interaction.guild.id)
@@ -435,9 +457,16 @@ class SettingsCommands(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @settings_group.command(name="reset", description="Reset channel restrictions (allow all channels)")
-    @app_commands.checks.has_permissions(administrator=True)
     async def reset(self, interaction: discord.Interaction):
         """Reset all channel restrictions"""
+        # Check permissions
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission or Admin role to use this command!",
+                ephemeral=True
+            )
+            return
+        
         db = get_db()
         
         # Get current channels

@@ -9,6 +9,7 @@ from discord.ext import commands
 import logging
 
 from database import get_db
+from bot import has_admin_permissions
 
 logger = logging.getLogger('help_commands')
 
@@ -354,9 +355,9 @@ class HelpCommands(commands.Cog):
     async def helpsetup(self, interaction: discord.Interaction):
         """Setup the permanent help embed"""
         # Check if user has admin permissions
-        if not interaction.user.guild_permissions.administrator:
+        if not has_admin_permissions(interaction):
             await interaction.response.send_message(
-                "❌ You need Administrator permission to use this command!",
+                "❌ You need Administrator permission or Admin role to use this command!",
                 ephemeral=True
             )
             return
