@@ -446,8 +446,21 @@ server_group = app_commands.Group(name="server", description="Server information
 # ================================
 class MyBot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix="!", intents=intents)
-        print("🤖 Bot instance created")
+        # Zwiększone timeouty dla Railway
+        import aiohttp
+        connector = aiohttp.TCPConnector(
+            limit=100,
+            ttl_dns_cache=300,
+            force_close=False,
+            enable_cleanup_closed=True
+        )
+        super().__init__(
+            command_prefix="!", 
+            intents=intents,
+            connector=connector,
+            timeout=aiohttp.ClientTimeout(total=60, connect=30)  # Zwiększone timeouty
+        )
+        print("🤖 Bot instance created with extended timeouts for Railway")
 
     async def on_ready(self):
         """Called when bot successfully connects to Discord"""
@@ -4383,8 +4396,8 @@ import sys
 
 async def run_bot_with_retry():
     """Run bot with connection retry logic"""
-    max_retries = 3
-    retry_delay = 5  # seconds
+    max_retries = 5  # Zwiększone z 3 do 5
+    retry_delay = 10  # Zwiększone z 5 do 10 sekund
     
     for attempt in range(1, max_retries + 1):
         try:
@@ -4396,18 +4409,25 @@ async def run_bot_with_retry():
             if attempt < max_retries:
                 print(f"⏳ Retrying in {retry_delay} seconds...")
                 await asyncio.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
+                retry_delay = min(retry_delay * 1.5, 60)  # Exponential backoff, max 60s
             else:
                 print(f"❌ Failed to connect after {max_retries} attempts")
+                print(f"💡 This may be a Railway network issue. Check Railway status or try redeploying.")
                 raise
         except KeyboardInterrupt:
             print("👋 Bot shutdown requested")
+            await bot.close()  # Properly close bot connection
             break
         except Exception as e:
             print(f"❌ Fatal error: {e}")
             import traceback
             traceback.print_exc()
+            await bot.close()  # Properly close bot connection
             raise
+    
+    # Ensure bot closes properly
+    if not bot.is_closed():
+        await bot.close()
 
 try:
     # Use asyncio.run() with timeout
