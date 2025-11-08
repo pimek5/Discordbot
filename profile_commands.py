@@ -1185,6 +1185,12 @@ class ProfileCommands(commands.Cog):
                 active_game=active_game
             )
         
+            # Clear the "Calculating..." message before sending embed
+            try:
+                await interaction.edit_original_response(content=None)
+            except:
+                pass  # Ignore if already deleted
+            
             message = await interaction.followup.send(embed=embed, view=view)
             view.message = message  # Store message for deletion on timeout
         
@@ -1531,6 +1537,12 @@ class ProfileCommands(commands.Cog):
             else:
                 embed.set_footer(text=f"{target_user.display_name} • Today's LP gains")
         
+            # Clear the "Calculating..." message before sending embed
+            try:
+                await interaction.edit_original_response(content=None)
+            except:
+                pass  # Ignore if already deleted
+            
             message = await interaction.followup.send(embed=embed)
         
             # Auto-delete after 2 minutes
