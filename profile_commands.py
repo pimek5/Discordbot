@@ -2285,7 +2285,7 @@ class ProfileView(discord.ui.View):
                 ]
                 
                 embed.add_field(
-                    name="� Playstyle",
+                    name="🎭 Playstyle",
                     value="\n".join(playstyle_lines),
                     inline=True
                 )
@@ -2551,7 +2551,7 @@ class ProfileView(discord.ui.View):
                 mode_lines.append(f"• {mode}: {games}G ({wr:.0f}% WR)")
             mode_text = "\n\n**Queue Types:**\n" + "\n".join(mode_lines[:3])
         
-        embed.add_field(name="� **Activity & Queues**", value=activity_text + mode_text, inline=False)
+        embed.add_field(name="📅 **Activity & Queues**", value=activity_text + mode_text, inline=False)
         
         # Spacer
         embed.add_field(name="\u200b", value="\u200b", inline=False)
