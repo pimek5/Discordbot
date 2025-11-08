@@ -561,32 +561,26 @@ class MyBot(commands.Bot):
         
         print("🔧 Registering command groups...")
         
-        guild = discord.Object(id=1153027935553454191)
+        # Register command groups GLOBALLY (available on all servers)
+        self.tree.add_command(twitter_group)
+        self.tree.add_command(loldle_group)
+        self.tree.add_command(mod_group)
+        self.tree.add_command(server_group)
         
-        # Register command groups
-        self.tree.add_command(twitter_group, guild=guild)
-        self.tree.add_command(loldle_group, guild=guild)
-        self.tree.add_command(mod_group, guild=guild)
-        self.tree.add_command(server_group, guild=guild)
+        # Standalone commands GLOBALLY (general use)
+        self.tree.add_command(setup_create_panel)
+        self.tree.add_command(invite)
+        self.tree.add_command(addthread)
+        self.tree.add_command(diagnose)
+        self.tree.add_command(checkruneforge)
         
-        # Standalone commands (general use)
-        self.tree.add_command(setup_create_panel, guild=guild)
-        self.tree.add_command(invite, guild=guild)
-        self.tree.add_command(addthread, guild=guild)
-        self.tree.add_command(diagnose, guild=guild)
-        self.tree.add_command(checkruneforge, guild=guild)
+        print("✅ Command groups registered globally")
         
-        print("✅ Command groups registered")
-        
-        # Copy global commands (from Orianna Cogs) to guild
-        print("🔧 Copying global commands to guild...")
-        self.tree.copy_global_to(guild=guild)
-        print("✅ Global commands copied")
-        
-        # Sync ALL commands to guild (fast, instant update)
-        print("🔧 Syncing commands to guild...")
-        synced_guild = await self.tree.sync(guild=guild)
-        print(f"✅ Synced {len(synced_guild)} commands to guild")
+        # Sync ALL commands globally (slower, but works on all servers)
+        print("🔧 Syncing commands globally...")
+        synced_global = await self.tree.sync()
+        print(f"✅ Synced {len(synced_global)} commands globally (available on all servers)")
+        print("⚠️ Note: Global command sync can take up to 1 hour to propagate to all servers")
         print("🎉 setup_hook completed successfully!")
 
 bot = MyBot()
