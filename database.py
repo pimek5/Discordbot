@@ -431,18 +431,17 @@ class Database:
                 """
                 
                 if guild_id:
-                    # Server-only leaderboard - show best account per user
+                    # Server-only leaderboard - show best rank per user
                     cur.execute(f"""
-                        WITH ranked_accounts AS (
+                        WITH best_ranks AS (
                             SELECT 
+                                u.id,
                                 u.snowflake, 
                                 ur.tier, 
                                 ur.rank, 
                                 ur.league_points, 
                                 ur.wins, 
                                 ur.losses,
-                                la.riot_id_game_name, 
-                                la.riot_id_tagline,
                                 ROW_NUMBER() OVER (
                                     PARTITION BY u.id 
                                     ORDER BY 
@@ -452,33 +451,43 @@ class Database:
                                 ) as rn
                             FROM user_ranks ur
                             JOIN users u ON ur.user_id = u.id
-                            JOIN league_accounts la ON u.id = la.user_id AND la.account_id = ur.account_id
                             WHERE ur.queue = %s
                         )
                         SELECT 
-                            snowflake, tier, rank, league_points, wins, losses,
-                            riot_id_game_name, riot_id_tagline
-                        FROM ranked_accounts
-                        WHERE rn = 1
+                            br.snowflake, 
+                            br.tier, 
+                            br.rank, 
+                            br.league_points, 
+                            br.wins, 
+                            br.losses,
+                            COALESCE(
+                                (SELECT riot_id_game_name FROM league_accounts WHERE user_id = br.id AND primary_account = TRUE LIMIT 1),
+                                (SELECT riot_id_game_name FROM league_accounts WHERE user_id = br.id LIMIT 1)
+                            ) as riot_id_game_name,
+                            COALESCE(
+                                (SELECT riot_id_tagline FROM league_accounts WHERE user_id = br.id AND primary_account = TRUE LIMIT 1),
+                                (SELECT riot_id_tagline FROM league_accounts WHERE user_id = br.id LIMIT 1)
+                            ) as riot_id_tagline
+                        FROM best_ranks br
+                        WHERE br.rn = 1
                         ORDER BY 
                             {tier_order} DESC,
                             {rank_order} DESC,
-                            league_points DESC
+                            br.league_points DESC
                         LIMIT %s
                     """, (queue, limit))
                 else:
-                    # Global leaderboard - show best account per user
+                    # Global leaderboard - show best rank per user
                     cur.execute(f"""
-                        WITH ranked_accounts AS (
+                        WITH best_ranks AS (
                             SELECT 
+                                u.id,
                                 u.snowflake, 
                                 ur.tier, 
                                 ur.rank, 
                                 ur.league_points, 
                                 ur.wins, 
                                 ur.losses,
-                                la.riot_id_game_name, 
-                                la.riot_id_tagline,
                                 ROW_NUMBER() OVER (
                                     PARTITION BY u.id 
                                     ORDER BY 
@@ -488,18 +497,29 @@ class Database:
                                 ) as rn
                             FROM user_ranks ur
                             JOIN users u ON ur.user_id = u.id
-                            JOIN league_accounts la ON u.id = la.user_id AND la.account_id = ur.account_id
                             WHERE ur.queue = %s
                         )
                         SELECT 
-                            snowflake, tier, rank, league_points, wins, losses,
-                            riot_id_game_name, riot_id_tagline
-                        FROM ranked_accounts
-                        WHERE rn = 1
+                            br.snowflake, 
+                            br.tier, 
+                            br.rank, 
+                            br.league_points, 
+                            br.wins, 
+                            br.losses,
+                            COALESCE(
+                                (SELECT riot_id_game_name FROM league_accounts WHERE user_id = br.id AND primary_account = TRUE LIMIT 1),
+                                (SELECT riot_id_game_name FROM league_accounts WHERE user_id = br.id LIMIT 1)
+                            ) as riot_id_game_name,
+                            COALESCE(
+                                (SELECT riot_id_tagline FROM league_accounts WHERE user_id = br.id AND primary_account = TRUE LIMIT 1),
+                                (SELECT riot_id_tagline FROM league_accounts WHERE user_id = br.id LIMIT 1)
+                            ) as riot_id_tagline
+                        FROM best_ranks br
+                        WHERE br.rn = 1
                         ORDER BY 
                             {tier_order} DESC,
                             {rank_order} DESC,
-                            league_points DESC
+                            br.league_points DESC
                         LIMIT %s
                     """, (queue, limit))
                 return cur.fetchall()
