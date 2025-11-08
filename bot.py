@@ -601,6 +601,19 @@ class MyBot(commands.Bot):
         
         print("✅ Command groups registered globally")
         
+        # Sync to primary guild FIRST (instant)
+        print(f"🔧 Syncing commands to primary guild {GUILD_ID}...")
+        try:
+            synced_guild = await asyncio.wait_for(
+                self.tree.sync(guild=primary_guild),
+                timeout=30.0
+            )
+            print(f"✅ Synced {len(synced_guild)} commands to primary guild (instant access)")
+        except asyncio.TimeoutError:
+            print("⚠️ Timeout syncing to guild - will retry next restart")
+        except Exception as e:
+            print(f"⚠️ Error syncing to guild: {e}")
+        
         # Sync globally (all commands available on all servers)
         print("🔧 Syncing commands globally...")
         try:
@@ -614,9 +627,7 @@ class MyBot(commands.Bot):
             print("⚠️ Timeout syncing globally - will retry next restart")
         except Exception as e:
             print(f"⚠️ Error syncing globally: {e}")
-            print(f"⚠️ Error syncing globally: {e}")
-        print("⚠️ Note: Global command sync can take up to 1 hour to propagate to other servers")
-        print(f"✅ Primary guild {primary_guild.id} has instant access to all commands")
+        
         print("🎉 setup_hook completed successfully!")
 
 bot = MyBot()
