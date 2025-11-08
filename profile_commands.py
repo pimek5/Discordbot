@@ -2984,7 +2984,7 @@ class ProfileView(discord.ui.View):
     async def stats_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to statistics view"""
         # Set custom emoji dynamically
-        button.emoji = discord.PartialEmoji(name="Noted", id=1436595827748634634)
+        button.emoji = discord.PartialEmoji(name="noted", id=1436595827748634634)
         
         if self.current_view == "stats":
             await interaction.response.defer()
