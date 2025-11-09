@@ -2016,13 +2016,18 @@ async def get_twitter_user_tweets(username, max_results=5):
         "nitter.privacydev.net",
         "nitter.poast.org",
         "nitter.net",
-        "nitter.woodland.cafe",
         "nitter.lucabased.xyz",
+        "xcancel.com",  # Twitter frontend alternative
+        "nitter.unixfox.eu",
+        "nitter.1d4.us",
+        "nitter.kavin.rocks",
         "nitter.fdn.fr",
-        "nitter.nojam.io",
-        "nitter.cz",
-        "nitter.in.projectsegfau.lt",
-        "xcancel.com"  # Twitter frontend alternative
+        "nitter.42l.fr",
+        "nitter.pussthecat.org",
+        "nitter.nixnet.services",
+        "nitter.woodland.cafe",
+        "nitter.foss.wtf",
+        "nitter.namazso.eu"
     ]
     
     for instance in nitter_instances:
