@@ -281,7 +281,7 @@ class StatsCommands(commands.Cog):
         embed.set_footer(text=f"Requested by {interaction.user.name}")
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="compare", description="Compare champion statistics between two players")
+    @app_commands.command(name="compare", description="Compare champion mastery between two players")
     @app_commands.describe(
         champion="The champion to compare",
         user1="First player",
@@ -289,7 +289,7 @@ class StatsCommands(commands.Cog):
     )
     async def compare(self, interaction: discord.Interaction, champion: str, 
                      user1: discord.Member, user2: Optional[discord.Member] = None):
-        """Compare two players' champion statistics (WR, KDA, games)"""
+        """Compare two players' mastery on a champion"""
         await interaction.response.defer()
         
         user2 = user2 or interaction.user
@@ -323,57 +323,56 @@ class StatsCommands(commands.Cog):
         
         champion_id, champion_name = champ_result
         
-        # Get stats for both users
-        stats1 = db.get_user_champion_stats(db_user1['id'], champion_id)
-        stats2 = db.get_user_champion_stats(db_user2['id'], champion_id)
+        # Get mastery stats for both users (summed across all accounts)
+        conn = db.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # User 1 total mastery
+                cur.execute("""
+                    SELECT 
+                        SUM(score) as total_points,
+                        MAX(level) as max_level
+                    FROM user_champion_stats
+                    WHERE user_id = %s AND champion_id = %s
+                """, (db_user1['id'], champion_id))
+                result1 = cur.fetchone()
+                points1 = result1[0] if result1 and result1[0] else 0
+                level1 = result1[1] if result1 and result1[1] else 0
+                
+                # User 2 total mastery
+                cur.execute("""
+                    SELECT 
+                        SUM(score) as total_points,
+                        MAX(level) as max_level
+                    FROM user_champion_stats
+                    WHERE user_id = %s AND champion_id = %s
+                """, (db_user2['id'], champion_id))
+                result2 = cur.fetchone()
+                points2 = result2[0] if result2 and result2[0] else 0
+                level2 = result2[1] if result2 and result2[1] else 0
+        finally:
+            db.return_connection(conn)
         
-        # Extract stats (wins, losses, games, KDA, WR)
-        if stats1 and stats1[0]:
-            s1 = stats1[0]
-            wins1 = s1.get('wins', 0)
-            losses1 = s1.get('losses', 0)
-            games1 = wins1 + losses1
-            wr1 = (wins1 / games1 * 100) if games1 > 0 else 0
-            kills1 = s1.get('kills', 0)
-            deaths1 = s1.get('deaths', 1)  # Prevent division by 0
-            assists1 = s1.get('assists', 0)
-            kda1 = (kills1 + assists1) / deaths1 if deaths1 > 0 else 0
-        else:
-            games1 = wins1 = losses1 = 0
-            wr1 = kda1 = 0
-        
-        if stats2 and stats2[0]:
-            s2 = stats2[0]
-            wins2 = s2.get('wins', 0)
-            losses2 = s2.get('losses', 0)
-            games2 = wins2 + losses2
-            wr2 = (wins2 / games2 * 100) if games2 > 0 else 0
-            kills2 = s2.get('kills', 0)
-            deaths2 = s2.get('deaths', 1)
-            assists2 = s2.get('assists', 0)
-            kda2 = (kills2 + assists2) / deaths2 if deaths2 > 0 else 0
-        else:
-            games2 = wins2 = losses2 = 0
-            wr2 = kda2 = 0
+        # Determine winner
+        winner = user1 if points1 > points2 else user2 if points2 > points1 else None
+        difference = abs(points1 - points2)
         
         # Get champion emoji
         champ_emoji = get_champion_emoji(champion_name)
         
         # Create embed
         embed = discord.Embed(
-            title=f"{champ_emoji} {champion_name} Statistics Comparison",
-            description="Comparing champion performance between players",
+            title=f"{champ_emoji} {champion_name} Mastery Comparison",
             color=0x1F8EFA
         )
         
-        # Player 1 stats
-        p1_stats = f"**Games:** {games1} ({wins1}W / {losses1}L)\n"
-        p1_stats += f"**Win Rate:** {wr1:.1f}%\n"
-        p1_stats += f"**KDA:** {kda1:.2f}"
+        # Format level emojis
+        level1_emoji = "🔟" if level1 >= 10 else f"{level1}⭐" if level1 >= 7 else f"{level1}"
+        level2_emoji = "🔟" if level2 >= 10 else f"{level2}⭐" if level2 >= 7 else f"{level2}"
         
         embed.add_field(
             name=f"👤 {user1.display_name}",
-            value=p1_stats,
+            value=f"{level1_emoji} **Level {level1}**\n**{points1:,}** points",
             inline=True
         )
         
@@ -383,53 +382,30 @@ class StatsCommands(commands.Cog):
             inline=True
         )
         
-        # Player 2 stats
-        p2_stats = f"**Games:** {games2} ({wins2}W / {losses2}L)\n"
-        p2_stats += f"**Win Rate:** {wr2:.1f}%\n"
-        p2_stats += f"**KDA:** {kda2:.2f}"
-        
         embed.add_field(
             name=f"👤 {user2.display_name}",
-            value=p2_stats,
+            value=f"{level2_emoji} **Level {level2}**\n**{points2:,}** points",
             inline=True
         )
         
-        # Winner determination (by WR, then KDA, then games)
-        winner = None
-        reason = ""
-        
-        if games1 > 0 or games2 > 0:
-            if wr1 > wr2:
-                winner = user1
-                reason = f"Higher win rate ({wr1:.1f}% vs {wr2:.1f}%)"
-            elif wr2 > wr1:
-                winner = user2
-                reason = f"Higher win rate ({wr2:.1f}% vs {wr1:.1f}%)"
-            elif kda1 > kda2:
-                winner = user1
-                reason = f"Better KDA ({kda1:.2f} vs {kda2:.2f})"
-            elif kda2 > kda1:
-                winner = user2
-                reason = f"Better KDA ({kda2:.2f} vs {kda1:.2f})"
-            elif games1 > games2:
-                winner = user1
-                reason = f"More games played ({games1} vs {games2})"
-            elif games2 > games1:
-                winner = user2
-                reason = f"More games played ({games2} vs {games1})"
-            else:
-                reason = "Perfectly matched statistics!"
-        
+        # Winner
         if winner:
+            if difference >= 1000000:
+                diff_str = f"{difference/1000000:.2f}M"
+            elif difference >= 1000:
+                diff_str = f"{difference/1000:.0f}K"
+            else:
+                diff_str = f"{difference:,}"
+            
             embed.add_field(
                 name="🏆 Winner",
-                value=f"{winner.mention}\n{reason}",
+                value=f"{winner.mention} by **{diff_str}** points!",
                 inline=False
             )
         else:
             embed.add_field(
                 name="🤝 Result",
-                value=reason if reason else "No data to compare!",
+                value="It's a tie!",
                 inline=False
             )
         
