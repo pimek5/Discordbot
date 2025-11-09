@@ -49,14 +49,19 @@ class StatsCommands(commands.Cog):
         self.riot_api = riot_api
         self.guild = discord.Object(id=guild_id)
     
-    @app_commands.command(name="stats", description="View mastery progression graph (combined from all accounts)")
+    @app_commands.command(name="stats", description="View your recent match statistics and performance")
     @app_commands.describe(
-        champion="The champion to view stats for",
-        user="The user to check (defaults to yourself)"
+        user="The user to check (defaults to yourself)",
+        games="Number of recent games to analyze (5-20, default: 10)"
     )
-    async def stats(self, interaction: discord.Interaction, champion: str, user: Optional[discord.Member] = None):
-        """Show mastery progression with graph from all linked accounts"""
+    async def stats(self, interaction: discord.Interaction, user: Optional[discord.Member] = None, games: int = 10):
+        """Show recent match statistics with performance graphs"""
         await interaction.response.defer()
+        
+        # Validate games parameter
+        if games < 5 or games > 20:
+            await interaction.followup.send("❌ Games must be between 5 and 20!", ephemeral=True)
+            return
         
         target = user or interaction.user
         db = get_db()
@@ -70,133 +75,230 @@ class StatsCommands(commands.Cog):
             )
             return
         
-        # Find champion
-        champ_result = find_champion_id(champion)
-        if not champ_result:
-            # Check if multiple matches
-            matching = [(cid, cn) for cid, cn in CHAMPION_ID_TO_NAME.items() if champion.lower() in cn.lower()]
-            if len(matching) > 1:
-                options = ", ".join([cn for _, cn in matching[:5]])
-                await interaction.followup.send(
-                    f"❌ Multiple champions found: **{options}**\nPlease be more specific!",
-                    ephemeral=True
-                )
-            else:
-                await interaction.followup.send(
-                    f"❌ Champion **{champion}** not found!",
-                    ephemeral=True
-                )
-            return
+        # Get user's primary account
+        accounts = db.get_user_accounts(db_user['id'])
+        primary_account = None
+        for acc in accounts:
+            if acc.get('verified'):
+                if acc.get('primary_account'):
+                    primary_account = acc
+                    break
+                elif not primary_account:
+                    primary_account = acc
         
-        champion_id, champion_name = champ_result
-        
-        # Get mastery history (this is aggregated by user_id across all accounts)
-        history = db.get_mastery_history(db_user['id'], champion_id, days=180)
-        
-        if not history or len(history) < 2:
+        if not primary_account:
             await interaction.followup.send(
-                f"❌ No progression data recorded for **{champion_name}**!\n"
-                f"Data is collected automatically. Play some games and check back later!",
+                f"❌ {target.mention} has no verified League account!",
                 ephemeral=True
             )
             return
         
-        # Prepare data for chart
-        timestamps = [h['timestamp'] for h in history]
-        values = [h['value'] for h in history]
-        deltas = [h['delta'] for h in history]
+        puuid = primary_account['puuid']
+        region = primary_account['region']
+        summoner_name = f"{primary_account['riot_id_game_name']}#{primary_account['riot_id_tagline']}"
         
-        # Calculate W/L (rough estimate: delta > 600 = win, else loss)
-        wins = sum(1 for d in deltas if d > 600)
-        losses = len(deltas) - wins
-        winrate = round(wins / len(deltas) * 100, 1) if deltas else 0
-        
-        # Create chart
-        plt.figure(figsize=(12, 6), facecolor='#2C2F33')
-        ax = plt.gca()
-        ax.set_facecolor('#23272A')
-        
-        # Plot line with gradient fill
-        line = ax.plot(timestamps, values, color='#1F8EFA', linewidth=2.5, marker='o', markersize=4)
-        ax.fill_between(timestamps, values, alpha=0.3, color='#1F8EFA')
-        
-        # Styling
-        ax.set_title(f'{champion_name} Mastery Progression - {target.display_name}', 
-                    fontsize=16, color='white', pad=20, fontweight='bold')
-        ax.set_xlabel('Date', fontsize=12, color='#99AAB5')
-        ax.set_ylabel('Mastery Points', fontsize=12, color='#99AAB5')
-        
-        # Format axes
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
-        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-        plt.xticks(rotation=45, ha='right', color='#99AAB5')
-        plt.yticks(color='#99AAB5')
-        
-        # Grid
-        ax.grid(True, alpha=0.2, color='#99AAB5', linestyle='--')
-        
-        # Format y-axis values
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x):,}'))
-        
-        # Spine colors
-        for spine in ax.spines.values():
-            spine.set_edgecolor('#99AAB5')
-            spine.set_linewidth(0.5)
-        
-        plt.tight_layout()
-        
-        # Save to buffer
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='#2C2F33')
-        buf.seek(0)
-        plt.close()
-        
-        # Get champion emoji
-        champ_emoji = get_champion_emoji(champion_name)
-        
-        # Create embed
-        embed = discord.Embed(
-            title=f"{champ_emoji} 📊 {champion_name} Statistics",
-            description=f"Showing progression for {target.mention}",
-            color=0x1F8EFA
-        )
-        
-        # Calculate date range
-        first_game = timestamps[0].strftime('%b %d, %Y')
-        last_game = timestamps[-1].strftime('%b %d, %Y')
-        
-        embed.add_field(
-            name="📅 Data Range",
-            value=f"**{first_game}** to **{last_game}**\n{len(history)} games recorded",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="🎮 Win/Loss",
-            value=f"**{wins}**W **{losses}**L ({winrate}%)\n*Estimated from mastery gains*",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="📈 Progress",
-            value=f"Started: **{values[0]:,}** pts\nNow: **{values[-1]:,}** pts\nGained: **{values[-1] - values[0]:,}** pts",
-            inline=True
-        )
-        
-        embed.set_image(url="attachment://stats.png")
-        
-        # Get account info for footer
-        all_accounts = db.get_user_accounts(db_user['id'])
-        verified_accounts = [acc for acc in all_accounts if acc.get('verified')]
-        if len(verified_accounts) > 1:
-            account_names = ", ".join([f"{acc['riot_id_game_name']}" for acc in verified_accounts])
-            embed.set_footer(text=f"Combined data from: {account_names}")
-        else:
-            embed.set_footer(text=f"Requested by {interaction.user.name}")
-        
-        file = discord.File(buf, filename='stats.png')
-        
-        await interaction.followup.send(embed=embed, file=file)
+        # Fetch match history
+        try:
+            match_ids = await self.riot_api.get_match_history(puuid, region, count=games)
+            
+            if not match_ids:
+                await interaction.followup.send(
+                    f"❌ No recent matches found for {summoner_name}!",
+                    ephemeral=True
+                )
+                return
+            
+            # Fetch match details
+            matches_data = []
+            progress_msg = await interaction.followup.send(
+                f"📊 Fetching match data... (0/{len(match_ids)})"
+            )
+            
+            for idx, match_id in enumerate(match_ids):
+                match_details = await self.riot_api.get_match_details(match_id, region)
+                if match_details:
+                    matches_data.append(match_details)
+                
+                # Update progress every 3 matches
+                if (idx + 1) % 3 == 0 or idx == len(match_ids) - 1:
+                    await progress_msg.edit(content=f"📊 Fetching match data... ({idx + 1}/{len(match_ids)})")
+            
+            if not matches_data:
+                await progress_msg.edit(content="❌ Failed to fetch match details!")
+                return
+            
+            # Process match data
+            stats_list = []
+            for match in matches_data:
+                # Find player's stats in the match
+                participant = None
+                for p in match['info']['participants']:
+                    if p['puuid'] == puuid:
+                        participant = p
+                        break
+                
+                if participant:
+                    stats_list.append({
+                        'champion_id': participant['championId'],
+                        'champion_name': participant['championName'],
+                        'kills': participant['kills'],
+                        'deaths': participant['deaths'],
+                        'assists': participant['assists'],
+                        'win': participant['win'],
+                        'damage': participant['totalDamageDealtToChampions'],
+                        'gold': participant['goldEarned'],
+                        'cs': participant['totalMinionsKilled'] + participant.get('neutralMinionsKilled', 0),
+                        'vision_score': participant['visionScore'],
+                        'game_duration': match['info']['gameDuration'],
+                        'game_mode': match['info']['gameMode']
+                    })
+            
+            if not stats_list:
+                await progress_msg.edit(content="❌ No player data found in matches!")
+                return
+            
+            # Calculate aggregated stats
+            total_games = len(stats_list)
+            wins = sum(1 for s in stats_list if s['win'])
+            losses = total_games - wins
+            winrate = (wins / total_games * 100) if total_games > 0 else 0
+            
+            avg_kills = sum(s['kills'] for s in stats_list) / total_games
+            avg_deaths = sum(s['deaths'] for s in stats_list) / total_games
+            avg_assists = sum(s['assists'] for s in stats_list) / total_games
+            avg_kda = (avg_kills + avg_assists) / avg_deaths if avg_deaths > 0 else 0
+            
+            avg_damage = sum(s['damage'] for s in stats_list) / total_games
+            avg_cs = sum(s['cs'] for s in stats_list) / total_games
+            avg_vision = sum(s['vision_score'] for s in stats_list) / total_games
+            
+            # Create performance chart
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            import io
+            
+            fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10), facecolor='#2C2F33')
+            
+            game_numbers = list(range(1, total_games + 1))
+            
+            # KDA Chart
+            ax1.set_facecolor('#23272A')
+            kdas = [(s['kills'] + s['assists']) / max(s['deaths'], 1) for s in stats_list]
+            colors = ['#00FF00' if s['win'] else '#FF0000' for s in stats_list]
+            ax1.bar(game_numbers, kdas, color=colors, alpha=0.7)
+            ax1.axhline(y=avg_kda, color='#1F8EFA', linestyle='--', linewidth=2, label=f'Avg: {avg_kda:.2f}')
+            ax1.set_title('KDA per Game', fontsize=12, color='white', fontweight='bold')
+            ax1.set_xlabel('Game #', fontsize=10, color='#99AAB5')
+            ax1.set_ylabel('KDA', fontsize=10, color='#99AAB5')
+            ax1.tick_params(colors='#99AAB5')
+            ax1.legend(loc='upper right', facecolor='#2C2F33', edgecolor='#99AAB5', labelcolor='white')
+            ax1.grid(True, alpha=0.2, color='#99AAB5')
+            
+            # Damage Chart
+            ax2.set_facecolor('#23272A')
+            damages = [s['damage'] for s in stats_list]
+            ax2.plot(game_numbers, damages, color='#FF6B35', marker='o', linewidth=2, markersize=6)
+            ax2.axhline(y=avg_damage, color='#1F8EFA', linestyle='--', linewidth=2, label=f'Avg: {avg_damage:,.0f}')
+            ax2.set_title('Damage to Champions', fontsize=12, color='white', fontweight='bold')
+            ax2.set_xlabel('Game #', fontsize=10, color='#99AAB5')
+            ax2.set_ylabel('Damage', fontsize=10, color='#99AAB5')
+            ax2.tick_params(colors='#99AAB5')
+            ax2.legend(loc='upper right', facecolor='#2C2F33', edgecolor='#99AAB5', labelcolor='white')
+            ax2.grid(True, alpha=0.2, color='#99AAB5')
+            ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x/1000)}K' if x >= 1000 else f'{int(x)}'))
+            
+            # CS Chart
+            ax3.set_facecolor('#23272A')
+            cs_scores = [s['cs'] for s in stats_list]
+            ax3.plot(game_numbers, cs_scores, color='#FFD700', marker='s', linewidth=2, markersize=6)
+            ax3.axhline(y=avg_cs, color='#1F8EFA', linestyle='--', linewidth=2, label=f'Avg: {avg_cs:.0f}')
+            ax3.set_title('CS per Game', fontsize=12, color='white', fontweight='bold')
+            ax3.set_xlabel('Game #', fontsize=10, color='#99AAB5')
+            ax3.set_ylabel('CS', fontsize=10, color='#99AAB5')
+            ax3.tick_params(colors='#99AAB5')
+            ax3.legend(loc='upper right', facecolor='#2C2F33', edgecolor='#99AAB5', labelcolor='white')
+            ax3.grid(True, alpha=0.2, color='#99AAB5')
+            
+            # Win/Loss streak
+            ax4.set_facecolor('#23272A')
+            wl_values = [1 if s['win'] else -1 for s in stats_list]
+            colors4 = ['#00FF00' if v > 0 else '#FF0000' for v in wl_values]
+            ax4.bar(game_numbers, wl_values, color=colors4, alpha=0.7)
+            ax4.set_title('Win/Loss History', fontsize=12, color='white', fontweight='bold')
+            ax4.set_xlabel('Game #', fontsize=10, color='#99AAB5')
+            ax4.set_ylabel('Result', fontsize=10, color='#99AAB5')
+            ax4.set_yticks([1, -1])
+            ax4.set_yticklabels(['WIN', 'LOSS'])
+            ax4.tick_params(colors='#99AAB5')
+            ax4.grid(True, alpha=0.2, color='#99AAB5', axis='x')
+            
+            # Style all spines
+            for ax in [ax1, ax2, ax3, ax4]:
+                for spine in ax.spines.values():
+                    spine.set_edgecolor('#99AAB5')
+                    spine.set_linewidth(0.5)
+            
+            plt.tight_layout()
+            
+            # Save to buffer
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='#2C2F33')
+            buf.seek(0)
+            plt.close()
+            
+            # Create embed
+            embed = discord.Embed(
+                title=f"📊 Recent Match Statistics",
+                description=f"**{summoner_name}** • Last {total_games} games",
+                color=0x00FF00 if winrate >= 50 else 0xFF0000
+            )
+            
+            embed.add_field(
+                name="🎮 Win Rate",
+                value=f"**{wins}**W **{losses}**L\n**{winrate:.1f}%**",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="⚔️ Average KDA",
+                value=f"**{avg_kills:.1f}** / **{avg_deaths:.1f}** / **{avg_assists:.1f}**\n**{avg_kda:.2f}** KDA",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="📈 Performance",
+                value=f"💥 {avg_damage:,.0f} dmg\n🌾 {avg_cs:.0f} CS\n👁️ {avg_vision:.0f} vision",
+                inline=True
+            )
+            
+            # Most played champions
+            from collections import Counter
+            champ_counts = Counter([s['champion_name'] for s in stats_list])
+            top_champs = champ_counts.most_common(3)
+            champs_text = " • ".join([f"{name} ({count})" for name, count in top_champs])
+            
+            embed.add_field(
+                name="🎭 Most Played",
+                value=champs_text,
+                inline=False
+            )
+            
+            embed.set_image(url="attachment://stats.png")
+            embed.set_footer(text=f"Requested by {interaction.user.name} • Data from Riot API")
+            
+            file = discord.File(buf, filename='stats.png')
+            
+            await progress_msg.delete()
+            await interaction.followup.send(embed=embed, file=file)
+            
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Error fetching match data: {str(e)}",
+                ephemeral=True
+            )
+            print(f"Error in stats command: {e}")
+            import traceback
+            traceback.print_exc()
     
     @app_commands.command(name="points", description="Show your TOP 10 champion masteries")
     @app_commands.describe(
