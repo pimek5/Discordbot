@@ -81,11 +81,16 @@ SKIN_IDEAS_CHANNEL_ID = 1329671504941682750  # Channel where threads are created
 YOUR_IDEAS_CHANNEL_ID = 1433892799862018109  # Channel where embeds are posted
 MOD_REVIEW_CHANNEL_ID = 1433893934265925682  # Channel for mod review
 
-# RuneForge Configuration
+# RuneForge Configuration - Multiple channels support
 RUNEFORGE_USERNAME = "p1mek"
 RUNEFORGE_ICON_URL = "https://avatars.githubusercontent.com/u/132106741?s=200&v=4"
 RUNEFORGE_CHECK_INTERVAL = 3600  # Check every hour (3600 seconds) - RuneForge mod tagging
-RUNEFORGE_TAG_ID = 1435096925144748062  # ID of the onRuneforge tag
+
+# Multiple channels with their own onRuneforge tags
+RUNEFORGE_CHANNELS = {
+    1279916286612078665: 1435096925144748062,  # Channel 1 -> Tag 1
+    1272565735595573248: 1436897685444497558,  # Channel 2 -> Tag 2
+}
 
 # Auto-Slowmode Configuration
 AUTO_SLOWMODE_ENABLED = {}  # {channel_id: True/False}
@@ -1558,7 +1563,7 @@ async def find_matching_mod(thread_name, runeforge_mods, threshold=0.7):
         return best_match, best_score
     return None, 0
 
-async def add_runeforge_tag(thread: discord.Thread):
+async def add_runeforge_tag(thread: discord.Thread, tag_id: int):
     """Add 'onRuneforge' tag to a thread"""
     try:
         print(f"🏷️ Attempting to add tag to thread: {thread.name} (ID: {thread.id})")
@@ -1597,13 +1602,13 @@ async def add_runeforge_tag(thread: discord.Thread):
         # Find the RuneForge tag by ID
         runeforge_tag = None
         for tag in parent.available_tags:
-            if tag.id == RUNEFORGE_TAG_ID:
+            if tag.id == tag_id:
                 runeforge_tag = tag
                 print(f"  ✅ Found 'onRuneforge' tag by ID: {tag.name}")
                 break
         
         if not runeforge_tag:
-            print(f"  ❌ Tag with ID {RUNEFORGE_TAG_ID} not found in forum")
+            print(f"  ❌ Tag with ID {tag_id} not found in forum")
             return False
         
         # Add the tag to the thread
@@ -1715,7 +1720,7 @@ async def remove_runeforge_tag(thread: discord.Thread):
 
 @tasks.loop(seconds=RUNEFORGE_CHECK_INTERVAL)
 async def check_threads_for_runeforge():
-    """Background task to check all threads for RuneForge mods"""
+    """Background task to check all threads for RuneForge mods across multiple channels"""
     try:
         print(f"\n{'='*60}")
         print(f"🔄 Starting RuneForge mod check...")
@@ -1728,88 +1733,103 @@ async def check_threads_for_runeforge():
             return
         
         print(f"\n📋 Will check against {len(runeforge_mods)} RuneForge mods")
+        print(f"📺 Checking {len(RUNEFORGE_CHANNELS)} channels...")
         
-        # Get the Skin Ideas channel
-        channel = bot.get_channel(SKIN_IDEAS_CHANNEL_ID)
-        print(f"🔍 Looking for channel ID: {SKIN_IDEAS_CHANNEL_ID}")
-        print(f"📺 Channel found: {channel.name if channel else 'None'}")
-        print(f"📺 Channel type: {type(channel).__name__ if channel else 'None'}")
+        total_tagged = 0
+        total_untagged = 0
         
-        if not channel:
-            print(f"❌ Skin Ideas channel not found (ID: {SKIN_IDEAS_CHANNEL_ID})")
-            return
+        # Check each channel
+        for channel_id, tag_id in RUNEFORGE_CHANNELS.items():
+            print(f"\n{'='*40}")
+            print(f"� Checking channel ID: {channel_id} (Tag ID: {tag_id})")
             
-        if not isinstance(channel, discord.ForumChannel):
-            print(f"❌ Channel is not a ForumChannel! It's a {type(channel).__name__}")
-            return
-        
-        # Get all active threads
-        threads = channel.threads
-        print(f"🧵 Found {len(threads)} active threads")
-        
-        archived_threads = []
-        
-        # Also get archived threads
-        print(f"🗄️ Fetching archived threads...")
-        try:
-            # Get ALL archived threads (no limit)
-            async for thread in channel.archived_threads(limit=None):
-                archived_threads.append(thread)
-            print(f"🗄️ Found {len(archived_threads)} archived threads")
-        except Exception as e:
-            print(f"⚠️ Error fetching archived threads: {e}")
-        
-        all_threads = list(threads) + archived_threads
-        print(f"🔍 Checking {len(all_threads)} threads...")
-        
-        tagged_count = 0
-        untagged_count = 0
-        
-        for thread in all_threads:
-            # Check if thread name matches any RuneForge mod
-            match, score = await find_matching_mod(thread.name, runeforge_mods, threshold=0.7)
-            has_tag = any(tag.name == "onRuneforge" for tag in thread.applied_tags)
+            channel = bot.get_channel(channel_id)
+            if not channel:
+                print(f"❌ Channel not found (ID: {channel_id})")
+                continue
+                
+            if not isinstance(channel, discord.ForumChannel):
+                print(f"❌ Channel is not a ForumChannel! It's a {type(channel).__name__}")
+                continue
             
-            if match:
-                # Thread SHOULD have tag
-                if not has_tag:
-                    print(f"🎯 Match found: '{thread.name}' matches '{match}' (score: {score:.2f})")
-                    success = await add_runeforge_tag(thread)
-                    if success:
-                        tagged_count += 1
+            print(f"📺 Channel found: {channel.name}")
+            
+            # Get all active threads
+            threads = channel.threads
+            print(f"🧵 Found {len(threads)} active threads")
+            
+            archived_threads = []
+            
+            # Also get archived threads
+            print(f"🗄️ Fetching archived threads...")
+            try:
+                # Get ALL archived threads (no limit)
+                async for thread in channel.archived_threads(limit=None):
+                    archived_threads.append(thread)
+                print(f"🗄️ Found {len(archived_threads)} archived threads")
+            except Exception as e:
+                print(f"⚠️ Error fetching archived threads: {e}")
+            
+            all_threads = list(threads) + archived_threads
+            print(f"🔍 Checking {len(all_threads)} threads...")
+            
+            tagged_count = 0
+            untagged_count = 0
+            
+            for thread in all_threads:
+                # Check if thread name matches any RuneForge mod
+                match, score = await find_matching_mod(thread.name, runeforge_mods, threshold=0.7)
+                has_tag = any(tag.name == "onRuneforge" for tag in thread.applied_tags)
+                
+                if match:
+                    # Thread SHOULD have tag
+                    if not has_tag:
+                        print(f"🎯 Match found: '{thread.name}' matches '{match}' (score: {score:.2f})")
+                        success = await add_runeforge_tag(thread, tag_id)
+                        if success:
+                            tagged_count += 1
+                            
+                            # Log to log channel
+                            log_channel = bot.get_channel(LOG_CHANNEL_ID)
+                            if log_channel:
+                                await log_channel.send(
+                                    f"🔥 Tagged thread with 'onRuneforge': **{thread.name}**\n"
+                                    f"Channel: **{channel.name}**\n"
+                                    f"Matched to RuneForge mod: **{match}** (similarity: {score:.0%})\n"
+                                    f"Thread: {thread.jump_url}"
+                                )
                         
-                        # Log to log channel
-                        log_channel = bot.get_channel(LOG_CHANNEL_ID)
-                        if log_channel:
-                            await log_channel.send(
-                                f"🔥 Tagged thread with 'onRuneforge': **{thread.name}**\n"
-                                f"Matched to RuneForge mod: **{match}** (similarity: {score:.0%})\n"
-                                f"Thread: {thread.jump_url}"
-                            )
-                    
-                    # Small delay to avoid rate limits
-                    await asyncio.sleep(1)
-            else:
-                # Thread SHOULD NOT have tag
-                if has_tag:
-                    print(f"🗑️ Removing tag from: '{thread.name}' (no longer on RuneForge)")
-                    success = await remove_runeforge_tag(thread)
-                    if success:
-                        untagged_count += 1
+                        # Small delay to avoid rate limits
+                        await asyncio.sleep(1)
+                else:
+                    # Thread SHOULD NOT have tag
+                    if has_tag:
+                        print(f"🗑️ Removing tag from: '{thread.name}' (no longer on RuneForge)")
+                        success = await remove_runeforge_tag(thread)
+                        if success:
+                            untagged_count += 1
+                            
+                            # Log to log channel
+                            log_channel = bot.get_channel(LOG_CHANNEL_ID)
+                            if log_channel:
+                                await log_channel.send(
+                                    f"🗑️ Removed 'onRuneforge' tag from: **{thread.name}**\n"
+                                    f"Channel: **{channel.name}**\n"
+                                    f"Reason: No longer matches any RuneForge mod\n"
+                                    f"Thread: {thread.jump_url}"
+                                )
                         
-                        # Log to log channel
-                        log_channel = bot.get_channel(LOG_CHANNEL_ID)
-                        if log_channel:
-                            await log_channel.send(
-                                f"🗑️ Removed 'onRuneforge' tag from: **{thread.name}**\n"
-                                f"Reason: No longer matches any RuneForge mod\n"
-                                f"Thread: {thread.jump_url}"
-                            )
-                    
-                    # Small delay to avoid rate limits
-                    await asyncio.sleep(1)
+                        # Small delay to avoid rate limits
+                        await asyncio.sleep(1)
+            
+            print(f"✅ Channel {channel.name}: Tagged {tagged_count} threads, untagged {untagged_count} threads.")
+            total_tagged += tagged_count
+            total_untagged += untagged_count
         
-        print(f"✅ RuneForge check complete. Tagged {tagged_count} threads, untagged {untagged_count} threads.")
+        print(f"\n{'='*60}")
+        print(f"✅ RuneForge check complete across all channels!")
+        print(f"📊 Total: Tagged {total_tagged} threads, untagged {total_untagged} threads.")
+        print(f"{'='*60}")
         
     except Exception as e:
         print(f"❌ Error in RuneForge check task: {e}")
@@ -1825,7 +1845,7 @@ async def before_runeforge_check():
 # Manual command to check threads now
 @bot.tree.command(name="checkruneforge", description="Manually check all threads for RuneForge mods")
 async def checkruneforge(interaction: discord.Interaction):
-    """Manually trigger RuneForge mod checking with enhanced UI and full sync"""
+    """Manually trigger RuneForge mod checking with enhanced UI and full sync across multiple channels"""
     # Send initial "checking..." message
     initial_embed = discord.Embed(
         title="🔄 Checking RuneForge Mods...",
@@ -1848,123 +1868,125 @@ async def checkruneforge(interaction: discord.Interaction):
             await interaction.edit_original_response(embed=error_embed)
             return
         
-        # Get the Skin Ideas channel
-        channel = bot.get_channel(SKIN_IDEAS_CHANNEL_ID)
-        if not channel or not isinstance(channel, discord.ForumChannel):
-            error_embed = discord.Embed(
-                title="❌ Channel Not Found",
-                description=f"Could not find Skin Ideas forum channel (ID: {SKIN_IDEAS_CHANNEL_ID})",
-                color=0xFF0000
-            )
-            await interaction.edit_original_response(embed=error_embed)
-            return
+        # Check all channels
+        total_tagged_count = 0
+        total_untagged_count = 0
+        total_matches_found = []
+        total_already_tagged = []
+        total_removed_tags = []
+        total_threads_count = 0
+        total_archived_count = 0
         
-        # Get all threads
-        threads = list(channel.threads)
-        archived_threads = []
-        
-        try:
-            # Get ALL archived threads (no limit)
-            async for thread in channel.archived_threads(limit=None):
-                archived_threads.append(thread)
-        except Exception as e:
-            print(f"⚠️ Error fetching archived threads: {e}")
-        
-        all_threads = threads + archived_threads
-        
-        # Check each thread for ADDING and REMOVING tags
-        tagged_count = 0
-        untagged_count = 0
-        matches_found = []
-        already_tagged = []
-        removed_tags = []
-        
-        for thread in all_threads:
-            match, score = await find_matching_mod(thread.name, runeforge_mods, threshold=0.7)
-            has_tag = any(tag.name == "onRuneforge" for tag in thread.applied_tags)
+        for channel_id, tag_id in RUNEFORGE_CHANNELS.items():
+            channel = bot.get_channel(channel_id)
+            if not channel or not isinstance(channel, discord.ForumChannel):
+                continue
             
-            if match:
-                # Thread SHOULD have tag
-                if has_tag:
-                    already_tagged.append(f"✅ **{thread.name}** → **{match}** ({score:.0%})")
+            # Get all threads
+            threads = list(channel.threads)
+            archived_threads = []
+            
+            try:
+                # Get ALL archived threads (no limit)
+                async for thread in channel.archived_threads(limit=None):
+                    archived_threads.append(thread)
+            except Exception as e:
+                print(f"⚠️ Error fetching archived threads: {e}")
+            
+            all_threads = threads + archived_threads
+            total_threads_count += len(threads)
+            total_archived_count += len(archived_threads)
+            
+            # Check each thread for ADDING and REMOVING tags
+            for thread in all_threads:
+                match, score = await find_matching_mod(thread.name, runeforge_mods, threshold=0.7)
+                has_tag = any(tag.name == "onRuneforge" for tag in thread.applied_tags)
+                
+                if match:
+                    # Thread SHOULD have tag
+                    if has_tag:
+                        total_already_tagged.append(f"✅ **{thread.name}** → **{match}** ({score:.0%}) [{channel.name}]")
+                    else:
+                        total_matches_found.append({
+                            'thread': thread.name,
+                            'mod': match,
+                            'score': score,
+                            'url': thread.jump_url,
+                            'channel': channel.name
+                        })
+                        success = await add_runeforge_tag(thread, tag_id)
+                        if success:
+                            total_tagged_count += 1
+                        await asyncio.sleep(0.5)
                 else:
-                    matches_found.append({
-                        'thread': thread.name,
-                        'mod': match,
-                        'score': score,
-                        'url': thread.jump_url
-                    })
-                    success = await add_runeforge_tag(thread)
-                    if success:
-                        tagged_count += 1
-                    await asyncio.sleep(0.5)
-            else:
-                # Thread SHOULD NOT have tag
-                if has_tag:
-                    removed_tags.append({
-                        'thread': thread.name,
-                        'url': thread.jump_url
-                    })
-                    success = await remove_runeforge_tag(thread)
-                    if success:
-                        untagged_count += 1
-                    await asyncio.sleep(0.5)
+                    # Thread SHOULD NOT have tag
+                    if has_tag:
+                        total_removed_tags.append({
+                            'thread': thread.name,
+                            'url': thread.jump_url,
+                            'channel': channel.name
+                        })
+                        success = await remove_runeforge_tag(thread)
+                        if success:
+                            total_untagged_count += 1
+                        await asyncio.sleep(0.5)
         
         # Create detailed response embed
+        total_all_threads = total_threads_count + total_archived_count
         embed = discord.Embed(
             title="🔥 RuneForge Mod Check Complete",
-            description=f"Scanned **{len(all_threads)}** threads against **{len(runeforge_mods)}** RuneForge mods",
-            color=0x00FF00 if tagged_count > 0 else 0xFF6B35,
+            description=f"Scanned **{total_all_threads}** threads across **{len(RUNEFORGE_CHANNELS)}** channels against **{len(runeforge_mods)}** RuneForge mods",
+            color=0x00FF00 if total_tagged_count > 0 else 0xFF6B35,
             timestamp=datetime.datetime.now()
         )
         
         # Statistics section
         embed.add_field(
             name="📊 Statistics",
-            value=f"**{len(runeforge_mods)}** mods on RuneForge\n**{len(threads)}** active threads\n**{len(archived_threads)}** archived threads",
+            value=f"**{len(runeforge_mods)}** mods on RuneForge\n**{total_threads_count}** active threads\n**{total_archived_count}** archived threads",
             inline=True
         )
         
         embed.add_field(
             name="🏷️ Sync Results",
-            value=f"**{tagged_count}** tags added\n**{untagged_count}** tags removed\n**{len(already_tagged)}** already synced",
+            value=f"**{total_tagged_count}** tags added\n**{total_untagged_count}** tags removed\n**{len(total_already_tagged)}** already synced",
             inline=True
         )
         
         embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
         
         # New matches section
-        if matches_found:
+        if total_matches_found:
             matches_text = ""
-            for i, match in enumerate(matches_found[:5], 1):  # Show first 5
+            for i, match in enumerate(total_matches_found[:5], 1):  # Show first 5
                 matches_text += f"**{i}.** [{match['thread']}]({match['url']})\n"
-                matches_text += f"    └─ Matched to **{match['mod']}** ({match['score']:.0%} similarity)\n\n"
+                matches_text += f"    └─ **{match['mod']}** ({match['score']:.0%}) in {match['channel']}\n\n"
             
-            if len(matches_found) > 5:
-                matches_text += f"*... and {len(matches_found) - 5} more new matches*"
+            if len(total_matches_found) > 5:
+                matches_text += f"*... and {len(total_matches_found) - 5} more new matches*"
             
             embed.add_field(name="✨ Newly Tagged Threads", value=matches_text, inline=False)
         
         # Removed tags section
-        if removed_tags:
+        if total_removed_tags:
             removed_text = ""
-            for i, item in enumerate(removed_tags[:5], 1):  # Show first 5
-                removed_text += f"**{i}.** [{item['thread']}]({item['url']})\n"
+            for i, item in enumerate(total_removed_tags[:5], 1):  # Show first 5
+                removed_text += f"**{i}.** [{item['thread']}]({item['url']}) in {item['channel']}\n"
             
-            if len(removed_tags) > 5:
-                removed_text += f"*... and {len(removed_tags) - 5} more removed*"
+            if len(total_removed_tags) > 5:
+                removed_text += f"*... and {len(total_removed_tags) - 5} more removed*"
             
             embed.add_field(name="🗑️ Tags Removed (No Longer on RuneForge)", value=removed_text, inline=False)
         
         # Already tagged section (collapsed)
-        if already_tagged:
-            already_text = "\n".join(already_tagged[:3])
-            if len(already_tagged) > 3:
-                already_text += f"\n*... and {len(already_tagged) - 3} more*"
+        if total_already_tagged:
+            already_text = "\n".join(total_already_tagged[:3])
+            if len(total_already_tagged) > 3:
+                already_text += f"\n*... and {len(total_already_tagged) - 3} more*"
             embed.add_field(name="📌 Already Synced", value=already_text, inline=False)
         
         # No changes message
-        if not matches_found and not removed_tags and not already_tagged:
+        if not total_matches_found and not total_removed_tags and not total_already_tagged:
             embed.add_field(
                 name="💡 No Threads Found",
                 value="No threads match any mods on RuneForge (≥70% similarity threshold)",
@@ -1982,10 +2004,10 @@ async def checkruneforge(interaction: discord.Interaction):
         
         # Log the manual check
         log_channel = bot.get_channel(LOG_CHANNEL_ID)
-        if log_channel and tagged_count > 0:
+        if log_channel and total_tagged_count > 0:
             await log_channel.send(
                 f"🔍 Manual RuneForge check by {interaction.user.mention}\n"
-                f"**{tagged_count}** new threads tagged with 'onRuneforge'"
+                f"**{total_tagged_count}** new threads tagged with 'onRuneforge' across {len(RUNEFORGE_CHANNELS)} channels"
             )
         
     except Exception as e:
