@@ -9,3 +9,4 @@ lxml
 psycopg2-binary
 matplotlib
 pillow
+ntscraper

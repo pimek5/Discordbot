@@ -2148,289 +2148,120 @@ async def get_specific_tweet(tweet_id):
 
 async def get_twitter_user_tweets(username, max_results=5):
     """
-    Fetch the latest tweets from a Twitter user using Nitter (free alternative)
-    Twitter API requires expensive paid plan, so we use Nitter RSS feeds
+    Fetch the latest tweets from a Twitter user using ntscraper
+    No API key required!
     """
     print(f"🔍 Starting tweet fetch for @{username} (max {max_results} tweets)")
     
-    # Method 1: Try Nitter instances (primary method - no API key needed!)
-    nitter_instances = [
-        "nitter.privacydev.net",
-        "nitter.poast.org",
-        "nitter.net",
-        "nitter.lucabased.xyz",
-        "xcancel.com",  # Twitter frontend alternative
-        "nitter.unixfox.eu",
-        "nitter.1d4.us",
-        "nitter.kavin.rocks",
-        "nitter.fdn.fr",
-        "nitter.42l.fr",
-        "nitter.pussthecat.org",
-        "nitter.nixnet.services",
-        "nitter.woodland.cafe",
-        "nitter.foss.wtf",
-        "nitter.namazso.eu"
-    ]
-    
-    for instance in nitter_instances:
-        try:
-            print(f"� Trying {instance} for @{username}...")
-            
-            url = f"https://{instance}/{username}/rss"
-            
-            # Rotate user agents to avoid blocks
-            import random
-            user_agents = [
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            ]
-            
-            headers = {
-                'User-Agent': random.choice(user_agents),
-                'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-                'Accept-Language': 'en-US,en;q=0.9'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
-            
-            if response.status_code == 200:
-                print(f"✅ Connected to {instance}")
-                
-                import xml.etree.ElementTree as ET
-                try:
-                    root = ET.fromstring(response.content)
-                    
-                    tweets = []
-                    for item in root.findall('.//item')[:max_results]:  # Get requested number of tweets
-                        title = item.find('title')
-                        link = item.find('link')
-                        pub_date = item.find('pubDate')
-                        description = item.find('description')
-                        
-                        if title is not None and link is not None:
-                            tweet_id = link.text.split('/')[-1].split('#')[0]
-                            tweet_text = title.text if title.text else ''
-                            
-                            # FILTER OUT RETWEETS - Skip tweets that start with "RT by"
-                            if tweet_text.startswith('RT by'):
-                                print(f"⏭️ Skipping retweet: {tweet_text[:80]}...")
-                                continue
-                            
-                            # FILTER OUT REPLIES - Check if link contains reply indicator
-                            if '#m' in link.text:  # Nitter marks replies with #m
-                                print(f"⏭️ Skipping reply: {tweet_text[:80]}...")
-                                continue
-                            
-                            # Convert Nitter URL to Twitter URL
-                            twitter_url = f'https://twitter.com/{username}/status/{tweet_id}'
-                            
-                            # Extract images from description HTML using BeautifulSoup
-                            media_list = []
-                            if description is not None and description.text:
-                                try:
-                                    # Parse HTML content
-                                    desc_soup = BeautifulSoup(description.text, 'html.parser')
-                                    
-                                    # Debug: print first 500 chars of description for first tweet
-                                    if not tweets:  # Only for first tweet to avoid spam
-                                        print(f"🔍 Description preview: {description.text[:500]}...")
-                                    
-                                    # Method 1: Look for Twitter CDN URLs in anchor tags
-                                    for a_tag in desc_soup.find_all('a'):
-                                        href = a_tag.get('href', '')
-                                        if 'pbs.twimg.com' in href or 'twimg.com/media' in href:
-                                            if href.startswith('http://'):
-                                                href = href.replace('http://', 'https://', 1)
-                                            elif not href.startswith('http'):
-                                                href = f"https://{href}" if not href.startswith('//') else f"https:{href}"
-                                            
-                                            media_list.append({
-                                                'type': 'photo',
-                                                'url': href
-                                            })
-                                    
-                                    # Method 2: Look in img tags
-                                    if not media_list:
-                                        for img in desc_soup.find_all('img'):
-                                            src = img.get('src', '')
-                                            if 'pbs.twimg.com' in src or 'twimg.com/media' in src:
-                                                if src.startswith('http://'):
-                                                    src = src.replace('http://', 'https://', 1)
-                                                elif not src.startswith('http'):
-                                                    src = f"https://{src}" if not src.startswith('//') else f"https:{src}"
-                                                
-                                                media_list.append({
-                                                    'type': 'photo',
-                                                    'url': src
-                                                })
-                                    
-                                    # Method 3: Use Nitter proxy as last resort (convert to direct later)
-                                    if not media_list:
-                                        for img in desc_soup.find_all('img'):
-                                            src = img.get('src', '')
-                                            if src and '/pic/' in src:
-                                                # Build full Nitter URL
-                                                if src.startswith('/'):
-                                                    src = f"https://{instance}{src}"
-                                                elif src.startswith('http://'):
-                                                    src = src.replace('http://', 'https://', 1)
-                                                
-                                                # Try to extract filename and build Twitter CDN URL
-                                                # Nitter URLs: /pic/media%2FFILENAME or /pic/orig/media%2FFILENAME
-                                                import urllib.parse
-                                                if 'media%2F' in src:
-                                                    filename = src.split('media%2F')[-1].split('&')[0].split('?')[0]
-                                                    # Construct direct Twitter CDN URL
-                                                    twitter_img = f"https://pbs.twimg.com/media/{filename}"
-                                                    media_list.append({
-                                                        'type': 'photo',
-                                                        'url': twitter_img
-                                                    })
-                                    
-                                    if media_list:
-                                        print(f"🖼️ Found {len(media_list)} images in tweet {tweet_id}")
-                                        for idx, media in enumerate(media_list, 1):
-                                            print(f"  📸 Image {idx}: {media['url']}")
-                                    else:
-                                        print(f"ℹ️ No images found in tweet {tweet_id}")
-                                except Exception as e:
-                                    print(f"⚠️ Error parsing images from description: {e}")
-                                    import traceback
-                                    traceback.print_exc()
-                            
-                            tweet_obj = {
-                                'id': tweet_id,
-                                'text': tweet_text,
-                                'url': twitter_url,
-                                'created_at': pub_date.text if pub_date is not None else '',
-                                'description': description.text if description is not None else tweet_text,
-                                'metrics': {}
-                            }
-                            
-                            if media_list:
-                                tweet_obj['media'] = media_list
-                            
-                            tweets.append(tweet_obj)
-                    
-                    if tweets:
-                        print(f"✅ Nitter: Found {len(tweets)} tweets from {instance}")
-                        print(f"🆕 Latest tweet ID: {tweets[0]['id']}")
-                        print(f"📝 Latest tweet text: {tweets[0]['text'][:100]}...")
-                        return tweets
-                    else:
-                        print(f"⚠️ No tweets parsed from {instance}")
-                        
-                except ET.ParseError as e:
-                    print(f"❌ XML parsing error for {instance}: {e}")
+    try:
+        from ntscraper import Nitter
+        
+        print(f"📡 Using ntscraper to fetch tweets from @{username}...")
+        
+        # Create scraper instance
+        scraper = Nitter(log_level=1, skip_instance_check=False)
+        
+        # Get user's tweets
+        raw_tweets = scraper.get_tweets(username, mode='user', number=max_results)
+        
+        if not raw_tweets or 'tweets' not in raw_tweets:
+            print(f"❌ No tweets found for @{username}")
+            return []
+        
+        tweets = []
+        for tweet_data in raw_tweets['tweets']:
+            try:
+                # Extract tweet ID from link
+                tweet_link = tweet_data.get('link', '')
+                if not tweet_link:
                     continue
-            else:
-                print(f"⚠️ {instance} returned status {response.status_code}")
-                    
-        except Exception as e:
-            print(f"❌ Error with {instance}: {e}")
-            continue
-    
-    # Method 2: Try Twitter API v2 (fallback - only if bearer token exists)
-    if TWITTER_BEARER_TOKEN:
-        try:
-            print(f"📡 Trying Twitter API v2 for @{username}...")
-            
-            # Get user ID first
-            user_url = f"https://api.twitter.com/2/users/by/username/{username}"
-            headers = {
-                'Authorization': f'Bearer {TWITTER_BEARER_TOKEN}',
-                'User-Agent': 'v2UserLookupPython'
-            }
-            
-            user_response = requests.get(user_url, headers=headers, timeout=10)
-            
-            # Handle rate limiting
-            if user_response.status_code == 429:
-                print(f"⚠️ Twitter API rate limit reached")
-                return []
-            
-            if user_response.status_code == 200:
-                user_data = user_response.json()
-                user_id = user_data['data']['id']
                 
-                # Get user tweets
-                tweets_url = f"https://api.twitter.com/2/users/{user_id}/tweets"
-                tweet_params = {
-                    'max_results': 5,
-                    'tweet.fields': 'created_at,public_metrics,text,attachments',
-                    'expansions': 'author_id,attachments.media_keys',
-                    'user.fields': 'name,username,profile_image_url',
-                    'media.fields': 'type,url,preview_image_url'
+                tweet_id = tweet_link.split('/')[-1].split('#')[0]
+                tweet_text = tweet_data.get('text', '')
+                
+                # FILTER OUT RETWEETS
+                if tweet_data.get('is-retweet', False) or tweet_text.startswith('RT '):
+                    print(f"⏭️ Skipping retweet: {tweet_text[:80]}...")
+                    continue
+                
+                # FILTER OUT REPLIES
+                if tweet_data.get('is-reply', False):
+                    print(f"⏭️ Skipping reply: {tweet_text[:80]}...")
+                    continue
+                
+                # Convert to Twitter URL
+                twitter_url = f'https://twitter.com/{username}/status/{tweet_id}'
+                
+                # Extract media/images
+                media_list = []
+                if 'pictures' in tweet_data and tweet_data['pictures']:
+                    for pic_url in tweet_data['pictures']:
+                        # Convert Nitter pic URLs to direct Twitter CDN
+                        if 'pbs.twimg.com' in pic_url:
+                            media_list.append({
+                                'type': 'photo',
+                                'url': pic_url
+                            })
+                        elif '/pic/' in pic_url or 'media%2F' in pic_url:
+                            # Extract filename and build Twitter CDN URL
+                            try:
+                                import urllib.parse
+                                if 'media%2F' in pic_url:
+                                    filename = pic_url.split('media%2F')[-1].split('&')[0].split('?')[0]
+                                    filename = urllib.parse.unquote(filename)
+                                    twitter_img = f"https://pbs.twimg.com/media/{filename}"
+                                    media_list.append({
+                                        'type': 'photo',
+                                        'url': twitter_img
+                                    })
+                            except:
+                                pass
+                
+                if media_list:
+                    print(f"🖼️ Found {len(media_list)} images in tweet {tweet_id}")
+                else:
+                    print(f"ℹ️ No images found in tweet {tweet_id}")
+                
+                # Build tweet object
+                tweet_obj = {
+                    'id': tweet_id,
+                    'text': tweet_text,
+                    'url': twitter_url,
+                    'created_at': tweet_data.get('date', ''),
+                    'description': tweet_text,
+                    'metrics': {
+                        'like_count': tweet_data.get('stats', {}).get('likes', 0),
+                        'retweet_count': tweet_data.get('stats', {}).get('retweets', 0),
+                        'reply_count': tweet_data.get('stats', {}).get('comments', 0),
+                    }
                 }
                 
-                tweets_response = requests.get(tweets_url, headers=headers, params=tweet_params, timeout=10)
+                if media_list:
+                    tweet_obj['media'] = media_list
                 
-                if tweets_response.status_code == 200:
-                    tweets_data = tweets_response.json()
-                    
-                    if 'data' in tweets_data:
-                        tweets = []
-                        
-                        # Get user profile image
-                        profile_image_url = None
-                        if 'includes' in tweets_data and 'users' in tweets_data['includes']:
-                            for user in tweets_data['includes']['users']:
-                                if user['username'].lower() == username.lower():
-                                    profile_image_url = user.get('profile_image_url', '').replace('_normal', '_400x400')
-                                    break
-                        
-                        # Get media data
-                        media_dict = {}
-                        if 'includes' in tweets_data and 'media' in tweets_data['includes']:
-                            for media in tweets_data['includes']['media']:
-                                media_dict[media['media_key']] = media
-                        
-                        for tweet in tweets_data['data']:
-                            tweet_obj = {
-                                'id': tweet['id'],
-                                'text': tweet['text'],
-                                'url': f'https://twitter.com/{username}/status/{tweet["id"]}',
-                                'created_at': tweet.get('created_at', ''),
-                                'metrics': tweet.get('public_metrics', {}),
-                                'description': tweet['text']
-                            }
-                            
-                            if profile_image_url:
-                                tweet_obj['profile_image_url'] = profile_image_url
-                            
-                            # Add media if available
-                            if 'attachments' in tweet and 'media_keys' in tweet['attachments']:
-                                media_list = []
-                                for media_key in tweet['attachments']['media_keys']:
-                                    if media_key in media_dict:
-                                        media_info = media_dict[media_key]
-                                        if media_info['type'] == 'photo':
-                                            media_list.append({
-                                                'type': 'photo',
-                                                'url': media_info.get('url', ''),
-                                                'preview_url': media_info.get('preview_image_url', '')
-                                            })
-                                        elif media_info['type'] in ['video', 'animated_gif']:
-                                            media_list.append({
-                                                'type': media_info['type'],
-                                                'preview_url': media_info.get('preview_image_url', '')
-                                            })
-                                
-                                if media_list:
-                                    tweet_obj['media'] = media_list
-                                
-                            tweets.append(tweet_obj)
-                        
-                        print(f"✅ Twitter API v2: Found {len(tweets)} tweets")
-                        print(f"🆕 Latest tweet ID: {tweets[0]['id']}")
-                        return tweets
-                    
-        except Exception as e:
-            print(f"❌ Twitter API v2 error: {e}")
-    
-    print("❌ All methods failed - no tweets found")
-    return []
+                tweets.append(tweet_obj)
+                
+            except Exception as e:
+                print(f"⚠️ Error parsing tweet: {e}")
+                continue
+        
+        if tweets:
+            print(f"✅ ntscraper: Found {len(tweets)} tweets")
+            print(f"🆕 Latest tweet ID: {tweets[0]['id']}")
+            print(f"📝 Latest tweet text: {tweets[0]['text'][:100]}...")
+            return tweets
+        else:
+            print(f"❌ No valid tweets found after filtering")
+            return []
+            
+    except ImportError:
+        print(f"❌ ntscraper not installed! Install with: pip install ntscraper")
+        return []
+    except Exception as e:
+        print(f"❌ ntscraper error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 async def create_tweet_embed(tweet_data):
     """Create a Discord embed from tweet data that looks like the Twitter app"""
