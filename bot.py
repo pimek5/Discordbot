@@ -1666,7 +1666,8 @@ async def check_threads_for_runeforge():
         # Also get archived threads
         print(f"🗄️ Fetching archived threads...")
         try:
-            async for thread in channel.archived_threads(limit=100):
+            # Get ALL archived threads (no limit)
+            async for thread in channel.archived_threads(limit=None):
                 archived_threads.append(thread)
             print(f"🗄️ Found {len(archived_threads)} archived threads")
         except Exception as e:

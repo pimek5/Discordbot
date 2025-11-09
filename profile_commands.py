@@ -1257,12 +1257,11 @@ class ProfileCommands(commands.Cog):
     async def forcelink(self, interaction: discord.Interaction, user: discord.User, riot_id: str, region: str):
         """Force link an account without verification (owner only)"""
         
-        # Check if user has admin role
-        ADMIN_ROLE_ID = 1153030265782927501
-        has_admin = any(role.id == ADMIN_ROLE_ID for role in interaction.user.roles) if hasattr(interaction.user, 'roles') else False
+        # Import admin permissions check
+        from permissions import has_admin_permissions
         
-        if not has_admin:
-            await interaction.response.send_message("❌ This command requires admin role!", ephemeral=True)
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message("❌ This command requires admin permissions!", ephemeral=True)
             return
         
         await interaction.response.defer(ephemeral=True)
