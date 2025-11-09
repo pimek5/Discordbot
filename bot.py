@@ -1474,45 +1474,62 @@ def string_similarity(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 async def get_runeforge_mods():
-    """Fetch all mods from RuneForge user profile"""
+    """Fetch all mods from RuneForge user profile (all pages)"""
     try:
-        url = f"https://runeforge.dev/users/{RUNEFORGE_USERNAME}/mods"
+        all_mods = []
+        page = 1
+        max_pages = 10  # Safety limit to prevent infinite loop
+        
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
-        print(f"🌐 Fetching RuneForge mods from: {url}")
-        response = requests.get(url, headers=headers, timeout=10)
+        print(f"🌐 Fetching RuneForge mods from all pages...")
         
-        if response.status_code != 200:
-            print(f"❌ Failed to fetch RuneForge mods: {response.status_code}")
-            return []
-        
-        print(f"✅ Successfully fetched RuneForge page (status: {response.status_code})")
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Find all mod titles - they're in links with specific structure
-        mods = []
-        all_links = soup.find_all('a', href=True)
-        print(f"🔍 Found {len(all_links)} total links on page")
-        
-        for link in all_links:
-            if '/mods/' in link['href']:
-                # Get the text content which should be the mod name
-                mod_name = link.get_text(strip=True)
-                if mod_name and len(mod_name) > 3:  # Ignore very short names
-                    mods.append(mod_name)
-                    print(f"  📦 Found mod: {mod_name}")
+        while page <= max_pages:
+            url = f"https://runeforge.dev/users/{RUNEFORGE_USERNAME}/mods?page={page}&sortBy=recently_updated"
+            print(f"📄 Fetching page {page}: {url}")
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code != 200:
+                print(f"❌ Failed to fetch page {page}: {response.status_code}")
+                break
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Find all mod titles - they're in links with specific structure
+            page_mods = []
+            all_links = soup.find_all('a', href=True)
+            
+            for link in all_links:
+                if '/mods/' in link['href']:
+                    # Get the text content which should be the mod name
+                    mod_name = link.get_text(strip=True)
+                    if mod_name and len(mod_name) > 3:  # Ignore very short names
+                        page_mods.append(mod_name)
+            
+            # If no mods found on this page, we've reached the end
+            if not page_mods:
+                print(f"✅ No more mods found on page {page} - stopping")
+                break
+            
+            print(f"✅ Found {len(page_mods)} mods on page {page}")
+            all_mods.extend(page_mods)
+            page += 1
+            
+            # Small delay to be nice to the server
+            await asyncio.sleep(0.5)
         
         # Remove duplicates while preserving order
         seen = set()
         unique_mods = []
-        for mod in mods:
+        for mod in all_mods:
             if mod not in seen:
                 seen.add(mod)
                 unique_mods.append(mod)
         
-        print(f"✅ Found {len(unique_mods)} unique mods on RuneForge:")
+        print(f"✅ Found {len(unique_mods)} unique mods on RuneForge across {page - 1} pages:")
         for mod in unique_mods[:5]:  # Show first 5
             print(f"  • {mod}")
         if len(unique_mods) > 5:
