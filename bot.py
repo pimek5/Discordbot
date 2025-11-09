@@ -1753,10 +1753,11 @@ async def checkruneforge(interaction: discord.Interaction):
         archived_threads = []
         
         try:
-            async for thread in channel.archived_threads(limit=100):
+            # Get ALL archived threads (no limit)
+            async for thread in channel.archived_threads(limit=None):
                 archived_threads.append(thread)
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ Error fetching archived threads: {e}")
         
         all_threads = threads + archived_threads
         
