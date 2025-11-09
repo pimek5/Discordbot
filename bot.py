@@ -955,17 +955,26 @@ async def update_mastery(interaction: discord.Interaction):
     
     try:
         from database import get_db
+        from riot_api import RiotAPI
+        import os
+        
         db = get_db()
+        riot_api = RiotAPI(os.getenv('RIOT_API_KEY'))
         
         # Get all users with linked accounts
         conn = db.get_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT DISTINCT u.id, u.snowflake
+                    SELECT DISTINCT u.id, u.snowflake, la.puuid, la.region
                     FROM users u
                     JOIN league_accounts la ON u.id = la.user_id
-                    WHERE la.puuid IS NOT NULL
+                    WHERE la.puuid IS NOT NULL AND (la.primary_account = TRUE OR la.id = (
+                        SELECT id FROM league_accounts 
+                        WHERE user_id = u.id 
+                        ORDER BY primary_account DESC, id ASC 
+                        LIMIT 1
+                    ))
                 """)
                 users = cur.fetchall()
         finally:
@@ -981,34 +990,17 @@ async def update_mastery(interaction: discord.Interaction):
         # Update mastery for each user
         updated = 0
         failed = 0
+        errors = []
         
-        for user_id, snowflake in users:
+        for user_id, snowflake, puuid, region in users:
             try:
-                # Get user's primary account
-                conn = db.get_connection()
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            SELECT puuid, region
-                            FROM league_accounts
-                            WHERE user_id = %s AND primary_account = TRUE
-                            LIMIT 1
-                        """, (user_id,))
-                        account = cur.fetchone()
-                finally:
-                    db.return_connection(conn)
+                # Fetch mastery from Riot API
+                mastery_data = await riot_api.get_champion_mastery(puuid, region)
                 
-                if account:
-                    puuid, region = account
-                    # Fetch mastery from Riot API
-                    from riot_api import RiotAPI
-                    import os
-                    riot_api = RiotAPI(os.getenv('RIOT_API_KEY'))
-                    mastery_data = await riot_api.get_champion_mastery(puuid, region)
-                    
-                    if mastery_data:
-                        # Update in database
-                        for champ in mastery_data:
+                if mastery_data and len(mastery_data) > 0:
+                    # Update in database
+                    for champ in mastery_data:
+                        try:
                             db.update_champion_stats(
                                 user_id,
                                 champ['championId'],
@@ -1018,23 +1010,42 @@ async def update_mastery(interaction: discord.Interaction):
                                 champ.get('tokensEarned', 0),
                                 champ.get('lastPlayTime', 0)
                             )
-                        updated += 1
-                    else:
-                        failed += 1
+                        except Exception as e:
+                            print(f"⚠️ Error updating champion {champ['championId']} for user {snowflake}: {e}")
+                    updated += 1
+                    print(f"✅ Updated mastery for user {snowflake} ({len(mastery_data)} champions)")
                 else:
                     failed += 1
+                    errors.append(f"<@{snowflake}>: No mastery data returned")
+                    print(f"❌ No mastery data for user {snowflake}")
                     
             except Exception as e:
-                print(f"Error updating mastery for user {snowflake}: {e}")
                 failed += 1
+                error_msg = str(e)[:100]  # Limit error message length
+                errors.append(f"<@{snowflake}>: {error_msg}")
+                print(f"❌ Error updating mastery for user {snowflake}: {e}")
         
         embed = discord.Embed(
             title="✅ Mastery Update Complete",
-            color=0x00FF00
+            color=0x00FF00 if failed == 0 else 0xFFA500
         )
         embed.add_field(name="✅ Updated", value=str(updated), inline=True)
         embed.add_field(name="❌ Failed", value=str(failed), inline=True)
         embed.add_field(name="📊 Total", value=str(len(users)), inline=True)
+        
+        # Show some errors if any
+        if errors and len(errors) <= 5:
+            embed.add_field(
+                name="⚠️ Errors",
+                value="\n".join(errors[:5]),
+                inline=False
+            )
+        elif errors:
+            embed.add_field(
+                name="⚠️ Errors",
+                value=f"Too many errors to display ({len(errors)} total). Check logs.",
+                inline=False
+            )
         
         await interaction.followup.send(embed=embed, ephemeral=True)
         print(f"✅ Mastery updated by {interaction.user.name}: {updated} success, {failed} failed")

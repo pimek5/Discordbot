@@ -299,8 +299,8 @@ class ProfileCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="verify", description="Complete account verification")
-    async def verify(self, interaction: discord.Interaction):
+    @app_commands.command(name="verifyacc", description="Complete account verification")
+    async def verifyacc(self, interaction: discord.Interaction):
         """Verify League client code"""
         await interaction.response.defer(ephemeral=True)
         
@@ -417,10 +417,10 @@ class ProfileCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="setprimary", description="Set your primary Riot account")
-    @app_commands.describe(riot_id="Riot ID of the account to set as primary (Name#TAG)")
-    async def setprimary(self, interaction: discord.Interaction, riot_id: str):
-        """Set a primary account from your linked accounts"""
+    @app_commands.command(name="setmain", description="Set your main Riot account")
+    @app_commands.describe(riot_id="Riot ID of the account to set as main (Name#TAG)")
+    async def setmain(self, interaction: discord.Interaction, riot_id: str):
+        """Set a main account from your linked accounts"""
         await interaction.response.defer(ephemeral=True)
         
         db = get_db()
