@@ -1001,7 +1001,7 @@ async def update_mastery(interaction: discord.Interaction):
                     # Update in database
                     for champ in mastery_data:
                         try:
-                            db.update_champion_stats(
+                            db.update_champion_mastery(
                                 user_id,
                                 champ['championId'],
                                 champ['championPoints'],
