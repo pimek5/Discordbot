@@ -2158,8 +2158,20 @@ async def get_twitter_user_tweets(username, max_results=5):
         
         print(f"📡 Using ntscraper to fetch tweets from @{username}...")
         
-        # Create scraper instance
-        scraper = Nitter(log_level=1, skip_instance_check=False)
+        # SKIP instance check to avoid blocking (takes 10+ seconds)
+        # Instead provide a list of known working instances
+        working_instances = [
+            "nitter.privacydev.net",
+            "nitter.poast.org", 
+            "xcancel.com",
+            "nitter.net"
+        ]
+        
+        # Create scraper with pre-configured instances
+        scraper = Nitter(log_level=1, skip_instance_check=True)
+        
+        # Manually set working instances to skip testing
+        scraper.working_instances = working_instances
         
         # Get user's tweets
         raw_tweets = scraper.get_tweets(username, mode='user', number=max_results)
