@@ -71,7 +71,7 @@ LOG_CHANNEL_ID = 1408036991454417039
 # Twitter Configuration
 TWITTER_USERNAME = "p1mek"
 TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
-TWITTER_CHECK_INTERVAL = 120  # Check every 2 minutes (120 seconds)
+TWITTER_CHECK_INTERVAL = 1800  # Check every 30 minutes (1800 seconds) - reduced to avoid Twitter API rate limits
 
 # Twitter API Configuration (add these to your .env file)
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
@@ -2183,30 +2183,29 @@ async def get_twitter_user_tweets(username, max_results=5):
         
         print(f"🌐 Trying with {len(working_instances)} Nitter instances...")
         
-        # Create scraper with pre-configured instances
-        scraper = Nitter(log_level=1, skip_instance_check=True)
-        
-        # Manually set working instances to skip testing
-        scraper.working_instances = working_instances
-        
-        # Get user's tweets - try multiple times with different instances
+        # Get user's tweets - try each instance one by one
         raw_tweets = None
         last_error = None
         
-        for attempt in range(2):  # Reduced to 2 attempts to fail faster
+        for attempt, instance in enumerate(working_instances[:3]):  # Try first 3 instances
             try:
-                print(f"🔄 Attempt {attempt + 1}/2 to fetch tweets...")
+                print(f"🔄 Attempt {attempt + 1}/3 trying instance: {instance}")
+                
+                # Create scraper with specific instance
+                scraper = Nitter(log_level=1, skip_instance_check=True)
+                scraper.instance = instance
+                
                 raw_tweets = scraper.get_tweets(username, mode='user', number=max_results)
                 if raw_tweets and 'tweets' in raw_tweets and len(raw_tweets['tweets']) > 0:
-                    print(f"✅ Successfully fetched tweets on attempt {attempt + 1}")
+                    print(f"✅ Successfully fetched tweets from {instance}")
                     break
                 else:
-                    print(f"⚠️ Attempt {attempt + 1} returned no data")
+                    print(f"⚠️ Instance {instance} returned no data")
                     last_error = "No data returned"
             except Exception as e:
                 last_error = str(e)
-                print(f"⚠️ Attempt {attempt + 1} failed: {e}")
-                if attempt < 1:  # Don't sleep on last attempt
+                print(f"⚠️ Instance {instance} failed: {e}")
+                if attempt < 2:  # Don't sleep on last attempt
                     await asyncio.sleep(1)  # Wait before retry
         
         if raw_tweets and 'tweets' in raw_tweets and len(raw_tweets['tweets']) > 0:
@@ -2297,7 +2296,7 @@ async def get_twitter_user_tweets(username, max_results=5):
                 print(f"❌ ntscraper: No valid tweets found after filtering")
         
         # ntscraper FAILED - try Twitter API
-        print(f"❌ ntscraper failed after {2} attempts. Last error: {last_error}")
+        print(f"❌ ntscraper failed after trying {min(3, len(working_instances))} instances. Last error: {last_error}")
         print(f"💡 Trying Twitter API as fallback...")
             
     except ImportError:
@@ -2392,6 +2391,11 @@ async def get_twitter_user_tweets(username, max_results=5):
                 
         except ImportError:
             print(f"❌ Tweepy not installed! Install with: pip install tweepy")
+        except tweepy.errors.TooManyRequests as e:
+            print(f"❌ Twitter API rate limit exceeded (429 Too Many Requests)")
+            print(f"💡 Waiting for rate limit to reset. Check interval is now {TWITTER_CHECK_INTERVAL} seconds.")
+            print(f"💡 Consider increasing TWITTER_CHECK_INTERVAL to avoid rate limits.")
+            return []
         except Exception as e:
             print(f"❌ Twitter API error: {e}")
             import traceback
