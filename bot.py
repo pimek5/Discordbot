@@ -2324,10 +2324,13 @@ async def get_twitter_user_tweets(username, max_results=5):
             user_id = user.data.id
             print(f"✅ Found user @{username} (ID: {user_id})")
             
-            # Get tweets
+            # Twitter API requires max_results between 5 and 100 for this endpoint.
+            # Use at least 5 for the API call, but we'll only return the number the caller requested.
+            api_max = max(5, max_results)
+            print(f"📡 Twitter API: requesting up to {api_max} tweets (client requested {max_results})")
             response = client.get_users_tweets(
                 user_id,
-                max_results=max_results,
+                max_results=api_max,
                 exclude=['retweets', 'replies'],  # No retweets or replies
                 tweet_fields=['created_at', 'public_metrics', 'attachments'],
                 expansions=['attachments.media_keys'],
@@ -2379,12 +2382,12 @@ async def get_twitter_user_tweets(username, max_results=5):
                 except Exception as e:
                     print(f"⚠️ Error parsing Twitter API tweet: {e}")
                     continue
-            
+            # Only return the number of tweets requested by caller (may be less than api_max)
             if tweets:
-                print(f"✅ Twitter API: Found {len(tweets)} tweets")
+                print(f"✅ Twitter API: Found {len(tweets)} tweets (returning {min(len(tweets), max_results)})")
                 print(f"🆕 Latest tweet ID: {tweets[0]['id']}")
                 print(f"📝 Latest tweet text: {tweets[0]['text'][:100]}...")
-                return tweets
+                return tweets[:max_results]
             else:
                 print(f"❌ Twitter API: No valid tweets found")
                 return []
@@ -2552,6 +2555,58 @@ async def before_tweet_check():
     await bot.wait_until_ready()
     load_last_tweet_id()  # Load saved tweet ID from file
     print(f"🐦 Tweet monitoring initialized! Last known tweet ID: {last_tweet_id or 'None (will initialize on first check)'}")
+
+# ================================
+#    BAN EXPIRATION BACKGROUND TASK
+# ================================
+
+@tasks.loop(minutes=5)  # Check every 5 minutes
+async def expire_bans_task():
+    """Background task to automatically expire temporary bans"""
+    try:
+        db = get_db()
+        expired_count = db.expire_old_bans()
+        
+        if expired_count > 0:
+            print(f"⏰ Expired {expired_count} temporary ban(s)")
+            
+            # Try to unban users from Discord
+            for guild in bot.guilds:
+                bans = await guild.bans()
+                for ban_entry in bans:
+                    # Check if this user's ban has expired in database
+                    active_ban = db.get_active_ban(ban_entry.user.id, guild.id)
+                    if not active_ban:
+                        # Ban expired, unban from Discord
+                        try:
+                            await guild.unban(ban_entry.user, reason="Ban expired (automatic)")
+                            print(f"🔓 Auto-unbanned {ban_entry.user.name} from {guild.name} (ban expired)")
+                            
+                            # Send DM notification
+                            try:
+                                embed = discord.Embed(
+                                    title="✅ Ban Expired",
+                                    description=f"Your temporary ban from **{guild.name}** has expired.",
+                                    color=discord.Color.green(),
+                                    timestamp=datetime.datetime.now()
+                                )
+                                embed.add_field(name="ℹ️ Status", value="You can now rejoin the server.", inline=False)
+                                await ban_entry.user.send(embed=embed)
+                            except:
+                                pass
+                        except Exception as e:
+                            print(f"⚠️ Error auto-unbanning {ban_entry.user.name}: {e}")
+                            
+    except Exception as e:
+        print(f"❌ Error in ban expiration task: {e}")
+        import traceback
+        traceback.print_exc()
+
+@expire_bans_task.before_loop
+async def before_expire_bans():
+    """Wait for bot to be ready before starting the ban expiration loop"""
+    await bot.wait_until_ready()
+    print(f"⏰ Ban expiration task initialized (checks every 5 minutes)")
 
 # Manual tweet posting command (for testing)
 @twitter_group.command(name="post", description="Manually post the latest tweet from @p1mek")
@@ -4161,6 +4216,477 @@ async def ability(interaction: discord.Interaction, champion: str):
                 pass
 
 # ================================
+#        Banning/Moderation System
+# ================================
+
+@mod_group.command(name="ban", description="Ban a user from the server with a reason")
+@app_commands.describe(
+    user="The user to ban",
+    reason="Reason for the ban",
+    duration="Duration in minutes (leave empty for permanent ban)",
+    delete_messages="Delete messages from last N days (0-7)"
+)
+async def ban_user(
+    interaction: discord.Interaction, 
+    user: discord.Member,
+    reason: str,
+    duration: Optional[int] = None,
+    delete_messages: Optional[int] = 0
+):
+    """Ban a user with reasoning and DM notification"""
+    # Check permissions
+    if not interaction.user.guild_permissions.ban_members:
+        await interaction.response.send_message("❌ You don't have permission to ban members!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Check if user is already banned
+        db = get_db()
+        existing_ban = db.get_active_ban(user.id, interaction.guild.id)
+        
+        if existing_ban:
+            await interaction.followup.send(f"❌ {user.mention} is already banned!", ephemeral=True)
+            return
+        
+        # Add ban to database
+        ban_id = db.add_ban(
+            user_id=user.id,
+            guild_id=interaction.guild.id,
+            moderator_id=interaction.user.id,
+            reason=reason,
+            duration_minutes=duration
+        )
+        
+        # Send DM to user before banning
+        try:
+            embed = discord.Embed(
+                title="🔨 You have been banned",
+                description=f"You have been banned from **{interaction.guild.name}**",
+                color=discord.Color.red(),
+                timestamp=datetime.datetime.now()
+            )
+            
+            embed.add_field(name="📋 Reason", value=reason, inline=False)
+            
+            if duration:
+                hours = duration // 60
+                minutes = duration % 60
+                duration_text = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+                embed.add_field(name="⏰ Duration", value=duration_text, inline=True)
+                embed.add_field(name="🔓 Expires", value=f"<t:{int((datetime.datetime.now() + datetime.timedelta(minutes=duration)).timestamp())}:R>", inline=True)
+            else:
+                embed.add_field(name="⏰ Duration", value="Permanent", inline=True)
+            
+            embed.add_field(
+                name="📝 Appeal",
+                value=f"You can appeal this ban using `/appeal` command in the server or by contacting a moderator.",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Ban ID: {ban_id} • Moderator: {interaction.user.name}")
+            
+            await user.send(embed=embed)
+            dm_sent = True
+        except discord.Forbidden:
+            dm_sent = False
+        except Exception as e:
+            print(f"Error sending DM: {e}")
+            dm_sent = False
+        
+        # Ban the user from Discord
+        await user.ban(
+            reason=f"[Ban ID: {ban_id}] {reason}",
+            delete_message_days=min(delete_messages, 7)
+        )
+        
+        # Confirmation message
+        embed = discord.Embed(
+            title="✅ User Banned",
+            description=f"{user.mention} has been banned",
+            color=discord.Color.green(),
+            timestamp=datetime.datetime.now()
+        )
+        
+        embed.add_field(name="👤 User", value=f"{user.name} ({user.id})", inline=True)
+        embed.add_field(name="🔨 Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="🆔 Ban ID", value=str(ban_id), inline=True)
+        embed.add_field(name="📋 Reason", value=reason, inline=False)
+        
+        if duration:
+            hours = duration // 60
+            minutes = duration % 60
+            duration_text = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+            embed.add_field(name="⏰ Duration", value=duration_text, inline=True)
+        else:
+            embed.add_field(name="⏰ Duration", value="Permanent", inline=True)
+        
+        embed.add_field(name="📨 DM", value="✅ Sent" if dm_sent else "❌ Failed (DMs disabled)", inline=True)
+        
+        await interaction.followup.send(embed=embed)
+        
+        # Log to mod log channel if exists
+        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID) if 'LOG_CHANNEL_ID' in globals() else None
+        if log_channel:
+            await log_channel.send(embed=embed)
+            
+    except discord.Forbidden:
+        await interaction.followup.send("❌ I don't have permission to ban this user!", ephemeral=True)
+    except Exception as e:
+        print(f"Error banning user: {e}")
+        import traceback
+        traceback.print_exc()
+        await interaction.followup.send(f"❌ Error banning user: {e}", ephemeral=True)
+
+
+@mod_group.command(name="unban", description="Unban a previously banned user")
+@app_commands.describe(
+    user_id="The Discord ID of the user to unban",
+    reason="Reason for unbanning"
+)
+async def unban_user(interaction: discord.Interaction, user_id: str, reason: Optional[str] = "No reason provided"):
+    """Unban a user"""
+    # Check permissions
+    if not interaction.user.guild_permissions.ban_members:
+        await interaction.response.send_message("❌ You don't have permission to unban members!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Convert to int
+        user_id_int = int(user_id)
+        
+        # Check if user has active ban
+        db = get_db()
+        active_ban = db.get_active_ban(user_id_int, interaction.guild.id)
+        
+        if not active_ban:
+            await interaction.followup.send(f"❌ User ID {user_id} is not currently banned!", ephemeral=True)
+            return
+        
+        # Unban from database
+        db.unban_user(active_ban['id'], interaction.user.id, reason)
+        
+        # Unban from Discord
+        user = await bot.fetch_user(user_id_int)
+        await interaction.guild.unban(user, reason=f"[Unban by {interaction.user.name}] {reason}")
+        
+        # Send DM to user
+        try:
+            embed = discord.Embed(
+                title="✅ You have been unbanned",
+                description=f"You have been unbanned from **{interaction.guild.name}**",
+                color=discord.Color.green(),
+                timestamp=datetime.datetime.now()
+            )
+            
+            embed.add_field(name="📋 Reason", value=reason, inline=False)
+            embed.add_field(name="🔨 Unbanned by", value=interaction.user.name, inline=True)
+            
+            await user.send(embed=embed)
+        except:
+            pass
+        
+        # Confirmation
+        embed = discord.Embed(
+            title="✅ User Unbanned",
+            description=f"<@{user_id_int}> has been unbanned",
+            color=discord.Color.green(),
+            timestamp=datetime.datetime.now()
+        )
+        
+        embed.add_field(name="👤 User", value=f"{user.name} ({user_id_int})", inline=True)
+        embed.add_field(name="🔨 Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="📋 Reason", value=reason, inline=False)
+        
+        await interaction.followup.send(embed=embed)
+        
+    except ValueError:
+        await interaction.followup.send("❌ Invalid user ID! Must be a number.", ephemeral=True)
+    except discord.NotFound:
+        await interaction.followup.send("❌ User not found in ban list!", ephemeral=True)
+    except Exception as e:
+        print(f"Error unbanning user: {e}")
+        await interaction.followup.send(f"❌ Error unbanning user: {e}", ephemeral=True)
+
+
+@mod_group.command(name="banlist", description="View all active bans")
+async def banlist(interaction: discord.Interaction):
+    """View all active bans in the server"""
+    # Check permissions
+    if not interaction.user.guild_permissions.ban_members:
+        await interaction.response.send_message("❌ You don't have permission to view bans!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        db = get_db()
+        bans = db.get_all_active_bans(interaction.guild.id)
+        
+        if not bans:
+            await interaction.followup.send("✅ No active bans!", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title=f"📋 Active Bans ({len(bans)})",
+            color=discord.Color.red(),
+            timestamp=datetime.datetime.now()
+        )
+        
+        for ban in bans[:25]:  # Discord limit is 25 fields
+            user_info = f"<@{ban['user_id']}> ({ban['user_id']})"
+            
+            if ban['expires_at']:
+                duration_text = f"Expires <t:{int(ban['expires_at'].timestamp())}:R>"
+            else:
+                duration_text = "Permanent"
+            
+            field_value = f"**Reason:** {ban['reason']}\n**Duration:** {duration_text}\n**Banned:** <t:{int(ban['banned_at'].timestamp())}:R>\n**Moderator:** <@{ban['moderator_id']}>"
+            
+            embed.add_field(
+                name=f"🔨 Ban #{ban['id']} - {user_info}",
+                value=field_value,
+                inline=False
+            )
+        
+        if len(bans) > 25:
+            embed.set_footer(text=f"Showing 25 of {len(bans)} bans")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        
+    except Exception as e:
+        print(f"Error fetching ban list: {e}")
+        await interaction.followup.send(f"❌ Error fetching ban list: {e}", ephemeral=True)
+
+
+@bot.tree.command(name="appeal", description="Appeal your ban")
+@app_commands.describe(appeal_text="Your appeal message explaining why you should be unbanned")
+async def appeal_ban(interaction: discord.Interaction, appeal_text: str):
+    """Submit a ban appeal"""
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        db = get_db()
+        
+        # Check if user is banned
+        active_ban = db.get_active_ban(interaction.user.id, interaction.guild.id)
+        
+        if not active_ban:
+            await interaction.followup.send("❌ You are not currently banned!", ephemeral=True)
+            return
+        
+        # Check if user has already appealed
+        existing_appeals = db.get_user_appeals(interaction.user.id, interaction.guild.id)
+        pending_appeals = [a for a in existing_appeals if a['status'] == 'pending']
+        
+        if pending_appeals:
+            await interaction.followup.send("❌ You already have a pending appeal! Please wait for moderators to review it.", ephemeral=True)
+            return
+        
+        # Submit appeal
+        appeal_id = db.add_appeal(active_ban['id'], interaction.user.id, appeal_text)
+        
+        # Confirmation
+        embed = discord.Embed(
+            title="✅ Appeal Submitted",
+            description="Your ban appeal has been submitted and will be reviewed by moderators.",
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now()
+        )
+        
+        embed.add_field(name="🆔 Appeal ID", value=str(appeal_id), inline=True)
+        embed.add_field(name="🆔 Ban ID", value=str(active_ban['id']), inline=True)
+        embed.add_field(name="📋 Your Appeal", value=appeal_text[:1024], inline=False)
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        # Notify moderators
+        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID) if 'LOG_CHANNEL_ID' in globals() else None
+        if log_channel:
+            mod_embed = discord.Embed(
+                title="📝 New Ban Appeal",
+                description=f"{interaction.user.mention} has submitted a ban appeal",
+                color=discord.Color.blue(),
+                timestamp=datetime.datetime.now()
+            )
+            
+            mod_embed.add_field(name="👤 User", value=f"{interaction.user.name} ({interaction.user.id})", inline=True)
+            mod_embed.add_field(name="🆔 Appeal ID", value=str(appeal_id), inline=True)
+            mod_embed.add_field(name="🆔 Ban ID", value=str(active_ban['id']), inline=True)
+            mod_embed.add_field(name="📋 Ban Reason", value=active_ban['reason'], inline=False)
+            mod_embed.add_field(name="📝 Appeal", value=appeal_text[:1024], inline=False)
+            mod_embed.add_field(name="⚙️ Review", value="Use `/mod appeals` to review", inline=False)
+            
+            await log_channel.send(embed=mod_embed)
+        
+    except Exception as e:
+        print(f"Error submitting appeal: {e}")
+        import traceback
+        traceback.print_exc()
+        await interaction.followup.send(f"❌ Error submitting appeal: {e}", ephemeral=True)
+
+
+@mod_group.command(name="appeals", description="View and manage ban appeals")
+async def view_appeals(interaction: discord.Interaction):
+    """View all pending ban appeals"""
+    # Check permissions
+    if not interaction.user.guild_permissions.ban_members:
+        await interaction.response.send_message("❌ You don't have permission to view appeals!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        db = get_db()
+        appeals = db.get_pending_appeals(interaction.guild.id)
+        
+        if not appeals:
+            await interaction.followup.send("✅ No pending appeals!", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title=f"📝 Pending Appeals ({len(appeals)})",
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now()
+        )
+        
+        for appeal in appeals[:10]:  # Show first 10
+            user_info = f"<@{appeal['user_id']}> ({appeal['user_id']})"
+            
+            field_value = f"**Appeal ID:** {appeal['id']}\n"
+            field_value += f"**Ban ID:** {appeal['ban_id']}\n"
+            field_value += f"**Ban Reason:** {appeal['ban_reason']}\n"
+            field_value += f"**Appeal:** {appeal['appeal_text'][:200]}{'...' if len(appeal['appeal_text']) > 200 else ''}\n"
+            field_value += f"**Submitted:** <t:{int(appeal['submitted_at'].timestamp())}:R>\n"
+            field_value += f"**Review:** `/mod reviewappeal {appeal['id']} approve/deny`"
+            
+            embed.add_field(
+                name=f"📝 {user_info}",
+                value=field_value,
+                inline=False
+            )
+        
+        if len(appeals) > 10:
+            embed.set_footer(text=f"Showing 10 of {len(appeals)} appeals")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        
+    except Exception as e:
+        print(f"Error fetching appeals: {e}")
+        await interaction.followup.send(f"❌ Error fetching appeals: {e}", ephemeral=True)
+
+
+@mod_group.command(name="reviewappeal", description="Review a ban appeal")
+@app_commands.describe(
+    appeal_id="The ID of the appeal to review",
+    action="Approve or deny the appeal",
+    notes="Optional notes about your decision"
+)
+@app_commands.choices(action=[
+    app_commands.Choice(name="Approve (Unban)", value="approved"),
+    app_commands.Choice(name="Deny", value="denied")
+])
+async def review_appeal(interaction: discord.Interaction, appeal_id: int, action: str, notes: Optional[str] = None):
+    """Review and approve/deny a ban appeal"""
+    # Check permissions
+    if not interaction.user.guild_permissions.ban_members:
+        await interaction.response.send_message("❌ You don't have permission to review appeals!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        db = get_db()
+        
+        # Get appeal info
+        appeals = db.get_pending_appeals(interaction.guild.id)
+        appeal = next((a for a in appeals if a['id'] == appeal_id), None)
+        
+        if not appeal:
+            await interaction.followup.send(f"❌ Appeal ID {appeal_id} not found or already reviewed!", ephemeral=True)
+            return
+        
+        # Review the appeal
+        db.review_appeal(appeal_id, interaction.user.id, action, notes)
+        
+        # If approved, unban the user
+        if action == "approved":
+            db.unban_user(appeal['ban_id'], interaction.user.id, f"Appeal approved: {notes or 'No notes'}")
+            
+            try:
+                user = await bot.fetch_user(appeal['user_id'])
+                await interaction.guild.unban(user, reason=f"Appeal approved by {interaction.user.name}")
+                unban_success = True
+            except Exception as e:
+                print(f"Error unbanning user: {e}")
+                unban_success = False
+        else:
+            unban_success = None
+        
+        # Send DM to user
+        try:
+            user = await bot.fetch_user(appeal['user_id'])
+            
+            if action == "approved":
+                embed = discord.Embed(
+                    title="✅ Appeal Approved",
+                    description=f"Your ban appeal for **{interaction.guild.name}** has been approved!",
+                    color=discord.Color.green(),
+                    timestamp=datetime.datetime.now()
+                )
+                embed.add_field(name="📋 Ban Reason", value=appeal['ban_reason'], inline=False)
+                if notes:
+                    embed.add_field(name="📝 Moderator Notes", value=notes, inline=False)
+                embed.add_field(name="✅ Status", value="You have been unbanned and can rejoin the server.", inline=False)
+            else:
+                embed = discord.Embed(
+                    title="❌ Appeal Denied",
+                    description=f"Your ban appeal for **{interaction.guild.name}** has been denied.",
+                    color=discord.Color.red(),
+                    timestamp=datetime.datetime.now()
+                )
+                embed.add_field(name="📋 Ban Reason", value=appeal['ban_reason'], inline=False)
+                if notes:
+                    embed.add_field(name="📝 Moderator Notes", value=notes, inline=False)
+                embed.add_field(name="ℹ️ Note", value="You can submit another appeal later if circumstances change.", inline=False)
+            
+            await user.send(embed=embed)
+        except:
+            pass
+        
+        # Confirmation
+        embed = discord.Embed(
+            title=f"{'✅ Appeal Approved' if action == 'approved' else '❌ Appeal Denied'}",
+            description=f"Appeal #{appeal_id} has been {action}",
+            color=discord.Color.green() if action == "approved" else discord.Color.red(),
+            timestamp=datetime.datetime.now()
+        )
+        
+        embed.add_field(name="👤 User", value=f"<@{appeal['user_id']}> ({appeal['user_id']})", inline=True)
+        embed.add_field(name="🔨 Reviewer", value=interaction.user.mention, inline=True)
+        embed.add_field(name="🆔 Appeal ID", value=str(appeal_id), inline=True)
+        embed.add_field(name="📋 Original Ban", value=appeal['ban_reason'], inline=False)
+        embed.add_field(name="📝 User's Appeal", value=appeal['appeal_text'][:1024], inline=False)
+        
+        if notes:
+            embed.add_field(name="📝 Review Notes", value=notes, inline=False)
+        
+        if action == "approved":
+            embed.add_field(name="🔓 Unban", value="✅ Success" if unban_success else "❌ Failed (may need manual unban)", inline=True)
+        
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        print(f"Error reviewing appeal: {e}")
+        import traceback
+        traceback.print_exc()
+        await interaction.followup.send(f"❌ Error reviewing appeal: {e}", ephemeral=True)
+
+
+# ================================
 #        ANALYTICS COMMANDS
 # ================================
 @server_group.command(name="stats", description="View server activity statistics")
@@ -4679,6 +5205,11 @@ async def on_ready():
     if not check_threads_for_runeforge.is_running():
         check_threads_for_runeforge.start()
         print(f"🔥 Started monitoring threads for RuneForge mods")
+    
+    # Start ban expiration monitoring
+    if not expire_bans_task.is_running():
+        expire_bans_task.start()
+        print(f"⏰ Started ban expiration monitoring (checks every 5 minutes)")
 
 # Run bot - simple approach, let Docker/hosting service handle restarts
 import sys

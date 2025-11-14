@@ -848,6 +848,159 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    # ==================== BAN SYSTEM ====================
+    
+    def add_ban(self, user_id: int, guild_id: int, moderator_id: int, reason: str, 
+                duration_minutes: Optional[int] = None) -> int:
+        """Add a new ban. Returns ban ID."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                expires_at = None
+                if duration_minutes:
+                    expires_at = datetime.now() + timedelta(minutes=duration_minutes)
+                
+                cur.execute("""
+                    INSERT INTO user_bans 
+                    (user_id, guild_id, moderator_id, reason, duration_minutes, expires_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (user_id, guild_id, moderator_id, reason, duration_minutes, expires_at))
+                
+                ban_id = cur.fetchone()[0]
+                conn.commit()
+                return ban_id
+        finally:
+            self.return_connection(conn)
+    
+    def get_active_ban(self, user_id: int, guild_id: int) -> Optional[Dict]:
+        """Get active ban for user in guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM user_bans 
+                    WHERE user_id = %s AND guild_id = %s AND active = TRUE
+                    AND (expires_at IS NULL OR expires_at > NOW())
+                    ORDER BY banned_at DESC
+                    LIMIT 1
+                """, (user_id, guild_id))
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+    
+    def unban_user(self, ban_id: int, moderator_id: int, reason: str = None):
+        """Unban a user"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE user_bans 
+                    SET active = FALSE, unbanned_at = NOW(), 
+                        unbanned_by = %s, unban_reason = %s
+                    WHERE id = %s
+                """, (moderator_id, reason, ban_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def get_all_active_bans(self, guild_id: int) -> List[Dict]:
+        """Get all active bans for a guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM user_bans 
+                    WHERE guild_id = %s AND active = TRUE
+                    AND (expires_at IS NULL OR expires_at > NOW())
+                    ORDER BY banned_at DESC
+                """, (guild_id,))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+    
+    def add_appeal(self, ban_id: int, user_id: int, appeal_text: str) -> int:
+        """Submit a ban appeal. Returns appeal ID."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO ban_appeals (ban_id, user_id, appeal_text)
+                    VALUES (%s, %s, %s)
+                    RETURNING id
+                """, (ban_id, user_id, appeal_text))
+                
+                appeal_id = cur.fetchone()[0]
+                conn.commit()
+                return appeal_id
+        finally:
+            self.return_connection(conn)
+    
+    def get_pending_appeals(self, guild_id: int) -> List[Dict]:
+        """Get all pending appeals for a guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT ba.*, ub.guild_id, ub.reason as ban_reason, 
+                           ub.banned_at, ub.expires_at
+                    FROM ban_appeals ba
+                    JOIN user_bans ub ON ba.ban_id = ub.id
+                    WHERE ub.guild_id = %s AND ba.status = 'pending'
+                    ORDER BY ba.submitted_at ASC
+                """, (guild_id,))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+    
+    def get_user_appeals(self, user_id: int, guild_id: int) -> List[Dict]:
+        """Get all appeals by a user in a guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT ba.*, ub.guild_id, ub.reason as ban_reason
+                    FROM ban_appeals ba
+                    JOIN user_bans ub ON ba.ban_id = ub.id
+                    WHERE ba.user_id = %s AND ub.guild_id = %s
+                    ORDER BY ba.submitted_at DESC
+                """, (user_id, guild_id))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+    
+    def review_appeal(self, appeal_id: int, reviewer_id: int, status: str, notes: str = None):
+        """Review a ban appeal (approve or deny)"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE ban_appeals 
+                    SET status = %s, reviewed_by = %s, reviewed_at = NOW(), review_notes = %s
+                    WHERE id = %s
+                """, (status, reviewer_id, notes, appeal_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def expire_old_bans(self):
+        """Mark expired bans as inactive"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE user_bans 
+                    SET active = FALSE
+                    WHERE active = TRUE 
+                    AND expires_at IS NOT NULL 
+                    AND expires_at <= NOW()
+                """)
+                expired_count = cur.rowcount
+                conn.commit()
+                return expired_count
+        finally:
+            self.return_connection(conn)
+    
     def close(self):
         """Close all connections"""
         if self.connection_pool:
@@ -856,7 +1009,6 @@ class Database:
 
 # Global database instance
 db = None
-
 
 def initialize_database(database_url: str = None):
     """Initialize the global database instance"""

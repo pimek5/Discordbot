@@ -154,3 +154,44 @@ CREATE INDEX IF NOT EXISTS idx_voting_sessions_status ON voting_sessions(status)
 CREATE INDEX IF NOT EXISTS idx_voting_votes_session ON voting_votes(session_id);
 CREATE INDEX IF NOT EXISTS idx_voting_votes_user ON voting_votes(user_id);
 CREATE INDEX IF NOT EXISTS idx_help_embed_guild ON help_embed(guild_id);
+
+-- ================================
+--    BAN SYSTEM TABLES
+-- ================================
+
+-- User bans with reasoning
+CREATE TABLE IF NOT EXISTS user_bans (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,  -- Discord user ID (snowflake)
+    guild_id BIGINT NOT NULL,  -- Discord guild ID
+    moderator_id BIGINT NOT NULL,  -- Discord ID of moderator who banned
+    reason TEXT NOT NULL,  -- Ban reason
+    duration_minutes INTEGER,  -- NULL for permanent ban, otherwise minutes
+    banned_at TIMESTAMP DEFAULT NOW(),
+    expires_at TIMESTAMP,  -- NULL for permanent ban
+    active BOOLEAN DEFAULT TRUE,  -- FALSE when unbanned or expired
+    unbanned_at TIMESTAMP,
+    unbanned_by BIGINT,  -- Discord ID of moderator who unbanned
+    unban_reason TEXT
+);
+
+-- Ban appeals
+CREATE TABLE IF NOT EXISTS ban_appeals (
+    id SERIAL PRIMARY KEY,
+    ban_id INTEGER NOT NULL REFERENCES user_bans(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    appeal_text TEXT NOT NULL,
+    submitted_at TIMESTAMP DEFAULT NOW(),
+    status VARCHAR(20) DEFAULT 'pending',  -- 'pending', 'approved', 'denied'
+    reviewed_by BIGINT,  -- Discord ID of moderator who reviewed
+    reviewed_at TIMESTAMP,
+    review_notes TEXT
+);
+
+-- Indexes for ban system
+CREATE INDEX IF NOT EXISTS idx_user_bans_user ON user_bans(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_bans_guild ON user_bans(guild_id);
+CREATE INDEX IF NOT EXISTS idx_user_bans_active ON user_bans(active) WHERE active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_user_bans_expires ON user_bans(expires_at) WHERE expires_at IS NOT NULL AND active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_ban_appeals_ban ON ban_appeals(ban_id);
+CREATE INDEX IF NOT EXISTS idx_ban_appeals_status ON ban_appeals(status);
