@@ -4219,21 +4219,21 @@ async def ability(interaction: discord.Interaction, champion: str):
 #        Banning/Moderation System
 # ================================
 
-@mod_group.command(name="ban", description="Ban a user from the server with a reason")
+@mod_group.command(name="ban", description="Ban a user from the server with a reason (works with user ID)")
 @app_commands.describe(
-    user="The user to ban",
+    user="The user to ban (mention or ID)",
     reason="Reason for the ban",
     duration="Duration in minutes (leave empty for permanent ban)",
     delete_messages="Delete messages from last N days (0-7)"
 )
 async def ban_user(
     interaction: discord.Interaction, 
-    user: discord.Member,
+    user: discord.User,  # Changed from Member to User - allows banning users not in server
     reason: str,
     duration: Optional[int] = None,
     delete_messages: Optional[int] = 0
 ):
-    """Ban a user with reasoning and DM notification"""
+    """Ban a user with reasoning and DM notification - works even if user left server"""
     # Check permissions
     if not interaction.user.guild_permissions.ban_members:
         await interaction.response.send_message("❌ You don't have permission to ban members!", ephemeral=True)
@@ -4242,13 +4242,21 @@ async def ban_user(
     await interaction.response.defer(ephemeral=True)
     
     try:
-        # Check if user is already banned
+        # Check if user is already banned in database
         db = get_db()
         existing_ban = db.get_active_ban(user.id, interaction.guild.id)
         
         if existing_ban:
             await interaction.followup.send(f"❌ {user.mention} is already banned!", ephemeral=True)
             return
+        
+        # Check if user is already Discord-banned
+        try:
+            await interaction.guild.fetch_ban(user)
+            await interaction.followup.send(f"❌ {user.mention} is already Discord-banned! Use database to track this ban.", ephemeral=True)
+            # Still allow adding to database even if Discord-banned
+        except discord.NotFound:
+            pass  # Not banned, good to proceed
         
         # Add ban to database
         ban_id = db.add_ban(
@@ -4258,6 +4266,10 @@ async def ban_user(
             reason=reason,
             duration_minutes=duration
         )
+        
+        # Check if user is in server (for role/member specific actions)
+        member = interaction.guild.get_member(user.id)
+        is_in_server = member is not None
         
         # Send DM to user before banning
         try:
@@ -4297,7 +4309,8 @@ async def ban_user(
             dm_sent = False
         
         # Ban the user from Discord
-        await user.ban(
+        await interaction.guild.ban(
+            user,
             reason=f"[Ban ID: {ban_id}] {reason}",
             delete_message_days=min(delete_messages, 7)
         )
@@ -4314,6 +4327,7 @@ async def ban_user(
         embed.add_field(name="🔨 Moderator", value=interaction.user.mention, inline=True)
         embed.add_field(name="🆔 Ban ID", value=str(ban_id), inline=True)
         embed.add_field(name="📋 Reason", value=reason, inline=False)
+        embed.add_field(name="🏠 Was in server", value="✅ Yes" if is_in_server else "❌ No (already left)", inline=True)
         
         if duration:
             hours = duration // 60
