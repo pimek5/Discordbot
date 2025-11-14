@@ -4219,6 +4219,22 @@ async def ability(interaction: discord.Interaction, champion: str):
 #        Banning/Moderation System
 # ================================
 
+# Allowed moderator role IDs
+ALLOWED_MOD_ROLES = [1274834684429209695, 1153030265782927501]
+
+def has_mod_role(interaction: discord.Interaction) -> bool:
+    """Check if user has one of the allowed moderator roles"""
+    if not interaction.guild:
+        return False
+    
+    member = interaction.guild.get_member(interaction.user.id)
+    if not member:
+        return False
+    
+    # Check if user has any of the allowed roles
+    user_role_ids = [role.id for role in member.roles]
+    return any(role_id in user_role_ids for role_id in ALLOWED_MOD_ROLES)
+
 @mod_group.command(name="ban", description="Ban a user from the server with a reason (works with user ID)")
 @app_commands.describe(
     user="The user to ban (mention or ID)",
@@ -4234,9 +4250,9 @@ async def ban_user(
     delete_messages: Optional[int] = 0
 ):
     """Ban a user with reasoning and DM notification - works even if user left server"""
-    # Check permissions
-    if not interaction.user.guild_permissions.ban_members:
-        await interaction.response.send_message("❌ You don't have permission to ban members!", ephemeral=True)
+    # Check if user has required role
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have the required moderator role to use this command!", ephemeral=True)
         return
     
     await interaction.response.defer(ephemeral=True)
@@ -4362,9 +4378,9 @@ async def ban_user(
 )
 async def unban_user(interaction: discord.Interaction, user_id: str, reason: Optional[str] = "No reason provided"):
     """Unban a user"""
-    # Check permissions
-    if not interaction.user.guild_permissions.ban_members:
-        await interaction.response.send_message("❌ You don't have permission to unban members!", ephemeral=True)
+    # Check if user has required role
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have the required moderator role to use this command!", ephemeral=True)
         return
     
     await interaction.response.defer(ephemeral=True)
@@ -4430,9 +4446,9 @@ async def unban_user(interaction: discord.Interaction, user_id: str, reason: Opt
 @mod_group.command(name="banlist", description="View all active bans")
 async def banlist(interaction: discord.Interaction):
     """View all active bans in the server"""
-    # Check permissions
-    if not interaction.user.guild_permissions.ban_members:
-        await interaction.response.send_message("❌ You don't have permission to view bans!", ephemeral=True)
+    # Check if user has required role
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have the required moderator role to use this command!", ephemeral=True)
         return
     
     await interaction.response.defer(ephemeral=True)
@@ -4592,9 +4608,9 @@ async def appeal_ban(interaction: discord.Interaction, appeal_text: str):
 @mod_group.command(name="appeals", description="View and manage ban appeals")
 async def view_appeals(interaction: discord.Interaction):
     """View all pending ban appeals"""
-    # Check permissions
-    if not interaction.user.guild_permissions.ban_members:
-        await interaction.response.send_message("❌ You don't have permission to view appeals!", ephemeral=True)
+    # Check if user has required role
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have the required moderator role to use this command!", ephemeral=True)
         return
     
     await interaction.response.defer(ephemeral=True)
@@ -4651,9 +4667,9 @@ async def view_appeals(interaction: discord.Interaction):
 ])
 async def review_appeal(interaction: discord.Interaction, appeal_id: int, action: str, notes: Optional[str] = None):
     """Review and approve/deny a ban appeal"""
-    # Check permissions
-    if not interaction.user.guild_permissions.ban_members:
-        await interaction.response.send_message("❌ You don't have permission to review appeals!", ephemeral=True)
+    # Check if user has required role
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have the required moderator role to use this command!", ephemeral=True)
         return
     
     await interaction.response.defer(ephemeral=True)
@@ -5045,9 +5061,9 @@ async def on_message(message):
 async def autoslowmode(interaction: discord.Interaction, enabled: bool):
     """Toggle auto-slowmode for the current channel"""
     
-    # Check permissions
-    if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message("❌ You need 'Manage Channels' permission to use this command.", ephemeral=True)
+    # Check if user has required role
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have the required moderator role to use this command!", ephemeral=True)
         return
     
     channel_id = interaction.channel.id
@@ -5086,9 +5102,9 @@ async def autoslowmode(interaction: discord.Interaction, enabled: bool):
 async def slowmode(interaction: discord.Interaction, seconds: int):
     """Set slowmode for the current channel"""
     
-    # Check permissions
-    if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message("❌ You need 'Manage Channels' permission to use this command.", ephemeral=True)
+    # Check if user has required role
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have the required moderator role to use this command!", ephemeral=True)
         return
     
     # Validate input
@@ -5138,6 +5154,11 @@ async def slowmode(interaction: discord.Interaction, seconds: int):
 @mod_group.command(name="slowmodeinfo", description="Check current slowmode settings")
 async def slowmodeinfo(interaction: discord.Interaction):
     """Check slowmode status of current channel"""
+    
+    # Check if user has required role
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have the required moderator role to use this command!", ephemeral=True)
+        return
     
     channel = interaction.channel
     delay = channel.slowmode_delay
