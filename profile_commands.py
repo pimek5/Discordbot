@@ -1334,12 +1334,32 @@ class ProfileCommands(commands.Cog):
             ephemeral=True
         )
 
+    async def region_autocomplete_batch(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Autocomplete for region parameter"""
+        regions = [
+            ('EUNE', 'eune'), ('EUW', 'euw'), ('NA', 'na'), ('KR', 'kr'),
+            ('BR', 'br'), ('JP', 'jp'), ('LAN', 'lan'), ('LAS', 'las'),
+            ('OCE', 'oce'), ('TR', 'tr'), ('RU', 'ru'), ('PH', 'ph'),
+            ('SG', 'sg'), ('TH', 'th'), ('TW', 'tw'), ('VN', 'vn'),
+        ]
+        return [
+            app_commands.Choice(name=name, value=value)
+            for name, value in regions
+            if current.lower() in name.lower() or current.lower() in value.lower()
+        ][:25]
+
     @app_commands.command(name="batchforcelink", description="Link multiple Riot accounts (Staff only)")
     @app_commands.describe(
         user="Discord user to link accounts for",
-        block="Multiline list of accounts. Formats accepted per line: 'REGION - GameName#TAG' or 'GameName#TAG region'"
+        region="Default region (can be overridden per line with format: 'REGION - Name#TAG' or 'Name#TAG REGION')",
+        block="Multiline list of accounts. Format: one 'GameName#TAG' per line (uses default region), or 'REGION - GameName#TAG', or 'GameName#TAG REGION'"
     )
-    async def batchforcelink(self, interaction: discord.Interaction, user: discord.User, block: str):
+    @app_commands.autocomplete(region=region_autocomplete_batch)
+    async def batchforcelink(self, interaction: discord.Interaction, user: discord.User, region: str, block: str):
         """Batch force link multiple accounts with global fallback (Staff only)"""
         # Role-based permission check
         allowed_role_ids = {1274834684429209695, 1153030265782927501}
@@ -1355,6 +1375,12 @@ class ProfileCommands(commands.Cog):
             return
 
         valid_regions = {'br','eune','euw','jp','kr','lan','las','na','oce','tr','ru','ph','sg','th','tw','vn'}
+        
+        # Validate default region
+        default_region = region.lower()
+        if default_region not in valid_regions:
+            await interaction.followup.send(f"❌ Invalid default region: {region}", ephemeral=True)
+            return
 
         # Prepare user in DB
         db = get_db()
@@ -1402,30 +1428,43 @@ class ProfileCommands(commands.Cog):
         import re
         parse_pattern_a = re.compile(r"^(?P<region>\w+)\s*-\s*(?P<name>[^#]+)#(?P<tag>\S+)$", re.IGNORECASE)
         parse_pattern_b = re.compile(r"^(?P<name>[^#]+)#(?P<tag>\S+)\s+(?P<region>\w+)$", re.IGNORECASE)
+        parse_pattern_simple = re.compile(r"^(?P<name>[^#]+)#(?P<tag>\S+)$", re.IGNORECASE)
 
         await interaction.followup.send(f"🚀 Processing {len(lines)} accounts...", ephemeral=True)
 
         for idx, line in enumerate(lines, 1):
-            region = None
+            line_region = None
             game_name = None
             tagline = None
+            
+            # Try parsing with explicit region first (REGION - Name#TAG)
             m = parse_pattern_a.match(line)
             if m:
-                region = m.group('region').lower()
+                line_region = m.group('region').lower()
                 game_name = m.group('name').strip()
                 tagline = m.group('tag').strip()
             else:
+                # Try Name#TAG REGION format
                 m = parse_pattern_b.match(line)
                 if m:
-                    region = m.group('region').lower()
+                    line_region = m.group('region').lower()
                     game_name = m.group('name').strip()
                     tagline = m.group('tag').strip()
-            if not (region and game_name and tagline and '#' not in tagline and region in valid_regions):
+                else:
+                    # Try simple Name#TAG format (use default region)
+                    m = parse_pattern_simple.match(line)
+                    if m:
+                        line_region = default_region
+                        game_name = m.group('name').strip()
+                        tagline = m.group('tag').strip()
+            
+            # Validate parsed data
+            if not (line_region and game_name and tagline and '#' not in tagline and line_region in valid_regions):
                 fail += 1
                 results.append((line, "❌", "Parse/region error"))
                 continue
             # Process
-            await process_account(game_name, tagline, region)
+            await process_account(game_name, tagline, line_region)
             # Rate limit safety
             await asyncio.sleep(0.6)
             # Periodic progress update every 5 accounts
