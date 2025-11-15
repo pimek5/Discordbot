@@ -2125,6 +2125,11 @@ async def before_runeforge_check():
 @bot.tree.command(name="checkruneforge", description="Manually check all threads for RuneForge mods")
 async def checkruneforge(interaction: discord.Interaction):
     """Manually trigger RuneForge mod checking with enhanced UI and full sync across multiple channels"""
+    # Check if user has required role
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have the required moderator role to use this command!", ephemeral=True)
+        return
+    
     # Send initial "checking..." message
     initial_embed = discord.Embed(
         title="🔄 Checking RuneForge Mods...",
@@ -2904,6 +2909,10 @@ async def before_expire_bans():
 @twitter_group.command(name="post", description="Manually post the latest tweet from @p1mek")
 async def posttweet(interaction: discord.Interaction):
     """Manual command to post the latest tweet"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     await interaction.response.defer()
     
     try:
@@ -2925,6 +2934,10 @@ async def posttweet(interaction: discord.Interaction):
 @twitter_group.command(name="toggle", description="Start or stop automatic tweet monitoring")
 async def toggletweets(interaction: discord.Interaction):
     """Toggle the tweet monitoring task"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     if check_for_new_tweets.is_running():
         check_for_new_tweets.stop()
         await interaction.response.send_message("🛑 Tweet monitoring stopped.", ephemeral=True)
@@ -2942,6 +2955,10 @@ async def toggletweets(interaction: discord.Interaction):
 @twitter_group.command(name="start", description="Start automatic tweet monitoring")
 async def starttweets(interaction: discord.Interaction):
     """Start the tweet monitoring task"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     if check_for_new_tweets.is_running():
         await interaction.response.send_message("ℹ️ Tweet monitoring is already running.", ephemeral=True)
     else:
@@ -2957,6 +2974,10 @@ async def starttweets(interaction: discord.Interaction):
 @twitter_group.command(name="status", description="Check if tweet monitoring is currently active")
 async def tweetstatus(interaction: discord.Interaction):
     """Check the status of tweet monitoring"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     status = "🟢 **ACTIVE**" if check_for_new_tweets.is_running() else "🔴 **STOPPED**"
     
     embed = discord.Embed(
@@ -2977,6 +2998,10 @@ async def tweetstatus(interaction: discord.Interaction):
 @twitter_group.command(name="test", description="Test if Twitter data fetching is working")
 async def testtwitter(interaction: discord.Interaction):
     """Test command to verify Twitter connection"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     await interaction.response.defer()
     
     try:
@@ -3062,6 +3087,10 @@ async def testtwitter(interaction: discord.Interaction):
 @twitter_group.command(name="reset", description="Reset tweet tracking to detect current tweet as new")
 async def resettweets(interaction: discord.Interaction):
     """Reset tweet tracking to force detection of current tweets"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     global last_tweet_id
     
     await interaction.response.defer()
@@ -3107,6 +3136,10 @@ async def resettweets(interaction: discord.Interaction):
 @app_commands.describe(tweet_id="Tweet ID to check (e.g. 1978993084693102705)")
 async def checktweet(interaction: discord.Interaction, tweet_id: str):
     """Check if a specific tweet ID matches current latest tweet"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     await interaction.response.defer()
     
     try:
@@ -3143,6 +3176,10 @@ async def checktweet(interaction: discord.Interaction, tweet_id: str):
 @app_commands.describe(tweet_id="Tweet ID to post (e.g. 1979003059117207752)")
 async def addtweet(interaction: discord.Interaction, tweet_id: str):
     """Manually add a specific tweet by ID"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     await interaction.response.defer()
     
     try:
@@ -3209,6 +3246,10 @@ async def addtweet(interaction: discord.Interaction, tweet_id: str):
 @app_commands.describe(query="Keywords to search for")
 async def searchtweet(interaction: discord.Interaction, query: str):
     """Search through recent tweets"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     await interaction.response.defer()
     
     try:
@@ -3272,6 +3313,10 @@ async def searchtweet(interaction: discord.Interaction, query: str):
 @twitter_group.command(name="stats", description="@p1mek Twitter analytics and statistics")
 async def tweetstats(interaction: discord.Interaction):
     """Show Twitter statistics"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
     await interaction.response.defer()
     
     try:
