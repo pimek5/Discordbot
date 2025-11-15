@@ -521,7 +521,7 @@ class ProfileCommands(commands.Cog):
     
     @app_commands.command(name="profile", description="View player profile and stats")
     @app_commands.describe(user="The user to view (defaults to yourself)")
-    async def profile(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+    async def profile(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
         """View profile with mastery and ranks"""
         await interaction.response.defer()
         
@@ -2053,7 +2053,7 @@ class AccountVisibilityView(discord.ui.View):
 class ProfileView(discord.ui.View):
     """Interactive view for profile with buttons to switch between views"""
     
-    def __init__(self, cog: 'ProfileCommands', target_user: discord.Member, 
+    def __init__(self, cog: 'ProfileCommands', target_user: discord.User, 
                  user_data: dict, all_accounts: list, all_match_details: list,
                  combined_stats: dict, champ_stats: list, all_ranked_stats: list,
                  account_ranks: dict = None, active_game: dict = None):
