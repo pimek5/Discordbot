@@ -203,19 +203,8 @@ class LeaderboardCommands(commands.Cog):
         # Medal emojis for top 3
         medals = ["🥇", "🥈", "🥉"]
         
-        # Tier emojis
-        tier_emojis = {
-            'CHALLENGER': '<:Challenger:1303474959832182825>',
-            'GRANDMASTER': '<:Grandmaster:1303474958221070467>',
-            'MASTER': '<:Master:1303474956694536284>',
-            'DIAMOND': '<:Diamond:1303474954568044685>',
-            'EMERALD': '<:Emerald:1303474952793546753>',
-            'PLATINUM': '<:Platinum:1303474950394519562>',
-            'GOLD': '<:Gold:1303474948683968513>',
-            'SILVER': '<:Silver:1303474946985635860>',
-            'BRONZE': '<:Bronze:1303474943231127655>',
-            'IRON': '<:Iron:1303474941075697734>'
-        }
+        # Tier emojis (using updated IDs from emoji_dict)
+        from emoji_dict import get_rank_emoji
         
         for i, entry in enumerate(leaderboard):
             position = i + 1
@@ -237,8 +226,8 @@ class LeaderboardCommands(commands.Cog):
             total_games = wins + losses
             winrate = (wins / total_games * 100) if total_games > 0 else 0
             
-            # Get tier emoji
-            tier_emoji = tier_emojis.get(tier, '🎮')
+            # Get tier emoji from emoji_dict
+            tier_emoji = get_rank_emoji(tier)
             
             # Format rank text
             if tier in ['CHALLENGER', 'GRANDMASTER', 'MASTER']:
