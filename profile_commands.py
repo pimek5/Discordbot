@@ -1333,6 +1333,136 @@ class ProfileCommands(commands.Cog):
             f"Level: {summoner_data.get('summonerLevel', 'Unknown')} • PUUID: {puuid[:20]}...",
             ephemeral=True
         )
+
+    @app_commands.command(name="batchforcelink", description="Link multiple Riot accounts (Staff only)")
+    @app_commands.describe(
+        user="Discord user to link accounts for",
+        block="Multiline list of accounts. Formats accepted per line: 'REGION - GameName#TAG' or 'GameName#TAG region'"
+    )
+    async def batchforcelink(self, interaction: discord.Interaction, user: discord.User, block: str):
+        """Batch force link multiple accounts with global fallback (Staff only)"""
+        # Role-based permission check
+        allowed_role_ids = {1274834684429209695, 1153030265782927501}
+        if not interaction.guild or not any(r.id in allowed_role_ids for r in getattr(interaction.user, 'roles', [])):
+            await interaction.response.send_message("❌ You need Staff role to use this command.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        lines = [l.strip() for l in block.splitlines() if l.strip()]
+        if not lines:
+            await interaction.followup.send("❌ No lines provided.", ephemeral=True)
+            return
+
+        valid_regions = {'br','eune','euw','jp','kr','lan','las','na','oce','tr','ru','ph','sg','th','tw','vn'}
+
+        # Prepare user in DB
+        db = get_db()
+        db_user = db.get_user_by_discord_id(user.id)
+        if not db_user:
+            db_user_id = db.create_user(user.id)
+        else:
+            db_user_id = db_user['id']
+
+        results = []  # (original_line, status, message)
+        success = 0
+        fail = 0
+
+        async def process_account(game_name: str, tagline: str, region: str):
+            nonlocal success, fail
+            # Lookup account (region first then global)
+            account_data = await self.riot_api.get_account_by_riot_id(game_name, tagline, region)
+            if not account_data:
+                account_data = await self.riot_api.get_account_by_riot_id(game_name, tagline, None)
+            if not account_data:
+                fail += 1
+                results.append((f"{game_name}#{tagline} {region}", "❌", "Account not found"))
+                return
+            puuid = account_data['puuid']
+            summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, region) or {}
+            summoner_level = summoner_data.get('summonerLevel', 1)
+            try:
+                db.add_league_account(
+                    user_id=db_user_id,
+                    region=region,
+                    game_name=game_name,
+                    tagline=tagline,
+                    puuid=puuid,
+                    summoner_id=summoner_data.get('id'),
+                    summoner_level=summoner_level,
+                    verified=True
+                )
+                success += 1
+                results.append((f"{game_name}#{tagline} {region}", "✅", f"Level {summoner_level}"))
+            except Exception as e:
+                fail += 1
+                results.append((f"{game_name}#{tagline} {region}", "❌", f"DB error: {e}"))
+
+        # Parse lines
+        import re
+        parse_pattern_a = re.compile(r"^(?P<region>\w+)\s*-\s*(?P<name>[^#]+)#(?P<tag>\S+)$", re.IGNORECASE)
+        parse_pattern_b = re.compile(r"^(?P<name>[^#]+)#(?P<tag>\S+)\s+(?P<region>\w+)$", re.IGNORECASE)
+
+        await interaction.followup.send(f"🚀 Processing {len(lines)} accounts...", ephemeral=True)
+
+        for idx, line in enumerate(lines, 1):
+            region = None
+            game_name = None
+            tagline = None
+            m = parse_pattern_a.match(line)
+            if m:
+                region = m.group('region').lower()
+                game_name = m.group('name').strip()
+                tagline = m.group('tag').strip()
+            else:
+                m = parse_pattern_b.match(line)
+                if m:
+                    region = m.group('region').lower()
+                    game_name = m.group('name').strip()
+                    tagline = m.group('tag').strip()
+            if not (region and game_name and tagline and '#' not in tagline and region in valid_regions):
+                fail += 1
+                results.append((line, "❌", "Parse/region error"))
+                continue
+            # Process
+            await process_account(game_name, tagline, region)
+            # Rate limit safety
+            await asyncio.sleep(0.6)
+            # Periodic progress update every 5 accounts
+            if idx % 5 == 0 or idx == len(lines):
+                prog = f"⏳ Progress: {idx}/{len(lines)} | ✅ {success} • ❌ {fail}"
+                try:
+                    await interaction.edit_original_response(content=prog)
+                except Exception:
+                    pass
+
+        # Build final summary table
+        summary_lines = [f"{status} {orig} - {msg}" for (orig, status, msg) in results]
+        # Discord field size limits; chunk if necessary
+        MAX_FIELD = 950
+        chunks = []
+        current = []
+        length = 0
+        for line in summary_lines:
+            if length + len(line) + 1 > MAX_FIELD:
+                chunks.append("\n".join(current))
+                current = [line]
+                length = len(line)
+            else:
+                current.append(line)
+                length += len(line) + 1
+        if current:
+            chunks.append("\n".join(current))
+
+        embed = discord.Embed(
+            title="Batch Forcelink Summary",
+            description=f"Processed **{len(lines)}** accounts for {user.mention}\n✅ Success: {success} • ❌ Failed: {fail}",
+            color=0x1F8EFA if fail == 0 else 0xFFA500
+        )
+        for i, chunk in enumerate(chunks, 1):
+            embed.add_field(name=f"Results {i}", value=chunk or "-", inline=False)
+        embed.set_footer(text="Use /accounts to adjust visibility • /setmain to choose primary")
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     @app_commands.command(name="lp", description="View today's LP gains/losses")
     @app_commands.describe(user="The user to view (defaults to yourself)")
