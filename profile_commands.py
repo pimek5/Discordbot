@@ -2079,6 +2079,7 @@ class ProfileView(discord.ui.View):
         self.active_game = active_game  # Active game data (if in game)
         self.current_view = "profile"
         self.queue_filter = "all"  # Filter for all views: all, soloq, flex, normals, other
+        self.ranks_page = 0  # Page for ranks view
         self.message = None  # Will store the message to delete later
     
     async def on_timeout(self):
@@ -2091,96 +2092,89 @@ class ProfileView(discord.ui.View):
                 logger.error(f"❌ Failed to delete profile embed: {e}")
     
     async def create_ranks_embed(self) -> discord.Embed:
-        """Create embed showing ranks for all accounts grouped by region"""
+        """Create embed showing ranks for all accounts grouped by region with pagination"""
         logger.info(f"📊 Creating Ranks embed for {self.target_user.display_name}")
         logger.info(f"   Total accounts: {len(self.all_accounts)}")
         logger.info(f"   Accounts with rank data: {len(self.account_ranks)}")
         
+        # Build all account lines first
+        all_lines = []
+        
+        for acc in self.all_accounts:
+            account_name = f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
+            region = acc['region'].upper()
+            
+            # Get rank data for this account from self.account_ranks
+            acc_rank_data = self.account_ranks.get(acc['puuid'], {})
+            solo_rank = acc_rank_data.get('solo')
+            flex_rank = acc_rank_data.get('flex')
+            
+            logger.info(f"   📊 {account_name}: Solo={bool(solo_rank)}, Flex={bool(flex_rank)}")
+            if solo_rank:
+                logger.info(f"      Solo: {solo_rank.get('tier')} {solo_rank.get('rank')} {solo_rank.get('leaguePoints')}LP")
+            if flex_rank:
+                logger.info(f"      Flex: {flex_rank.get('tier')} {flex_rank.get('rank')} {flex_rank.get('leaguePoints')}LP")
+            
+            # Display Solo/Duo rank (primary)
+            if solo_rank:
+                tier = solo_rank.get('tier', 'UNRANKED')
+                rank = solo_rank.get('rank', '')
+                lp = solo_rank.get('leaguePoints', 0)
+                wins = solo_rank.get('wins', 0)
+                losses = solo_rank.get('losses', 0)
+                total = wins + losses
+                winrate = (wins / total * 100) if total > 0 else 0
+                
+                rank_emoji = get_rank_emoji(tier)
+                rank_display = f"{tier.title()} {rank}" if rank else tier.title()
+                
+                all_lines.append(
+                    f"{rank_emoji} **{account_name}** `{region}`\n"
+                    f"└ Solo/Duo: **{rank_display}** • {lp} LP • {winrate:.0f}% WR ({wins}W-{losses}L)"
+                )
+            elif flex_rank:
+                # Show flex if no solo rank
+                tier = flex_rank.get('tier', 'UNRANKED')
+                rank = flex_rank.get('rank', '')
+                lp = flex_rank.get('leaguePoints', 0)
+                wins = flex_rank.get('wins', 0)
+                losses = flex_rank.get('losses', 0)
+                total = wins + losses
+                winrate = (wins / total * 100) if total > 0 else 0
+                
+                rank_emoji = get_rank_emoji(tier)
+                rank_display = f"{tier.title()} {rank}" if rank else tier.title()
+                
+                all_lines.append(
+                    f"{rank_emoji} **{account_name}** `{region}`\n"
+                    f"└ Flex: **{rank_display}** • {lp} LP • {winrate:.0f}% WR ({wins}W-{losses}L)"
+                )
+            else:
+                # Unranked - use IRON emoji as placeholder
+                rank_emoji = get_rank_emoji('IRON')
+                all_lines.append(
+                    f"{rank_emoji} **{account_name}** `{region}`\n"
+                    f"└ Unranked this season"
+                )
+        
+        # Paginate: 8 accounts per page
+        accounts_per_page = 8
+        total_pages = (len(all_lines) + accounts_per_page - 1) // accounts_per_page
+        
+        start_idx = self.ranks_page * accounts_per_page
+        end_idx = min(start_idx + accounts_per_page, len(all_lines))
+        page_lines = all_lines[start_idx:end_idx]
+        
         embed = discord.Embed(
             title=f"🏆 **Ranked Overview**",
-            description=f"**{self.target_user.display_name}**'s ranks across all accounts",
+            description=f"**{self.target_user.display_name}**'s ranks across all accounts\n\n" + "\n\n".join(page_lines),
             color=0xF1C40F  # Gold color
         )
         
-        # Group accounts by region
-        accounts_by_region = {}
-        for acc in self.all_accounts:
-            region = acc['region'].upper()
-            if region not in accounts_by_region:
-                accounts_by_region[region] = []
-            accounts_by_region[region].append(acc)
-        
-        # Display each region
-        for region, accounts in sorted(accounts_by_region.items()):
-            region_lines = []
-            
-            for acc in accounts:
-                account_name = f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
-                
-                # Get rank data for this account from self.account_ranks
-                acc_rank_data = self.account_ranks.get(acc['puuid'], {})
-                solo_rank = acc_rank_data.get('solo')
-                flex_rank = acc_rank_data.get('flex')
-                
-                logger.info(f"   📊 {account_name}: Solo={bool(solo_rank)}, Flex={bool(flex_rank)}")
-                if solo_rank:
-                    logger.info(f"      Solo: {solo_rank.get('tier')} {solo_rank.get('rank')} {solo_rank.get('leaguePoints')}LP")
-                if flex_rank:
-                    logger.info(f"      Flex: {flex_rank.get('tier')} {flex_rank.get('rank')} {flex_rank.get('leaguePoints')}LP")
-                
-                # Display Solo/Duo rank (primary)
-                if solo_rank:
-                    tier = solo_rank.get('tier', 'UNRANKED')
-                    rank = solo_rank.get('rank', '')
-                    lp = solo_rank.get('leaguePoints', 0)
-                    wins = solo_rank.get('wins', 0)
-                    losses = solo_rank.get('losses', 0)
-                    total = wins + losses
-                    winrate = (wins / total * 100) if total > 0 else 0
-                    
-                    rank_emoji = get_rank_emoji(tier)
-                    rank_display = f"{tier.title()} {rank}" if rank else tier.title()
-                    
-                    region_lines.append(
-                        f"{rank_emoji} **{account_name}**\n"
-                        f"└ Solo/Duo: **{rank_display}** • {lp} LP • {winrate:.0f}% WR ({wins}W-{losses}L)"
-                    )
-                elif flex_rank:
-                    # Show flex if no solo rank
-                    tier = flex_rank.get('tier', 'UNRANKED')
-                    rank = flex_rank.get('rank', '')
-                    lp = flex_rank.get('leaguePoints', 0)
-                    wins = flex_rank.get('wins', 0)
-                    losses = flex_rank.get('losses', 0)
-                    total = wins + losses
-                    winrate = (wins / total * 100) if total > 0 else 0
-                    
-                    rank_emoji = get_rank_emoji(tier)
-                    rank_display = f"{tier.title()} {rank}" if rank else tier.title()
-                    
-                    region_lines.append(
-                        f"{rank_emoji} **{account_name}**\n"
-                        f"└ Flex: **{rank_display}** • {lp} LP • {winrate:.0f}% WR ({wins}W-{losses}L)"
-                    )
-                else:
-                    # Unranked - use IRON emoji as placeholder
-                    rank_emoji = get_rank_emoji('IRON')
-                    region_lines.append(
-                        f"{rank_emoji} **{account_name}**\n"
-                        f"└ Unranked this season"
-                    )
-            
-            if region_lines:
-                embed.add_field(
-                    name=f"📍 {region}",
-                    value="\n".join(region_lines),
-                    inline=False
-                )
-        
-        # Footer with account count
+        # Footer with page info
         visible_count = sum(1 for acc in self.all_accounts if acc.get('show_in_profile', True))
         total_count = len(self.all_accounts)
-        embed.set_footer(text=f"Showing {total_count} account(s) • {visible_count} visible in stats")
+        embed.set_footer(text=f"Page {self.ranks_page + 1}/{total_pages} • {total_count} account(s) • {visible_count} visible in stats")
         
         return embed
     
@@ -3242,6 +3236,7 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "profile"
+        self.update_navigation_buttons()
         embed = await self.create_profile_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -3253,6 +3248,7 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "stats"
+        self.update_navigation_buttons()
         embed = await self.create_stats_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -3264,6 +3260,7 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "matches"
+        self.update_navigation_buttons()
         embed = await self.create_matches_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -3275,6 +3272,7 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "lp"
+        self.update_navigation_buttons()
         embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -3286,6 +3284,8 @@ class ProfileView(discord.ui.View):
             return
         
         self.current_view = "ranks"
+        self.ranks_page = 0  # Reset to first page
+        self.update_navigation_buttons()  # Update button visibility
         embed = await self.create_ranks_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
@@ -3384,6 +3384,48 @@ class ProfileView(discord.ui.View):
             embed = await self.create_ranks_embed()
         
         await interaction.response.edit_message(embed=embed, view=self)
+    
+    # Navigation buttons for Ranks view (row 2)
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, row=2, disabled=True)
+    async def ranks_prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Previous page in ranks view"""
+        if self.current_view != "ranks":
+            await interaction.response.defer()
+            return
+        
+        self.ranks_page = max(0, self.ranks_page - 1)
+        self.update_navigation_buttons()
+        embed = await self.create_ranks_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, row=2, disabled=True)
+    async def ranks_next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Next page in ranks view"""
+        if self.current_view != "ranks":
+            await interaction.response.defer()
+            return
+        
+        accounts_per_page = 8
+        total_pages = (len(self.all_accounts) + accounts_per_page - 1) // accounts_per_page
+        self.ranks_page = min(total_pages - 1, self.ranks_page + 1)
+        self.update_navigation_buttons()
+        embed = await self.create_ranks_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    def update_navigation_buttons(self):
+        """Update navigation button states based on current view and page"""
+        # Calculate if we need navigation buttons
+        accounts_per_page = 8
+        total_pages = (len(self.all_accounts) + accounts_per_page - 1) // accounts_per_page
+        
+        # Show/hide and enable/disable based on current view
+        in_ranks_view = self.current_view == "ranks"
+        
+        # Update prev button
+        self.ranks_prev_button.disabled = not in_ranks_view or self.ranks_page == 0
+        
+        # Update next button
+        self.ranks_next_button.disabled = not in_ranks_view or self.ranks_page >= total_pages - 1
 
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):

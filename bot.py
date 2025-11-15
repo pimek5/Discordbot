@@ -101,16 +101,37 @@ message_tracker = {}  # {channel_id: [timestamps]}
 
 # Rank Role Configuration
 RANK_ROLES = {
-    'IRON': None,  # No role for Iron
-    'BRONZE': None,  # No role for Bronze
-    'SILVER': None,  # No role for Silver
-    'GOLD': None,  # No role for Gold
-    'PLATINUM': None,  # No role for Platinum
-    'EMERALD': None,  # No role for Emerald
-    'DIAMOND': 1166294337634717768,  # Diamond role ID
-    'MASTER': None,  # Add Master role ID if needed
-    'GRANDMASTER': None,  # Add GM role ID if needed
-    'CHALLENGER': None,  # Add Challenger role ID if needed
+    'IRON': 1166294418467332136,
+    'BRONZE': 1166294406106714112,
+    'SILVER': 1166294396145242173,
+    'GOLD': 1166294393850957854,
+    'PLATINUM': 1166294381263847454,
+    'EMERALD': 1166294376624967713,
+    'DIAMOND': 1166294337634717768,
+    'MASTER': 1166294315887247390,
+    'GRANDMASTER': 1166294306462638241,
+    'CHALLENGER': 1166294302473863189,
+    'UNRANKED': 1166294423567605811,
+}
+
+# Region Role Configuration
+REGION_ROLES = {
+    'eune': 1166293788717764620,
+    'euw': 1166293794078072916,
+    'na': 1166293823316570142,
+    'vn': 1166293852596994069,
+    'tw': 1166293854761263114,
+    'th': 1166293859018473494,
+    'sg': 1166293862252281876,
+    'ph': 1166293872956166215,
+    'kr': 1166293880468152409,
+    'tr': 1166293882741461054,
+    'oce': 1166293889217482774,
+    'jp': 1166293935291912272,
+    'lan': 1166293937896554497,
+    'las': 1166293940710940763,
+    'br': 1166293994423210046,
+    'ru': 1166294020293656678,
 }
 
 # LoLdle Configuration
@@ -508,6 +529,11 @@ class MyBot(commands.Bot):
         print(f"✅ Bot connected as {self.user.name} (ID: {self.user.id})")
         print(f"✅ Connected to {len(self.guilds)} servers")
         print(f"✅ Bot is ready and online!")
+        
+        # Start automatic rank update task
+        if not auto_update_ranks.is_running():
+            auto_update_ranks.start()
+            print("🔄 Started automatic rank/region update task (runs every 2 hours)")
 
     async def setup_hook(self):
         global riot_api, orianna_initialized
@@ -684,7 +710,7 @@ bot = MyBot()
 #        RANK ROLE MANAGEMENT
 # ================================
 async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
-    """Update Discord roles based on League rank"""
+    """Update Discord roles based on League rank and regions"""
     try:
         guild = bot.get_guild(guild_id)
         if not guild:
@@ -705,16 +731,23 @@ async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
             return
         
         # Find highest rank across all accounts
-        highest_rank = None
+        highest_rank = 'UNRANKED'  # Default to UNRANKED
         rank_priority = {
-            'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
+            'UNRANKED': -1, 'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
             'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
             'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
         }
         
+        # Collect all regions from verified accounts
+        user_regions = set()
+        
         for account in accounts:
             if not account.get('verified'):
                 continue
+            
+            # Add region to set
+            region = account['region'].lower()
+            user_regions.add(region)
             
             # Fetch current rank
             ranks = await riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
@@ -726,12 +759,10 @@ async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
                 if 'SOLO' in rank_data.get('queueType', ''):
                     tier = rank_data.get('tier', 'UNRANKED')
                     if tier in rank_priority:
-                        if not highest_rank or rank_priority[tier] > rank_priority[highest_rank]:
+                        if rank_priority[tier] > rank_priority[highest_rank]:
                             highest_rank = tier
         
-        if not highest_rank:
-            return
-        
+        # ===== UPDATE RANK ROLES =====
         # Remove all rank roles first
         roles_to_remove = []
         for tier, role_id in RANK_ROLES.items():
@@ -750,9 +781,89 @@ async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
             if new_role and new_role not in member.roles:
                 await member.add_roles(new_role, reason=f"League rank: {highest_rank}")
                 print(f"✅ Assigned {highest_rank} role to {member.name}")
+        
+        # ===== UPDATE REGION ROLES =====
+        # Remove all region roles first
+        region_roles_to_remove = []
+        for region, role_id in REGION_ROLES.items():
+            if role_id:
+                role = guild.get_role(role_id)
+                if role and role in member.roles and region not in user_regions:
+                    region_roles_to_remove.append(role)
+        
+        if region_roles_to_remove:
+            await member.remove_roles(*region_roles_to_remove, reason="Region role update")
+        
+        # Add region roles for all user's regions
+        for region in user_regions:
+            role_id = REGION_ROLES.get(region)
+            if role_id:
+                role = guild.get_role(role_id)
+                if role and role not in member.roles:
+                    await member.add_roles(role, reason=f"Playing on {region.upper()}")
+                    print(f"✅ Assigned {region.upper()} region role to {member.name}")
     
     except Exception as e:
-        print(f"⚠️ Error updating rank roles for user {user_id}: {e}")
+        print(f"⚠️ Error updating rank/region roles for user {user_id}: {e}")
+
+# ================================
+#   AUTOMATIC RANK/REGION UPDATE
+# ================================
+@tasks.loop(hours=2)
+async def auto_update_ranks():
+    """Automatically update rank and region roles every 12 hours"""
+    try:
+        print("🔄 Starting automatic rank/region role update...")
+        
+        guild = bot.get_guild(GUILD_ID)
+        if not guild:
+            print("⚠️ Guild not found for auto rank update")
+            return
+        
+        db = get_db()
+        
+        # Get all users with verified accounts from this guild
+        conn = db.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT DISTINCT u.snowflake
+                    FROM users u
+                    JOIN guild_members gm ON u.id = gm.user_id
+                    JOIN league_accounts la ON u.id = la.user_id
+                    WHERE gm.guild_id = %s AND la.verified = TRUE
+                """, (GUILD_ID,))
+                users = cur.fetchall()
+        finally:
+            db.return_connection(conn)
+        
+        if not users:
+            print("ℹ️ No users with verified accounts found")
+            return
+        
+        updated = 0
+        failed = 0
+        
+        for (user_id,) in users:
+            try:
+                await update_user_rank_roles(user_id, GUILD_ID)
+                updated += 1
+                # Small delay to avoid rate limiting
+                await asyncio.sleep(1)
+            except Exception as e:
+                failed += 1
+                logging.error(f"Failed to auto-update rank roles for {user_id}: {e}")
+        
+        print(f"✅ Auto rank update completed: {updated} updated, {failed} failed")
+        
+    except Exception as e:
+        logging.error(f"❌ Error in auto_update_ranks task: {e}")
+
+@auto_update_ranks.before_loop
+async def before_auto_update_ranks():
+    """Wait for bot to be ready before starting the task"""
+    await bot.wait_until_ready()
+    print("✅ Auto rank update task will start in 2 hours")
 
 # ================================
 #        CHANNEL COUNTER
