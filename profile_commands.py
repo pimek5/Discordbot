@@ -1316,12 +1316,7 @@ class ProfileCommands(commands.Cog):
         
         # Get or create user in database
         db = get_db()
-        db_user = db.get_user_by_discord_id(user.id)
-        
-        if not db_user:
-            db_user_id = db.create_user(user.id)
-        else:
-            db_user_id = db_user['id']
+        db_user_id = db.get_or_create_user(user.id)
         
         # Add account directly as verified (skip verification step)
         db.add_league_account(
@@ -1391,11 +1386,7 @@ class ProfileCommands(commands.Cog):
 
         # Prepare user in DB
         db = get_db()
-        db_user = db.get_user_by_discord_id(user.id)
-        if not db_user:
-            db_user_id = db.create_user(user.id)
-        else:
-            db_user_id = db_user['id']
+        db_user_id = db.get_or_create_user(user.id)
 
         results = []  # (original_line, status, message)
         success = 0
