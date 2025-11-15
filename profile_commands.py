@@ -16,6 +16,7 @@ import asyncio
 from database import get_db
 from riot_api import RiotAPI, RIOT_REGIONS, get_champion_icon_url, get_rank_icon_url, CHAMPION_ID_TO_NAME
 from emoji_dict import get_champion_emoji, get_rank_emoji, get_mastery_emoji, get_other_emoji, RANK_EMOJIS as RANK_EMOJIS_NEW
+from objective_icons import get_objective_emoji
 
 logger = logging.getLogger('profile_commands')
 
@@ -1319,14 +1320,14 @@ class ProfileCommands(commands.Cog):
             game_name=game_name,
             tagline=tagline,
             puuid=puuid,
-            summoner_id=summoner_data['id'],
-            summoner_level=summoner_data['summonerLevel'],
+            summoner_id=summoner_data.get('id'),  # Use .get() as it may not exist
+            summoner_level=summoner_data.get('summonerLevel', 1),
             verified=True  # Force verified
         )
         
         await interaction.followup.send(
             f"✅ Force-linked **{game_name}#{tagline}** ({region.upper()}) to {user.mention}\n"
-            f"Level: {summoner_data['summonerLevel']} • PUUID: {puuid[:20]}...",
+            f"Level: {summoner_data.get('summonerLevel', 'Unknown')} • PUUID: {puuid[:20]}...",
             ephemeral=True
         )
     
@@ -2530,13 +2531,18 @@ class ProfileView(discord.ui.View):
         avg_cs_per_min = self.combined_stats['cs'] / self.combined_stats['game_duration'] if self.combined_stats['game_duration'] > 0 else 0
         avg_vision = self.combined_stats['vision_score'] / total_games
         
+        # Use objective emojis
+        kills_emoji = get_objective_emoji('kills')
+        cs_emoji = get_objective_emoji('cs')
+        vision_emoji = get_objective_emoji('vision')
+        
         embed.add_field(
             name=f"⚔️ **Combat Stats** ({min(20, total_games)} games)",
             value=(
-                f"**Average KDA:** {avg_kills:.1f} / {avg_deaths:.1f} / {avg_assists:.1f}\n"
+                f"{kills_emoji} **Average KDA:** {avg_kills:.1f} / {avg_deaths:.1f} / {avg_assists:.1f}\n"
                 f"**KDA Ratio:** {kda_str}\n"
-                f"**CS/min:** {avg_cs_per_min:.1f}\n"
-                f"**Vision Score:** {avg_vision:.1f}/game"
+                f"{cs_emoji} **CS/min:** {avg_cs_per_min:.1f}\n"
+                f"{vision_emoji} **Vision Score:** {avg_vision:.1f}/game"
             ),
             inline=False
         )
@@ -2695,8 +2701,11 @@ class ProfileView(discord.ui.View):
             avg_to_obj = total_to_objectives / damage_games
             avg_mitigated = total_mitigated / damage_games
             
+            damage_emoji = get_objective_emoji('damage')
+            gold_emoji = get_objective_emoji('gold')
+            
             damage_text = (
-                f"**Avg Damage:** {avg_damage:,.0f}/game\n"
+                f"{damage_emoji} **Avg Damage:** {avg_damage:,.0f}/game\n"
                 f"**Breakdown:** {phys_pct:.0f}% Phys • {magic_pct:.0f}% Magic • {true_pct:.0f}% True\n"
                 f"**To Objectives:** {avg_to_obj:,.0f}/game\n"
                 f"**Mitigated:** {avg_mitigated:,.0f}/game"
@@ -2753,10 +2762,17 @@ class ProfileView(discord.ui.View):
         if obj_games > 0:
             total_drakes = dragons.get('total', 0)
             
+            # Use objective emojis
+            dragon_emoji = get_objective_emoji('dragon_elder')
+            baron_emoji = get_objective_emoji('baron')
+            herald_emoji = get_objective_emoji('herald')
+            tower_emoji = get_objective_emoji('tower')
+            inhib_emoji = get_objective_emoji('inhibitor')
+            
             obj_text = (
-                f"**Dragons:** {total_drakes}\n"
-                f"**Barons:** {barons} • **Heralds:** {heralds}\n"
-                f"**Towers:** {towers} • **Inhibitors:** {inhibs}"
+                f"{dragon_emoji} **Dragons:** {total_drakes}\n"
+                f"{baron_emoji} **Barons:** {barons} • {herald_emoji} **Heralds:** {heralds}\n"
+                f"{tower_emoji} **Towers:** {towers} • {inhib_emoji} **Inhibitors:** {inhibs}"
             )
             embed.add_field(name="🎯 **Objective Control**", value=obj_text, inline=False)
         
