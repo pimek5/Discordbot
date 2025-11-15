@@ -3083,7 +3083,7 @@ class ProfileView(discord.ui.View):
         embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="Challenger", id=1435683026792353792), row=0)
+    @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="Challenger", id=1439080558029443082), row=0)
     async def ranks_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to ranks view showing all accounts"""
         if self.current_view == "ranks":
