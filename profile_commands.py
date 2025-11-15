@@ -2150,8 +2150,8 @@ class ProfileView(discord.ui.View):
                     f"└ Flex: **{rank_display}** • {lp} LP • {winrate:.0f}% WR ({wins}W-{losses}L)"
                 )
             else:
-                # Unranked - use IRON emoji as placeholder
-                rank_emoji = get_rank_emoji('IRON')
+                # Unranked - use special unranked emoji
+                rank_emoji = discord.PartialEmoji(name="rank_unranked", id=1439117325260292206)
                 all_lines.append(
                     f"{rank_emoji} **{account_name}** `{region}`\n"
                     f"└ Unranked this season"
