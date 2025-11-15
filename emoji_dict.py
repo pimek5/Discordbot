@@ -182,7 +182,7 @@ RANK_EMOJIS = {
     'CHALLENGER': '<:rank_Challenger:1439080558029443082>',
     'DIAMOND': '<:rank_Diamond:1439080559828795545>',
     'EMERALD': '<:rank_Emerald:1439080561011462367>',
-    'GOLD': '<:rank_Gold:1439080562177343529>',
+    'GOLD': '<:rank_Gold:1439101362251104358>',
     'GRANDMASTER': '<:rank_Grandmaster:1439080563503009873>',
     'IRON': '<:rank_Iron:1439080565973319842>',
     'MASTER': '<:rank_Master:1439080567667953735>',
