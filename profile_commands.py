@@ -403,6 +403,13 @@ class ProfileCommands(commands.Cog):
         # Clean up verification code
         db.delete_verification_code(user['id'])
         
+        # Update rank roles
+        try:
+            from bot import update_user_rank_roles
+            await update_user_rank_roles(interaction.user.id, interaction.guild.id if interaction.guild else None)
+        except Exception as e:
+            logger.warning(f"Failed to update rank roles: {e}")
+        
         embed = discord.Embed(
             title="✅ Account Linked Successfully!",
             description=f"**{verification['riot_id_game_name']}#{verification['riot_id_tagline']}** ({verification['region'].upper()})\n\n"

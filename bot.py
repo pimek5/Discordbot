@@ -99,6 +99,20 @@ AUTO_SLOWMODE_DELAY = 3  # Slowmode delay in seconds when triggered
 AUTO_SLOWMODE_COOLDOWN = 300  # How long slowmode stays active (5 minutes)
 message_tracker = {}  # {channel_id: [timestamps]}
 
+# Rank Role Configuration
+RANK_ROLES = {
+    'IRON': None,  # No role for Iron
+    'BRONZE': None,  # No role for Bronze
+    'SILVER': None,  # No role for Silver
+    'GOLD': None,  # No role for Gold
+    'PLATINUM': None,  # No role for Platinum
+    'EMERALD': None,  # No role for Emerald
+    'DIAMOND': 1166294337634717768,  # Diamond role ID
+    'MASTER': None,  # Add Master role ID if needed
+    'GRANDMASTER': None,  # Add GM role ID if needed
+    'CHALLENGER': None,  # Add Challenger role ID if needed
+}
+
 # LoLdle Configuration
 LOLDLE_CHANNEL_ID = 1435357204374093824  # Channel restriction for /guess command
 loldle_data = {
@@ -667,6 +681,80 @@ class MyBot(commands.Bot):
 bot = MyBot()
 
 # ================================
+#        RANK ROLE MANAGEMENT
+# ================================
+async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
+    """Update Discord roles based on League rank"""
+    try:
+        guild = bot.get_guild(guild_id)
+        if not guild:
+            return
+        
+        member = guild.get_member(user_id)
+        if not member:
+            return
+        
+        db = get_db()
+        db_user = db.get_user_by_discord_id(user_id)
+        if not db_user:
+            return
+        
+        # Get all accounts for this user
+        accounts = db.get_user_accounts(db_user['id'])
+        if not accounts:
+            return
+        
+        # Find highest rank across all accounts
+        highest_rank = None
+        rank_priority = {
+            'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
+            'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
+            'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
+        }
+        
+        for account in accounts:
+            if not account.get('verified'):
+                continue
+            
+            # Fetch current rank
+            ranks = await riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
+            if not ranks:
+                continue
+            
+            # Check Solo/Duo queue
+            for rank_data in ranks:
+                if 'SOLO' in rank_data.get('queueType', ''):
+                    tier = rank_data.get('tier', 'UNRANKED')
+                    if tier in rank_priority:
+                        if not highest_rank or rank_priority[tier] > rank_priority[highest_rank]:
+                            highest_rank = tier
+        
+        if not highest_rank:
+            return
+        
+        # Remove all rank roles first
+        roles_to_remove = []
+        for tier, role_id in RANK_ROLES.items():
+            if role_id:
+                role = guild.get_role(role_id)
+                if role and role in member.roles:
+                    roles_to_remove.append(role)
+        
+        if roles_to_remove:
+            await member.remove_roles(*roles_to_remove, reason="Rank role update")
+        
+        # Add new rank role
+        new_role_id = RANK_ROLES.get(highest_rank)
+        if new_role_id:
+            new_role = guild.get_role(new_role_id)
+            if new_role and new_role not in member.roles:
+                await member.add_roles(new_role, reason=f"League rank: {highest_rank}")
+                print(f"✅ Assigned {highest_rank} role to {member.name}")
+    
+    except Exception as e:
+        print(f"⚠️ Error updating rank roles for user {user_id}: {e}")
+
+# ================================
 #        CHANNEL COUNTER
 # ================================
 channel_counter = {
@@ -1089,6 +1177,71 @@ async def update_mastery(interaction: discord.Interaction):
             ephemeral=True
         )
         print(f"❌ Error updating mastery: {e}")
+
+@bot.tree.command(name="update_ranks", description="Update rank roles for all members (Admin only)")
+async def update_ranks(interaction: discord.Interaction):
+    """Manually update rank roles for all members"""
+    # Check permissions
+    if not has_admin_permissions(interaction):
+        await interaction.response.send_message(
+            "❌ You need Administrator permission to use this command!",
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        db = get_db()
+        
+        # Get all users with linked accounts from this guild
+        conn = db.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT DISTINCT u.snowflake
+                    FROM users u
+                    JOIN guild_members gm ON u.id = gm.user_id
+                    JOIN league_accounts la ON u.id = la.user_id
+                    WHERE gm.guild_id = %s AND la.verified = TRUE
+                """, (guild.id,))
+                users = cur.fetchall()
+        finally:
+            db.return_connection(conn)
+        
+        if not users:
+            await interaction.followup.send("ℹ️ No users with verified accounts found in this server.", ephemeral=True)
+            return
+        
+        updated = 0
+        failed = 0
+        
+        for (user_id,) in users:
+            try:
+                await update_user_rank_roles(user_id, guild.id)
+                updated += 1
+            except Exception as e:
+                failed += 1
+                logging.error(f"Failed to update rank roles for {user_id}: {e}")
+        
+        embed = discord.Embed(
+            title="✅ Rank Roles Updated",
+            color=0x00FF00 if failed == 0 else 0xFFA500
+        )
+        embed.add_field(name="✅ Updated", value=str(updated), inline=True)
+        embed.add_field(name="❌ Failed", value=str(failed), inline=True)
+        embed.add_field(name="📊 Total", value=str(len(users)), inline=True)
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    except Exception as e:
+        logging.error(f"Error in update_ranks: {e}")
+        await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
 # ================================
 #        FIXED MESSAGES
