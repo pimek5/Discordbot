@@ -106,33 +106,44 @@ class RiotAPI:
         if not self.api_key:
             return None
         
-        # If region specified, try that first
-        regions_to_try = [region] if region else list(set(RIOT_REGIONS.values()))
+        # Build routing list: if region specified, try its routing first then fallback to all others
+        if region:
+            primary_routing = RIOT_REGIONS.get(region.lower())
+            all_routings = list(set(RIOT_REGIONS.values()))
+            regions_to_try = [r for r in [primary_routing] + all_routings if r]
+        else:
+            regions_to_try = list(set(RIOT_REGIONS.values()))
         
         for routing in regions_to_try:
             url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
             
             for attempt in range(retries):
                 try:
-                    # Use longer timeout for Railway network
-                    timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                    # Escalating timeout per attempt to handle transient latency
+                    timeout = aiohttp.ClientTimeout(total=20 + attempt * 5, connect=10)
                     async with aiohttp.ClientSession(timeout=timeout) as session:
                         async with session.get(url, headers=self.headers) as response:
                             if response.status == 200:
                                 logger.info(f"✅ Found account in {routing}: {game_name}#{tag_line}")
                                 return await response.json()
                             elif response.status == 404:
-                                break  # Try next region
+                                logger.debug(f"🔍 Not found in routing {routing} (404) – trying next routing if available")
+                                break  # Try next routing
                             elif response.status == 429:
-                                await asyncio.sleep(2)
+                                logger.warning(f"⏳ Rate limited on routing {routing} (attempt {attempt + 1}/{retries})")
+                                await asyncio.sleep(2 + attempt)
                                 continue
+                            else:
+                                text = await response.text()
+                                logger.warning(f"⚠️ Unexpected status {response.status} from {routing}: {text[:120]}")
+                                break
                 except asyncio.TimeoutError:
-                    logger.warning(f"⏱️ Timeout getting account (attempt {attempt + 1}/{retries})")
+                    logger.warning(f"⏱️ Timeout (routing {routing}) attempt {attempt + 1}/{retries} for {game_name}#{tag_line}")
                     if attempt < retries - 1:
                         await asyncio.sleep(2)
                     continue
                 except aiohttp.ClientError as e:
-                    logger.warning(f"🌐 Network error (attempt {attempt + 1}/{retries}): {e}")
+                    logger.warning(f"🌐 Network error (routing {routing}) attempt {attempt + 1}/{retries}: {e}")
                     if attempt < retries - 1:
                         await asyncio.sleep(2)
                     continue
@@ -140,7 +151,7 @@ class RiotAPI:
                     logger.error(f"❌ Error getting account: {e}")
                     break
         
-        logger.warning(f"⚠️ Account not found: {game_name}#{tag_line}")
+        logger.warning(f"⚠️ Account not found after trying routings: {game_name}#{tag_line}")
         return None
     
     async def find_summoner_region(self, puuid: str, retries: int = 2) -> Optional[str]:

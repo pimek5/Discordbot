@@ -1288,11 +1288,14 @@ class ProfileCommands(commands.Cog):
             await interaction.followup.send(f"❌ Invalid region! Valid: {', '.join(valid_regions)}", ephemeral=True)
             return
         
-        # Get account data from Riot API
+        # Get account data from Riot API (try specified region first, then global fallback)
         account_data = await self.riot_api.get_account_by_riot_id(game_name, tagline, region)
+        if not account_data:
+            # Fallback: try all routings regardless of provided region
+            account_data = await self.riot_api.get_account_by_riot_id(game_name, tagline, None)
         
         if not account_data:
-            await interaction.followup.send(f"❌ Account not found: {game_name}#{tagline}", ephemeral=True)
+            await interaction.followup.send(f"❌ Account not found after global fallback: {game_name}#{tagline}", ephemeral=True)
             return
         
         puuid = account_data['puuid']
