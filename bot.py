@@ -441,8 +441,8 @@ class LoldleButtonsView(discord.ui.View):
     async def guess_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Sends /guess command prompt to user"""
         await interaction.response.send_message(
-            "💬 Type `/loldle classic <champion_name>` in the chat to make your guess!\n"
-            "Example: `/loldle classic Yasuo`",
+            "💬 Type `/loldle <champion_name>` in the chat to make your guess!\n"
+            "Example: `/loldle Yasuo`",
             ephemeral=True
         )
     
@@ -3145,9 +3145,9 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
     
     return "🟥"  # Wrong
 
-@loldle_group.command(name="classic", description="Play daily LoL champion guessing game!")
+@bot.tree.command(name="loldle", description="Play daily LoL champion guessing game!")
 @app_commands.describe(champion="Guess the champion name")
-async def guess(interaction: discord.Interaction, champion: str):
+async def loldle(interaction: discord.Interaction, champion: str):
     """LoLdle - Guess the daily champion with persistent embed!"""
     
     # Channel restriction check
@@ -3386,7 +3386,7 @@ async def guess(interaction: discord.Interaction, champion: str):
             except:
                 pass
 
-@loldle_group.command(name="stats", description="Check your LoLdle stats for today")
+@bot.tree.command(name="loldlestats", description="Check your LoLdle stats for today")
 async def loldlestats(interaction: discord.Interaction):
     """Check your LoLdle progress"""
     
@@ -3394,7 +3394,7 @@ async def loldlestats(interaction: discord.Interaction):
     
     if user_id not in loldle_data['players']:
         await interaction.response.send_message(
-            "📊 You haven't played LoLdle today yet! Use `/loldle classic` to start guessing.",
+            "📊 You haven't played LoLdle today yet! Use `/loldle` to start guessing.",
             ephemeral=True
         )
         return
@@ -3420,13 +3420,13 @@ async def loldlestats(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@loldle_group.command(name="leaderboard", description="View global LoLdle leaderboard")
+@bot.tree.command(name="loldletop", description="View global LoLdle leaderboard")
 async def loldletop(interaction: discord.Interaction):
     """Display global LoLdle leaderboard"""
     
     if not loldle_global_stats:
         await interaction.response.send_message(
-            "📊 No one has played LoLdle yet! Be the first with `/loldle classic`!",
+            "📊 No one has played LoLdle yet! Be the first with `/loldle`!",
             ephemeral=True
         )
         return
@@ -3487,7 +3487,7 @@ async def loldletop(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-@loldle_group.command(name="start", description="Start a new LoLdle game")
+@bot.tree.command(name="loldlestart", description="Start a new LoLdle game")
 @app_commands.describe(mode="Choose game mode: classic, quote, emoji, ability")
 @app_commands.choices(mode=[
     app_commands.Choice(name="Classic (Attributes)", value="classic"),
@@ -3570,7 +3570,7 @@ async def loldlestart(interaction: discord.Interaction, mode: app_commands.Choic
         
         new_embed = discord.Embed(
             title="💬 LoLdle Quote - New Game!",
-            description=f"**Quote:** \"{quote_text}\"\n\nUse `/loldle quote <champion>` to guess!",
+            description=f"**Quote:** \"{quote_text}\"\n\nUse `/quote <champion>` to guess!",
             color=0x9B59B6
         )
         new_embed.set_footer(text="Guess the champion from their iconic quote!")
@@ -3610,7 +3610,7 @@ async def loldlestart(interaction: discord.Interaction, mode: app_commands.Choic
         
         new_embed = discord.Embed(
             title="😃 LoLdle Emoji - New Game!",
-            description=f"**Emojis:** {emoji_display}\n\nUse `/loldle emoji <champion>` to guess!",
+            description=f"**Emojis:** {emoji_display}\n\nUse `/emoji <champion>` to guess!",
             color=0xF39C12
         )
         new_embed.set_footer(text="Guess the champion from the emojis! More emojis reveal with each wrong guess.")
@@ -3661,7 +3661,7 @@ async def loldlestart(interaction: discord.Interaction, mode: app_commands.Choic
         
         new_embed = discord.Embed(
             title="🔮 LoLdle Ability - New Game!",
-            description=f"**Ability Description:** {ability_desc}\n\nUse `/loldle ability <champion>` to guess!",
+            description=f"**Ability Description:** {ability_desc}\n\nUse `/ability <champion>` to guess!",
             color=0xE91E63
         )
         new_embed.set_footer(text="Guess the champion from their ability!")
@@ -3694,7 +3694,7 @@ def get_daily_quote_champion():
     
     return loldle_quote_data['daily_champion']
 
-@loldle_group.command(name="quote", description="Guess the champion by their quote!")
+@bot.tree.command(name="quote", description="Guess the champion by their quote!")
 @app_commands.describe(champion="Guess the champion name")
 async def quote(interaction: discord.Interaction, champion: str):
     """LoLdle Quote Mode - Guess by quote"""
@@ -3787,7 +3787,7 @@ async def quote(interaction: discord.Interaction, champion: str):
         
         new_embed = discord.Embed(
             title="💬 Quote Mode - New Game!",
-            description=f"**Quote:** \"{quote_text}\"\n\nUse `/loldle quote <champion>` to guess!",
+            description=f"**Quote:** \"{quote_text}\"\n\nUse `/quote <champion>` to guess!",
             color=0x9B59B6
         )
         new_embed.set_footer(text="Guess the champion from their iconic quote!")
@@ -3825,7 +3825,7 @@ async def quote(interaction: discord.Interaction, champion: str):
                 inline=False
             )
         
-        embed.set_footer(text="Keep guessing! Use /loldle quote <champion> to try again.")
+        embed.set_footer(text="Keep guessing! Use /quote <champion> to try again.")
         
         # Edit existing embed or create new one
         if loldle_quote_data['embed_message_id']:
@@ -3867,7 +3867,7 @@ def get_daily_emoji_champion():
     
     return loldle_emoji_data['daily_champion']
 
-@loldle_group.command(name="emoji", description="Guess the champion by emojis!")
+@bot.tree.command(name="emoji", description="Guess the champion by emojis!")
 @app_commands.describe(champion="Guess the champion name")
 async def emoji(interaction: discord.Interaction, champion: str):
     """LoLdle Emoji Mode - Guess by emoji"""
@@ -3964,7 +3964,7 @@ async def emoji(interaction: discord.Interaction, champion: str):
         
         new_embed = discord.Embed(
             title="😃 Emoji Mode - New Game!",
-            description=f"**Emojis:** {emoji_display}\n\nUse `/loldle emoji <champion>` to guess!",
+            description=f"**Emojis:** {emoji_display}\n\nUse `/emoji <champion>` to guess!",
             color=0xF39C12
         )
         new_embed.set_footer(text="Guess the champion from the emojis! More emojis reveal with each wrong guess.")
@@ -4013,7 +4013,7 @@ async def emoji(interaction: discord.Interaction, champion: str):
                 inline=False
             )
         
-        embed.set_footer(text="Keep guessing! Use /loldle emoji <champion> to try again.")
+        embed.set_footer(text="Keep guessing! Use /emoji <champion> to try again.")
         
         # Edit existing embed or create new one
         if loldle_emoji_data['embed_message_id']:
@@ -4057,7 +4057,7 @@ def get_daily_ability_champion():
     
     return loldle_ability_data['daily_champion']
 
-@loldle_group.command(name="ability", description="Guess the champion by their ability!")
+@bot.tree.command(name="ability", description="Guess the champion by their ability!")
 @app_commands.describe(champion="Guess the champion name")
 async def ability(interaction: discord.Interaction, champion: str):
     """LoLdle Ability Mode - Guess by ability description"""
@@ -4171,7 +4171,7 @@ async def ability(interaction: discord.Interaction, champion: str):
             
             new_embed = discord.Embed(
                 title="🔮 Ability Mode - New Game!",
-                description=f"**Ability Description:** {ability_desc}\n\nUse `/loldle ability <champion>` to guess!",
+                description=f"**Ability Description:** {ability_desc}\n\nUse `/ability <champion>` to guess!",
                 color=0xE91E63
             )
             new_embed.set_footer(text="Guess the champion from their ability!")
@@ -4219,7 +4219,7 @@ async def ability(interaction: discord.Interaction, champion: str):
                 inline=False
             )
         
-        embed.set_footer(text="Keep guessing! Use /loldle ability <champion> to try again.")
+        embed.set_footer(text="Keep guessing! Use /ability <champion> to try again.")
         
         # Edit existing embed or create new one
         if loldle_ability_data['embed_message_id']:
