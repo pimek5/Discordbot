@@ -398,17 +398,16 @@ class Database:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 # Build query with optional guild filter
-                guild_filter = ""
+                guild_join = ""
+                guild_where = ""
                 params = [queue]
                 
                 if guild_id:
-                    guild_filter = """
-                        JOIN guild_members gm ON u.id = gm.user_id
-                        WHERE gm.guild_id = %s AND
-                    """
-                    params.insert(0, guild_id)
-                else:
-                    guild_filter = "WHERE"
+                    guild_join = "JOIN guild_members gm ON u.id = gm.user_id"
+                    guild_where = "AND gm.guild_id = %s"
+                    params.append(guild_id)
+                
+                params.append(limit)
                 
                 query = f"""
                     WITH user_best_ranks AS (
@@ -478,7 +477,7 @@ class Database:
                         la.riot_id_tagline
                     FROM user_best_ranks ubr
                     JOIN users u ON ubr.user_id = u.id
-                    {guild_filter} ubr.rn = 1
+                    {guild_join}
                     LEFT JOIN league_accounts la ON u.id = la.user_id 
                         AND (la.primary_account = TRUE OR la.id = (
                             SELECT id FROM league_accounts 
@@ -486,6 +485,7 @@ class Database:
                             ORDER BY primary_account DESC, id ASC 
                             LIMIT 1
                         ))
+                    WHERE ubr.rn = 1 {guild_where}
                     ORDER BY 
                         ubr.tier_value DESC,
                         ubr.rank_value DESC,
@@ -493,7 +493,6 @@ class Database:
                     LIMIT %s
                 """
                 
-                params.append(limit)
                 cur.execute(query, params)
                 return cur.fetchall()
         finally:
