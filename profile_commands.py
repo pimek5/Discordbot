@@ -1141,9 +1141,9 @@ class ProfileCommands(commands.Cog):
                         tier = solo_rank.get('tier', 'UNRANKED')
                         rank = solo_rank.get('rank', '')
                         rank_emoji = get_rank_emoji(tier)
-                        rank_display = f" {rank_emoji} {tier} {rank}" if rank else f" {rank_emoji} {tier}"
+                        rank_display = f"{rank_emoji} {tier} {rank} " if rank else f"{rank_emoji} {tier} "
             
-                acc_text = f"{primary_badge}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}{rank_display}"
+                acc_text = f"{primary_badge}{rank_display}{acc['region'].upper()} - {acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
             
                 # Split into two columns
                 if i % 2 == 0:
