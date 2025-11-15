@@ -628,7 +628,7 @@ class MyBot(commands.Bot):
         # Only add command GROUPS (not individual commands)
         # Groups need to be explicitly added to the tree
         self.tree.add_command(twitter_group)
-        self.tree.add_command(loldle_group)
+        # loldle_group removed - now using individual commands: /loldle, /quote, /emoji, /ability
         self.tree.add_command(mod_group)
         self.tree.add_command(server_group)
         
