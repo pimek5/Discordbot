@@ -127,6 +127,12 @@ class StatsCommands(commands.Cog):
                 await progress_msg.edit(content="❌ Failed to fetch match details!")
                 return
             
+            # Delete progress message before showing results
+            try:
+                await progress_msg.delete()
+            except:
+                pass  # If deletion fails, continue anyway
+            
             # Process match data
             stats_list = []
             for match in matches_data:

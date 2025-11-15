@@ -178,16 +178,16 @@ CHAMPION_EMOJIS = {
 }
 
 RANK_EMOJIS = {
-    'BRONZE': '<:rank_Bronze:1435683025253044435>',
-    'CHALLENGER': '<:rank_Challenger:1435683026792353792>',
-    'DIAMOND': '<:rank_Diamond:1435683028532858920>',
-    'EMERALD': '<:rank_Emerald:1435683029854060585>',
-    'GOLD': '<:rank_Gold:1435683030592258312>',
-    'GRANDMASTER': '<:rank_Grandmaster:1435683032236425367>',
-    'IRON': '<:rank_Iron:1435683033696178217>',
-    'MASTER': '<:rank_Master:1435683035143082105>',
-    'PLATINUM': '<:rank_Platinum:1435683036430602303>',
-    'SILVER': '<:rank_Silver:1435683038284615753>',
+    'BRONZE': '<:rank_Bronze:1439080556536004709>',
+    'CHALLENGER': '<:rank_Challenger:1439080558029443082>',
+    'DIAMOND': '<:rank_Diamond:1439080559828795545>',
+    'EMERALD': '<:rank_Emerald:1439080561011462367>',
+    'GOLD': '<:rank_Gold:1439080562177343529>',
+    'GRANDMASTER': '<:rank_Grandmaster:1439080563503009873>',
+    'IRON': '<:rank_Iron:1439080565973319842>',
+    'MASTER': '<:rank_Master:1439080567667953735>',
+    'PLATINUM': '<:rank_Platinum:1439080568980504587>',
+    'SILVER': '<:rank_Silver:1439080570624933959>',
 }
 
 OTHER_EMOJIS = {

@@ -782,6 +782,13 @@ class ProfileCommands(commands.Cog):
                     # Merge ranked games
                     combined_stats['ranked_games'].extend(stats.get('ranked_games', []))
         
+            # Cancel keep-alive and delete loading message
+            keep_alive_task.cancel()
+            try:
+                await interaction.delete_original_response()
+            except:
+                pass  # If deletion fails, continue anyway
+            
             # Create embed
             embed = discord.Embed(
                 title=f"**{target.display_name}'s Profile**",
@@ -1367,6 +1374,13 @@ class ProfileCommands(commands.Cog):
                 )
                 return
         
+            # Cancel keep-alive and delete loading message
+            keep_alive_task.cancel()
+            try:
+                await interaction.delete_original_response()
+            except:
+                pass  # If deletion fails, continue anyway
+            
             # Get today's date range
             from datetime import datetime, timedelta
             now = datetime.now()
@@ -1536,9 +1550,9 @@ class ProfileCommands(commands.Cog):
             else:
                 embed.set_footer(text=f"{target_user.display_name} • Today's LP gains")
         
-            # Clear the "Calculating..." message before sending embed
+            # Delete the "Calculating..." message before sending embed
             try:
-                await interaction.edit_original_response(content=None)
+                await interaction.delete_original_response()
             except:
                 pass  # Ignore if already deleted
             
