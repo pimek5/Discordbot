@@ -4892,8 +4892,8 @@ async def ban_user(
         
         message = await interaction.followup.send(embed=embed)
         
-        # Auto-delete after 30 seconds
-        await asyncio.sleep(30)
+        # Auto-delete after 60 seconds
+        await asyncio.sleep(60)
         try:
             await message.delete()
         except:
@@ -4976,8 +4976,8 @@ async def unban_user(interaction: discord.Interaction, user_id: str, reason: Opt
         
         message = await interaction.followup.send(embed=embed)
         
-        # Auto-delete after 30 seconds
-        await asyncio.sleep(30)
+        # Auto-delete after 60 seconds
+        await asyncio.sleep(60)
         try:
             await message.delete()
         except:
@@ -5304,8 +5304,8 @@ async def review_appeal(interaction: discord.Interaction, appeal_id: int, action
         
         message = await interaction.followup.send(embed=embed)
         
-        # Auto-delete after 30 seconds
-        await asyncio.sleep(30)
+        # Auto-delete after 60 seconds
+        await asyncio.sleep(60)
         try:
             await message.delete()
         except:
@@ -5408,8 +5408,8 @@ async def serverstats(interaction: discord.Interaction):
         
         message = await interaction.followup.send(embed=embed)
         
-        # Auto-delete after 30 seconds
-        await asyncio.sleep(30)
+        # Auto-delete after 60 seconds
+        await asyncio.sleep(60)
         try:
             await message.delete()
         except:

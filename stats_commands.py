@@ -325,8 +325,8 @@ class StatsCommands(commands.Cog):
             
             message = await interaction.followup.send(embed=embed, file=file)
             
-            # Auto-delete after 30 seconds
-            await asyncio.sleep(30)
+            # Auto-delete after 60 seconds
+            await asyncio.sleep(60)
             try:
                 await message.delete()
             except:
@@ -398,8 +398,8 @@ class StatsCommands(commands.Cog):
             )
             message = await interaction.followup.send(embed=embed)
             
-            # Auto-delete after 30 seconds
-            await asyncio.sleep(30)
+            # Auto-delete after 60 seconds
+            await asyncio.sleep(60)
             try:
                 await message.delete()
             except:
@@ -440,8 +440,8 @@ class StatsCommands(commands.Cog):
         embed.set_footer(text=f"Requested by {interaction.user.name}")
         message = await interaction.followup.send(embed=embed)
         
-        # Auto-delete after 30 seconds
-        await asyncio.sleep(30)
+        # Auto-delete after 60 seconds
+        await asyncio.sleep(60)
         try:
             await message.delete()
         except:
@@ -579,8 +579,8 @@ class StatsCommands(commands.Cog):
         
         message = await interaction.followup.send(embed=embed)
         
-        # Auto-delete after 30 seconds
-        await asyncio.sleep(30)
+        # Auto-delete after 60 seconds
+        await asyncio.sleep(60)
         try:
             await message.delete()
         except:

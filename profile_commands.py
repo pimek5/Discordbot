@@ -577,8 +577,8 @@ class ProfileCommands(commands.Cog):
                 )
                 message = await interaction.followup.send(embed=embed)
                 
-                # Auto-delete after 30 seconds
-                await asyncio.sleep(30)
+                # Auto-delete after 60 seconds
+                await asyncio.sleep(60)
                 try:
                     await message.delete()
                 except:
@@ -1635,8 +1635,8 @@ class ProfileCommands(commands.Cog):
                 embed.set_footer(text=f"Play some ranked to see your LP gains!")
                 message = await interaction.followup.send(embed=embed)
                 
-                # Auto-delete after 30 seconds
-                await asyncio.sleep(30)
+                # Auto-delete after 60 seconds
+                await asyncio.sleep(60)
                 try:
                     await message.delete()
                 except:
