@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 from typing import Optional
 import logging
+import asyncio
 
 from database import get_db
 from riot_api import RiotAPI, CHAMPION_ID_TO_NAME
@@ -188,24 +189,46 @@ class LeaderboardCommands(commands.Cog):
         """Show TOP20 ranked players with detailed stats from database"""
         await interaction.response.defer()
         
-        # Must be in a guild
-        if not interaction.guild:
-            await interaction.followup.send(
-                "❌ This command can only be used in a server!",
-                ephemeral=True
-            )
-            return
+        # Keep interaction alive with periodic updates
+        async def keep_alive():
+            """Update the interaction periodically to prevent timeout"""
+            messages = [
+                "⏳ Loading leaderboard data...",
+                "🔍 Fetching player ranks...",
+                "📊 Calculating statistics...",
+                "🏆 Preparing rankings..."
+            ]
+            for i, msg in enumerate(messages):
+                if i > 0:  # Don't wait before first message
+                    await asyncio.sleep(2)
+                try:
+                    await interaction.edit_original_response(content=msg)
+                except:
+                    break  # Stop if interaction is no longer valid
         
-        db = get_db()
+        # Start keep-alive task
+        keep_alive_task = asyncio.create_task(keep_alive())
         
-        # Rank priority for sorting
-        rank_priority = {
-            'CHALLENGER': 9, 'GRANDMASTER': 8, 'MASTER': 7,
-            'DIAMOND': 6, 'EMERALD': 5, 'PLATINUM': 4,
-            'GOLD': 3, 'SILVER': 2, 'BRONZE': 1, 'IRON': 0
-        }
-        
-        division_priority = {'I': 4, 'II': 3, 'III': 2, 'IV': 1}
+        try:
+            # Must be in a guild
+            if not interaction.guild:
+                keep_alive_task.cancel()
+                await interaction.followup.send(
+                    "❌ This command can only be used in a server!",
+                    ephemeral=True
+                )
+                return
+            
+            db = get_db()
+            
+            # Rank priority for sorting
+            rank_priority = {
+                'CHALLENGER': 9, 'GRANDMASTER': 8, 'MASTER': 7,
+                'DIAMOND': 6, 'EMERALD': 5, 'PLATINUM': 4,
+                'GOLD': 3, 'SILVER': 2, 'BRONZE': 1, 'IRON': 0
+            }
+            
+            division_priority = {'I': 4, 'II': 3, 'III': 2, 'IV': 1}
         
         # Collect all members with their rank data from database
         ranked_members = []
@@ -280,9 +303,12 @@ class LeaderboardCommands(commands.Cog):
                     'data': best_rank_data,
                     'priority': best_priority
                 })
-        
+            
         # Sort by priority (highest first)
         ranked_members.sort(key=lambda x: x['priority'], reverse=True)
+        
+        # Cancel keep-alive task
+        keep_alive_task.cancel()
         
         if not ranked_members:
             region_text = f" in {region.upper()}" if region else ""
@@ -291,7 +317,7 @@ class LeaderboardCommands(commands.Cog):
                 ephemeral=True
             )
             return
-        
+            
         # Get rank emoji
         from emoji_dict import get_rank_emoji
         
@@ -407,9 +433,15 @@ class LeaderboardCommands(commands.Cog):
         embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
         
         await interaction.followup.send(embed=embed)
-        embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
         
-        await interaction.followup.send(embed=embed)
+        except Exception as e:
+            keep_alive_task.cancel()
+            logger.error(f"Error in ranktop: {e}")
+            await interaction.followup.send("❌ An error occurred while fetching leaderboard data.", ephemeral=True)
+        finally:
+            # Ensure keep-alive task is cancelled
+            if not keep_alive_task.done():
+                keep_alive_task.cancel()
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
     """Setup leaderboard commands"""
