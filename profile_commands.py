@@ -405,10 +405,15 @@ class ProfileCommands(commands.Cog):
         # Clean up verification code
         db.delete_verification_code(user['id'])
         
-        # Update rank roles
+        # Update rank/region roles (server-specific if invoked in a guild)
         try:
             from bot import update_user_rank_roles
-            await update_user_rank_roles(interaction.user.id, interaction.guild.id if interaction.guild else None)
+            if interaction.guild:
+                # Update roles in the current server
+                await update_user_rank_roles(interaction.user.id, interaction.guild.id)
+            else:
+                # Update roles in the primary guild using default
+                await update_user_rank_roles(interaction.user.id)
         except Exception as e:
             logger.warning(f"Failed to update rank roles: {e}")
         
@@ -419,6 +424,11 @@ class ProfileCommands(commands.Cog):
             color=0x00FF00
         )
         
+        embed.add_field(
+            name="Roles Updated",
+            value="Your Discord rank and region roles were refreshed to match your current LoL profile.",
+            inline=False
+        )
         embed.add_field(
             name="What's Next?",
             value="• Use `/profile` to see your stats\n• Use `/stats champion` to see progression\n• Use `/points champion` for quick lookup",
