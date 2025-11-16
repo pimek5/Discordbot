@@ -565,7 +565,14 @@ class ProfileCommands(commands.Cog):
                     value="Use `/link riot_id:<Name#TAG> region:<region>` to link your account!",
                     inline=False
                 )
-                await interaction.followup.send(embed=embed, delete_after=30)
+                message = await interaction.followup.send(embed=embed)
+                
+                # Auto-delete after 30 seconds
+                await asyncio.sleep(30)
+                try:
+                    await message.delete()
+                except:
+                    pass
                 return
             
             # Get all accounts (including hidden ones for /accounts command)
@@ -1208,7 +1215,7 @@ class ProfileCommands(commands.Cog):
             except:
                 pass  # Ignore if already deleted
             
-            message = await interaction.followup.send(embed=embed, view=view, delete_after=30)
+            message = await interaction.followup.send(embed=embed, view=view)
             view.message = message  # Store message for deletion on timeout
         
         finally:
@@ -1616,7 +1623,14 @@ class ProfileCommands(commands.Cog):
                     color=0x808080
                 )
                 embed.set_footer(text=f"Play some ranked to see your LP gains!")
-                await interaction.followup.send(embed=embed, delete_after=30)
+                message = await interaction.followup.send(embed=embed)
+                
+                # Auto-delete after 30 seconds
+                await asyncio.sleep(30)
+                try:
+                    await message.delete()
+                except:
+                    pass
                 return
         
             # Sort by timestamp (oldest first)
@@ -1729,7 +1743,7 @@ class ProfileCommands(commands.Cog):
             except:
                 pass  # Ignore if already deleted
             
-            message = await interaction.followup.send(embed=embed, delete_after=30)
+            message = await interaction.followup.send(embed=embed)
         
             # Auto-delete after 2 minutes
             await asyncio.sleep(120)
@@ -1894,7 +1908,7 @@ class ProfileCommands(commands.Cog):
         accounts_list = ", ".join([f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}" for acc in all_accounts if acc.get('verified')])
         embed.set_footer(text=f"Accounts: {accounts_list}")
         
-        message = await interaction.followup.send(embed=embed, delete_after=30)
+        message = await interaction.followup.send(embed=embed)
         
         # Auto-delete after 2 minutes
         await asyncio.sleep(120)

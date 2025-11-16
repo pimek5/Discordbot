@@ -170,7 +170,14 @@ class LeaderboardCommands(commands.Cog):
         
         embed.set_footer(text=f"Requested by {interaction.user.name}")
         
-        await interaction.followup.send(embed=embed, delete_after=30)
+        message = await interaction.followup.send(embed=embed)
+        
+        # Auto-delete after 30 seconds
+        await asyncio.sleep(30)
+        try:
+            await message.delete()
+        except:
+            pass
     
     @app_commands.command(name="ranktop", description="View TOP20 ranked players on this server")
     @app_commands.describe(
@@ -445,7 +452,14 @@ class LeaderboardCommands(commands.Cog):
             
             embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
             
-            await interaction.followup.send(embed=embed, delete_after=30)
+            message = await interaction.followup.send(embed=embed)
+            
+            # Auto-delete after 30 seconds
+            await asyncio.sleep(30)
+            try:
+                await message.delete()
+            except:
+                pass
         
         except Exception as e:
             keep_alive_task.cancel()
