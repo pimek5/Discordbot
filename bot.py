@@ -534,6 +534,22 @@ class MyBot(commands.Bot):
         if not auto_update_ranks.is_running():
             auto_update_ranks.start()
             print("🔄 Started automatic rank/region update task (runs every 2 hours)")
+    
+    async def on_member_join(self, member: discord.Member):
+        """Automatically assign UNRANKED role to new members"""
+        try:
+            if member.bot:
+                return
+            
+            # Assign UNRANKED role to new members
+            unranked_role_id = RANK_ROLES.get('UNRANKED')
+            if unranked_role_id:
+                role = member.guild.get_role(unranked_role_id)
+                if role:
+                    await member.add_roles(role, reason="New member - default rank")
+                    print(f"✅ Assigned UNRANKED role to new member: {member.name}")
+        except Exception as e:
+            print(f"⚠️ Error assigning UNRANKED role to {member.name}: {e}")
 
     async def setup_hook(self):
         global riot_api, orianna_initialized
@@ -722,45 +738,46 @@ async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
         
         db = get_db()
         db_user = db.get_user_by_discord_id(user_id)
-        if not db_user:
-            return
         
-        # Get all accounts for this user
-        accounts = db.get_user_accounts(db_user['id'])
-        if not accounts:
-            return
-        
-        # Find highest rank across all accounts
-        highest_rank = 'UNRANKED'  # Default to UNRANKED
-        rank_priority = {
-            'UNRANKED': -1, 'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
-            'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
-            'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
-        }
-        
-        # Collect all regions from verified accounts
+        # Default rank for users without accounts
+        highest_rank = 'UNRANKED'
         user_regions = set()
         
-        for account in accounts:
-            if not account.get('verified'):
-                continue
-            
-            # Add region to set
-            region = account['region'].lower()
-            user_regions.add(region)
-            
-            # Fetch current rank
-            ranks = await riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
-            if not ranks:
-                continue
-            
-            # Check Solo/Duo queue
-            for rank_data in ranks:
-                if 'SOLO' in rank_data.get('queueType', ''):
-                    tier = rank_data.get('tier', 'UNRANKED')
-                    if tier in rank_priority:
-                        if rank_priority[tier] > rank_priority[highest_rank]:
-                            highest_rank = tier
+        # If user has linked accounts, check their rank
+        if db_user:
+            accounts = db.get_user_accounts(db_user['id'])
+            if accounts:
+                rank_priority = {
+                    'UNRANKED': -1, 'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
+                    'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
+                    'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
+                }
+                
+                # Find highest rank across all verified accounts
+                for account in accounts:
+                    if not account.get('verified'):
+                        continue
+                    
+                    # Add region to set
+                    region = account['region'].lower()
+                    user_regions.add(region)
+                    
+                    # Fetch current rank
+                    try:
+                        ranks = await riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
+                        if not ranks:
+                            continue
+                        
+                        # Check Solo/Duo queue
+                        for rank_data in ranks:
+                            if 'SOLO' in rank_data.get('queueType', ''):
+                                tier = rank_data.get('tier', 'UNRANKED')
+                                if tier in rank_priority:
+                                    if rank_priority[tier] > rank_priority[highest_rank]:
+                                        highest_rank = tier
+                    except Exception as e:
+                        print(f"⚠️ Error fetching rank for {account['riot_id_game_name']}: {e}")
+                        continue
         
         # ===== UPDATE RANK ROLES =====
         # Remove all rank roles first
@@ -773,91 +790,127 @@ async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
         
         if roles_to_remove:
             await member.remove_roles(*roles_to_remove, reason="Rank role update")
+            print(f"🔄 Removed old rank roles from {member.name}")
         
-        # Add new rank role
+        # Add new rank role (always add at least UNRANKED)
         new_role_id = RANK_ROLES.get(highest_rank)
         if new_role_id:
             new_role = guild.get_role(new_role_id)
-            if new_role and new_role not in member.roles:
-                await member.add_roles(new_role, reason=f"League rank: {highest_rank}")
-                print(f"✅ Assigned {highest_rank} role to {member.name}")
+            if new_role:
+                if new_role not in member.roles:
+                    await member.add_roles(new_role, reason=f"League rank: {highest_rank}")
+                    print(f"✅ Assigned {highest_rank} role to {member.name}")
+            else:
+                print(f"⚠️ Role {highest_rank} (ID: {new_role_id}) not found in guild")
         
         # ===== UPDATE REGION ROLES =====
-        # Remove all region roles first
-        region_roles_to_remove = []
-        for region, role_id in REGION_ROLES.items():
-            if role_id:
-                role = guild.get_role(role_id)
-                if role and role in member.roles and region not in user_regions:
-                    region_roles_to_remove.append(role)
-        
-        if region_roles_to_remove:
-            await member.remove_roles(*region_roles_to_remove, reason="Region role update")
-        
-        # Add region roles for all user's regions
-        for region in user_regions:
-            role_id = REGION_ROLES.get(region)
-            if role_id:
-                role = guild.get_role(role_id)
-                if role and role not in member.roles:
-                    await member.add_roles(role, reason=f"Playing on {region.upper()}")
-                    print(f"✅ Assigned {region.upper()} region role to {member.name}")
+        if user_regions:
+            # Remove region roles that user no longer has
+            region_roles_to_remove = []
+            for region, role_id in REGION_ROLES.items():
+                if role_id:
+                    role = guild.get_role(role_id)
+                    if role and role in member.roles and region not in user_regions:
+                        region_roles_to_remove.append(role)
+            
+            if region_roles_to_remove:
+                await member.remove_roles(*region_roles_to_remove, reason="Region role update")
+                print(f"🔄 Removed old region roles from {member.name}")
+            
+            # Add region roles for all user's regions
+            for region in user_regions:
+                role_id = REGION_ROLES.get(region)
+                if role_id:
+                    role = guild.get_role(role_id)
+                    if role and role not in member.roles:
+                        await member.add_roles(role, reason=f"Playing on {region.upper()}")
+                        print(f"✅ Assigned {region.upper()} region role to {member.name}")
     
     except Exception as e:
         print(f"⚠️ Error updating rank/region roles for user {user_id}: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ================================
 #   AUTOMATIC RANK/REGION UPDATE
 # ================================
 @tasks.loop(hours=2)
 async def auto_update_ranks():
-    """Automatically update rank and region roles every 12 hours"""
+    """Automatically update all members' rank and region roles every 2 hours"""
     try:
         print("🔄 Starting automatic rank/region role update...")
-        
         guild = bot.get_guild(GUILD_ID)
         if not guild:
-            print("⚠️ Guild not found for auto rank update")
+            print("⚠️ Guild not found")
             return
         
         db = get_db()
+        updated_count = 0
+        unranked_count = 0
+        error_count = 0
         
-        # Get all users with verified accounts from this guild
-        conn = db.get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT DISTINCT u.snowflake
-                    FROM users u
-                    JOIN guild_members gm ON u.id = gm.user_id
-                    JOIN league_accounts la ON u.id = la.user_id
-                    WHERE gm.guild_id = %s AND la.verified = TRUE
-                """, (GUILD_ID,))
-                users = cur.fetchall()
-        finally:
-            db.return_connection(conn)
-        
-        if not users:
-            print("ℹ️ No users with verified accounts found")
-            return
-        
-        updated = 0
-        failed = 0
-        
-        for (user_id,) in users:
+        # Process ALL guild members
+        for member in guild.members:
+            if member.bot:
+                continue
+            
             try:
-                await update_user_rank_roles(user_id, GUILD_ID)
-                updated += 1
-                # Small delay to avoid rate limiting
-                await asyncio.sleep(1)
+                # Get current rank role
+                old_rank = None
+                for tier, role_id in RANK_ROLES.items():
+                    role = guild.get_role(role_id)
+                    if role and role in member.roles:
+                        old_rank = tier
+                        break
+                
+                # Update roles (this will assign UNRANKED if no accounts)
+                await update_user_rank_roles(member.id, GUILD_ID)
+                
+                # Get new rank role
+                new_rank = None
+                for tier, role_id in RANK_ROLES.items():
+                    role = guild.get_role(role_id)
+                    if role and role in member.roles:
+                        new_rank = tier
+                        break
+                
+                # Log rank changes (promotions/demotions)
+                if old_rank != new_rank:
+                    if old_rank is None:
+                        print(f"📌 {member.name} assigned initial rank: {new_rank}")
+                    elif new_rank == 'UNRANKED' and old_rank != 'UNRANKED':
+                        print(f"📉 {member.name}: {old_rank} → {new_rank} (accounts removed or unranked)")
+                    elif old_rank == 'UNRANKED' and new_rank != 'UNRANKED':
+                        print(f"📈 {member.name}: {old_rank} → {new_rank} (ranked up!)")
+                    else:
+                        rank_priority = {
+                            'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
+                            'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
+                            'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
+                        }
+                        if rank_priority.get(new_rank, -1) > rank_priority.get(old_rank, -1):
+                            print(f"📈 {member.name}: {old_rank} → {new_rank} (promoted!)")
+                        else:
+                            print(f"📉 {member.name}: {old_rank} → {new_rank} (demoted)")
+                    updated_count += 1
+                
+                if new_rank == 'UNRANKED':
+                    unranked_count += 1
+                
+                # Small delay to avoid rate limits
+                await asyncio.sleep(0.5)
+            
             except Exception as e:
-                failed += 1
-                logging.error(f"Failed to auto-update rank roles for {user_id}: {e}")
+                print(f"⚠️ Error updating {member.name}: {e}")
+                error_count += 1
+                continue
         
-        print(f"✅ Auto rank update completed: {updated} updated, {failed} failed")
-        
+        print(f"✅ Auto-update complete: {updated_count} changes, {unranked_count} unranked, {error_count} errors")
+    
     except Exception as e:
-        logging.error(f"❌ Error in auto_update_ranks task: {e}")
+        print(f"⚠️ Auto-update task error: {e}")
+        import traceback
+        traceback.print_exc()
 
 @auto_update_ranks.before_loop
 async def before_auto_update_ranks():
@@ -1308,45 +1361,53 @@ async def update_ranks(interaction: discord.Interaction):
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
         
-        db = get_db()
+        # Update ALL members (not just those with accounts)
+        updated_count = 0
+        unranked_count = 0
+        error_count = 0
         
-        # Get all users with linked accounts from this guild
-        conn = db.get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT DISTINCT u.snowflake
-                    FROM users u
-                    JOIN guild_members gm ON u.id = gm.user_id
-                    JOIN league_accounts la ON u.id = la.user_id
-                    WHERE gm.guild_id = %s AND la.verified = TRUE
-                """, (guild.id,))
-                users = cur.fetchall()
-        finally:
-            db.return_connection(conn)
-        
-        if not users:
-            await interaction.followup.send("ℹ️ No users with verified accounts found in this server.", ephemeral=True)
-            return
-        
-        updated = 0
-        failed = 0
-        
-        for (user_id,) in users:
+        for member in guild.members:
+            if member.bot:
+                continue
+            
             try:
-                await update_user_rank_roles(user_id, guild.id)
-                updated += 1
+                # Get current rank
+                old_rank = None
+                for tier, role_id in RANK_ROLES.items():
+                    role = guild.get_role(role_id)
+                    if role and role in member.roles:
+                        old_rank = tier
+                        break
+                
+                # Update roles
+                await update_user_rank_roles(member.id, guild.id)
+                
+                # Get new rank
+                new_rank = None
+                for tier, role_id in RANK_ROLES.items():
+                    role = guild.get_role(role_id)
+                    if role and role in member.roles:
+                        new_rank = tier
+                        break
+                
+                if old_rank != new_rank:
+                    updated_count += 1
+                
+                if new_rank == 'UNRANKED':
+                    unranked_count += 1
+                
             except Exception as e:
-                failed += 1
-                logging.error(f"Failed to update rank roles for {user_id}: {e}")
+                error_count += 1
+                logging.error(f"Failed to update rank roles for {member.id}: {e}")
         
         embed = discord.Embed(
             title="✅ Rank Roles Updated",
-            color=0x00FF00 if failed == 0 else 0xFFA500
+            color=0x00FF00 if error_count == 0 else 0xFFA500
         )
-        embed.add_field(name="✅ Updated", value=str(updated), inline=True)
-        embed.add_field(name="❌ Failed", value=str(failed), inline=True)
-        embed.add_field(name="📊 Total", value=str(len(users)), inline=True)
+        embed.add_field(name="🔄 Changes", value=str(updated_count), inline=True)
+        embed.add_field(name="📌 Unranked", value=str(unranked_count), inline=True)
+        embed.add_field(name="❌ Errors", value=str(error_count), inline=True)
+        embed.add_field(name="👥 Processed", value=str(len([m for m in guild.members if not m.bot])), inline=True)
         
         await interaction.followup.send(embed=embed, ephemeral=True)
     
