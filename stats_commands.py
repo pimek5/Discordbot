@@ -76,6 +76,11 @@ class StatsCommands(commands.Cog):
             # Validate games parameter
             if games < 5 or games > 20:
                 keep_alive_task.cancel()
+                # Remove loading message before error
+                try:
+                    await interaction.delete_original_response()
+                except Exception:
+                    pass
                 await interaction.followup.send("❌ Games must be between 5 and 20!", ephemeral=True)
                 return
             
@@ -86,6 +91,10 @@ class StatsCommands(commands.Cog):
             db_user = db.get_user_by_discord_id(target.id)
             if not db_user:
                 keep_alive_task.cancel()
+                try:
+                    await interaction.delete_original_response()
+                except Exception:
+                    pass
                 await interaction.followup.send(
                     f"❌ {target.mention} has not linked a Riot account!",
                     ephemeral=True
@@ -105,6 +114,10 @@ class StatsCommands(commands.Cog):
             
             if not primary_account:
                 keep_alive_task.cancel()
+                try:
+                    await interaction.delete_original_response()
+                except Exception:
+                    pass
                 await interaction.followup.send(
                     f"❌ {target.mention} has no verified League account!",
                     ephemeral=True
@@ -120,6 +133,10 @@ class StatsCommands(commands.Cog):
             
             if not match_ids:
                 keep_alive_task.cancel()
+                try:
+                    await interaction.delete_original_response()
+                except Exception:
+                    pass
                 await interaction.followup.send(
                     f"❌ No recent matches found for {summoner_name}!",
                     ephemeral=True
@@ -135,6 +152,11 @@ class StatsCommands(commands.Cog):
                     matches_data.append(match_details)
             
             keep_alive_task.cancel()
+            # Remove loading message before final embed
+            try:
+                await interaction.delete_original_response()
+            except Exception:
+                pass
             
             if not matches_data:
                 await interaction.followup.send("❌ Failed to fetch match details!", ephemeral=True)
@@ -313,6 +335,10 @@ class StatsCommands(commands.Cog):
         except Exception as e:
             keep_alive_task.cancel()
             logger.error(f"Error in /stats: {e}")
+            try:
+                await interaction.delete_original_response()
+            except Exception:
+                pass
             await interaction.followup.send(
                 f"❌ Error fetching match data: {str(e)}",
                 ephemeral=True

@@ -329,9 +329,19 @@ class LeaderboardCommands(commands.Cog):
             
             # Cancel keep-alive task
             keep_alive_task.cancel()
+            # Remove the last loading message before sending the result
+            try:
+                await interaction.delete_original_response()
+            except Exception:
+                pass
             
             if not ranked_members:
                 region_text = f" in {region.upper()}" if region else ""
+                # Remove loading message if still present
+                try:
+                    await interaction.delete_original_response()
+                except Exception:
+                    pass
                 await interaction.followup.send(
                     f"❌ No ranked players found{region_text}!",
                     ephemeral=True
