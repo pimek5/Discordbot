@@ -252,6 +252,7 @@ class DivineSkinsScraper:
             async with aiohttp.ClientSession() as session:
                 async with session.get(mod_url) as response:
                     if response.status != 200:
+                        logger.warning("⚠️ Skin page returned status %s", response.status)
                         return None
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
@@ -260,20 +261,36 @@ class DivineSkinsScraper:
                     og_image = soup.find('meta', property='og:image')
                     if og_image and og_image.get('content'):
                         img_url = og_image['content']
-                        return img_url if img_url.startswith('http') else f"{self.BASE_URL}{img_url}"
+                        final_url = img_url if img_url.startswith('http') else f"{self.BASE_URL}{img_url}"
+                        logger.info("✅ Found og:image: %s", final_url[:100])
+                        return final_url
                     
-                    # Try first large image
+                    # Try twitter:image
+                    twitter_image = soup.find('meta', attrs={'name': 'twitter:image'})
+                    if twitter_image and twitter_image.get('content'):
+                        img_url = twitter_image['content']
+                        final_url = img_url if img_url.startswith('http') else f"{self.BASE_URL}{img_url}"
+                        logger.info("✅ Found twitter:image: %s", final_url[:100])
+                        return final_url
+                    
+                    # Look for skin/preview images
                     for img in soup.find_all('img'):
                         src = img.get('src', '')
-                        if src and ('skin' in src or 'screenshot' in src or 'preview' in src or 'mod' in src):
-                            return src if src.startswith('http') else f"{self.BASE_URL}{src}"
+                        if src and any(kw in src.lower() for kw in ['skin', 'screenshot', 'preview', 'thumbnail', 'gallery', 'mod']):
+                            if 'avatar' not in src.lower() and 'icon' not in src.lower():
+                                final_url = src if src.startswith('http') else f"{self.BASE_URL}{src}"
+                                logger.info("✅ Found keyword image: %s", final_url[:100])
+                                return final_url
                     
-                    # Fallback: any image except avatars
+                    # Fallback: first large image
                     for img in soup.find_all('img'):
                         src = img.get('src', '')
-                        if src and 'avatar' not in src.lower() and 'icon' not in src.lower():
-                            return src if src.startswith('http') else f"{self.BASE_URL}{src}"
+                        if src and 'avatar' not in src.lower() and 'icon' not in src.lower() and 'logo' not in src.lower():
+                            final_url = src if src.startswith('http') else f"{self.BASE_URL}{src}"
+                            logger.info("✅ Found fallback image: %s", final_url[:100])
+                            return final_url
                     
+                    logger.warning("⚠️ No suitable image found on page")
                     return None
         except Exception as e:
             logger.error("❌ Error fetching skin image from %s: %s", mod_url, e)

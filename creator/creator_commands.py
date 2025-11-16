@@ -382,9 +382,6 @@ class CreatorCommands(commands.Cog):
                 url=test_mod['url']
             )
             
-            if profile and profile.get('avatar_url'):
-                embed.set_thumbnail(url=profile['avatar_url'])
-            
             if mod_image_url:
                 embed.set_image(url=mod_image_url)
             
