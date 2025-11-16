@@ -1,3 +1,98 @@
+"""
+HEXRTBRXEN BOT - Discord Bot for League of Legends Community
+==============================================================
+
+TABLE OF CONTENTS:
+------------------
+1. IMPORTS & SETUP (Lines 1-100)
+   - Discord imports
+   - Kassalytics integration
+   - Logging setup
+
+2. CONFIGURATION (Lines 100-200)
+   - Intents & timeouts
+   - Channel & role IDs
+   - Twitter configuration
+   - Thread manager configuration
+   - RuneForge configuration
+   - Auto-slowmode configuration
+   - Rank & region roles
+   - LoLdle configuration
+
+3. BOT CLASS & INITIALIZATION (Lines ~500-750)
+   - MyBot class
+   - on_ready event
+   - on_member_join event
+   - setup_hook
+
+4. RANK ROLE MANAGEMENT (Lines ~725-960)
+   - update_user_rank_roles()
+   - auto_update_ranks() task
+   - Automatic role assignment
+
+5. CHANNEL COUNTER (Lines ~960-1000)
+   - Voice channel member counter
+
+6. ADMIN COMMANDS (Lines ~1000-1500)
+   - /sync_commands
+   - /update_mastery
+   - /update_ranks
+   - /diagnose
+
+7. FIXED MESSAGES (Lines ~1460-1520)
+   - Persistent embeds with buttons
+   - FixedMessageView class
+
+8. THREAD MANAGER (Lines ~1520-2410)
+   - VotingView, ModReviewView
+   - Thread approval system
+   - Vote handling
+
+9. TWITTER POSTER (Lines ~2410-3000)
+   - Tweet monitoring
+   - Tweet fetching (ntscraper, tweepy)
+   - Post to Discord
+
+10. RUNEFORGE MOD MONITOR (Lines ~3000-3500)
+    - Mod monitoring task
+    - Update tracking
+    - Multi-channel support
+
+11. LOLDLE GAME (Lines ~3500-4100)
+    - Daily champion game
+    - Multiple game modes (classic, quote, emoji, ability)
+    - Statistics tracking
+
+12. AUTO-SLOWMODE (Lines ~4100-4270)
+    - Message rate tracking
+    - Automatic slowmode activation
+
+13. BAN SYSTEM (Lines ~4270-4450)
+    - Temporary bans
+    - Ban expiration monitoring
+
+14. INVITE SYSTEM (Lines ~4450-4660)
+    - /invite command
+    - Temporary voice channels
+
+15. MOD COMMANDS (Lines ~4660-5200)
+    - /ban, /unban, /kick
+    - /clear, /lock, /unlock
+    - /mute, /unmute
+    - /rename
+
+16. SERVER COMMANDS (Lines ~5200-5400)
+    - /createpanel
+    - /serverstats
+
+17. BOT STARTUP (Lines ~5400-5820)
+    - Network diagnostics
+    - Bot initialization
+    - Error handling
+
+==============================================================
+"""
+
 import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
@@ -5807,13 +5902,23 @@ async def run_bot_with_retry():
     if not bot.is_closed():
         await bot.close()
 
-try:
-    # Use asyncio.run() with timeout
-    asyncio.run(run_bot_with_retry())
-except KeyboardInterrupt:
-    print("👋 Bot shutdown requested")
-    sys.exit(0)
-except Exception as e:
-    print(f"❌ Fatal error during bot startup: {e}")
-    sys.exit(1)
-    raise
+# Main entry point
+if __name__ == "__main__":
+    try:
+        # Check if we're already in an event loop (e.g., Jupyter, some hosting environments)
+        try:
+            loop = asyncio.get_running_loop()
+            # Already in event loop, create task instead
+            print("⚠️ Already in running event loop, creating task...")
+            loop.create_task(run_bot_with_retry())
+        except RuntimeError:
+            # No running loop, use asyncio.run()
+            asyncio.run(run_bot_with_retry())
+    except KeyboardInterrupt:
+        print("👋 Bot shutdown requested")
+        sys.exit(0)
+    except Exception as e:
+        print(f"❌ Fatal error during bot startup: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
