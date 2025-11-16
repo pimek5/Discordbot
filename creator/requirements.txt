@@ -1,16 +1,9 @@
 # Creator Bot - Requirements
 # Python 3.10+
 
-# Discord
 discord.py>=2.3.2
-
-# Database
 psycopg2-binary>=2.9.9
-
-# Web Scraping
 aiohttp>=3.9.1
 beautifulsoup4>=4.12.2
 lxml>=4.9.3
-
-# Utilities
 python-dotenv>=1.0.0

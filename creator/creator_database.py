@@ -7,7 +7,6 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
 import logging
-from datetime import datetime
 
 logger = logging.getLogger('creator_database')
 
@@ -21,20 +20,18 @@ class CreatorDatabase:
         self.create_tables()
     
     def connect(self):
-        """Connect to PostgreSQL database"""
         try:
             self.conn = psycopg2.connect(DATABASE_URL)
             logger.info("✅ Connected to database")
         except Exception as e:
-            logger.error(f"❌ Database connection failed: {e}")
+            logger.error("❌ Database connection failed: %s", e)
             raise
     
     def create_tables(self):
-        """Create necessary tables if they don't exist"""
         try:
             with self.conn.cursor() as cur:
-                # Creators table
-                cur.execute("""
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS creators (
                         id SERIAL PRIMARY KEY,
                         discord_user_id BIGINT NOT NULL,
@@ -52,10 +49,10 @@ class CreatorDatabase:
                         added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE(discord_user_id, platform, username)
                     )
-                """)
-                
-                # Mods/Skins table
-                cur.execute("""
+                    """
+                )
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS mods (
                         id SERIAL PRIMARY KEY,
                         creator_id INTEGER REFERENCES creators(id) ON DELETE CASCADE,
@@ -68,10 +65,10 @@ class CreatorDatabase:
                         is_update BOOLEAN DEFAULT FALSE,
                         UNIQUE(mod_id, platform)
                     )
-                """)
-                
-                # Notifications log
-                cur.execute("""
+                    """
+                )
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS notification_log (
                         id SERIAL PRIMARY KEY,
                         creator_id INTEGER REFERENCES creators(id) ON DELETE CASCADE,
@@ -79,25 +76,23 @@ class CreatorDatabase:
                         action VARCHAR(50) NOT NULL,
                         notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
-                """)
-                
+                    """
+                )
                 self.conn.commit()
                 logger.info("✅ Database tables created/verified")
-                
         except Exception as e:
-            logger.error(f"❌ Error creating tables: {e}")
+            logger.error("❌ Error creating tables: %s", e)
             self.conn.rollback()
     
     def add_creator(self, discord_user_id: int, platform: str, profile_url: str, profile_data: dict):
-        """Add a new creator to track"""
         try:
             with self.conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO creators 
-                    (discord_user_id, platform, profile_url, username, rank, 
-                     total_mods, total_downloads, total_views, followers, following, joined_date)
+                    (discord_user_id, platform, profile_url, username, rank, total_mods, total_downloads, total_views, followers, following, joined_date)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (discord_user_id, platform, username) 
+                    ON CONFLICT (discord_user_id, platform, username)
                     DO UPDATE SET
                         rank = EXCLUDED.rank,
                         total_mods = EXCLUDED.total_mods,
@@ -107,166 +102,152 @@ class CreatorDatabase:
                         following = EXCLUDED.following,
                         last_updated = CURRENT_TIMESTAMP
                     RETURNING id
-                """, (
-                    discord_user_id,
-                    platform,
-                    profile_url,
-                    profile_data.get('username'),
-                    profile_data.get('rank'),
-                    profile_data.get('total_mods', 0),
-                    profile_data.get('total_downloads', 0),
-                    profile_data.get('total_views', 0),
-                    profile_data.get('followers', 0),
-                    profile_data.get('following', 0),
-                    profile_data.get('joined_date')
-                ))
-                
+                    """,
+                    (
+                        discord_user_id,
+                        platform,
+                        profile_url,
+                        profile_data.get('username'),
+                        profile_data.get('rank'),
+                        profile_data.get('total_mods', 0),
+                        profile_data.get('total_downloads', 0),
+                        profile_data.get('total_views', 0),
+                        profile_data.get('followers', 0),
+                        profile_data.get('following', 0),
+                        profile_data.get('joined_date')
+                    ),
+                )
                 creator_id = cur.fetchone()[0]
                 self.conn.commit()
-                logger.info(f"✅ Creator added/updated: {profile_data.get('username')} (ID: {creator_id})")
+                logger.info("✅ Creator added/updated: %s (ID: %s)", profile_data.get('username'), creator_id)
                 return creator_id
-                
         except Exception as e:
-            logger.error(f"❌ Error adding creator: {e}")
+            logger.error("❌ Error adding creator: %s", e)
             self.conn.rollback()
             return None
     
     def get_creator(self, discord_user_id: int, platform: str):
-        """Get creator by Discord user ID and platform"""
         try:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT * FROM creators 
-                    WHERE discord_user_id = %s AND platform = %s
-                """, (discord_user_id, platform))
-                
+                cur.execute(
+                    """
+                    SELECT * FROM creators WHERE discord_user_id = %s AND platform = %s
+                    """,
+                    (discord_user_id, platform),
+                )
                 return cur.fetchone()
-                
         except Exception as e:
-            logger.error(f"❌ Error getting creator: {e}")
+            logger.error("❌ Error getting creator: %s", e)
             return None
     
     def get_all_creators(self):
-        """Get all tracked creators"""
         try:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("SELECT * FROM creators ORDER BY added_at DESC")
                 return cur.fetchall()
-                
         except Exception as e:
-            logger.error(f"❌ Error getting creators: {e}")
+            logger.error("❌ Error getting creators: %s", e)
             return []
     
     def remove_creator(self, discord_user_id: int, platform: str):
-        """Remove a creator from tracking"""
         try:
             with self.conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     DELETE FROM creators 
                     WHERE discord_user_id = %s AND platform = %s
                     RETURNING id
-                """, (discord_user_id, platform))
-                
+                    """,
+                    (discord_user_id, platform),
+                )
                 result = cur.fetchone()
                 self.conn.commit()
-                
-                if result:
-                    logger.info(f"✅ Creator removed: Discord ID {discord_user_id}, Platform {platform}")
-                    return True
-                return False
-                
+                return bool(result)
         except Exception as e:
-            logger.error(f"❌ Error removing creator: {e}")
+            logger.error("❌ Error removing creator: %s", e)
             self.conn.rollback()
             return False
     
     def add_mod(self, creator_id: int, mod_id: str, mod_name: str, mod_url: str, updated_at: str, platform: str):
-        """Add a new mod/skin"""
         try:
             with self.conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO mods 
-                    (creator_id, mod_id, mod_name, mod_url, platform, updated_at)
+                cur.execute(
+                    """
+                    INSERT INTO mods (creator_id, mod_id, mod_name, mod_url, platform, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (mod_id, platform) DO NOTHING
-                """, (creator_id, mod_id, mod_name, mod_url, platform, updated_at))
-                
+                    """,
+                    (creator_id, mod_id, mod_name, mod_url, platform, updated_at),
+                )
                 self.conn.commit()
-                logger.info(f"✅ Mod added: {mod_name}")
-                
         except Exception as e:
-            logger.error(f"❌ Error adding mod: {e}")
+            logger.error("❌ Error adding mod: %s", e)
             self.conn.rollback()
     
     def get_mod(self, mod_id: str, platform: str):
-        """Get mod by ID and platform"""
         try:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT * FROM mods 
-                    WHERE mod_id = %s AND platform = %s
-                """, (mod_id, platform))
-                
+                cur.execute(
+                    """
+                    SELECT * FROM mods WHERE mod_id = %s AND platform = %s
+                    """,
+                    (mod_id, platform),
+                )
                 return cur.fetchone()
-                
         except Exception as e:
-            logger.error(f"❌ Error getting mod: {e}")
+            logger.error("❌ Error getting mod: %s", e)
             return None
     
     def update_mod(self, mod_id: str, updated_at: str, platform: str):
-        """Update mod's updated_at timestamp"""
         try:
             with self.conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     UPDATE mods 
                     SET updated_at = %s, is_update = TRUE, notified_at = CURRENT_TIMESTAMP
                     WHERE mod_id = %s AND platform = %s
-                """, (updated_at, mod_id, platform))
-                
+                    """,
+                    (updated_at, mod_id, platform),
+                )
                 self.conn.commit()
-                logger.info(f"✅ Mod updated: {mod_id}")
-                
         except Exception as e:
-            logger.error(f"❌ Error updating mod: {e}")
+            logger.error("❌ Error updating mod: %s", e)
             self.conn.rollback()
     
     def get_creator_mods(self, creator_id: int):
-        """Get all mods for a creator"""
         try:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT * FROM mods 
-                    WHERE creator_id = %s
-                    ORDER BY notified_at DESC
-                """, (creator_id,))
-                
+                cur.execute(
+                    """
+                    SELECT * FROM mods WHERE creator_id = %s ORDER BY notified_at DESC
+                    """,
+                    (creator_id,),
+                )
                 return cur.fetchall()
-                
         except Exception as e:
-            logger.error(f"❌ Error getting creator mods: {e}")
+            logger.error("❌ Error getting creator mods: %s", e)
             return []
     
     def log_notification(self, creator_id: int, mod_id: str, action: str):
-        """Log a notification"""
         try:
             with self.conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO notification_log (creator_id, mod_id, action)
                     VALUES (%s, %s, %s)
-                """, (creator_id, mod_id, action))
-                
+                    """,
+                    (creator_id, mod_id, action),
+                )
                 self.conn.commit()
-                
         except Exception as e:
-            logger.error(f"❌ Error logging notification: {e}")
+            logger.error("❌ Error logging notification: %s", e)
             self.conn.rollback()
 
 
-# Singleton instance
 _db_instance = None
 
+
 def get_creator_db():
-    """Get database instance"""
     global _db_instance
     if _db_instance is None:
         _db_instance = CreatorDatabase()
