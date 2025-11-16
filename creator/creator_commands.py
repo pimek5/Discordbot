@@ -313,6 +313,89 @@ class CreatorCommands(commands.Cog):
         except Exception as e:
             logger.error("❌ Test scraper error: %s", e)
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+    
+    @creator_group.command(name="testnotify", description="Test notification embed (Admin only)")
+    @app_commands.describe(
+        platform="Platform to simulate",
+        username="Creator username",
+        mod_name="Mod/Skin name to test"
+    )
+    @app_commands.choices(platform=[
+        app_commands.Choice(name="RuneForge", value="runeforge"),
+        app_commands.Choice(name="Divine Skins", value="divineskins")
+    ])
+    async def test_notification(
+        self,
+        interaction: discord.Interaction,
+        platform: str,
+        username: str,
+        mod_name: str
+    ):
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission to use this command!",
+                ephemeral=True
+            )
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        try:
+            # Fetch profile for avatar
+            if platform == 'runeforge':
+                profile = await self.runeforge_scraper.get_profile_data(username)
+                mods = await self.runeforge_scraper.get_user_mods(username)
+            else:
+                profile = await self.divineskins_scraper.get_profile_data(username)
+                mods = await self.divineskins_scraper.get_user_skins(username)
+            
+            # Use first mod if available, otherwise create test data
+            test_mod = None
+            if mods:
+                test_mod = next((m for m in mods if mod_name.lower() in m['name'].lower()), mods[0])
+            
+            if not test_mod:
+                test_mod = {
+                    'name': mod_name,
+                    'url': f"https://{platform}.example/test",
+                    'views': 1234,
+                    'downloads': 567
+                }
+            
+            # Create notification-style embed
+            platform_emoji = "🔧" if platform == 'runeforge' else "✨"
+            platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
+            
+            embed = discord.Embed(
+                title=f"{platform_emoji} Posted new {'mod' if platform == 'runeforge' else 'skin'}!",
+                description=f"**{test_mod['name']}**",
+                color=0x00FF00,
+                url=test_mod['url']
+            )
+            
+            if profile and profile.get('avatar_url'):
+                embed.set_thumbnail(url=profile['avatar_url'])
+            
+            embed.add_field(name="Author", value=interaction.user.mention, inline=True)
+            embed.add_field(name="Platform", value=platform_name, inline=True)
+            
+            views = test_mod.get('views', 0)
+            downloads = test_mod.get('downloads', 0)
+            
+            if views > 0:
+                embed.add_field(name="👁️ Views", value=f"{views:,}", inline=True)
+            if downloads > 0:
+                embed.add_field(name="📥 Downloads", value=f"{downloads:,}", inline=True)
+            
+            embed.add_field(name="Link", value=f"[View on {platform_name}]({test_mod['url']})", inline=False)
+            embed.set_footer(text="🧪 This is a test notification")
+            
+            await interaction.followup.send("✅ Sending test notification...", ephemeral=True)
+            await interaction.channel.send(embed=embed)
+            
+            logger.info("🧪 Test notification sent by %s", interaction.user)
+        except Exception as e:
+            logger.error("❌ Test notification error: %s", e)
+            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
