@@ -367,8 +367,9 @@ class LeaderboardCommands(commands.Cog):
                 color=0xC89B3C
             )
             
-            # TOP20 leaderboard text
-            leaderboard_text = ""
+            # TOP20 leaderboard text - split into multiple fields to avoid 1024 char limit
+            leaderboard_parts = []
+            current_part = ""
             user_position = None
             
             for i, entry in enumerate(ranked_members[:20], start=1):
@@ -395,18 +396,39 @@ class LeaderboardCommands(commands.Cog):
                 else:
                     rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
                 
-                leaderboard_text += f"{i}. {member.mention} {region_flag} **{data['region']}**\n"
-                leaderboard_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR)\n"
+                entry_text = f"{i}. {member.mention} {region_flag} **{data['region']}**\n"
+                entry_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR)\n"
+                
+                # Check if adding this entry would exceed 1024 characters
+                if len(current_part) + len(entry_text) > 1024:
+                    leaderboard_parts.append(current_part)
+                    current_part = entry_text
+                else:
+                    current_part += entry_text
                 
                 # Check if this is the requested user
                 if user and member.id == user.id:
                     user_position = i
             
-            embed.add_field(
-                name="📊 Rankings",
-                value=leaderboard_text if leaderboard_text else "No ranked players",
-                inline=False
-            )
+            # Add remaining text
+            if current_part:
+                leaderboard_parts.append(current_part)
+            
+            # Add fields for each part
+            if leaderboard_parts:
+                for idx, part in enumerate(leaderboard_parts):
+                    field_name = "📊 Rankings" if idx == 0 else "📊 Rankings (continued)"
+                    embed.add_field(
+                        name=field_name,
+                        value=part,
+                        inline=False
+                    )
+            else:
+                embed.add_field(
+                    name="📊 Rankings",
+                    value="No ranked players",
+                    inline=False
+                )
             
             # If user specified and found in ranking
             if user:
