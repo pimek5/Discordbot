@@ -166,23 +166,16 @@ class CreatorCommands(commands.Cog):
             if profile_data.get('joined_date'): overview_lines.append(f"Joined: **{profile_data['joined_date']}**")
             if overview_lines:
                 embed.add_field(name="Overview", value="\n".join(overview_lines), inline=False)
-            # Top content by views
-            top_lines = []
+            # Recent content (chronological order)
             if content:
-                # ensure numeric views
-                for item in content:
-                    if 'views' not in item or not isinstance(item['views'], int):
-                        item['views'] = 0
-                sorted_items = sorted(content, key=lambda x: x.get('views', 0), reverse=True)
-                top_subset = sorted_items[:5]
-                for itm in top_subset:
-                    views_display = f" • {itm['views']:,} views" if itm.get('views') else ""
-                    top_lines.append(f"• [{itm['name']}]({itm['url']}){views_display}")
-            if top_lines:
-                embed.add_field(name=f"Top {label} (by views)", value="\n".join(top_lines), inline=False)
-            elif content:
                 recent_subset = content[:5]
-                embed.add_field(name=f"Recent {label}", value="\n".join([f"• [{c['name']}]({c['url']})" for c in recent_subset]), inline=False)
+                recent_lines = []
+                for itm in recent_subset:
+                    views_display = f" • {itm.get('views', 0):,} views" if itm.get('views') else ""
+                    downloads_display = f" • {itm.get('downloads', 0):,} downloads" if itm.get('downloads') else ""
+                    stats = views_display + downloads_display
+                    recent_lines.append(f"• [{itm['name']}]({itm['url']}){stats}")
+                embed.add_field(name=f"Recent {label}", value="\n".join(recent_lines), inline=False)
             else:
                 embed.add_field(name=f"{label}", value="No data found", inline=False)
             embed.set_footer(text="Live data fetched; some fields may be missing if platform layout changed")

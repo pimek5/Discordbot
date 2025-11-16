@@ -114,6 +114,8 @@ class CreatorBot(commands.Bot):
                 mod_name = mod['name']
                 mod_url = mod['url']
                 updated_at = mod['updated_at']
+                views = mod.get('views', 0)
+                downloads = mod.get('downloads', 0)
                 
                 existing = db.get_mod(mod_id, 'runeforge')
                 
@@ -124,7 +126,9 @@ class CreatorBot(commands.Bot):
                         'Posted new mod',
                         mod_name,
                         mod_url,
-                        'runeforge'
+                        'runeforge',
+                        views,
+                        downloads
                     )
                     db.add_mod(creator_id, mod_id, mod_name, mod_url, updated_at, 'runeforge')
                 elif existing['updated_at'] != updated_at:
@@ -134,7 +138,9 @@ class CreatorBot(commands.Bot):
                         'Updated mod',
                         mod_name,
                         mod_url,
-                        'runeforge'
+                        'runeforge',
+                        views,
+                        downloads
                     )
                     db.update_mod(mod_id, updated_at, 'runeforge')
                     
@@ -153,6 +159,8 @@ class CreatorBot(commands.Bot):
                 skin_name = skin['name']
                 skin_url = skin['url']
                 updated_at = skin['updated_at']
+                views = skin.get('views', 0)
+                downloads = skin.get('downloads', 0)
                 
                 existing = db.get_mod(skin_id, 'divineskins')
                 
@@ -163,7 +171,9 @@ class CreatorBot(commands.Bot):
                         'Posted new skin',
                         skin_name,
                         skin_url,
-                        'divineskins'
+                        'divineskins',
+                        views,
+                        downloads
                     )
                     db.add_mod(creator_id, skin_id, skin_name, skin_url, updated_at, 'divineskins')
                 elif existing['updated_at'] != updated_at:
@@ -173,14 +183,16 @@ class CreatorBot(commands.Bot):
                         'Updated skin',
                         skin_name,
                         skin_url,
-                        'divineskins'
+                        'divineskins',
+                        views,
+                        downloads
                     )
                     db.update_mod(skin_id, updated_at, 'divineskins')
                     
         except Exception as e:
             logger.error("❌ Error checking Divine Skins for %s: %s", profile_url, e)
     
-    async def send_notification(self, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str):
+    async def send_notification(self, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
         try:
             channel = self.get_channel(NOTIFICATION_CHANNEL_ID)
             if not channel:
@@ -194,14 +206,36 @@ class CreatorBot(commands.Bot):
             platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
             color = 0x00FF00 if 'Posted' in action else 0xFFA500
             
+            # Fetch profile to get avatar for thumbnail
+            avatar_url = None
+            try:
+                if platform == 'runeforge':
+                    profile = await self.runeforge_scraper.get_profile_data(username)
+                else:
+                    profile = await self.divineskins_scraper.get_profile_data(username)
+                if profile:
+                    avatar_url = profile.get('avatar_url')
+            except:
+                pass
+            
             embed = discord.Embed(
                 title=f"{platform_emoji} {action}!",
-                description=f"{user_mention} {action.lower()}: **{mod_name}**",
+                description=f"**{mod_name}**",
                 color=color,
+                url=mod_url,
                 timestamp=datetime.now()
             )
+            
+            if avatar_url:
+                embed.set_thumbnail(url=avatar_url)
+            
+            embed.add_field(name="Author", value=user_mention, inline=True)
             embed.add_field(name="Platform", value=platform_name, inline=True)
-            embed.add_field(name="Link", value=f"[View {mod_name}]({mod_url})", inline=True)
+            if views > 0:
+                embed.add_field(name="👁️ Views", value=f"{views:,}", inline=True)
+            if downloads > 0:
+                embed.add_field(name="📥 Downloads", value=f"{downloads:,}", inline=True)
+            embed.add_field(name="Link", value=f"[View on {platform_name}]({mod_url})", inline=False)
             
             await channel.send(embed=embed)
             logger.info("✅ Notification sent: %s - %s - %s", username, action, mod_name)
