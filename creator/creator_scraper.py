@@ -110,8 +110,8 @@ class RuneForgeScraper:
                         except Exception as e:
                             logger.warning("⚠️ API mods not JSON, trying HTML: %s", e)
             
-            # Fallback to HTML
-            url = f"{self.BASE_URL}/users/{username}/mods"
+            # Fallback to HTML - use page parameter (page=0 is first page)
+            url = f"{self.BASE_URL}/users/{username}/mods?page=0"
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status != 200:
