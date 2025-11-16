@@ -248,6 +248,54 @@ class CreatorCommands(commands.Cog):
         except Exception as e:
             logger.error("❌ Error refreshing creator: %s", e)
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+    
+    @creator_group.command(name="test", description="Test scraping for a creator profile")
+    @app_commands.describe(
+        platform="Platform to test",
+        username="Creator username"
+    )
+    @app_commands.choices(platform=[
+        app_commands.Choice(name="RuneForge", value="runeforge"),
+        app_commands.Choice(name="Divine Skins", value="divineskins")
+    ])
+    async def test_scraper(self, interaction: discord.Interaction, platform: str, username: str):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            # Test profile data
+            if platform == 'runeforge':
+                profile = await self.runeforge_scraper.get_profile_data(username)
+                mods = await self.runeforge_scraper.get_user_mods(username)
+            else:
+                profile = await self.divineskins_scraper.get_profile_data(username)
+                mods = await self.divineskins_scraper.get_user_skins(username)
+            
+            embed = discord.Embed(
+                title=f"🧪 Test Results: {username}",
+                description=f"Platform: **{platform.title()}**",
+                color=0xFFAA00
+            )
+            
+            if profile:
+                embed.add_field(name="✅ Profile Fetched", value="Success", inline=False)
+                profile_text = "\n".join([f"**{k}**: {v}" for k, v in profile.items() if k not in ['username', 'platform']])
+                embed.add_field(name="Profile Data", value=profile_text or "No data", inline=False)
+            else:
+                embed.add_field(name="❌ Profile Failed", value="Could not fetch profile", inline=False)
+            
+            if mods:
+                embed.add_field(name="✅ Content Found", value=f"{len(mods)} items", inline=False)
+                recent = mods[:3]
+                items_text = "\n".join([f"• [{m['name']}]({m['url']})" for m in recent])
+                embed.add_field(name="Recent Items (3)", value=items_text, inline=False)
+            else:
+                embed.add_field(name="⚠️ Content", value="No items found or failed", inline=False)
+            
+            embed.set_footer(text="Use this to verify scraping works before adding creators")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info("🧪 Test scraper executed: %s on %s by %s", username, platform, interaction.user)
+        except Exception as e:
+            logger.error("❌ Test scraper error: %s", e)
+            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

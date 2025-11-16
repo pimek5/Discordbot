@@ -13,9 +13,22 @@ logger = logging.getLogger('creator_scraper')
 
 class RuneForgeScraper:
     BASE_URL = "https://runeforge.dev"
+    API_URL = "https://runeforge.dev/api"
     
     async def get_profile_data(self, username: str) -> dict | None:
         try:
+            # Try API first
+            api_url = f"{self.API_URL}/users/{username}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url) as response:
+                    if response.status == 200:
+                        try:
+                            json_data = await response.json()
+                            return self._parse_api_profile(json_data, username)
+                        except Exception as e:
+                            logger.warning("⚠️ API response not JSON, trying HTML scraping: %s", e)
+            
+            # Fallback to HTML scraping
             url = f"{self.BASE_URL}/users/{username}"
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
@@ -57,8 +70,47 @@ class RuneForgeScraper:
             logger.error("❌ Error scraping RuneForge profile %s: %s", username, e)
             return None
     
+    def _parse_api_profile(self, json_data: dict, username: str) -> dict:
+        """Parse RuneForge API response."""
+        data = {
+            'username': username,
+            'platform': 'runeforge',
+            'profile_url': f"{self.BASE_URL}/users/{username}"
+        }
+        if 'rank' in json_data:
+            data['rank'] = json_data['rank']
+        if 'mods_count' in json_data or 'modsCount' in json_data:
+            data['total_mods'] = json_data.get('mods_count', json_data.get('modsCount', 0))
+        if 'downloads' in json_data or 'total_downloads' in json_data:
+            data['total_downloads'] = json_data.get('downloads', json_data.get('total_downloads', 0))
+        if 'views' in json_data or 'total_views' in json_data:
+            data['total_views'] = json_data.get('views', json_data.get('total_views', 0))
+        if 'followers' in json_data:
+            data['followers'] = json_data['followers']
+        if 'following' in json_data:
+            data['following'] = json_data['following']
+        if 'joined_at' in json_data or 'created_at' in json_data:
+            data['joined_date'] = json_data.get('joined_at', json_data.get('created_at', ''))
+        logger.info("✅ RuneForge API profile parsed: %s", username)
+        return data
+    
     async def get_user_mods(self, username: str) -> list:
         try:
+            # Try API first
+            api_url = f"{self.API_URL}/users/{username}/mods"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url) as response:
+                    if response.status == 200:
+                        try:
+                            json_data = await response.json()
+                            if isinstance(json_data, list):
+                                return self._parse_api_mods(json_data)
+                            elif isinstance(json_data, dict) and 'mods' in json_data:
+                                return self._parse_api_mods(json_data['mods'])
+                        except Exception as e:
+                            logger.warning("⚠️ API mods not JSON, trying HTML: %s", e)
+            
+            # Fallback to HTML
             url = f"{self.BASE_URL}/users/{username}/mods"
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
@@ -110,9 +162,22 @@ class RuneForgeScraper:
 
 class DivineSkinsScraper:
     BASE_URL = "https://divineskins.gg"
+    API_URL = "https://divineskins.gg/api"
     
     async def get_profile_data(self, username: str) -> dict | None:
         try:
+            # Try API first
+            api_url = f"{self.API_URL}/users/{username}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url) as response:
+                    if response.status == 200:
+                        try:
+                            json_data = await response.json()
+                            return self._parse_api_profile(json_data, username)
+                        except Exception as e:
+                            logger.warning("⚠️ Divine Skins API not JSON, trying HTML: %s", e)
+            
+            # Fallback to HTML
             url = f"{self.BASE_URL}/{username}"
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
@@ -138,8 +203,39 @@ class DivineSkinsScraper:
             logger.error("❌ Error scraping Divine Skins profile %s: %s", username, e)
             return None
     
+    def _parse_api_profile(self, json_data: dict, username: str) -> dict:
+        """Parse Divine Skins API response."""
+        data = {
+            'username': username,
+            'platform': 'divineskins',
+            'profile_url': f"{self.BASE_URL}/{username}"
+        }
+        if 'rank' in json_data:
+            data['rank'] = json_data['rank']
+        if 'skins_count' in json_data or 'skinsCount' in json_data:
+            data['total_mods'] = json_data.get('skins_count', json_data.get('skinsCount', 0))
+        if 'downloads' in json_data or 'total_downloads' in json_data:
+            data['total_downloads'] = json_data.get('downloads', json_data.get('total_downloads', 0))
+        logger.info("✅ Divine Skins API profile parsed: %s", username)
+        return data
+    
     async def get_user_skins(self, username: str) -> list:
         try:
+            # Try API first
+            api_url = f"{self.API_URL}/users/{username}/skins"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url) as response:
+                    if response.status == 200:
+                        try:
+                            json_data = await response.json()
+                            if isinstance(json_data, list):
+                                return self._parse_api_skins(json_data)
+                            elif isinstance(json_data, dict) and 'skins' in json_data:
+                                return self._parse_api_skins(json_data['skins'])
+                        except Exception as e:
+                            logger.warning("⚠️ Divine Skins API skins not JSON, trying HTML: %s", e)
+            
+            # Fallback to HTML
             url = f"{self.BASE_URL}/{username}/skins"
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
