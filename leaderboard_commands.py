@@ -396,7 +396,10 @@ class LeaderboardCommands(commands.Cog):
                 else:
                     rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
                 
-                entry_text = f"{i}. {member.mention} {region_flag} **{data['region']}**\n"
+                # Use display name as fallback if mention doesn't render properly
+                user_display = member.mention if member else f"**{data.get('summoner_name', 'Unknown')}**"
+                
+                entry_text = f"{i}. {user_display} {region_flag} **{data['region']}**\n"
                 entry_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR)\n"
                 
                 # Check if adding this entry would exceed 1024 characters
