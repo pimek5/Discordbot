@@ -160,10 +160,32 @@ class LeaderboardCommands(commands.Cog):
     
     @app_commands.command(name="ranktop", description="View TOP20 ranked players on this server")
     @app_commands.describe(
-        user="Show specific user's position in ranking (optional)"
+        user="Show specific user's position in ranking (optional)",
+        region="Filter by specific region (optional)"
     )
-    async def ranktop(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
-        """Show TOP20 ranked players based on highest rank role"""
+    @app_commands.choices(region=[
+        app_commands.Choice(name="🇪🇺 EUW - Europe West", value="euw"),
+        app_commands.Choice(name="🇪🇺 EUNE - Europe Nordic & East", value="eune"),
+        app_commands.Choice(name="🇺🇸 NA - North America", value="na"),
+        app_commands.Choice(name="🇰🇷 KR - Korea", value="kr"),
+        app_commands.Choice(name="🇨🇳 CN - China", value="cn"),
+        app_commands.Choice(name="🇯🇵 JP - Japan", value="jp"),
+        app_commands.Choice(name="🇧🇷 BR - Brazil", value="br"),
+        app_commands.Choice(name="🇲🇽 LAN - Latin America North", value="lan"),
+        app_commands.Choice(name="🇦🇷 LAS - Latin America South", value="las"),
+        app_commands.Choice(name="🇦🇺 OCE - Oceania", value="oce"),
+        app_commands.Choice(name="🇷🇺 RU - Russia", value="ru"),
+        app_commands.Choice(name="🇹🇷 TR - Turkey", value="tr"),
+        app_commands.Choice(name="🇸🇬 SG - Singapore", value="sg"),
+        app_commands.Choice(name="🇵🇭 PH - Philippines", value="ph"),
+        app_commands.Choice(name="🇹🇭 TH - Thailand", value="th"),
+        app_commands.Choice(name="🇹🇼 TW - Taiwan", value="tw"),
+        app_commands.Choice(name="🇻🇳 VN - Vietnam", value="vn"),
+    ])
+    async def ranktop(self, interaction: discord.Interaction, 
+                     user: Optional[discord.User] = None,
+                     region: Optional[str] = None):
+        """Show TOP20 ranked players with detailed stats from database"""
         await interaction.response.defer()
         
         # Must be in a guild
@@ -174,55 +196,98 @@ class LeaderboardCommands(commands.Cog):
             )
             return
         
+        db = get_db()
+        
         # Rank priority for sorting
         rank_priority = {
-            'CHALLENGER': 9,
-            'GRANDMASTER': 8,
-            'MASTER': 7,
-            'DIAMOND': 6,
-            'EMERALD': 5,
-            'PLATINUM': 4,
-            'GOLD': 3,
-            'SILVER': 2,
-            'BRONZE': 1,
-            'IRON': 0,
-            'UNRANKED': -1
+            'CHALLENGER': 9, 'GRANDMASTER': 8, 'MASTER': 7,
+            'DIAMOND': 6, 'EMERALD': 5, 'PLATINUM': 4,
+            'GOLD': 3, 'SILVER': 2, 'BRONZE': 1, 'IRON': 0
         }
         
-        # Get rank role IDs from bot.py
-        from bot import RANK_ROLES
+        division_priority = {'I': 4, 'II': 3, 'III': 2, 'IV': 1}
         
-        # Collect all members with their ranks
+        # Collect all members with their rank data from database
         ranked_members = []
         
         for member in interaction.guild.members:
             if member.bot:
                 continue
             
-            # Find member's rank role
-            member_rank = None
-            for tier, role_id in RANK_ROLES.items():
-                if tier == 'UNRANKED':  # Skip unranked
-                    continue
-                role = interaction.guild.get_role(role_id)
-                if role and role in member.roles:
-                    member_rank = tier
-                    break
+            # Get user from database
+            db_user = db.get_user_by_discord_id(member.id)
+            if not db_user:
+                continue
             
-            # Only add members with ranks (exclude UNRANKED)
-            if member_rank:
+            # Get all accounts
+            accounts = db.get_user_accounts(db_user['id'])
+            if not accounts:
+                continue
+            
+            # Find best rank across all accounts
+            best_rank_data = None
+            best_priority = -1
+            
+            for account in accounts:
+                if not account.get('verified'):
+                    continue
+                
+                # Check region filter
+                if region and account['region'].lower() != region.lower():
+                    continue
+                
+                # Fetch rank data from Riot API
+                try:
+                    ranks = await self.riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
+                    if not ranks:
+                        continue
+                    
+                    # Check Solo/Duo queue
+                    for rank_data in ranks:
+                        if 'SOLO' in rank_data.get('queueType', ''):
+                            tier = rank_data.get('tier', 'UNRANKED')
+                            if tier == 'UNRANKED':
+                                continue
+                            
+                            rank = rank_data.get('rank', 'I')
+                            lp = rank_data.get('leaguePoints', 0)
+                            wins = rank_data.get('wins', 0)
+                            losses = rank_data.get('losses', 0)
+                            
+                            # Calculate priority
+                            tier_priority = rank_priority.get(tier, -1)
+                            div_priority = division_priority.get(rank, 0) if tier not in ['MASTER', 'GRANDMASTER', 'CHALLENGER'] else 4
+                            total_priority = tier_priority * 1000 + div_priority * 100 + lp
+                            
+                            if total_priority > best_priority:
+                                best_priority = total_priority
+                                best_rank_data = {
+                                    'tier': tier,
+                                    'rank': rank,
+                                    'lp': lp,
+                                    'wins': wins,
+                                    'losses': losses,
+                                    'region': account['region'].upper(),
+                                    'riot_name': f"{account['riot_id_game_name']}#{account['riot_id_tagline']}"
+                                }
+                except Exception as e:
+                    continue
+            
+            # Add member if they have rank data
+            if best_rank_data:
                 ranked_members.append({
                     'member': member,
-                    'rank': member_rank,
-                    'priority': rank_priority[member_rank]
+                    'data': best_rank_data,
+                    'priority': best_priority
                 })
         
-        # Sort by rank priority (highest first)
+        # Sort by priority (highest first)
         ranked_members.sort(key=lambda x: x['priority'], reverse=True)
         
         if not ranked_members:
+            region_text = f" in {region.upper()}" if region else ""
             await interaction.followup.send(
-                "❌ No ranked players found on this server!",
+                f"❌ No ranked players found{region_text}!",
                 ephemeral=True
             )
             return
@@ -230,9 +295,18 @@ class LeaderboardCommands(commands.Cog):
         # Get rank emoji
         from emoji_dict import get_rank_emoji
         
+        # Region emoji map
+        region_flags = {
+            'euw': '🇪🇺', 'eune': '🇪🇺', 'na': '🇺🇸', 'kr': '🇰🇷',
+            'jp': '🇯🇵', 'br': '🇧🇷', 'lan': '🇲🇽', 'las': '🇦🇷',
+            'oce': '🇦🇺', 'ru': '🇷🇺', 'tr': '🇹🇷', 'sg': '🇸🇬',
+            'ph': '🇵🇭', 'th': '🇹🇭', 'tw': '🇹🇼', 'vn': '🇻🇳'
+        }
+        
         # Create embed
+        region_text = f" • {region.upper()}" if region else ""
         embed = discord.Embed(
-            title="🏆 Server Rank Leaderboard",
+            title=f"🏆 Server Rank Leaderboard{region_text}",
             description=f"**{interaction.guild.name}** • TOP20 Ranked Players",
             color=0xC89B3C
         )
@@ -243,10 +317,30 @@ class LeaderboardCommands(commands.Cog):
         
         for i, entry in enumerate(ranked_members[:20], start=1):
             member = entry['member']
-            rank = entry['rank']
-            rank_emoji = get_rank_emoji(rank)
+            data = entry['data']
             
-            leaderboard_text += f"{i}. {member.mention} {rank_emoji} **{rank}**\n"
+            tier = data['tier']
+            rank = data['rank']
+            lp = data['lp']
+            wins = data['wins']
+            losses = data['losses']
+            region_code = data['region'].lower()
+            
+            # Calculate winrate
+            total_games = wins + losses
+            winrate = (wins / total_games * 100) if total_games > 0 else 0
+            
+            rank_emoji = get_rank_emoji(tier)
+            region_flag = region_flags.get(region_code, '🌍')
+            
+            # Format rank text
+            if tier in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
+                rank_text = f"{rank_emoji} **{tier.capitalize()}**"
+            else:
+                rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
+            
+            leaderboard_text += f"{i}. {member.mention} {region_flag}\n"
+            leaderboard_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR)\n"
             
             # Check if this is the requested user
             if user and member.id == user.id:
@@ -261,10 +355,21 @@ class LeaderboardCommands(commands.Cog):
         # If user specified and found in ranking
         if user:
             if user_position:
-                rank_emoji = get_rank_emoji(ranked_members[user_position - 1]['rank'])
+                data = ranked_members[user_position - 1]['data']
+                rank_emoji = get_rank_emoji(data['tier'])
+                region_flag = region_flags.get(data['region'].lower(), '🌍')
+                
+                if data['tier'] in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
+                    rank_text = f"{data['tier'].capitalize()}"
+                else:
+                    rank_text = f"{data['tier'].capitalize()} {data['rank']}"
+                
+                total_games = data['wins'] + data['losses']
+                winrate = (data['wins'] / total_games * 100) if total_games > 0 else 0
+                
                 embed.add_field(
                     name=f"📍 {user.display_name}'s Position",
-                    value=f"**#{user_position}** • {rank_emoji} **{ranked_members[user_position - 1]['rank']}**",
+                    value=f"**#{user_position}** • {region_flag} {rank_emoji} **{rank_text}** • {data['lp']} LP • {winrate:.0f}% WR",
                     inline=False
                 )
             else:
@@ -272,10 +377,21 @@ class LeaderboardCommands(commands.Cog):
                 user_found = False
                 for i, entry in enumerate(ranked_members, start=1):
                     if entry['member'].id == user.id:
-                        rank_emoji = get_rank_emoji(entry['rank'])
+                        data = entry['data']
+                        rank_emoji = get_rank_emoji(data['tier'])
+                        region_flag = region_flags.get(data['region'].lower(), '🌍')
+                        
+                        if data['tier'] in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
+                            rank_text = f"{data['tier'].capitalize()}"
+                        else:
+                            rank_text = f"{data['tier'].capitalize()} {data['rank']}"
+                        
+                        total_games = data['wins'] + data['losses']
+                        winrate = (data['wins'] / total_games * 100) if total_games > 0 else 0
+                        
                         embed.add_field(
                             name=f"📍 {user.display_name}'s Position",
-                            value=f"**#{i}** • {rank_emoji} **{entry['rank']}** (Outside TOP20)",
+                            value=f"**#{i}** • {region_flag} {rank_emoji} **{rank_text}** • {data['lp']} LP • {winrate:.0f}% WR (Outside TOP20)",
                             inline=False
                         )
                         user_found = True
@@ -288,6 +404,9 @@ class LeaderboardCommands(commands.Cog):
                         inline=False
                     )
         
+        embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
+        
+        await interaction.followup.send(embed=embed)
         embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
         
         await interaction.followup.send(embed=embed)
