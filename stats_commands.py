@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from typing import Optional
+import asyncio
 import matplotlib
 matplotlib.use('Agg')  # Non-GUI backend
 import matplotlib.pyplot as plt
@@ -58,80 +59,86 @@ class StatsCommands(commands.Cog):
         """Show recent match statistics with performance graphs"""
         await interaction.response.defer()
         
-        # Validate games parameter
-        if games < 5 or games > 20:
-            await interaction.followup.send("❌ Games must be between 5 and 20!", ephemeral=True)
-            return
-        
-        target = user or interaction.user
-        db = get_db()
-        
-        # Get user
-        db_user = db.get_user_by_discord_id(target.id)
-        if not db_user:
-            await interaction.followup.send(
-                f"❌ {target.mention} has not linked a Riot account!",
-                ephemeral=True
-            )
-            return
-        
-        # Get user's primary account
-        accounts = db.get_user_accounts(db_user['id'])
-        primary_account = None
-        for acc in accounts:
-            if acc.get('verified'):
-                if acc.get('primary_account'):
-                    primary_account = acc
+        # Keep interaction alive
+        async def keep_alive():
+            messages = ["⏳ Fetching match data...", "📊 Analyzing performance...", "🎮 Generating statistics..."]
+            for i, msg in enumerate(messages):
+                if i > 0:
+                    await asyncio.sleep(2)
+                try:
+                    await interaction.edit_original_response(content=msg)
+                except:
                     break
-                elif not primary_account:
-                    primary_account = acc
         
-        if not primary_account:
-            await interaction.followup.send(
-                f"❌ {target.mention} has no verified League account!",
-                ephemeral=True
-            )
-            return
+        keep_alive_task = asyncio.create_task(keep_alive())
         
-        puuid = primary_account['puuid']
-        region = primary_account['region']
-        summoner_name = f"{primary_account['riot_id_game_name']}#{primary_account['riot_id_tagline']}"
-        
-        # Fetch match history
         try:
+            # Validate games parameter
+            if games < 5 or games > 20:
+                keep_alive_task.cancel()
+                await interaction.followup.send("❌ Games must be between 5 and 20!", ephemeral=True)
+                return
+            
+            target = user or interaction.user
+            db = get_db()
+            
+            # Get user
+            db_user = db.get_user_by_discord_id(target.id)
+            if not db_user:
+                keep_alive_task.cancel()
+                await interaction.followup.send(
+                    f"❌ {target.mention} has not linked a Riot account!",
+                    ephemeral=True
+                )
+                return
+            
+            # Get user's primary account
+            accounts = db.get_user_accounts(db_user['id'])
+            primary_account = None
+            for acc in accounts:
+                if acc.get('verified'):
+                    if acc.get('primary_account'):
+                        primary_account = acc
+                        break
+                    elif not primary_account:
+                        primary_account = acc
+            
+            if not primary_account:
+                keep_alive_task.cancel()
+                await interaction.followup.send(
+                    f"❌ {target.mention} has no verified League account!",
+                    ephemeral=True
+                )
+                return
+            
+            puuid = primary_account['puuid']
+            region = primary_account['region']
+            summoner_name = f"{primary_account['riot_id_game_name']}#{primary_account['riot_id_tagline']}"
+            
+            # Fetch match history
             match_ids = await self.riot_api.get_match_history(puuid, region, count=games)
             
             if not match_ids:
+                keep_alive_task.cancel()
                 await interaction.followup.send(
                     f"❌ No recent matches found for {summoner_name}!",
                     ephemeral=True
                 )
                 return
             
-            # Fetch match details
+            # Fetch match details with progress updates
             matches_data = []
-            progress_msg = await interaction.followup.send(
-                f"📊 Fetching match data... (0/{len(match_ids)})"
-            )
             
             for idx, match_id in enumerate(match_ids):
                 match_details = await self.riot_api.get_match_details(match_id, region)
                 if match_details:
                     matches_data.append(match_details)
-                
-                # Update progress every 3 matches
-                if (idx + 1) % 3 == 0 or idx == len(match_ids) - 1:
-                    await progress_msg.edit(content=f"📊 Fetching match data... ({idx + 1}/{len(match_ids)})")
+            
+            keep_alive_task.cancel()
             
             if not matches_data:
-                await progress_msg.edit(content="❌ Failed to fetch match details!")
+                await interaction.followup.send("❌ Failed to fetch match details!", ephemeral=True)
                 return
-            
-            # Delete progress message before showing results
-            try:
-                await progress_msg.delete()
-            except:
-                pass  # If deletion fails, continue anyway
             
             # Process match data
             stats_list = []
@@ -160,7 +167,7 @@ class StatsCommands(commands.Cog):
                     })
             
             if not stats_list:
-                await progress_msg.edit(content="❌ No player data found in matches!")
+                await interaction.followup.send("❌ No player data found in matches!", ephemeral=True)
                 return
             
             # Calculate aggregated stats
@@ -294,14 +301,18 @@ class StatsCommands(commands.Cog):
             
             file = discord.File(buf, filename='stats.png')
             
-            await progress_msg.delete()
             await interaction.followup.send(embed=embed, file=file)
             
         except Exception as e:
+            keep_alive_task.cancel()
+            logger.error(f"Error in /stats: {e}")
             await interaction.followup.send(
                 f"❌ Error fetching match data: {str(e)}",
                 ephemeral=True
             )
+        finally:
+            if not keep_alive_task.done():
+                keep_alive_task.cancel()
             print(f"Error in stats command: {e}")
             import traceback
             traceback.print_exc()

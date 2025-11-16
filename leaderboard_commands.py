@@ -15,6 +15,19 @@ from riot_api import RiotAPI, CHAMPION_ID_TO_NAME
 
 logger = logging.getLogger('leaderboard_commands')
 
+async def loading_animation(interaction, messages=None):
+    """Helper function for loading animation"""
+    if messages is None:
+        messages = ["⏳ Loading data...", "📊 Processing...", "🎮 Preparing results..."]
+    
+    for i, msg in enumerate(messages):
+        if i > 0:
+            await asyncio.sleep(2)
+        try:
+            await interaction.edit_original_response(content=msg)
+        except:
+            break
+
 def find_champion_id(champion_name: str) -> Optional[tuple]:
     """Find champion by name (case insensitive, partial match)"""
     champion_lower = champion_name.lower()
