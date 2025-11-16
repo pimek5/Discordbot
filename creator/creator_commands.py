@@ -134,34 +134,58 @@ class CreatorCommands(commands.Cog):
                     ephemeral=True
                 )
                 return
-            
+            username = creator['username']
+            label = "Mods" if platform == 'runeforge' else "Skins"
+            # Fetch fresh profile + content
+            if platform == 'runeforge':
+                fresh_profile = await self.runeforge_scraper.get_profile_data(username)
+                content = await self.runeforge_scraper.get_user_mods(username)
+            else:
+                fresh_profile = await self.divineskins_scraper.get_profile_data(username)
+                content = await self.divineskins_scraper.get_user_skins(username)
+            profile_data = fresh_profile or creator  # fallback to DB if scraper fails
             embed = discord.Embed(
-                title=f"{'🔧' if platform == 'runeforge' else '✨'} {creator['username']}",
+                title=f"{'🔧' if platform == 'runeforge' else '✨'} {username}",
                 description=f"**{platform.title()}** Profile",
                 color=0x1F8EFA if platform == 'runeforge' else 0x9B59B6,
                 url=creator['profile_url']
             )
             embed.set_author(name=target_user.display_name, icon_url=target_user.display_avatar.url)
-            if creator.get('rank'):
-                embed.add_field(name="Rank", value=creator['rank'], inline=True)
-            label = "Mods" if platform == 'runeforge' else "Skins"
-            if creator.get('total_mods'):
-                embed.add_field(name=label, value=f"{creator['total_mods']:,}", inline=True)
-            if creator.get('total_downloads'):
-                embed.add_field(name="Downloads", value=f"{creator['total_downloads']:,}", inline=True)
-            if creator.get('total_views'):
-                embed.add_field(name="Views", value=f"{creator['total_views']:,}", inline=True)
-            if creator.get('followers'):
-                embed.add_field(name="Followers", value=f"{creator['followers']:,}", inline=True)
-            if creator.get('following'):
-                embed.add_field(name="Following", value=f"{creator['following']:,}", inline=True)
-            if creator.get('joined_date'):
-                embed.add_field(name="Joined", value=creator['joined_date'], inline=False)
-            mods = db.get_creator_mods(creator['id'])
-            if mods:
-                recent = mods[:5]
-                mods_text = "\n".join([f"• [{m['mod_name']}]({m['mod_url']})" for m in recent])
-                embed.add_field(name=f"Recent {label} ({len(mods)} total)", value=mods_text, inline=False)
+            if profile_data.get('avatar_url'):
+                embed.set_thumbnail(url=profile_data['avatar_url'])
+            if profile_data.get('banner_url'):
+                embed.set_image(url=profile_data['banner_url'])
+            # Overview block
+            overview_lines = []
+            if profile_data.get('rank'): overview_lines.append(f"Rank: **{profile_data['rank']}**")
+            if profile_data.get('total_mods') is not None: overview_lines.append(f"{label}: **{profile_data.get('total_mods', 0):,}**")
+            if profile_data.get('total_downloads'): overview_lines.append(f"Downloads: **{profile_data['total_downloads']:,}**")
+            if profile_data.get('total_views'): overview_lines.append(f"Views: **{profile_data['total_views']:,}**")
+            if profile_data.get('followers'): overview_lines.append(f"Followers: **{profile_data['followers']:,}**")
+            if profile_data.get('following'): overview_lines.append(f"Following: **{profile_data['following']:,}**")
+            if profile_data.get('joined_date'): overview_lines.append(f"Joined: **{profile_data['joined_date']}**")
+            if overview_lines:
+                embed.add_field(name="Overview", value="\n".join(overview_lines), inline=False)
+            # Top content by views
+            top_lines = []
+            if content:
+                # ensure numeric views
+                for item in content:
+                    if 'views' not in item or not isinstance(item['views'], int):
+                        item['views'] = 0
+                sorted_items = sorted(content, key=lambda x: x.get('views', 0), reverse=True)
+                top_subset = sorted_items[:5]
+                for itm in top_subset:
+                    views_display = f" • {itm['views']:,} views" if itm.get('views') else ""
+                    top_lines.append(f"• [{itm['name']}]({itm['url']}){views_display}")
+            if top_lines:
+                embed.add_field(name=f"Top {label} (by views)", value="\n".join(top_lines), inline=False)
+            elif content:
+                recent_subset = content[:5]
+                embed.add_field(name=f"Recent {label}", value="\n".join([f"• [{c['name']}]({c['url']})" for c in recent_subset]), inline=False)
+            else:
+                embed.add_field(name=f"{label}", value="No data found", inline=False)
+            embed.set_footer(text="Live data fetched; some fields may be missing if platform layout changed")
             await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
             logger.error("❌ Error viewing profile: %s", e)
