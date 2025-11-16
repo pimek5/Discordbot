@@ -726,15 +726,21 @@ bot = MyBot()
 #        RANK ROLE MANAGEMENT
 # ================================
 async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
-    """Update Discord roles based on League rank and regions"""
+    """Update Discord roles based on League rank and regions
+    
+    Returns:
+        bool: True if any changes were made, False if no changes needed
+    """
     try:
         guild = bot.get_guild(guild_id)
         if not guild:
-            return
+            return False
         
         member = guild.get_member(user_id)
         if not member:
-            return
+            return False
+        
+        changes_made = False
         
         db = get_db()
         db_user = db.get_user_by_discord_id(user_id)
@@ -780,56 +786,83 @@ async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
                         continue
         
         # ===== UPDATE RANK ROLES =====
-        # Remove all rank roles first
-        roles_to_remove = []
+        # Check current rank role
+        current_rank_role = None
         for tier, role_id in RANK_ROLES.items():
             if role_id:
                 role = guild.get_role(role_id)
                 if role and role in member.roles:
-                    roles_to_remove.append(role)
+                    current_rank_role = tier
+                    break
         
-        if roles_to_remove:
-            await member.remove_roles(*roles_to_remove, reason="Rank role update")
-            print(f"🔄 Removed old rank roles from {member.name}")
-        
-        # Add new rank role (always add at least UNRANKED)
-        new_role_id = RANK_ROLES.get(highest_rank)
-        if new_role_id:
-            new_role = guild.get_role(new_role_id)
-            if new_role:
-                if new_role not in member.roles:
-                    await member.add_roles(new_role, reason=f"League rank: {highest_rank}")
-                    print(f"✅ Assigned {highest_rank} role to {member.name}")
-            else:
-                print(f"⚠️ Role {highest_rank} (ID: {new_role_id}) not found in guild")
+        # Only update if rank changed
+        if current_rank_role != highest_rank:
+            changes_made = True
+            # Remove old rank roles
+            roles_to_remove = []
+            for tier, role_id in RANK_ROLES.items():
+                if role_id and tier != highest_rank:
+                    role = guild.get_role(role_id)
+                    if role and role in member.roles:
+                        roles_to_remove.append(role)
+            
+            if roles_to_remove:
+                await member.remove_roles(*roles_to_remove, reason="Rank role update")
+                print(f"🔄 Removed old rank roles from {member.name}")
+            
+            # Add new rank role
+            new_role_id = RANK_ROLES.get(highest_rank)
+            if new_role_id:
+                new_role = guild.get_role(new_role_id)
+                if new_role:
+                    if new_role not in member.roles:
+                        await member.add_roles(new_role, reason=f"League rank: {highest_rank}")
+                        print(f"✅ Assigned {highest_rank} role to {member.name}")
+                else:
+                    print(f"⚠️ Role {highest_rank} (ID: {new_role_id}) not found in guild")
         
         # ===== UPDATE REGION ROLES =====
         if user_regions:
-            # Remove region roles that user no longer has
-            region_roles_to_remove = []
+            # Check which region roles need to be changed
+            current_region_roles = set()
             for region, role_id in REGION_ROLES.items():
                 if role_id:
                     role = guild.get_role(role_id)
-                    if role and role in member.roles and region not in user_regions:
-                        region_roles_to_remove.append(role)
+                    if role and role in member.roles:
+                        current_region_roles.add(region)
             
-            if region_roles_to_remove:
-                await member.remove_roles(*region_roles_to_remove, reason="Region role update")
-                print(f"🔄 Removed old region roles from {member.name}")
-            
-            # Add region roles for all user's regions
-            for region in user_regions:
-                role_id = REGION_ROLES.get(region)
-                if role_id:
-                    role = guild.get_role(role_id)
-                    if role and role not in member.roles:
-                        await member.add_roles(role, reason=f"Playing on {region.upper()}")
-                        print(f"✅ Assigned {region.upper()} region role to {member.name}")
+            # Only update if regions changed
+            if current_region_roles != user_regions:
+                changes_made = True
+                
+                # Remove region roles that user no longer has
+                region_roles_to_remove = []
+                for region, role_id in REGION_ROLES.items():
+                    if role_id:
+                        role = guild.get_role(role_id)
+                        if role and role in member.roles and region not in user_regions:
+                            region_roles_to_remove.append(role)
+                
+                if region_roles_to_remove:
+                    await member.remove_roles(*region_roles_to_remove, reason="Region role update")
+                    print(f"🔄 Removed old region roles from {member.name}")
+                
+                # Add region roles for all user's regions
+                for region in user_regions:
+                    role_id = REGION_ROLES.get(region)
+                    if role_id:
+                        role = guild.get_role(role_id)
+                        if role and role not in member.roles:
+                            await member.add_roles(role, reason=f"Playing on {region.upper()}")
+                            print(f"✅ Assigned {region.upper()} region role to {member.name}")
+        
+        return changes_made
     
     except Exception as e:
         print(f"⚠️ Error updating rank/region roles for user {user_id}: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 # ================================
 #   AUTOMATIC RANK/REGION UPDATE
@@ -846,6 +879,7 @@ async def auto_update_ranks():
         
         db = get_db()
         updated_count = 0
+        skipped_count = 0
         unranked_count = 0
         error_count = 0
         
@@ -863,8 +897,12 @@ async def auto_update_ranks():
                         old_rank = tier
                         break
                 
-                # Update roles (this will assign UNRANKED if no accounts)
-                await update_user_rank_roles(member.id, GUILD_ID)
+                # Update roles (returns True if changes were made)
+                changed = await update_user_rank_roles(member.id, GUILD_ID)
+                
+                if not changed:
+                    skipped_count += 1
+                    continue
                 
                 # Get new rank role
                 new_rank = None
@@ -905,7 +943,7 @@ async def auto_update_ranks():
                 error_count += 1
                 continue
         
-        print(f"✅ Auto-update complete: {updated_count} changes, {unranked_count} unranked, {error_count} errors")
+        print(f"✅ Auto-update complete: {updated_count} changes, {skipped_count} skipped (no changes), {unranked_count} unranked, {error_count} errors")
     
     except Exception as e:
         print(f"⚠️ Auto-update task error: {e}")
@@ -1363,6 +1401,7 @@ async def update_ranks(interaction: discord.Interaction):
         
         # Update ALL members (not just those with accounts)
         updated_count = 0
+        skipped_count = 0
         unranked_count = 0
         error_count = 0
         
@@ -1371,16 +1410,21 @@ async def update_ranks(interaction: discord.Interaction):
                 continue
             
             try:
-                # Get current rank
-                old_rank = None
-                for tier, role_id in RANK_ROLES.items():
-                    role = guild.get_role(role_id)
-                    if role and role in member.roles:
-                        old_rank = tier
-                        break
+                # Update roles (returns True if changes were made)
+                changed = await update_user_rank_roles(member.id, guild.id)
                 
-                # Update roles
-                await update_user_rank_roles(member.id, guild.id)
+                if not changed:
+                    skipped_count += 1
+                    # Still count unranked even if no change
+                    for tier, role_id in RANK_ROLES.items():
+                        if tier == 'UNRANKED':
+                            role = guild.get_role(role_id)
+                            if role and role in member.roles:
+                                unranked_count += 1
+                            break
+                    continue
+                
+                updated_count += 1
                 
                 # Get new rank
                 new_rank = None
@@ -1389,9 +1433,6 @@ async def update_ranks(interaction: discord.Interaction):
                     if role and role in member.roles:
                         new_rank = tier
                         break
-                
-                if old_rank != new_rank:
-                    updated_count += 1
                 
                 if new_rank == 'UNRANKED':
                     unranked_count += 1
@@ -1405,6 +1446,7 @@ async def update_ranks(interaction: discord.Interaction):
             color=0x00FF00 if error_count == 0 else 0xFFA500
         )
         embed.add_field(name="🔄 Changes", value=str(updated_count), inline=True)
+        embed.add_field(name="⏭️ Skipped", value=str(skipped_count), inline=True)
         embed.add_field(name="📌 Unranked", value=str(unranked_count), inline=True)
         embed.add_field(name="❌ Errors", value=str(error_count), inline=True)
         embed.add_field(name="👥 Processed", value=str(len([m for m in guild.members if not m.bot])), inline=True)
