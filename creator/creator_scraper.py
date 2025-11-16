@@ -42,37 +42,58 @@ class RuneForgeScraper:
                         'platform': 'runeforge',
                         'profile_url': url
                     }
-                    # TODO: Update selectors based on real structure
-                    rank_elem = soup.find('div', class_='rank')
-                    if rank_elem:
-                        data['rank'] = rank_elem.get_text(strip=True)
-                    # Avatar / banner heuristics
-                    avatar = soup.find('img', class_=re.compile('avatar|profile', re.I)) or soup.find('img', attrs={'alt': re.compile(username, re.I)})
-                    if avatar and avatar.get('src'):
-                        data['avatar_url'] = avatar['src']
-                    banner_div = soup.find('div', class_=re.compile('banner|header', re.I))
-                    if banner_div and banner_div.get('style') and 'url(' in banner_div['style']:
-                        m = re.search(r'url\(([^)]+)\)', banner_div['style'])
-                        if m:
-                            data['banner_url'] = m.group(1).strip('"\'')
-                    mods_elem = soup.find('div', class_='mods-count')
-                    if mods_elem:
-                        data['total_mods'] = self._parse_number(mods_elem.get_text(strip=True))
-                    downloads_elem = soup.find('div', class_='downloads-count')
-                    if downloads_elem:
-                        data['total_downloads'] = self._parse_number(downloads_elem.get_text(strip=True))
-                    views_elem = soup.find('div', class_='views-count')
-                    if views_elem:
-                        data['total_views'] = self._parse_number(views_elem.get_text(strip=True))
-                    followers_elem = soup.find('div', class_='followers-count')
-                    if followers_elem:
-                        data['followers'] = self._parse_number(followers_elem.get_text(strip=True))
-                    following_elem = soup.find('div', class_='following-count')
-                    if following_elem:
-                        data['following'] = self._parse_number(following_elem.get_text(strip=True))
-                    joined_elem = soup.find('div', class_='join-date')
-                    if joined_elem:
-                        data['joined_date'] = joined_elem.get_text(strip=True)
+                    
+                    # Avatar - find first image with profile/avatar in src
+                    for img in soup.find_all('img'):
+                        src = img.get('src', '')
+                        alt = img.get('alt', '').lower()
+                        if 'avatar' in alt or 'profile' in alt or 'avatar' in src or username in alt:
+                            if src.startswith('http'):
+                                data['avatar_url'] = src
+                            elif src.startswith('/'):
+                                data['avatar_url'] = f"https://runeforge.dev{src}"
+                            break
+                    
+                    # Parse text for stats using regex patterns
+                    page_text = soup.get_text()
+                    
+                    # Mods count - look for pattern like "24mods"
+                    mods_match = re.search(r'(\d+)\s*mods?', page_text, re.I)
+                    if mods_match:
+                        data['total_mods'] = int(mods_match.group(1))
+                    
+                    # Downloads - look for "55.2k downloads"
+                    downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*downloads?', page_text, re.I)
+                    if downloads_match:
+                        data['total_downloads'] = self._parse_number(downloads_match.group(1))
+                    
+                    # Views - look for "185.4k views"
+                    views_match = re.search(r'([\d,\.]+[kKmM]?)\s*views?', page_text, re.I)
+                    if views_match:
+                        data['total_views'] = self._parse_number(views_match.group(1))
+                    
+                    # Followers
+                    followers_match = re.search(r'(\d+)\s*followers?', page_text, re.I)
+                    if followers_match:
+                        data['followers'] = int(followers_match.group(1))
+                    
+                    # Following
+                    following_match = re.search(r'(\d+)\s*following', page_text, re.I)
+                    if following_match:
+                        data['following'] = int(following_match.group(1))
+                    
+                    # Joined date - "Joined X months ago"
+                    joined_match = re.search(r'Joined\s+(.+?)(?:\n|$|Overview|Mods)', page_text, re.I)
+                    if joined_match:
+                        data['joined_date'] = joined_match.group(1).strip()
+                    
+                    # Rank - look for "Creator" or similar badge
+                    rank_match = re.search(r'@\w+\s*(\w+)\s*\d+\s*mods', page_text, re.I)
+                    if rank_match:
+                        potential_rank = rank_match.group(1)
+                        if potential_rank.lower() in ['creator', 'contributor', 'developer', 'admin', 'moderator']:
+                            data['rank'] = potential_rank
+                    
                     logger.info("✅ RuneForge profile fetched: %s", username)
                     return data
         except Exception as e:
@@ -130,26 +151,49 @@ class RuneForgeScraper:
                      html = await response.text()
                      soup = BeautifulSoup(html, 'html.parser')
                      mods = []
-                     cards = soup.find_all('div', class_='mod-card')
-                     for card in cards:
+                     seen_urls = set()
+                     # Find all links with /mods/ in href
+                     mod_links = soup.find_all('a', href=lambda x: x and '/mods/' in x and x != '/mods')
+                     for link in mod_links:
                          try:
-                             link = card.find('a', href=True)
-                             if not link:
+                             mod_url = link.get('href', '')
+                             if not mod_url or mod_url in seen_urls:
                                  continue
-                             mod_url = link['href']
                              if not mod_url.startswith('http'):
                                  mod_url = f"{self.BASE_URL}{mod_url}"
-                             mod_id = mod_url.split('/')[-1]
+                             seen_urls.add(mod_url)
+                             mod_id = mod_url.rstrip('/').split('/')[-1]
                              mod_name = link.get_text(strip=True)
-                             time_el = card.find('time')
-                             updated_at = time_el.get('datetime', '') if time_el else ''
-                             views_el = card.find(string=re.compile('views', re.I))
-                             downloads_el = card.find(string=re.compile('downloads', re.I))
-                             views = self._parse_number(views_el) if views_el else 0
-                             downloads = self._parse_number(downloads_el) if downloads_el else 0
-                             mods.append({'id': mod_id, 'name': mod_name, 'url': mod_url, 'updated_at': updated_at, 'views': views, 'downloads': downloads})
+                             if not mod_name:
+                                 continue
+                             # Try to find stats in parent or sibling elements
+                             parent = link.find_parent()
+                             views = 0
+                             downloads = 0
+                             updated_at = ''
+                             if parent:
+                                 # Look for time element
+                                 time_el = parent.find('time')
+                                 if time_el:
+                                     updated_at = time_el.get('datetime', '')
+                                 # Look for stats text
+                                 stats_text = parent.get_text()
+                                 views_match = re.search(r'([\d,\.]+)\s*k?\s*views?', stats_text, re.I)
+                                 downloads_match = re.search(r'([\d,\.]+)\s*k?\s*downloads?', stats_text, re.I)
+                                 if views_match:
+                                     views = self._parse_number(views_match.group(1))
+                                 if downloads_match:
+                                     downloads = self._parse_number(downloads_match.group(1))
+                             mods.append({
+                                 'id': mod_id, 
+                                 'name': mod_name, 
+                                 'url': mod_url, 
+                                 'updated_at': updated_at, 
+                                 'views': views, 
+                                 'downloads': downloads
+                             })
                          except Exception as e:
-                             logger.error("❌ Error parsing mod card: %s", e)
+                             logger.error("❌ Error parsing mod link: %s", e)
                              continue
                      logger.info("✅ Found %s mods for %s on RuneForge", len(mods), username)
                      return mods
