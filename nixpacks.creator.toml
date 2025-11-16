@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["python310", "gcc"]
+
+[phases.install]
+cmds = ["pip install -r creator_requirements.txt"]
+
+[start]
+cmd = "python creator_bot.py"
