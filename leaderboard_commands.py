@@ -170,7 +170,7 @@ class LeaderboardCommands(commands.Cog):
         
         embed.set_footer(text=f"Requested by {interaction.user.name}")
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, delete_after=30)
     
     @app_commands.command(name="ranktop", description="View TOP20 ranked players on this server")
     @app_commands.describe(
@@ -243,209 +243,209 @@ class LeaderboardCommands(commands.Cog):
             
             division_priority = {'I': 4, 'II': 3, 'III': 2, 'IV': 1}
         
-        # Collect all members with their rank data from database
-        ranked_members = []
-        
-        for member in interaction.guild.members:
-            if member.bot:
-                continue
+            # Collect all members with their rank data from database
+            ranked_members = []
             
-            # Get user from database
-            db_user = db.get_user_by_discord_id(member.id)
-            if not db_user:
-                continue
-            
-            # Get all accounts
-            accounts = db.get_user_accounts(db_user['id'])
-            if not accounts:
-                continue
-            
-            # Find best rank across all accounts
-            best_rank_data = None
-            best_priority = -1
-            
-            for account in accounts:
-                if not account.get('verified'):
+            for member in interaction.guild.members:
+                if member.bot:
                     continue
                 
-                # Check region filter
-                if region and account['region'].lower() != region.lower():
+                # Get user from database
+                db_user = db.get_user_by_discord_id(member.id)
+                if not db_user:
                     continue
                 
-                # Fetch rank data from Riot API
-                try:
-                    ranks = await self.riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
-                    if not ranks:
+                # Get all accounts
+                accounts = db.get_user_accounts(db_user['id'])
+                if not accounts:
+                    continue
+                
+                # Find best rank across all accounts
+                best_rank_data = None
+                best_priority = -1
+                
+                for account in accounts:
+                    if not account.get('verified'):
                         continue
                     
-                    # Check Solo/Duo queue
-                    for rank_data in ranks:
-                        if 'SOLO' in rank_data.get('queueType', ''):
-                            tier = rank_data.get('tier', 'UNRANKED')
-                            if tier == 'UNRANKED':
-                                continue
-                            
-                            rank = rank_data.get('rank', 'I')
-                            lp = rank_data.get('leaguePoints', 0)
-                            wins = rank_data.get('wins', 0)
-                            losses = rank_data.get('losses', 0)
-                            
-                            # Calculate priority
-                            tier_priority = rank_priority.get(tier, -1)
-                            div_priority = division_priority.get(rank, 0) if tier not in ['MASTER', 'GRANDMASTER', 'CHALLENGER'] else 4
-                            total_priority = tier_priority * 1000 + div_priority * 100 + lp
-                            
-                            if total_priority > best_priority:
-                                best_priority = total_priority
-                                best_rank_data = {
-                                    'tier': tier,
-                                    'rank': rank,
-                                    'lp': lp,
-                                    'wins': wins,
-                                    'losses': losses,
-                                    'region': account['region'].upper(),
-                                    'riot_name': f"{account['riot_id_game_name']}#{account['riot_id_tagline']}"
-                                }
-                except Exception as e:
-                    continue
-            
-            # Add member if they have rank data
-            if best_rank_data:
-                ranked_members.append({
-                    'member': member,
-                    'data': best_rank_data,
-                    'priority': best_priority
-                })
-            
-        # Sort by priority (highest first)
-        ranked_members.sort(key=lambda x: x['priority'], reverse=True)
-        
-        # Cancel keep-alive task
-        keep_alive_task.cancel()
-        
-        if not ranked_members:
-            region_text = f" in {region.upper()}" if region else ""
-            await interaction.followup.send(
-                f"❌ No ranked players found{region_text}!",
-                ephemeral=True
-            )
-            return
-            
-        # Get rank emoji
-        from emoji_dict import get_rank_emoji
-        
-        # Region emoji map
-        region_flags = {
-            'euw': '🇪🇺', 'eune': '🇪🇺', 'na': '🇺🇸', 'kr': '🇰🇷',
-            'jp': '🇯🇵', 'br': '🇧🇷', 'lan': '🇲🇽', 'las': '🇦🇷',
-            'oce': '🇦🇺', 'ru': '🇷🇺', 'tr': '🇹🇷', 'sg': '🇸🇬',
-            'ph': '🇵🇭', 'th': '🇹🇭', 'tw': '🇹🇼', 'vn': '🇻🇳'
-        }
-        
-        # Create embed
-        region_text = f" • {region.upper()}" if region else ""
-        embed = discord.Embed(
-            title=f"🏆 Server Rank Leaderboard{region_text}",
-            description=f"**{interaction.guild.name}** • TOP20 Ranked Players",
-            color=0xC89B3C
-        )
-        
-        # TOP20 leaderboard text
-        leaderboard_text = ""
-        user_position = None
-        
-        for i, entry in enumerate(ranked_members[:20], start=1):
-            member = entry['member']
-            data = entry['data']
-            
-            tier = data['tier']
-            rank = data['rank']
-            lp = data['lp']
-            wins = data['wins']
-            losses = data['losses']
-            region_code = data['region'].lower()
-            
-            # Calculate winrate
-            total_games = wins + losses
-            winrate = (wins / total_games * 100) if total_games > 0 else 0
-            
-            rank_emoji = get_rank_emoji(tier)
-            region_flag = region_flags.get(region_code, '🌍')
-            
-            # Format rank text
-            if tier in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
-                rank_text = f"{rank_emoji} **{tier.capitalize()}**"
-            else:
-                rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
-            
-            leaderboard_text += f"{i}. {member.mention} {region_flag}\n"
-            leaderboard_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR)\n"
-            
-            # Check if this is the requested user
-            if user and member.id == user.id:
-                user_position = i
-        
-        embed.add_field(
-            name="📊 Rankings",
-            value=leaderboard_text if leaderboard_text else "No ranked players",
-            inline=False
-        )
-        
-        # If user specified and found in ranking
-        if user:
-            if user_position:
-                data = ranked_members[user_position - 1]['data']
-                rank_emoji = get_rank_emoji(data['tier'])
-                region_flag = region_flags.get(data['region'].lower(), '🌍')
+                    # Check region filter
+                    if region and account['region'].lower() != region.lower():
+                        continue
+                    
+                    # Fetch rank data from Riot API
+                    try:
+                        ranks = await self.riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
+                        if not ranks:
+                            continue
+                        
+                        # Check Solo/Duo queue
+                        for rank_data in ranks:
+                            if 'SOLO' in rank_data.get('queueType', ''):
+                                tier = rank_data.get('tier', 'UNRANKED')
+                                if tier == 'UNRANKED':
+                                    continue
+                                
+                                rank = rank_data.get('rank', 'I')
+                                lp = rank_data.get('leaguePoints', 0)
+                                wins = rank_data.get('wins', 0)
+                                losses = rank_data.get('losses', 0)
+                                
+                                # Calculate priority
+                                tier_priority = rank_priority.get(tier, -1)
+                                div_priority = division_priority.get(rank, 0) if tier not in ['MASTER', 'GRANDMASTER', 'CHALLENGER'] else 4
+                                total_priority = tier_priority * 1000 + div_priority * 100 + lp
+                                
+                                if total_priority > best_priority:
+                                    best_priority = total_priority
+                                    best_rank_data = {
+                                        'tier': tier,
+                                        'rank': rank,
+                                        'lp': lp,
+                                        'wins': wins,
+                                        'losses': losses,
+                                        'region': account['region'].upper(),
+                                        'riot_name': f"{account['riot_id_game_name']}#{account['riot_id_tagline']}"
+                                    }
+                    except Exception as e:
+                        continue
                 
-                if data['tier'] in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
-                    rank_text = f"{data['tier'].capitalize()}"
-                else:
-                    rank_text = f"{data['tier'].capitalize()} {data['rank']}"
+                # Add member if they have rank data
+                if best_rank_data:
+                    ranked_members.append({
+                        'member': member,
+                        'data': best_rank_data,
+                        'priority': best_priority
+                    })
                 
-                total_games = data['wins'] + data['losses']
-                winrate = (data['wins'] / total_games * 100) if total_games > 0 else 0
-                
-                embed.add_field(
-                    name=f"📍 {user.display_name}'s Position",
-                    value=f"**#{user_position}** • {region_flag} {rank_emoji} **{rank_text}** • {data['lp']} LP • {winrate:.0f}% WR",
-                    inline=False
+            # Sort by priority (highest first)
+            ranked_members.sort(key=lambda x: x['priority'], reverse=True)
+            
+            # Cancel keep-alive task
+            keep_alive_task.cancel()
+            
+            if not ranked_members:
+                region_text = f" in {region.upper()}" if region else ""
+                await interaction.followup.send(
+                    f"❌ No ranked players found{region_text}!",
+                    ephemeral=True
                 )
-            else:
-                # Check if user is ranked but outside TOP20
-                user_found = False
-                for i, entry in enumerate(ranked_members, start=1):
-                    if entry['member'].id == user.id:
-                        data = entry['data']
-                        rank_emoji = get_rank_emoji(data['tier'])
-                        region_flag = region_flags.get(data['region'].lower(), '🌍')
-                        
-                        if data['tier'] in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
-                            rank_text = f"{data['tier'].capitalize()}"
-                        else:
-                            rank_text = f"{data['tier'].capitalize()} {data['rank']}"
-                        
-                        total_games = data['wins'] + data['losses']
-                        winrate = (data['wins'] / total_games * 100) if total_games > 0 else 0
-                        
-                        embed.add_field(
-                            name=f"📍 {user.display_name}'s Position",
-                            value=f"**#{i}** • {region_flag} {rank_emoji} **{rank_text}** • {data['lp']} LP • {winrate:.0f}% WR (Outside TOP20)",
-                            inline=False
-                        )
-                        user_found = True
-                        break
+                return
                 
-                if not user_found:
+            # Get rank emoji
+            from emoji_dict import get_rank_emoji
+            
+            # Region emoji map
+            region_flags = {
+                'euw': '🇪🇺', 'eune': '🇪🇺', 'na': '🇺🇸', 'kr': '🇰🇷',
+                'jp': '🇯🇵', 'br': '🇧🇷', 'lan': '🇲🇽', 'las': '🇦🇷',
+                'oce': '🇦🇺', 'ru': '🇷🇺', 'tr': '🇹🇷', 'sg': '🇸🇬',
+                'ph': '🇵🇭', 'th': '🇹🇭', 'tw': '🇹🇼', 'vn': '🇻🇳'
+            }
+            
+            # Create embed
+            region_text = f" • {region.upper()}" if region else ""
+            embed = discord.Embed(
+                title=f"🏆 Server Rank Leaderboard{region_text}",
+                description=f"**{interaction.guild.name}** • TOP20 Ranked Players",
+                color=0xC89B3C
+            )
+            
+            # TOP20 leaderboard text
+            leaderboard_text = ""
+            user_position = None
+            
+            for i, entry in enumerate(ranked_members[:20], start=1):
+                member = entry['member']
+                data = entry['data']
+                
+                tier = data['tier']
+                rank = data['rank']
+                lp = data['lp']
+                wins = data['wins']
+                losses = data['losses']
+                region_code = data['region'].lower()
+                
+                # Calculate winrate
+                total_games = wins + losses
+                winrate = (wins / total_games * 100) if total_games > 0 else 0
+                
+                rank_emoji = get_rank_emoji(tier)
+                region_flag = region_flags.get(region_code, '🌍')
+                
+                # Format rank text
+                if tier in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
+                    rank_text = f"{rank_emoji} **{tier.capitalize()}**"
+                else:
+                    rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
+                
+                leaderboard_text += f"{i}. {member.mention} {region_flag} **{data['region']}**\n"
+                leaderboard_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR)\n"
+                
+                # Check if this is the requested user
+                if user and member.id == user.id:
+                    user_position = i
+            
+            embed.add_field(
+                name="📊 Rankings",
+                value=leaderboard_text if leaderboard_text else "No ranked players",
+                inline=False
+            )
+            
+            # If user specified and found in ranking
+            if user:
+                if user_position:
+                    data = ranked_members[user_position - 1]['data']
+                    rank_emoji = get_rank_emoji(data['tier'])
+                    region_flag = region_flags.get(data['region'].lower(), '🌍')
+                    
+                    if data['tier'] in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
+                        rank_text = f"{data['tier'].capitalize()}"
+                    else:
+                        rank_text = f"{data['tier'].capitalize()} {data['rank']}"
+                    
+                    total_games = data['wins'] + data['losses']
+                    winrate = (data['wins'] / total_games * 100) if total_games > 0 else 0
+                    
                     embed.add_field(
                         name=f"📍 {user.display_name}'s Position",
-                        value="**Unranked** • Not in leaderboard",
+                        value=f"**#{user_position}** • {region_flag} **{data['region']}** • {rank_emoji} **{rank_text}** • {data['lp']} LP • {winrate:.0f}% WR",
                         inline=False
                     )
-        
-        embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
-        
-        await interaction.followup.send(embed=embed)
+                else:
+                    # Check if user is ranked but outside TOP20
+                    user_found = False
+                    for i, entry in enumerate(ranked_members, start=1):
+                        if entry['member'].id == user.id:
+                            data = entry['data']
+                            rank_emoji = get_rank_emoji(data['tier'])
+                            region_flag = region_flags.get(data['region'].lower(), '🌍')
+                            
+                            if data['tier'] in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
+                                rank_text = f"{data['tier'].capitalize()}"
+                            else:
+                                rank_text = f"{data['tier'].capitalize()} {data['rank']}"
+                            
+                            total_games = data['wins'] + data['losses']
+                            winrate = (data['wins'] / total_games * 100) if total_games > 0 else 0
+                            
+                            embed.add_field(
+                                name=f"📍 {user.display_name}'s Position",
+                                value=f"**#{i}** • {region_flag} **{data['region']}** • {rank_emoji} **{rank_text}** • {data['lp']} LP • {winrate:.0f}% WR (Outside TOP20)",
+                                inline=False
+                            )
+                            user_found = True
+                            break
+                    
+                    if not user_found:
+                        embed.add_field(
+                            name=f"📍 {user.display_name}'s Position",
+                            value="**Unranked** • Not in leaderboard",
+                            inline=False
+                        )
+            
+            embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
+            
+            await interaction.followup.send(embed=embed, delete_after=30)
         
         except Exception as e:
             keep_alive_task.cancel()

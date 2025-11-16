@@ -4890,7 +4890,7 @@ async def ban_user(
         
         embed.add_field(name="📨 DM", value="✅ Sent" if dm_sent else "❌ Failed (DMs disabled)", inline=True)
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, delete_after=30)
         
         # Log to mod log channel if exists
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID) if 'LOG_CHANNEL_ID' in globals() else None
@@ -4967,7 +4967,7 @@ async def unban_user(interaction: discord.Interaction, user_id: str, reason: Opt
         embed.add_field(name="🔨 Moderator", value=interaction.user.mention, inline=True)
         embed.add_field(name="📋 Reason", value=reason, inline=False)
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, delete_after=30)
         
     except ValueError:
         await interaction.followup.send("❌ Invalid user ID! Must be a number.", ephemeral=True)
@@ -5288,7 +5288,7 @@ async def review_appeal(interaction: discord.Interaction, appeal_id: int, action
         if action == "approved":
             embed.add_field(name="🔓 Unban", value="✅ Success" if unban_success else "❌ Failed (may need manual unban)", inline=True)
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, delete_after=30)
         
     except Exception as e:
         print(f"Error reviewing appeal: {e}")
@@ -5385,7 +5385,7 @@ async def serverstats(interaction: discord.Interaction):
         
         embed.set_footer(text=f"Requested by {interaction.user.name}")
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, delete_after=30)
         
     except Exception as e:
         print(f"Error in serverstats: {e}")

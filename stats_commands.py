@@ -301,7 +301,7 @@ class StatsCommands(commands.Cog):
             
             file = discord.File(buf, filename='stats.png')
             
-            await interaction.followup.send(embed=embed, file=file)
+            await interaction.followup.send(embed=embed, file=file, delete_after=30)
             
         except Exception as e:
             keep_alive_task.cancel()
@@ -363,7 +363,7 @@ class StatsCommands(commands.Cog):
                 description="No mastery data found!",
                 color=0x808080
             )
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed, delete_after=30)
             return
         
         # Build embed
@@ -398,7 +398,7 @@ class StatsCommands(commands.Cog):
             )
         
         embed.set_footer(text=f"Requested by {interaction.user.name}")
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, delete_after=30)
     
     @app_commands.command(name="compare", description="Compare champion mastery between two players")
     @app_commands.describe(
@@ -530,7 +530,7 @@ class StatsCommands(commands.Cog):
         
         embed.set_footer(text=f"Requested by {interaction.user.name}")
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, delete_after=30)
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
     """Setup stats commands"""

@@ -81,10 +81,12 @@ def calculate_match_stats(matches: list, puuid: str) -> dict:
         stats['vision_score'] += player_data.get('visionScore', 0)
         
         # Game duration in minutes
+        # gameDuration is in seconds for newer matches (typical: 1200-2400s = 20-40min)
+        # and milliseconds for very old matches (would be > 1000000)
         duration = info.get('gameDuration', 0)
-        if duration > 1000:  # Old format (milliseconds)
-            duration = duration / 1000
-        stats['game_duration'] += duration / 60
+        if duration > 10000:  # Likely milliseconds (games can't be longer than ~2.7 hours = 10000s)
+            duration = duration / 1000  # Convert milliseconds to seconds
+        stats['game_duration'] += duration / 60  # Convert seconds to minutes
         
         # Role tracking
         role = player_data.get('teamPosition', 'UTILITY')
@@ -563,7 +565,7 @@ class ProfileCommands(commands.Cog):
                     value="Use `/link riot_id:<Name#TAG> region:<region>` to link your account!",
                     inline=False
                 )
-                await interaction.followup.send(embed=embed)
+                await interaction.followup.send(embed=embed, delete_after=30)
                 return
             
             # Get all accounts (including hidden ones for /accounts command)
@@ -898,7 +900,7 @@ class ProfileCommands(commands.Cog):
                         f"**CS/min:** {avg_cs_per_min:.1f} • **Vision:** {avg_vision:.0f}"
                     ]
                 
-                    noted_emoji = get_other_emoji('noted')
+                    noted_emoji = "<:Noted:1436595827748634634>"
                     embed.add_field(
                         name=f"{noted_emoji} Recent Performance ({recent_games_count} games)",
                         value="\n".join(perf_lines),
@@ -1077,7 +1079,7 @@ class ProfileCommands(commands.Cog):
                 embed.set_thumbnail(url="https://cdn.discordapp.com/avatars/1274276113660645389/a_445fd12821cb7e77b1258cc379f07da7.gif?size=1024")
             else:
                 embed.add_field(
-                    name=f"{get_other_emoji('noted')} Champion Mastery",
+                    name=f"<:Noted:1436595827748634634> Champion Mastery",
                     value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
                     inline=False
                 )
@@ -1206,7 +1208,7 @@ class ProfileCommands(commands.Cog):
             except:
                 pass  # Ignore if already deleted
             
-            message = await interaction.followup.send(embed=embed, view=view)
+            message = await interaction.followup.send(embed=embed, view=view, delete_after=30)
             view.message = message  # Store message for deletion on timeout
         
         finally:
@@ -1607,14 +1609,14 @@ class ProfileCommands(commands.Cog):
                             })
         
             if not all_ranked_matches:
-                noted_emoji = get_other_emoji('noted')
+                noted_emoji = "<:Noted:1436595827748634634>"
                 embed = discord.Embed(
                     title=f"{noted_emoji} LP Balance - Today",
                     description=f"**{target_user.display_name}** hasn't played any ranked games today.",
                     color=0x808080
                 )
                 embed.set_footer(text=f"Play some ranked to see your LP gains!")
-                await interaction.followup.send(embed=embed)
+                await interaction.followup.send(embed=embed, delete_after=30)
                 return
         
             # Sort by timestamp (oldest first)
@@ -1709,7 +1711,7 @@ class ProfileCommands(commands.Cog):
             )
         
             embed.add_field(
-                name=f"{get_other_emoji('noted')} Summary",
+                name=f"<:Noted:1436595827748634634> Summary",
                 value=summary_text,
                 inline=False
             )
@@ -1727,7 +1729,7 @@ class ProfileCommands(commands.Cog):
             except:
                 pass  # Ignore if already deleted
             
-            message = await interaction.followup.send(embed=embed)
+            message = await interaction.followup.send(embed=embed, delete_after=30)
         
             # Auto-delete after 2 minutes
             await asyncio.sleep(120)
@@ -1882,7 +1884,7 @@ class ProfileCommands(commands.Cog):
         avg_kda = f"{total_kills/len(all_matches):.1f}/{total_deaths/len(all_matches):.1f}/{total_assists/len(all_matches):.1f}"
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
         
-        noted_emoji = get_other_emoji('noted')
+        noted_emoji = "<:Noted:1436595827748634634>"
         embed.add_field(
             name=f"{noted_emoji} Combined Stats",
             value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%)\n**Avg KDA:** {avg_kda}",
@@ -1892,7 +1894,7 @@ class ProfileCommands(commands.Cog):
         accounts_list = ", ".join([f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}" for acc in all_accounts if acc.get('verified')])
         embed.set_footer(text=f"Accounts: {accounts_list}")
         
-        message = await interaction.followup.send(embed=embed)
+        message = await interaction.followup.send(embed=embed, delete_after=30)
         
         # Auto-delete after 2 minutes
         await asyncio.sleep(120)
@@ -2574,7 +2576,7 @@ class ProfileView(discord.ui.View):
             embed.set_thumbnail(url="https://cdn.discordapp.com/avatars/1274276113660645389/a_445fd12821cb7e77b1258cc379f07da7.gif?size=1024")
         else:
             embed.add_field(
-                name=f"{get_other_emoji('noted')} Champion Mastery",
+                name=f"<:Noted:1436595827748634634> Champion Mastery",
                 value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
                 inline=False
             )
@@ -2675,8 +2677,11 @@ class ProfileView(discord.ui.View):
     
     async def create_stats_embed(self) -> discord.Embed:
         """Create statistics embed with detailed performance data"""
+        # Use direct emoji format instead of get_other_emoji
+        noted_emoji = "<:Noted:1436595827748634634>"
+        
         embed = discord.Embed(
-            title=f"{get_other_emoji('noted')} **{self.target_user.display_name}'s Statistics**",
+            title=f"{noted_emoji} **{self.target_user.display_name}'s Statistics**",
             color=0x1F8EFA
         )
         
@@ -2874,7 +2879,7 @@ class ProfileView(discord.ui.View):
                 f"**To Objectives:** {avg_to_obj:,.0f}/game\n"
                 f"**Mitigated:** {avg_mitigated:,.0f}/game"
             )
-            embed.add_field(name="💎 **Damage Breakdown**", value=damage_text, inline=False)
+            embed.add_field(name="💎 **Damage Breakdown** (last 20 games)", value=damage_text, inline=False)
         
         # Spacer
         embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -2926,6 +2931,13 @@ class ProfileView(discord.ui.View):
         if obj_games > 0:
             total_drakes = dragons.get('total', 0)
             
+            # Calculate averages per game
+            avg_drakes = total_drakes / obj_games
+            avg_barons = barons / obj_games
+            avg_heralds = heralds / obj_games
+            avg_towers = towers / obj_games
+            avg_inhibs = inhibs / obj_games
+            
             # Use objective emojis
             dragon_emoji = get_objective_emoji('dragon_elder')
             baron_emoji = get_objective_emoji('baron')
@@ -2934,11 +2946,11 @@ class ProfileView(discord.ui.View):
             inhib_emoji = get_objective_emoji('inhibitor')
             
             obj_text = (
-                f"{dragon_emoji} **Dragons:** {total_drakes}\n"
-                f"{baron_emoji} **Barons:** {barons} • {herald_emoji} **Heralds:** {heralds}\n"
-                f"{tower_emoji} **Towers:** {towers} • {inhib_emoji} **Inhibitors:** {inhibs}"
+                f"{dragon_emoji} **Dragons:** {avg_drakes:.1f}/game\n"
+                f"{baron_emoji} **Barons:** {avg_barons:.1f}/game • {herald_emoji} **Heralds:** {avg_heralds:.1f}/game\n"
+                f"{tower_emoji} **Towers:** {avg_towers:.1f}/game • {inhib_emoji} **Inhibitors:** {avg_inhibs:.1f}/game"
             )
-            embed.add_field(name="🎯 **Objective Control**", value=obj_text, inline=False)
+            embed.add_field(name="🎯 **Objective Control** (last 20 games)", value=obj_text, inline=False)
         
         # Spacer
         embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -2973,7 +2985,7 @@ class ProfileView(discord.ui.View):
                 f"**@15min:** {avg_15:,.0f}g\n"
                 f"**@20min:** {avg_20:,.0f}g"
             )
-            embed.add_field(name=f"{get_other_emoji('noted')} **Gold Timeline**", value=timeline_text, inline=True)
+            embed.add_field(name=f"<:Noted:1436595827748634634> **Gold Timeline** (last 10 games)", value=timeline_text, inline=True)
             
             # Early game performance
             if avg_10 >= 4000:
@@ -3070,7 +3082,7 @@ class ProfileView(discord.ui.View):
 
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
         embed.add_field(
-            name=f"{get_other_emoji('noted')} Summary",
+            name=f"<:Noted:1436595827748634634> Summary",
             value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%) • {len(filtered_matches)} total games",
             inline=False
         )
@@ -3210,7 +3222,7 @@ class ProfileView(discord.ui.View):
         # Summary
         lp_display = f"+{total_lp_change}" if total_lp_change > 0 else str(total_lp_change)
         embed.add_field(
-            name=f"{get_other_emoji('noted')} Summary",
+            name=f"<:Noted:1436595827748634634> Summary",
             value=f"**Total:** {lp_display} LP\n**Record:** {wins}W - {losses}L\n**Games Played:** {wins + losses}",
             inline=False
         )
