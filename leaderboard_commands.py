@@ -158,17 +158,12 @@ class LeaderboardCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="ranktop", description="View ranked leaderboard for this server")
+    @app_commands.command(name="ranktop", description="View TOP20 ranked players on this server")
     @app_commands.describe(
-        queue="Queue type (default: Solo/Duo)"
+        user="Show specific user's position in ranking (optional)"
     )
-    @app_commands.choices(queue=[
-        app_commands.Choice(name="Solo/Duo", value="RANKED_SOLO_5x5"),
-        app_commands.Choice(name="Flex", value="RANKED_FLEX_SR"),
-    ])
-    async def ranktop(self, interaction: discord.Interaction, 
-                     queue: str = "RANKED_SOLO_5x5"):
-        """Show top ranked players on this server"""
+    async def ranktop(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
+        """Show TOP20 ranked players based on highest rank role"""
         await interaction.response.defer()
         
         # Must be in a guild
@@ -179,79 +174,121 @@ class LeaderboardCommands(commands.Cog):
             )
             return
         
-        db = get_db()
+        # Rank priority for sorting
+        rank_priority = {
+            'CHALLENGER': 9,
+            'GRANDMASTER': 8,
+            'MASTER': 7,
+            'DIAMOND': 6,
+            'EMERALD': 5,
+            'PLATINUM': 4,
+            'GOLD': 3,
+            'SILVER': 2,
+            'BRONZE': 1,
+            'IRON': 0,
+            'UNRANKED': -1
+        }
         
-        # Get leaderboard for this server only
-        leaderboard = db.get_rank_leaderboard(guild_id=interaction.guild.id, queue=queue, limit=10)
+        # Get rank role IDs from bot.py
+        from bot import RANK_ROLES
         
-        if not leaderboard:
-            queue_name = "Solo/Duo" if queue == "RANKED_SOLO_5x5" else "Flex"
+        # Collect all members with their ranks
+        ranked_members = []
+        
+        for member in interaction.guild.members:
+            if member.bot:
+                continue
+            
+            # Find member's rank role
+            member_rank = None
+            for tier, role_id in RANK_ROLES.items():
+                if tier == 'UNRANKED':  # Skip unranked
+                    continue
+                role = interaction.guild.get_role(role_id)
+                if role and role in member.roles:
+                    member_rank = tier
+                    break
+            
+            # Only add members with ranks (exclude UNRANKED)
+            if member_rank:
+                ranked_members.append({
+                    'member': member,
+                    'rank': member_rank,
+                    'priority': rank_priority[member_rank]
+                })
+        
+        # Sort by rank priority (highest first)
+        ranked_members.sort(key=lambda x: x['priority'], reverse=True)
+        
+        if not ranked_members:
             await interaction.followup.send(
-                f"❌ No ranked data recorded for **{queue_name}** on this server!",
+                "❌ No ranked players found on this server!",
                 ephemeral=True
             )
             return
         
-        # Create embed
-        queue_name = "Solo/Duo" if queue == "RANKED_SOLO_5x5" else "Flex"
-        embed = discord.Embed(
-            title=f"🏆 Ranked Leaderboard - {queue_name}",
-            description=f"Top players on **{interaction.guild.name}**",
-            color=0xC89B3C  # Gold color
-        )
-        
-        # Medal emojis for top 3
-        medals = ["🥇", "🥈", "🥉"]
-        
-        # Tier emojis (using updated IDs from emoji_dict)
+        # Get rank emoji
         from emoji_dict import get_rank_emoji
         
-        for i, entry in enumerate(leaderboard):
-            position = i + 1
-            
-            # Get Discord user
-            try:
-                user = await self.bot.fetch_user(entry['snowflake'])
-                username = user.display_name
-            except:
-                username = f"{entry['riot_id_game_name']}#{entry['riot_id_tagline']}"
-            
-            tier = entry['tier']
-            rank = entry.get('rank', '')  # Master+ doesn't have rank
-            lp = entry['league_points']
-            wins = entry['wins']
-            losses = entry['losses']
-            
-            # Calculate winrate
-            total_games = wins + losses
-            winrate = (wins / total_games * 100) if total_games > 0 else 0
-            
-            # Get tier emoji from emoji_dict
-            tier_emoji = get_rank_emoji(tier)
-            
-            # Format rank text
-            if tier in ['CHALLENGER', 'GRANDMASTER', 'MASTER']:
-                rank_text = f"{tier_emoji} **{tier.capitalize()}**"
-            else:
-                rank_text = f"{tier_emoji} **{tier.capitalize()} {rank}**"
-            
-            # Position emoji
-            if position <= 3:
-                pos_emoji = medals[position - 1]
-            else:
-                pos_emoji = f"**{position}.**"
-            
-            # Field value with stats
-            value = f"{rank_text} • **{lp} LP**\n"
-            value += f"📊 {wins}W {losses}L ({winrate:.1f}% WR)"
-            
-            embed.add_field(
-                name=f"{pos_emoji} {username}",
-                value=value,
-                inline=False
-            )
+        # Create embed
+        embed = discord.Embed(
+            title="🏆 Server Rank Leaderboard",
+            description=f"**{interaction.guild.name}** • TOP20 Ranked Players",
+            color=0xC89B3C
+        )
         
-        embed.set_footer(text=f"Requested by {interaction.user.name}")
+        # TOP20 leaderboard text
+        leaderboard_text = ""
+        user_position = None
+        
+        for i, entry in enumerate(ranked_members[:20], start=1):
+            member = entry['member']
+            rank = entry['rank']
+            rank_emoji = get_rank_emoji(rank)
+            
+            leaderboard_text += f"{i}. {member.mention} {rank_emoji} **{rank}**\n"
+            
+            # Check if this is the requested user
+            if user and member.id == user.id:
+                user_position = i
+        
+        embed.add_field(
+            name="📊 Rankings",
+            value=leaderboard_text if leaderboard_text else "No ranked players",
+            inline=False
+        )
+        
+        # If user specified and found in ranking
+        if user:
+            if user_position:
+                rank_emoji = get_rank_emoji(ranked_members[user_position - 1]['rank'])
+                embed.add_field(
+                    name=f"📍 {user.display_name}'s Position",
+                    value=f"**#{user_position}** • {rank_emoji} **{ranked_members[user_position - 1]['rank']}**",
+                    inline=False
+                )
+            else:
+                # Check if user is ranked but outside TOP20
+                user_found = False
+                for i, entry in enumerate(ranked_members, start=1):
+                    if entry['member'].id == user.id:
+                        rank_emoji = get_rank_emoji(entry['rank'])
+                        embed.add_field(
+                            name=f"📍 {user.display_name}'s Position",
+                            value=f"**#{i}** • {rank_emoji} **{entry['rank']}** (Outside TOP20)",
+                            inline=False
+                        )
+                        user_found = True
+                        break
+                
+                if not user_found:
+                    embed.add_field(
+                        name=f"📍 {user.display_name}'s Position",
+                        value="**Unranked** • Not in leaderboard",
+                        inline=False
+                    )
+        
+        embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
         
         await interaction.followup.send(embed=embed)
 
