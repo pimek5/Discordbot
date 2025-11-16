@@ -246,6 +246,39 @@ class DivineSkinsScraper:
     BASE_URL = "https://divineskins.gg"
     API_URL = "https://divineskins.gg/api"
     
+    async def get_mod_image(self, mod_url: str) -> str | None:
+        """Fetch the main/thumbnail image from a skin page."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(mod_url) as response:
+                    if response.status != 200:
+                        return None
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    # Try og:image meta tag
+                    og_image = soup.find('meta', property='og:image')
+                    if og_image and og_image.get('content'):
+                        img_url = og_image['content']
+                        return img_url if img_url.startswith('http') else f"{self.BASE_URL}{img_url}"
+                    
+                    # Try first large image
+                    for img in soup.find_all('img'):
+                        src = img.get('src', '')
+                        if src and ('skin' in src or 'screenshot' in src or 'preview' in src or 'mod' in src):
+                            return src if src.startswith('http') else f"{self.BASE_URL}{src}"
+                    
+                    # Fallback: any image except avatars
+                    for img in soup.find_all('img'):
+                        src = img.get('src', '')
+                        if src and 'avatar' not in src.lower() and 'icon' not in src.lower():
+                            return src if src.startswith('http') else f"{self.BASE_URL}{src}"
+                    
+                    return None
+        except Exception as e:
+            logger.error("❌ Error fetching skin image from %s: %s", mod_url, e)
+            return None
+    
     async def get_profile_data(self, username: str) -> dict | None:
         try:
             # Try API first
