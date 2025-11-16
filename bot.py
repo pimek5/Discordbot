@@ -1552,6 +1552,62 @@ async def update_ranks(interaction: discord.Interaction):
         logging.error(f"Error in update_ranks: {e}")
         await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
+@bot.tree.command(name="rankupdate", description="Update your rank roles based on your League accounts")
+async def rankupdate(interaction: discord.Interaction):
+    """Update rank roles for the user who runs the command"""
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        # Update only the user's roles
+        changed = await update_user_rank_roles(interaction.user.id, guild.id)
+        
+        if not changed:
+            # Get current rank to show user
+            current_rank = None
+            for tier, role_id in RANK_ROLES.items():
+                role = guild.get_role(role_id)
+                if role and role in interaction.user.roles:
+                    current_rank = tier
+                    break
+            
+            rank_text = f"**{current_rank}**" if current_rank else "**UNRANKED**"
+            await interaction.followup.send(
+                f"✅ Your rank roles are already up to date! Current rank: {rank_text}",
+                ephemeral=True
+            )
+            return
+        
+        # Get new rank after update
+        new_rank = None
+        for tier, role_id in RANK_ROLES.items():
+            role = guild.get_role(role_id)
+            if role and role in interaction.user.roles:
+                new_rank = tier
+                break
+        
+        rank_text = f"**{new_rank}**" if new_rank else "**UNRANKED**"
+        
+        embed = discord.Embed(
+            title="✅ Rank Roles Updated",
+            description=f"Your Discord roles have been updated based on your League accounts!",
+            color=0x00FF00
+        )
+        embed.add_field(name="Current Rank", value=rank_text, inline=False)
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Error updating your rank: {str(e)}",
+            ephemeral=True
+        )
+        logging.error(f"Error in rankupdate for {interaction.user.id}: {e}")
+
 # ================================
 #        FIXED MESSAGES
 # ================================

@@ -37,8 +37,14 @@ class HelpView(discord.ui.View):
         )
         
         embed.add_field(
-            name="/verify",
-            value="Verify your Riot account ownership\n`/verify code:ABC123`",
+            name="/verifyacc",
+            value="Complete account verification and update roles\n`/verifyacc`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/setmain",
+            value="Set your main Riot account\n`/setmain`",
             inline=False
         )
         
@@ -67,6 +73,12 @@ class HelpView(discord.ui.View):
         )
         
         embed.add_field(
+            name="/rankupdate",
+            value="Update your Discord rank roles based on your League accounts\n`/rankupdate`",
+            inline=False
+        )
+        
+        embed.add_field(
             name="/unlink",
             value="Unlink your Riot account\n`/unlink`",
             inline=False
@@ -85,20 +97,32 @@ class HelpView(discord.ui.View):
         )
         
         embed.add_field(
-            name="/vote start",
-            value="Start a new voting session\n`/vote start duration:60 exclude:Yasuo,Yone`",
+            name="/vote",
+            value="Vote for your top 5 champions\n`/vote`",
             inline=False
         )
         
         embed.add_field(
-            name="/vote end",
-            value="End the current voting session and show results\n`/vote end`",
+            name="/votestart",
+            value="Start a new voting session (Admin)\n`/votestart duration:60 exclude:Yasuo,Yone`",
             inline=False
         )
         
         embed.add_field(
-            name="/vote status",
-            value="Check current voting status\n`/vote status`",
+            name="/votestop",
+            value="Stop the current voting session and show results (Admin)\n`/votestop`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/voteexclude",
+            value="Exclude champions from voting (Admin)\n`/voteexclude champions:Yasuo,Yone`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/voteinclude",
+            value="Remove champion from exclusion list (Admin)\n`/voteinclude champion:Yasuo`",
             inline=False
         )
         
@@ -117,7 +141,60 @@ class HelpView(discord.ui.View):
         embed.set_footer(text="Click buttons below to see other command categories")
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Admin Commands", style=discord.ButtonStyle.danger, emoji="⚙️", custom_id="help_admin", row=0)
+    @discord.ui.button(label="Stats & Leaderboards", style=discord.ButtonStyle.primary, emoji="📊", custom_id="help_stats", row=0)
+    async def stats_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Show stats and leaderboard commands"""
+        embed = discord.Embed(
+            title="📊 Statistics & Leaderboards",
+            description="View detailed statistics and server leaderboards",
+            color=0xFFD700
+        )
+        
+        embed.add_field(
+            name="/stats",
+            value="View your recent match statistics with performance graphs\n`/stats` or `/stats user:@someone`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/points",
+            value="Show your TOP 10 champion masteries\n`/points` or `/points user:@someone`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/compare",
+            value="Compare champion mastery between two players\n`/compare user1:@player1 user2:@player2`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/top",
+            value="View champion mastery leaderboard for the server\n`/top champion:Ahri`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/ranktop",
+            value="View TOP20 ranked players on this server\n`/ranktop` or `/ranktop region:euw user:@someone`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📈 Features",
+            value=(
+                "• Performance graphs for KDA, Win Rate, CS\n"
+                "• Server-wide champion mastery rankings\n"
+                "• Ranked player leaderboards by region\n"
+                "• Compare mastery points with friends"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Click buttons below to see other command categories")
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Admin Commands", style=discord.ButtonStyle.danger, emoji="⚙️", custom_id="help_admin", row=1)
     async def admin_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Show admin commands"""
         embed = discord.Embed(
@@ -128,7 +205,13 @@ class HelpView(discord.ui.View):
         
         embed.add_field(
             name="/forcelink",
-            value="Force link a Riot account to a user (Admin only)\n`/forcelink user:@someone riot_id:Name#TAG region:eune`",
+            value="Force link a Riot account to a user (Owner only)\n`/forcelink user:@someone riot_id:Name#TAG region:eune`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/batchforcelink",
+            value="Link multiple Riot accounts at once (Staff only)\n`/batchforcelink`",
             inline=False
         )
         
@@ -145,15 +228,39 @@ class HelpView(discord.ui.View):
         )
         
         embed.add_field(
+            name="/update_ranks",
+            value="Update rank roles for all members (Admin only)\n`/update_ranks`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/helpsetup",
+            value="Setup the permanent help embed (Admin only)\n`/helpsetup`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/commands",
+            value="Interactive command list with categories (Everyone)\n`/commands`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/help",
+            value="Show all available commands (Everyone)\n`/help`",
+            inline=False
+        )
+        
+        embed.add_field(
             name="🔐 Permissions Required",
-            value="These commands require Administrator permission or Bot Owner status",
+            value="Admin commands require Administrator permission or Bot Owner status. /commands and /help are available to everyone.",
             inline=False
         )
         
         embed.set_footer(text="Click buttons below to see other command categories")
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Profile Tabs Guide", style=discord.ButtonStyle.secondary, emoji="📖", custom_id="help_tabs", row=1)
+    @discord.ui.button(label="Profile Tabs Guide", style=discord.ButtonStyle.secondary, emoji="📖", custom_id="help_tabs", row=2)
     async def tabs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Show profile tabs guide"""
         embed = discord.Embed(
@@ -238,7 +345,7 @@ class HelpView(discord.ui.View):
         embed.set_footer(text="Click buttons below to see other command categories")
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Main Menu", style=discord.ButtonStyle.secondary, emoji="🏠", custom_id="help_main", row=1)
+    @discord.ui.button(label="Main Menu", style=discord.ButtonStyle.secondary, emoji="🏠", custom_id="help_main", row=2)
     async def main_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Return to main help menu"""
         embed = create_main_help_embed()
@@ -253,6 +360,7 @@ def create_main_help_embed() -> discord.Embed:
             "Welcome to the bot help menu! Click the buttons below to explore different command categories.\n\n"
             "**Quick Links:**\n"
             "• Profile Commands - Riot account management\n"
+            "• Stats & Leaderboards - Statistics and rankings\n"
             "• Voting Commands - Champion voting system\n"
             "• Admin Commands - Server administration\n"
             "• Profile Tabs - Understanding the /profile interface"
@@ -264,7 +372,16 @@ def create_main_help_embed() -> discord.Embed:
         name="🎮 Profile System",
         value=(
             "Link your League of Legends accounts and view comprehensive statistics across all your accounts. "
-            "Track your ranked progress, champion mastery, and recent performance."
+            "Track your ranked progress, champion mastery, and recent performance. Use `/rankupdate` to refresh your Discord roles!"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="📊 Statistics & Leaderboards",
+        value=(
+            "View detailed performance graphs, compare mastery with friends, and compete on server leaderboards. "
+            "Check TOP20 ranked players and champion mastery rankings!"
         ),
         inline=False
     )
@@ -280,13 +397,17 @@ def create_main_help_embed() -> discord.Embed:
     
     embed.add_field(
         name="⏱️ Auto-Cleanup",
-        value="Profile embeds automatically delete after 2 minutes of inactivity to keep channels clean.",
+        value="Most embeds automatically delete after 1 minute of inactivity to keep channels clean.",
         inline=False
     )
     
     embed.add_field(
-        name="💡 Tip",
-        value="Use `/accounts` to control which accounts are visible in your profile statistics!",
+        name="💡 Tips",
+        value=(
+            "• Use `/accounts` to control which accounts are visible in your profile statistics\n"
+            "• Use `/rankupdate` to manually update your Discord rank roles\n"
+            "• Hidden accounts don't affect stats but still count for rank roles"
+        ),
         inline=False
     )
     
