@@ -1,0 +1,3 @@
+# Procfile for Creator Bot
+# Use this in Railway for the creator bot service
+worker: python creator_bot.py
