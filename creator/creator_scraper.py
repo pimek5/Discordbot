@@ -592,8 +592,7 @@ class DivineSkinsScraper:
                                 return self._parse_api_skins(json_data['skins'])
                         except Exception as e:
                             logger.warning("⚠️ Divine Skins API skins not JSON, trying HTML: %s", e)
-            
-            # Fallback to HTML - DivineSkins shows all works on profile page
+            # Fallback to HTML - try parsing __NEXT_DATA__ first
             url = f"{self.BASE_URL}/{username}"
             logger.info(f"[DivineSkins] Fetching skins from profile: {url}")
             async with aiohttp.ClientSession() as session:
@@ -602,8 +601,46 @@ class DivineSkinsScraper:
                         logger.error("❌ Failed to fetch profile page: %s", url)
                         return []
                     html = await response.text()
-                    soup = BeautifulSoup(html, 'html.parser')
                     skins = []
+
+                    # Try Next.js __NEXT_DATA__ structure
+                    try:
+                        import json
+                        m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+                        if m:
+                            next_json = json.loads(m.group(1))
+                            props = next_json.get('props', {}).get('pageProps', {})
+                            # Common shapes: pageProps.works / pageProps.user.works / pageProps.items
+                            works = (
+                                props.get('works')
+                                or props.get('items')
+                                or props.get('skins')
+                                or props.get('mods')
+                                or props.get('user', {}).get('works')
+                            )
+                            if isinstance(works, list):
+                                for w in works:
+                                    try:
+                                        slug = w.get('slug') or w.get('id') or w.get('url', '').rstrip('/').split('/')[-1]
+                                        name = w.get('title') or w.get('name') or 'Untitled'
+                                        url_path = w.get('url') or f"/{username}/{slug}"
+                                        skin_url = url_path if url_path.startswith('http') else f"{self.BASE_URL}{url_path}"
+                                        skins.append({
+                                            'id': str(slug),
+                                            'name': name,
+                                            'url': skin_url,
+                                            'updated_at': w.get('updatedAt', '')
+                                        })
+                                    except Exception:
+                                        continue
+                                if skins:
+                                    logger.info("✅ Parsed %s skins from __NEXT_DATA__ for %s", len(skins), username)
+                                    return skins
+                    except Exception as e:
+                        logger.warning("⚠️ Failed parsing __NEXT_DATA__ on DivineSkins profile: %s", e)
+
+                    # Fallback: parse anchors heuristically
+                    soup = BeautifulSoup(html, 'html.parser')
                     
                     # Look for links to mod pages: /username/mod-name format
                     for link in soup.find_all('a', href=True):

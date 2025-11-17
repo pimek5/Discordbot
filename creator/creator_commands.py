@@ -341,6 +341,9 @@ class CreatorCommands(commands.Cog):
         
         await interaction.response.defer(ephemeral=True)
         try:
+            # Resolve platform naming early for error messages
+            platform_emoji = "🔧" if platform == 'runeforge' else "✨"
+            platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
             # Fetch profile for avatar
             if platform == 'runeforge':
                 profile = await self.runeforge_scraper.get_profile_data(username)
@@ -363,8 +366,6 @@ class CreatorCommands(commands.Cog):
                 return
             
             # Create notification-style embed
-            platform_emoji = "🔧" if platform == 'runeforge' else "✨"
-            platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
             
             # Fetch detailed mod information
             mod_details = {}
