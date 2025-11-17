@@ -247,7 +247,7 @@ class DivineSkinsScraper:
     API_URL = "https://divineskins.gg/api"
     
     async def get_mod_image(self, mod_url: str) -> str | None:
-        """Fetch the main/thumbnail image from a mod page."""
+        """Fetch the main/thumbnail image from a mod page. Strips cdn-cgi/image proxy for Discord compatibility."""
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(mod_url) as response:
@@ -260,6 +260,8 @@ class DivineSkinsScraper:
                     og_image = soup.find('meta', property='og:image')
                     if og_image and og_image.get('content'):
                         img_url = og_image['content']
+                        # Remove cdn-cgi/image proxy if present
+                        img_url = self._strip_cdn_proxy(img_url)
                         if any(img_url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                             logger.info(f"[get_mod_image] og:image: {img_url}")
                             return img_url
@@ -267,12 +269,14 @@ class DivineSkinsScraper:
                     twitter_image = soup.find('meta', attrs={'name': 'twitter:image'})
                     if twitter_image and twitter_image.get('content'):
                         img_url = twitter_image['content']
+                        img_url = self._strip_cdn_proxy(img_url)
                         if any(img_url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                             logger.info(f"[get_mod_image] twitter:image: {img_url}")
                             return img_url
                     # Try first <img> with direct image extension
                     for img in soup.find_all('img'):
                         src = img.get('src', '')
+                        src = self._strip_cdn_proxy(src)
                         if any(src.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp']):
                             logger.info(f"[get_mod_image] <img>: {src}")
                             return src if src.startswith('http') else f"{self.BASE_URL}{src}"
@@ -281,6 +285,15 @@ class DivineSkinsScraper:
         except Exception as e:
             logger.error(f"❌ Error fetching mod image from {mod_url}: {e}")
             return None
+
+    def _strip_cdn_proxy(self, url: str) -> str:
+        """If url is a Cloudflare cdn-cgi/image proxy, extract the direct image link."""
+        if url and '/cdn-cgi/image/' in url:
+            # Find the last occurrence of 'https://' in the string (the real image link)
+            idx = url.rfind('https://')
+            if idx > 0:
+                return url[idx:]
+        return url
     
     async def get_profile_data(self, username: str) -> dict | None:
         try:
