@@ -379,12 +379,17 @@ class CreatorCommands(commands.Cog):
             # Use detailed data if available, fallback to basic data
             final_name = mod_details.get('name', test_mod['name'])
             final_description = mod_details.get('description', f"Check out this new {'mod' if platform == 'runeforge' else 'skin'}!")
-            final_views = mod_details.get('views', test_mod.get('views', 0))
-            final_downloads = mod_details.get('downloads', test_mod.get('downloads', 0))
+            # Use scraped stats ONLY - don't fallback to test_mod fake data
+            final_views = mod_details.get('views', 0)
+            final_downloads = mod_details.get('downloads', 0)
             final_likes = mod_details.get('likes', 0)
             final_version = mod_details.get('version', '')
             final_tags = mod_details.get('tags', [])
             final_image = mod_details.get('image_url', None)
+            
+            # Log what we got
+            logger.info(f"[TestNotify] Stats: {final_downloads} downloads, {final_views} views, {final_likes} likes")
+            logger.info(f"[TestNotify] Details populated: {bool(mod_details)}")
 
             # Create rich embed
             embed = discord.Embed(
@@ -399,10 +404,14 @@ class CreatorCommands(commands.Cog):
             if final_image:
                 embed.set_image(url=final_image)
 
-            # Author info
+            # Author info - use profile avatar if available
+            author_avatar = profile.get('avatar_url') if profile else None
+            if not author_avatar:
+                author_avatar = interaction.user.display_avatar.url
+            
             embed.set_author(
                 name=f"By {username}",
-                icon_url=interaction.user.display_avatar.url
+                icon_url=author_avatar
             )
 
             # Stats fields
@@ -441,8 +450,9 @@ class CreatorCommands(commands.Cog):
             )
 
             await interaction.followup.send("✅ Sending test notification...", ephemeral=True)
-            await interaction.channel.send(f"{interaction.user.mention} just released a new {'mod' if platform == 'runeforge' else 'skin'}!", embed=embed)
-            logger.info("🧪 Test notification sent by %s", interaction.user)
+            # Show as if the actual creator (username) posted it, not the tester
+            await interaction.channel.send(f"**{username}** just released a new {'mod' if platform == 'runeforge' else 'skin'}!", embed=embed)
+            logger.info("🧪 Test notification sent by %s for creator %s", interaction.user, username)
         except Exception as e:
             logger.error("❌ Test notification error: %s", e)
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
