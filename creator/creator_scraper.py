@@ -347,6 +347,7 @@ class DivineSkinsScraper:
     async def get_mod_details(self, mod_url: str) -> dict:
         """Fetch detailed information about a specific skin including description, tags, stats, and images."""
         try:
+            logger.info(f"[DivineSkins] Fetching details from: {mod_url}")
             async with aiohttp.ClientSession() as session:
                 async with session.get(mod_url) as response:
                     if response.status != 200:
@@ -385,6 +386,7 @@ class DivineSkinsScraper:
                     
                     # Parse page text for stats
                     page_text = soup.get_text()
+                    logger.info(f"[DivineSkins] Page text sample: {page_text[:500]}")
                     
                     # Views - handle [Image: Image] markers from screen readers
                     views_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*views?', page_text, re.I)
@@ -393,6 +395,8 @@ class DivineSkinsScraper:
                     if views_match:
                         details['views'] = self._parse_number(views_match.group(1))
                         logger.info(f"[DivineSkins] Views: {views_match.group(1)} -> {details['views']}")
+                    else:
+                        logger.warning("[DivineSkins] No views found in page text")
                     
                     # Downloads
                     downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*downloads?', page_text, re.I)
@@ -401,6 +405,8 @@ class DivineSkinsScraper:
                     if downloads_match:
                         details['downloads'] = self._parse_number(downloads_match.group(1))
                         logger.info(f"[DivineSkins] Downloads: {downloads_match.group(1)} -> {details['downloads']}")
+                    else:
+                        logger.warning("[DivineSkins] No downloads found in page text")
                     
                     # Likes
                     likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*likes?', page_text, re.I)
@@ -409,6 +415,8 @@ class DivineSkinsScraper:
                     if likes_match:
                         details['likes'] = self._parse_number(likes_match.group(1))
                         logger.info(f"[DivineSkins] Likes: {likes_match.group(1)} -> {details['likes']}")
+                    else:
+                        logger.warning("[DivineSkins] No likes found in page text")
                     
                     # Version
                     version_match = re.search(r'Version\s*[:)]?\s*([\d\.]+)', page_text, re.I)
