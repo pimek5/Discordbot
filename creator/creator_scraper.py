@@ -593,35 +593,45 @@ class DivineSkinsScraper:
                         except Exception as e:
                             logger.warning("⚠️ Divine Skins API skins not JSON, trying HTML: %s", e)
             
-            # Fallback to HTML
-            url = f"{self.BASE_URL}/{username}/skins"
+            # Fallback to HTML - DivineSkins shows all works on profile page
+            url = f"{self.BASE_URL}/{username}"
+            logger.info(f"[DivineSkins] Fetching skins from profile: {url}")
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status != 200:
-                        logger.error("❌ Failed to fetch skins: %s", url)
+                        logger.error("❌ Failed to fetch profile page: %s", url)
                         return []
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
                     skins = []
-                    cards = soup.find_all('div', class_='skin-card')
-                    for card in cards:
-                        try:
-                            link = card.find('a', href=True)
-                            if not link:
-                                continue
-                            skin_url = link['href']
-                            if not skin_url.startswith('http'):
-                                skin_url = f"{self.BASE_URL}{skin_url}"
-                            skin_id = skin_url.split('/')[-1]
+                    
+                    # Look for links to mod pages: /username/mod-name format
+                    for link in soup.find_all('a', href=True):
+                        href = link['href']
+                        # DivineSkins mod URLs: /username/mod-slug
+                        if href.startswith(f'/{username}/') and href != f'/{username}':
+                            skin_url = f"{self.BASE_URL}{href}" if not href.startswith('http') else href
+                            # Extract mod slug (last part of URL)
+                            skin_id = href.split('/')[-1]
                             skin_name = link.get_text(strip=True)
-                            time_el = card.find('time')
-                            updated_at = time_el.get('datetime', '') if time_el else ''
-                            skins.append({'id': skin_id, 'name': skin_name, 'url': skin_url, 'updated_at': updated_at})
-                        except Exception as e:
-                            logger.error("❌ Error parsing skin card: %s", e)
-                            continue
-                    logger.info("✅ Found %s skins for %s on Divine Skins", len(skins), username)
-                    return skins
+                            if skin_name and len(skin_name) > 2:  # Filter out empty/short names
+                                skins.append({
+                                    'id': skin_id,
+                                    'name': skin_name,
+                                    'url': skin_url,
+                                    'updated_at': ''
+                                })
+                    
+                    # Deduplicate by URL
+                    seen = set()
+                    unique_skins = []
+                    for skin in skins:
+                        if skin['url'] not in seen:
+                            seen.add(skin['url'])
+                            unique_skins.append(skin)
+                    
+                    logger.info("✅ Found %s skins for %s on Divine Skins", len(unique_skins), username)
+                    return unique_skins
         except Exception as e:
             logger.error("❌ Error getting user skins: %s", e)
             return []

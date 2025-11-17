@@ -355,12 +355,12 @@ class CreatorCommands(commands.Cog):
                 test_mod = next((m for m in mods if mod_name.lower() in m['name'].lower()), mods[0])
             
             if not test_mod:
-                test_mod = {
-                    'name': mod_name,
-                    'url': f"https://{platform}.example/test",
-                    'views': 1234,
-                    'downloads': 567
-                }
+                await interaction.followup.send(
+                    f"❌ No mods/skins found for **{username}** on {platform_name}. "
+                    f"Make sure the username is correct and they have published content.",
+                    ephemeral=True
+                )
+                return
             
             # Create notification-style embed
             platform_emoji = "🔧" if platform == 'runeforge' else "✨"
