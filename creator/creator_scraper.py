@@ -286,20 +286,29 @@ class RuneForgeScraper:
                     # Parse page text for stats
                     page_text = soup.get_text()
                     
-                    # Views
-                    views_match = re.search(r'([\d,\.]+[kKmM]?)\s*views?', page_text, re.I)
+                    # Views - look for pattern before "views" text (may have [Image: Image] markers)
+                    views_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*views?', page_text, re.I)
+                    if not views_match:
+                        views_match = re.search(r'([\d,\.]+[kKmM]?)\s*views?', page_text, re.I)
                     if views_match:
                         details['views'] = self._parse_number(views_match.group(1))
+                        logger.info(f"[RuneForge] Views: {views_match.group(1)} -> {details['views']}")
                     
                     # Downloads
-                    downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*downloads?', page_text, re.I)
+                    downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*downloads?', page_text, re.I)
+                    if not downloads_match:
+                        downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*downloads?', page_text, re.I)
                     if downloads_match:
                         details['downloads'] = self._parse_number(downloads_match.group(1))
+                        logger.info(f"[RuneForge] Downloads: {downloads_match.group(1)} -> {details['downloads']}")
                     
                     # Likes
-                    likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*likes?', page_text, re.I)
+                    likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*likes?', page_text, re.I)
+                    if not likes_match:
+                        likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*likes?', page_text, re.I)
                     if likes_match:
                         details['likes'] = self._parse_number(likes_match.group(1))
+                        logger.info(f"[RuneForge] Likes: {likes_match.group(1)} -> {details['likes']}")
                     
                     # Version
                     version_match = re.search(r'Version\s*[:)]?\s*([\d\.]+)', page_text, re.I)
@@ -377,20 +386,29 @@ class DivineSkinsScraper:
                     # Parse page text for stats
                     page_text = soup.get_text()
                     
-                    # Views
-                    views_match = re.search(r'([\d,\.]+[kKmM]?)\s*views?', page_text, re.I)
+                    # Views - handle [Image: Image] markers from screen readers
+                    views_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*views?', page_text, re.I)
+                    if not views_match:
+                        views_match = re.search(r'([\d,\.]+[kKmM]?)\s*views?', page_text, re.I)
                     if views_match:
                         details['views'] = self._parse_number(views_match.group(1))
+                        logger.info(f"[DivineSkins] Views: {views_match.group(1)} -> {details['views']}")
                     
                     # Downloads
-                    downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*downloads?', page_text, re.I)
+                    downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*downloads?', page_text, re.I)
+                    if not downloads_match:
+                        downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*downloads?', page_text, re.I)
                     if downloads_match:
                         details['downloads'] = self._parse_number(downloads_match.group(1))
+                        logger.info(f"[DivineSkins] Downloads: {downloads_match.group(1)} -> {details['downloads']}")
                     
                     # Likes
-                    likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*likes?', page_text, re.I)
+                    likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*likes?', page_text, re.I)
+                    if not likes_match:
+                        likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*likes?', page_text, re.I)
                     if likes_match:
                         details['likes'] = self._parse_number(likes_match.group(1))
+                        logger.info(f"[DivineSkins] Likes: {likes_match.group(1)} -> {details['likes']}")
                     
                     # Version
                     version_match = re.search(r'Version\s*[:)]?\s*([\d\.]+)', page_text, re.I)
