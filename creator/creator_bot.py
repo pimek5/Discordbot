@@ -198,14 +198,14 @@ class CreatorBot(commands.Bot):
             if not channel:
                 logger.error("❌ Notification channel %s not found", NOTIFICATION_CHANNEL_ID)
                 return
-            
+
             user = self.get_user(discord_user_id)
             user_mention = user.mention if user else f"**{username}**"
-            
+
             platform_emoji = "🔧" if platform == 'runeforge' else "✨"
             platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
             color = 0x00FF00 if 'Posted' in action else 0xFFA500
-            
+
             mod_image_url = None
             try:
                 if platform == 'runeforge':
@@ -214,21 +214,21 @@ class CreatorBot(commands.Bot):
                     mod_image_url = await self.divineskins_scraper.get_mod_image(mod_url)
             except Exception as e:
                 logger.warning("⚠️ Error fetching mod image: %s", e)
-            
+
             embed = discord.Embed(
-                title=f"{platform_emoji} {action}!",
+                title=f"{platform_emoji} Posted new {'mod' if platform == 'runeforge' else 'skin'}!",
                 description=f"**{mod_name}**",
                 color=color,
-                url=mod_url,
-                timestamp=datetime.now()
+                url=mod_url
             )
             if mod_image_url:
                 embed.set_image(url=mod_image_url)
-            
+
             embed.add_field(name="Author", value=user_mention, inline=True)
             embed.add_field(name="Platform", value=platform_name, inline=True)
             embed.add_field(name="Link", value=f"[View on {platform_name}]({mod_url})", inline=False)
-            
+            embed.set_footer(text="🧪 This is a test notification" if 'test' in action.lower() else "")
+
             await channel.send(embed=embed)
             logger.info("✅ Notification sent: %s - %s - %s", username, action, mod_name)
         except Exception as e:
