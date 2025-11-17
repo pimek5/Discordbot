@@ -200,7 +200,6 @@ class CreatorBot(commands.Bot):
                 return
 
             user = self.get_user(discord_user_id)
-            user_mention = user.mention if user else f"**{username}**"
 
             platform_emoji = "🔧" if platform == 'runeforge' else "✨"
             platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
@@ -273,7 +272,8 @@ class CreatorBot(commands.Bot):
                 icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png" if platform == 'runeforge' else "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png"
             )
 
-            await channel.send(f"{user_mention} just released a new {'mod' if platform == 'runeforge' else 'skin'}!", embed=embed)
+            # Send embed only (no author mention to avoid pings)
+            await channel.send(embed=embed)
             logger.info("✅ Rich notification sent: %s - %s - %s", username, action, mod_name)
         except Exception as e:
             logger.error("❌ Error sending notification: %s", e)

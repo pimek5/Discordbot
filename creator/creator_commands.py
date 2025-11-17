@@ -444,8 +444,8 @@ class CreatorCommands(commands.Cog):
             )
 
             await interaction.followup.send("✅ Sending test notification...", ephemeral=True)
-            # Show as if the actual creator (username) posted it, not the tester
-            await interaction.channel.send(f"**{username}** just released a new {'mod' if platform == 'runeforge' else 'skin'}!", embed=embed)
+            # Send embed only (do not ping/mention anyone)
+            await interaction.channel.send(embed=embed)
             logger.info("🧪 Test notification sent by %s for creator %s", interaction.user, username)
         except Exception as e:
             logger.error("❌ Test notification error: %s", e)
