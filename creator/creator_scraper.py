@@ -384,55 +384,57 @@ class DivineSkinsScraper:
                     # Get image
                     details['image_url'] = await self.get_mod_image(mod_url)
                     
-                    # Parse page text for stats
+                    # Parse page text for stats - DivineSkins format: "98Views" "15Downloads" "0Likes" "0Comments"
                     page_text = soup.get_text()
-                    logger.info(f"[DivineSkins] Page text sample: {page_text[:500]}")
+                    logger.info(f"[DivineSkins] Searching in page text...")
                     
-                    # Views - handle [Image: Image] markers from screen readers
-                    views_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*views?', page_text, re.I)
-                    if not views_match:
-                        views_match = re.search(r'([\d,\.]+[kKmM]?)\s*views?', page_text, re.I)
+                    # DivineSkins specific: numbers directly before keywords (no spaces)
+                    # Pattern: \d+Views, \d+Downloads, \d+Likes
+                    views_match = re.search(r'(\d+)\s*Views?', page_text, re.I)
                     if views_match:
-                        details['views'] = self._parse_number(views_match.group(1))
-                        logger.info(f"[DivineSkins] Views: {views_match.group(1)} -> {details['views']}")
+                        details['views'] = int(views_match.group(1))
+                        logger.info(f"[DivineSkins] ✅ Views: {views_match.group(1)} -> {details['views']}")
                     else:
-                        logger.warning("[DivineSkins] No views found in page text")
+                        logger.warning("[DivineSkins] ❌ No views found")
                     
-                    # Downloads
-                    downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*downloads?', page_text, re.I)
-                    if not downloads_match:
-                        downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*downloads?', page_text, re.I)
+                    downloads_match = re.search(r'(\d+)\s*Downloads?', page_text, re.I)
                     if downloads_match:
-                        details['downloads'] = self._parse_number(downloads_match.group(1))
-                        logger.info(f"[DivineSkins] Downloads: {downloads_match.group(1)} -> {details['downloads']}")
+                        details['downloads'] = int(downloads_match.group(1))
+                        logger.info(f"[DivineSkins] ✅ Downloads: {downloads_match.group(1)} -> {details['downloads']}")
                     else:
-                        logger.warning("[DivineSkins] No downloads found in page text")
+                        logger.warning("[DivineSkins] ❌ No downloads found")
                     
-                    # Likes
-                    likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*\[?Image:\s*Image\]?\s*likes?', page_text, re.I)
-                    if not likes_match:
-                        likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*likes?', page_text, re.I)
+                    likes_match = re.search(r'(\d+)\s*Likes?', page_text, re.I)
                     if likes_match:
-                        details['likes'] = self._parse_number(likes_match.group(1))
-                        logger.info(f"[DivineSkins] Likes: {likes_match.group(1)} -> {details['likes']}")
+                        details['likes'] = int(likes_match.group(1))
+                        logger.info(f"[DivineSkins] ✅ Likes: {likes_match.group(1)} -> {details['likes']}")
                     else:
-                        logger.warning("[DivineSkins] No likes found in page text")
+                        logger.warning("[DivineSkins] ❌ No likes found")
                     
-                    # Version
+                    # Comments (bonus)
+                    comments_match = re.search(r'(\d+)\s*Comments?', page_text, re.I)
+                    if comments_match:
+                        logger.info(f"[DivineSkins] Comments: {comments_match.group(1)}")
+                    
+                    # Updated date - "Updated 11/17/2025"
+                    updated_match = re.search(r'Updated\s+(\d{1,2}/\d{1,2}/\d{4})', page_text, re.I)
+                    if updated_match:
+                        details['updated_at'] = updated_match.group(1)
+                        logger.info(f"[DivineSkins] ✅ Updated: {updated_match.group(1)}")
+                    
+                    # Version - look for version number
                     version_match = re.search(r'Version\s*[:)]?\s*([\d\.]+)', page_text, re.I)
                     if version_match:
                         details['version'] = version_match.group(1)
+                        logger.info(f"[DivineSkins] ✅ Version: {version_match.group(1)}")
                     
-                    # Updated date
-                    updated_match = re.search(r'Updated\s*[:)]?\s*(.+?)(?:\n|$|Views|Downloads)', page_text, re.I)
-                    if updated_match:
-                        details['updated_at'] = updated_match.group(1).strip()
+                    # Categories - look for "Main Category" or category links
+                    category_links = soup.find_all('a', href=re.compile(r'/explore-mods\?categoryId='))
+                    if category_links:
+                        details['tags'] = [link.get_text(strip=True) for link in category_links[:5]]
+                        logger.info(f"[DivineSkins] ✅ Categories: {details['tags']}")
                     
-                    # Tags/Categories
-                    tag_elements = soup.find_all('a', href=re.compile(r'/tags?/|/categories?/'))
-                    details['tags'] = [tag.get_text(strip=True) for tag in tag_elements[:5]]
-                    
-                    logger.info("✅ Fetched skin details: %s", details.get('name', mod_url))
+                    logger.info(f"✅ Fetched DivineSkins details: {details.get('name', mod_url)}")
                     return details
         except Exception as e:
             logger.error(f"❌ Error fetching skin details from {mod_url}: {e}")
