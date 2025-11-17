@@ -365,16 +365,6 @@ class CreatorCommands(commands.Cog):
             platform_emoji = "🔧" if platform == 'runeforge' else "✨"
             platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
             
-            # Fetch mod image
-            mod_image_url = None
-            try:
-                if platform == 'runeforge':
-                    mod_image_url = await self.runeforge_scraper.get_mod_image(test_mod['url'])
-                else:
-                    mod_image_url = await self.divineskins_scraper.get_mod_image(test_mod['url'])
-            except:
-                pass
-            
             embed = discord.Embed(
                 title=f"{platform_emoji} Posted new {'mod' if platform == 'runeforge' else 'skin'}!",
                 description=f"**{test_mod['name']}**",
@@ -382,26 +372,12 @@ class CreatorCommands(commands.Cog):
                 url=test_mod['url']
             )
             
-            if mod_image_url:
-                embed.set_image(url=mod_image_url)
-            
             embed.add_field(name="Author", value=interaction.user.mention, inline=True)
             embed.add_field(name="Platform", value=platform_name, inline=True)
-            
-            views = test_mod.get('views', 0)
-            downloads = test_mod.get('downloads', 0)
-            
-            if views > 0:
-                embed.add_field(name="👁️ Views", value=f"{views:,}", inline=True)
-            if downloads > 0:
-                embed.add_field(name="📥 Downloads", value=f"{downloads:,}", inline=True)
-            
             embed.add_field(name="Link", value=f"[View on {platform_name}]({test_mod['url']})", inline=False)
             embed.set_footer(text="🧪 This is a test notification")
-            
             await interaction.followup.send("✅ Sending test notification...", ephemeral=True)
             await interaction.channel.send(embed=embed)
-            
             logger.info("🧪 Test notification sent by %s", interaction.user)
         except Exception as e:
             logger.error("❌ Test notification error: %s", e)
