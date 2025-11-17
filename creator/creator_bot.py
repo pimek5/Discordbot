@@ -206,6 +206,15 @@ class CreatorBot(commands.Bot):
             platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
             color = 0x00FF00 if 'Posted' in action else 0xFFA500
             
+            mod_image_url = None
+            try:
+                if platform == 'runeforge':
+                    mod_image_url = await self.runeforge_scraper.get_mod_image(mod_url)
+                else:
+                    mod_image_url = await self.divineskins_scraper.get_mod_image(mod_url)
+            except Exception as e:
+                logger.warning("⚠️ Error fetching mod image: %s", e)
+            
             embed = discord.Embed(
                 title=f"{platform_emoji} {action}!",
                 description=f"**{mod_name}**",
@@ -213,6 +222,8 @@ class CreatorBot(commands.Bot):
                 url=mod_url,
                 timestamp=datetime.now()
             )
+            if mod_image_url:
+                embed.set_image(url=mod_image_url)
             
             embed.add_field(name="Author", value=user_mention, inline=True)
             embed.add_field(name="Platform", value=platform_name, inline=True)
