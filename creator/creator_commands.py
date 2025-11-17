@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import logging
+from datetime import datetime
 
 from creator_database import get_creator_db
 from creator_scraper import RuneForgeScraper, DivineSkinsScraper
@@ -365,29 +366,82 @@ class CreatorCommands(commands.Cog):
             platform_emoji = "🔧" if platform == 'runeforge' else "✨"
             platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
             
-            mod_image_url = None
+            # Fetch detailed mod information
+            mod_details = {}
             try:
                 if platform == 'runeforge':
-                    mod_image_url = await self.runeforge_scraper.get_mod_image(test_mod['url'])
+                    mod_details = await self.runeforge_scraper.get_mod_details(test_mod['url'])
                 else:
-                    mod_image_url = await self.divineskins_scraper.get_mod_image(test_mod['url'])
-            except:
-                pass
-            
+                    mod_details = await self.divineskins_scraper.get_mod_details(test_mod['url'])
+            except Exception as e:
+                logger.warning("⚠️ Error fetching mod details: %s", e)
+
+            # Use detailed data if available, fallback to basic data
+            final_name = mod_details.get('name', test_mod['name'])
+            final_description = mod_details.get('description', f"Check out this new {'mod' if platform == 'runeforge' else 'skin'}!")
+            final_views = mod_details.get('views', test_mod.get('views', 0))
+            final_downloads = mod_details.get('downloads', test_mod.get('downloads', 0))
+            final_likes = mod_details.get('likes', 0)
+            final_version = mod_details.get('version', '')
+            final_tags = mod_details.get('tags', [])
+            final_image = mod_details.get('image_url', None)
+
+            # Create rich embed
             embed = discord.Embed(
-                title=f"{platform_emoji} Posted new {'mod' if platform == 'runeforge' else 'skin'}!",
-                description=f"**{test_mod['name']}**",
-                color=0x00FF00,
-                url=test_mod['url']
+                title=f"{platform_emoji} New {'Mod' if platform == 'runeforge' else 'Skin'} Released!",
+                description=f"**{final_name}**\n{final_description[:200]}{'...' if len(final_description) > 200 else ''}",
+                color=0x3498db,
+                url=test_mod['url'],
+                timestamp=datetime.now()
             )
-            if mod_image_url:
-                embed.set_image(url=mod_image_url)
-            embed.add_field(name="Author", value=interaction.user.mention, inline=True)
-            embed.add_field(name="Platform", value=platform_name, inline=True)
-            embed.add_field(name="Link", value=f"[View on {platform_name}]({test_mod['url']})", inline=False)
-            embed.set_footer(text="🧪 This is a test notification")
+
+            # Set main image
+            if final_image:
+                embed.set_image(url=final_image)
+
+            # Author info
+            embed.set_author(
+                name=f"By {username}",
+                icon_url=interaction.user.display_avatar.url
+            )
+
+            # Stats fields
+            if final_views or final_downloads or final_likes:
+                stats_line = []
+                if final_downloads:
+                    stats_line.append(f"📥 **{final_downloads:,}** downloads")
+                if final_views:
+                    stats_line.append(f"👁️ **{final_views:,}** views")
+                if final_likes:
+                    stats_line.append(f"❤️ **{final_likes:,}** likes")
+                
+                if stats_line:
+                    embed.add_field(
+                        name="📊 Stats",
+                        value=" • ".join(stats_line),
+                        inline=False
+                    )
+
+            # Version info
+            if final_version:
+                embed.add_field(name="🔖 Version", value=f"`{final_version}`", inline=True)
+
+            # Platform info
+            embed.add_field(name="🌐 Platform", value=platform_name, inline=True)
+
+            # Tags
+            if final_tags:
+                tags_str = " • ".join([f"`{tag}`" for tag in final_tags[:5]])
+                embed.add_field(name="🏷️ Tags", value=tags_str, inline=False)
+
+            # Footer
+            embed.set_footer(
+                text=f"🧪 Test notification • Posted on {platform_name}",
+                icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png" if platform == 'runeforge' else "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png"
+            )
+
             await interaction.followup.send("✅ Sending test notification...", ephemeral=True)
-            await interaction.channel.send(embed=embed)
+            await interaction.channel.send(f"{interaction.user.mention} just released a new {'mod' if platform == 'runeforge' else 'skin'}!", embed=embed)
             logger.info("🧪 Test notification sent by %s", interaction.user)
         except Exception as e:
             logger.error("❌ Test notification error: %s", e)

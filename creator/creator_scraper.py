@@ -241,10 +241,176 @@ class RuneForgeScraper:
         except Exception:
             return 0
 
+    async def get_mod_details(self, mod_url: str) -> dict:
+        """Fetch detailed information about a specific mod including description, tags, stats, and images."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(mod_url) as response:
+                    if response.status != 200:
+                        logger.warning("⚠️ Mod page returned status %s", response.status)
+                        return {}
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    details = {
+                        'name': '',
+                        'description': '',
+                        'author': '',
+                        'views': 0,
+                        'downloads': 0,
+                        'likes': 0,
+                        'version': '',
+                        'updated_at': '',
+                        'created_at': '',
+                        'tags': [],
+                        'image_url': None,
+                        'author_avatar': None,
+                        'category': ''
+                    }
+                    
+                    # Try to extract from meta tags first
+                    title_tag = soup.find('meta', property='og:title')
+                    if title_tag:
+                        details['name'] = title_tag.get('content', '')
+                    
+                    desc_tag = soup.find('meta', property='og:description') or soup.find('meta', attrs={'name': 'description'})
+                    if desc_tag:
+                        details['description'] = desc_tag.get('content', '')
+                    
+                    # Get image
+                    og_image = soup.find('meta', property='og:image')
+                    if og_image and og_image.get('content'):
+                        img_url = og_image['content']
+                        details['image_url'] = self._strip_cdn_proxy(img_url)
+                    
+                    # Parse page text for stats
+                    page_text = soup.get_text()
+                    
+                    # Views
+                    views_match = re.search(r'([\d,\.]+[kKmM]?)\s*views?', page_text, re.I)
+                    if views_match:
+                        details['views'] = self._parse_number(views_match.group(1))
+                    
+                    # Downloads
+                    downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*downloads?', page_text, re.I)
+                    if downloads_match:
+                        details['downloads'] = self._parse_number(downloads_match.group(1))
+                    
+                    # Likes
+                    likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*likes?', page_text, re.I)
+                    if likes_match:
+                        details['likes'] = self._parse_number(likes_match.group(1))
+                    
+                    # Version
+                    version_match = re.search(r'Version\s*[:)]?\s*([\d\.]+)', page_text, re.I)
+                    if version_match:
+                        details['version'] = version_match.group(1)
+                    
+                    # Updated date
+                    updated_match = re.search(r'Updated\s*[:)]?\s*(.+?)(?:\n|$|Views|Downloads)', page_text, re.I)
+                    if updated_match:
+                        details['updated_at'] = updated_match.group(1).strip()
+                    
+                    # Tags/Categories
+                    tag_elements = soup.find_all('a', href=re.compile(r'/tags?/|/categories?/'))
+                    details['tags'] = [tag.get_text(strip=True) for tag in tag_elements[:5]]
+                    
+                    logger.info("✅ Fetched mod details: %s", details.get('name', mod_url))
+                    return details
+        except Exception as e:
+            logger.error(f"❌ Error fetching mod details from {mod_url}: {e}")
+            return {}
+
+    def _strip_cdn_proxy(self, url: str) -> str:
+        """If url is a Cloudflare cdn-cgi/image proxy, extract the direct image link."""
+        if url and '/cdn-cgi/image/' in url:
+            # Find the last occurrence of 'https://' in the string (the real image link)
+            idx = url.rfind('https://')
+            if idx > 0:
+                return url[idx:]
+        return url
+
 
 class DivineSkinsScraper:
     BASE_URL = "https://divineskins.gg"
     API_URL = "https://divineskins.gg/api"
+    
+    async def get_mod_details(self, mod_url: str) -> dict:
+        """Fetch detailed information about a specific skin including description, tags, stats, and images."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(mod_url) as response:
+                    if response.status != 200:
+                        logger.warning("⚠️ Skin page returned status %s", response.status)
+                        return {}
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    details = {
+                        'name': '',
+                        'description': '',
+                        'author': '',
+                        'views': 0,
+                        'downloads': 0,
+                        'likes': 0,
+                        'version': '',
+                        'updated_at': '',
+                        'created_at': '',
+                        'tags': [],
+                        'image_url': None,
+                        'author_avatar': None,
+                        'category': ''
+                    }
+                    
+                    # Try to extract from meta tags first
+                    title_tag = soup.find('meta', property='og:title')
+                    if title_tag:
+                        details['name'] = title_tag.get('content', '')
+                    
+                    desc_tag = soup.find('meta', property='og:description') or soup.find('meta', attrs={'name': 'description'})
+                    if desc_tag:
+                        details['description'] = desc_tag.get('content', '')
+                    
+                    # Get image
+                    details['image_url'] = await self.get_mod_image(mod_url)
+                    
+                    # Parse page text for stats
+                    page_text = soup.get_text()
+                    
+                    # Views
+                    views_match = re.search(r'([\d,\.]+[kKmM]?)\s*views?', page_text, re.I)
+                    if views_match:
+                        details['views'] = self._parse_number(views_match.group(1))
+                    
+                    # Downloads
+                    downloads_match = re.search(r'([\d,\.]+[kKmM]?)\s*downloads?', page_text, re.I)
+                    if downloads_match:
+                        details['downloads'] = self._parse_number(downloads_match.group(1))
+                    
+                    # Likes
+                    likes_match = re.search(r'([\d,\.]+[kKmM]?)\s*likes?', page_text, re.I)
+                    if likes_match:
+                        details['likes'] = self._parse_number(likes_match.group(1))
+                    
+                    # Version
+                    version_match = re.search(r'Version\s*[:)]?\s*([\d\.]+)', page_text, re.I)
+                    if version_match:
+                        details['version'] = version_match.group(1)
+                    
+                    # Updated date
+                    updated_match = re.search(r'Updated\s*[:)]?\s*(.+?)(?:\n|$|Views|Downloads)', page_text, re.I)
+                    if updated_match:
+                        details['updated_at'] = updated_match.group(1).strip()
+                    
+                    # Tags/Categories
+                    tag_elements = soup.find_all('a', href=re.compile(r'/tags?/|/categories?/'))
+                    details['tags'] = [tag.get_text(strip=True) for tag in tag_elements[:5]]
+                    
+                    logger.info("✅ Fetched skin details: %s", details.get('name', mod_url))
+                    return details
+        except Exception as e:
+            logger.error(f"❌ Error fetching skin details from {mod_url}: {e}")
+            return {}
     
     async def get_mod_image(self, mod_url: str) -> str | None:
         """Fetch the main/thumbnail image from a mod page. Strips cdn-cgi/image proxy for Discord compatibility."""
