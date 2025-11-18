@@ -450,6 +450,98 @@ class CreatorCommands(commands.Cog):
         except Exception as e:
             logger.error("❌ Test notification error: %s", e)
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+    
+    @app_commands.command(name="randommod", description="Get a random mod from RuneForge")
+    async def random_mod(self, interaction: discord.Interaction):
+        """Fetch and display a random mod from RuneForge."""
+        await interaction.response.defer()
+        
+        try:
+            import aiohttp
+            import random
+            
+            # Fetch recent mods from RuneForge API
+            api_url = "https://runeforge.dev/api/mods?page=0&limit=50"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url, headers=headers) as response:
+                    if response.status != 200:
+                        await interaction.followup.send(
+                            f"❌ Failed to fetch mods from RuneForge (Status: {response.status})",
+                            ephemeral=True
+                        )
+                        return
+                    
+                    try:
+                        data = await response.json()
+                        mods = data if isinstance(data, list) else data.get('mods', [])
+                        
+                        if not mods:
+                            await interaction.followup.send("❌ No mods found!", ephemeral=True)
+                            return
+                        
+                        # Pick a random mod
+                        mod = random.choice(mods)
+                        mod_id = mod.get('id') or mod.get('slug', '')
+                        mod_name = mod.get('name') or mod.get('title', 'Unknown Mod')
+                        mod_url = mod.get('url', f"https://runeforge.dev/mods/{mod_id}")
+                        author = mod.get('author') or mod.get('creator', {})
+                        author_name = author.get('username', 'Unknown') if isinstance(author, dict) else str(author)
+                        
+                        # Fetch detailed info
+                        mod_details = await self.runeforge_scraper.get_mod_details(mod_url)
+                        
+                        # Build embed
+                        embed = discord.Embed(
+                            title=f"🎲 Random Mod: {mod_details.get('name', mod_name)}",
+                            description=mod_details.get('description', 'No description available')[:500],
+                            color=0xFF6B35,
+                            url=mod_url,
+                            timestamp=datetime.now()
+                        )
+                        
+                        # Set image
+                        if mod_details.get('image_url'):
+                            embed.set_image(url=mod_details['image_url'])
+                        
+                        # Author
+                        embed.set_author(name=f"By {author_name}")
+                        
+                        # Stats
+                        stats = []
+                        if mod_details.get('views'):
+                            stats.append(f"👁️ {mod_details['views']:,} views")
+                        if mod_details.get('likes'):
+                            stats.append(f"❤️ {mod_details['likes']:,} likes")
+                        if stats:
+                            embed.add_field(name="📊 Stats", value=" • ".join(stats), inline=False)
+                        
+                        # Version
+                        if mod_details.get('version'):
+                            embed.add_field(name="🔖 Version", value=f"`{mod_details['version']}`", inline=True)
+                        
+                        embed.add_field(name="🌐 Platform", value="RuneForge", inline=True)
+                        
+                        # Tags
+                        if mod_details.get('tags'):
+                            tags_str = " • ".join([f"`{tag}`" for tag in mod_details['tags'][:5]])
+                            embed.add_field(name="🏷️ Tags", value=tags_str, inline=False)
+                        
+                        embed.set_footer(text="🎲 Random mod from RuneForge", icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f3b2.png")
+                        
+                        await interaction.followup.send(embed=embed)
+                        logger.info("🎲 Random mod sent to %s: %s", interaction.user, mod_name)
+                        
+                    except Exception as e:
+                        logger.error("❌ Error parsing RuneForge API response: %s", e)
+                        await interaction.followup.send(f"❌ Error parsing mods: {str(e)}", ephemeral=True)
+        
+        except Exception as e:
+            logger.error("❌ Random mod error: %s", e)
+            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

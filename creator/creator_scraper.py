@@ -646,10 +646,13 @@ class DivineSkinsScraper:
     
     async def get_user_skins(self, username: str) -> list:
         try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
             # Try API first
             api_url = f"{self.API_URL}/users/{username}/skins"
             async with aiohttp.ClientSession() as session:
-                async with session.get(api_url) as response:
+                async with session.get(api_url, headers=headers) as response:
                     if response.status == 200:
                         try:
                             json_data = await response.json()
@@ -663,7 +666,7 @@ class DivineSkinsScraper:
             url = f"{self.BASE_URL}/{username}"
             logger.info(f"[DivineSkins] Fetching skins from profile: {url}")
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(url, headers=headers) as response:
                     if response.status != 200:
                         logger.error("❌ Failed to fetch profile page: %s", url)
                         return []
@@ -722,71 +725,73 @@ class DivineSkinsScraper:
                                 if skins:
                                     logger.info("✅ Parsed %s skins from __NEXT_DATA__ for %s", len(skins), username)
                                     return skins
+                                # If works list was found but empty, don't return early - try other methods
                             # If not in common shapes, recursively scan pageProps for candidate items
-                            def _collect_candidates(node, results: list):
-                                try:
-                                    if isinstance(node, list):
-                                        for el in node:
-                                            _collect_candidates(el, results)
-                                    elif isinstance(node, dict):
-                                        # Heuristic: a dict representing a work/skin typically has title/name and slug or url
-                                        title = node.get('title') or node.get('name')
-                                        slug = node.get('slug') or node.get('id')
-                                        urlp = node.get('url') or node.get('path')
-                                        looks_like_item = title and (slug or urlp)
-                                        if looks_like_item:
-                                            results.append(node)
-                                        for v in node.values():
-                                            _collect_candidates(v, results)
-                                except Exception:
-                                    return
+                            if len(skins) == 0:  # Only do recursive if we haven't found any yet
+                                def _collect_candidates(node, results: list):
+                                    try:
+                                        if isinstance(node, list):
+                                            for el in node:
+                                                _collect_candidates(el, results)
+                                        elif isinstance(node, dict):
+                                            # Heuristic: a dict representing a work/skin typically has title/name and slug or url
+                                            title = node.get('title') or node.get('name')
+                                            slug = node.get('slug') or node.get('id')
+                                            urlp = node.get('url') or node.get('path')
+                                            looks_like_item = title and (slug or urlp)
+                                            if looks_like_item:
+                                                results.append(node)
+                                            for v in node.values():
+                                                _collect_candidates(v, results)
+                                    except Exception:
+                                        return
 
-                            candidates: list = []
-                            _collect_candidates(props, candidates)
-                            logger.info("[DivineSkins] recursive candidates found: %s", len(candidates))
-                            added = 0
-                            for w in candidates[:100]:  # limit
-                                try:
-                                    slug = (w.get('slug') or w.get('id') or '').strip()
-                                    name = (w.get('title') or w.get('name') or '').strip() or 'Untitled'
-                                    url_path = (w.get('url') or w.get('path') or '').strip()
-                                    # Prefer explicit url that includes /{username}/
-                                    if isinstance(url_path, str) and f'/{username}/' in url_path:
-                                        skin_url = url_path if url_path.startswith('http') else f"{self.BASE_URL}{url_path}"
-                                    elif slug:
-                                        skin_url = f"{self.BASE_URL}/{username}/{slug}"
-                                    else:
+                                candidates: list = []
+                                _collect_candidates(props, candidates)
+                                logger.info("[DivineSkins] recursive candidates found: %s", len(candidates))
+                                added = 0
+                                for w in candidates[:100]:  # limit
+                                    try:
+                                        slug = (w.get('slug') or w.get('id') or '').strip()
+                                        name = (w.get('title') or w.get('name') or '').strip() or 'Untitled'
+                                        url_path = (w.get('url') or w.get('path') or '').strip()
+                                        # Prefer explicit url that includes /{username}/
+                                        if isinstance(url_path, str) and f'/{username}/' in url_path:
+                                            skin_url = url_path if url_path.startswith('http') else f"{self.BASE_URL}{url_path}"
+                                        elif slug:
+                                            skin_url = f"{self.BASE_URL}/{username}/{slug}"
+                                        else:
+                                            continue
+                                        item = {
+                                            'id': slug or skin_url.rstrip('/').split('/')[-1],
+                                            'name': name,
+                                            'url': skin_url,
+                                            'updated_at': w.get('updatedAt', '')
+                                        }
+                                        v = w.get('views') or w.get('viewCount')
+                                        if isinstance(v, int):
+                                            item['views'] = v
+                                        l = w.get('likes') or w.get('likeCount')
+                                        if isinstance(l, int):
+                                            item['likes'] = l
+                                        skins.append(item)
+                                        added += 1
+                                    except Exception:
                                         continue
-                                    item = {
-                                        'id': slug or skin_url.rstrip('/').split('/')[-1],
-                                        'name': name,
-                                        'url': skin_url,
-                                        'updated_at': w.get('updatedAt', '')
-                                    }
-                                    v = w.get('views') or w.get('viewCount')
-                                    if isinstance(v, int):
-                                        item['views'] = v
-                                    l = w.get('likes') or w.get('likeCount')
-                                    if isinstance(l, int):
-                                        item['likes'] = l
-                                    skins.append(item)
-                                    added += 1
-                                except Exception:
-                                    continue
-                            if added:
-                                # Deduplicate by URL
-                                seenu = set()
-                                uniq = []
-                                for s in skins:
-                                    if s['url'] not in seenu:
-                                        seenu.add(s['url'])
-                                        uniq.append(s)
-                                logger.info("✅ Parsed %s skins from __NEXT_DATA__ (recursive) for %s", len(uniq), username)
-                                return uniq
+                                if added:
+                                    # Deduplicate by URL
+                                    seenu = set()
+                                    uniq = []
+                                    for s in skins:
+                                        if s['url'] not in seenu:
+                                            seenu.add(s['url'])
+                                            uniq.append(s)
+                                    logger.info("✅ Parsed %s skins from __NEXT_DATA__ (recursive) for %s", len(uniq), username)
+                                    return uniq
                     except Exception as e:
                         logger.warning("⚠️ Failed parsing __NEXT_DATA__ on DivineSkins profile: %s", e)
 
-                    # Fallback: parse anchors heuristically
+                    # Fallback: parse BeautifulSoup for anchors and grid cards
                     soup = BeautifulSoup(html, 'html.parser')
                     
                     # Look for links to mod pages: /username/mod-name format
@@ -807,7 +812,9 @@ class DivineSkinsScraper:
                                 })
 
                     # Extra fallback: parse grid cards without direct anchors (SPA click handlers)
-                    if not skins:
+                    # Always attempt this if we still have no skins after all previous attempts
+                    if len(skins) == 0:
+                        logger.info("[DivineSkins] Attempting grid-card fallback...")
                         def _slugify(text: str) -> str:
                             t = text.lower().strip()
                             t = re.sub(r'[^a-z0-9]+', '-', t)
