@@ -677,6 +677,17 @@ class DivineSkinsScraper:
                         if m:
                             next_json = json.loads(m.group(1))
                             props = next_json.get('props', {}).get('pageProps', {})
+                            try:
+                                logger.info("[DivineSkins] __NEXT_DATA__ pageProps keys: %s", list(props.keys())[:20])
+                                for key in ['works','items','skins','mods']:
+                                    val = props.get(key)
+                                    if isinstance(val, list):
+                                        logger.info("[DivineSkins] pageProps.%s length: %s", key, len(val))
+                                uworks = props.get('user', {}).get('works') if isinstance(props.get('user'), dict) else None
+                                if isinstance(uworks, list):
+                                    logger.info("[DivineSkins] pageProps.user.works length: %s", len(uworks))
+                            except Exception:
+                                pass
                             # Common shapes: pageProps.works / pageProps.user.works / pageProps.items
                             works = (
                                 props.get('works')
@@ -732,6 +743,7 @@ class DivineSkinsScraper:
 
                             candidates: list = []
                             _collect_candidates(props, candidates)
+                            logger.info("[DivineSkins] recursive candidates found: %s", len(candidates))
                             added = 0
                             for w in candidates[:100]:  # limit
                                 try:
