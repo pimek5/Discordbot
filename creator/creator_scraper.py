@@ -805,6 +805,49 @@ class DivineSkinsScraper:
                                     'url': skin_url,
                                     'updated_at': ''
                                 })
+
+                    # Extra fallback: parse grid cards without direct anchors (SPA click handlers)
+                    if not skins:
+                        def _slugify(text: str) -> str:
+                            t = text.lower().strip()
+                            t = re.sub(r'[^a-z0-9]+', '-', t)
+                            t = re.sub(r'-+', '-', t).strip('-')
+                            return t
+
+                        # Find thumbnails that indicate a mod card
+                        card_imgs = soup.find_all('img', src=re.compile(r'images\.divine-cdn\.com/thumbnails/'), alt=True)
+                        titles = set()
+                        for img in card_imgs:
+                            name = img.get('alt', '').strip()
+                            if not name or name in titles:
+                                continue
+                            titles.add(name)
+                            slug = _slugify(name)
+                            candidates = [f"{self.BASE_URL}/{username}/{slug}"]
+                            # Some items appear with pluralized slug, try appending 's'
+                            if not slug.endswith('s'):
+                                candidates.append(f"{self.BASE_URL}/{username}/{slug}s")
+                            # Try to validate which candidate exists
+                            chosen_url = None
+                            try:
+                                async with aiohttp.ClientSession() as s2:
+                                    for cu in candidates:
+                                        try:
+                                            async with s2.get(cu, allow_redirects=True) as r2:
+                                                if r2.status == 200:
+                                                    chosen_url = cu
+                                                    break
+                                        except Exception:
+                                            continue
+                            except Exception:
+                                pass
+                            if chosen_url:
+                                skins.append({
+                                    'id': chosen_url.rstrip('/').split('/')[-1],
+                                    'name': name,
+                                    'url': chosen_url,
+                                    'updated_at': ''
+                                })
                     
                     # Deduplicate by URL
                     seen = set()
