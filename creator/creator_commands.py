@@ -467,9 +467,10 @@ class CreatorCommands(commands.Cog):
     @app_commands.command(name="randommod", description="Get a random mod from RuneForge")
     async def random_mod(self, interaction: discord.Interaction):
         """Fetch and display a random mod from RuneForge."""
-        await interaction.response.defer()
-        
         try:
+            # IMPORTANT: Defer immediately to prevent timeout (Discord has 3 second limit)
+            await interaction.response.defer()
+            
             import aiohttp
             import random
             
@@ -480,7 +481,7 @@ class CreatorCommands(commands.Cog):
             }
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(api_url, headers=headers) as response:
+                async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                     if response.status != 200:
                         await interaction.followup.send(
                             f"❌ Failed to fetch mods from RuneForge (Status: {response.status})",
@@ -488,73 +489,84 @@ class CreatorCommands(commands.Cog):
                         )
                         return
                     
-                    try:
-                        data = await response.json()
-                        mods = data if isinstance(data, list) else data.get('mods', [])
-                        
-                        if not mods:
-                            await interaction.followup.send("❌ No mods found!", ephemeral=True)
-                            return
-                        
-                        # Pick a random mod
-                        mod = random.choice(mods)
-                        mod_id = mod.get('id') or mod.get('slug', '')
-                        mod_name = mod.get('name') or mod.get('title', 'Unknown Mod')
-                        mod_url = mod.get('url', f"https://runeforge.dev/mods/{mod_id}")
-                        author = mod.get('author') or mod.get('creator', {})
-                        author_name = author.get('username', 'Unknown') if isinstance(author, dict) else str(author)
-                        
-                        # Fetch detailed info
-                        mod_details = await self.runeforge_scraper.get_mod_details(mod_url)
-                        
-                        # Build embed
-                        embed = discord.Embed(
-                            title=f"🎲 Random Mod: {mod_details.get('name', mod_name)}",
-                            description=mod_details.get('description', 'No description available')[:500],
-                            color=0xFF6B35,
-                            url=mod_url,
-                            timestamp=datetime.now()
-                        )
-                        
-                        # Set image
-                        if mod_details.get('image_url'):
-                            embed.set_image(url=mod_details['image_url'])
-                        
-                        # Author
-                        embed.set_author(name=f"By {author_name}")
-                        
-                        # Stats
-                        stats = []
-                        if mod_details.get('views'):
-                            stats.append(f"👁️ {mod_details['views']:,} views")
-                        if mod_details.get('likes'):
-                            stats.append(f"❤️ {mod_details['likes']:,} likes")
-                        if stats:
-                            embed.add_field(name="📊 Stats", value=" • ".join(stats), inline=False)
-                        
-                        # Version
-                        if mod_details.get('version'):
-                            embed.add_field(name="🔖 Version", value=f"`{mod_details['version']}`", inline=True)
-                        
-                        embed.add_field(name="🌐 Platform", value="RuneForge", inline=True)
-                        
-                        # Tags
-                        if mod_details.get('tags'):
-                            tags_str = " • ".join([f"`{tag}`" for tag in mod_details['tags'][:5]])
-                            embed.add_field(name="🏷️ Tags", value=tags_str, inline=False)
-                        
-                        embed.set_footer(text="🎲 Random mod from RuneForge", icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f3b2.png")
-                        
-                        await interaction.followup.send(embed=embed)
-                        logger.info("🎲 Random mod sent to %s: %s", interaction.user, mod_name)
-                        
-                    except Exception as e:
-                        logger.error("❌ Error parsing RuneForge API response: %s", e)
-                        await interaction.followup.send(f"❌ Error parsing mods: {str(e)}", ephemeral=True)
+                    data = await response.json()
+                    mods = data if isinstance(data, list) else data.get('mods', [])
+                    
+                    if not mods:
+                        await interaction.followup.send("❌ No mods found!", ephemeral=True)
+                        return
+                    
+                    # Pick a random mod
+                    mod = random.choice(mods)
+                    mod_id = mod.get('id') or mod.get('slug', '')
+                    mod_name = mod.get('name') or mod.get('title', 'Unknown Mod')
+                    mod_url = mod.get('url', f"https://runeforge.dev/mods/{mod_id}")
+                    
+                    # Extract author info properly
+                    author = mod.get('author') or mod.get('creator', {})
+                    if isinstance(author, dict):
+                        author_name = author.get('username') or author.get('name', 'Unknown')
+                    else:
+                        author_name = str(author) if author else 'Unknown'
+                    
+                    # Fetch detailed info (with timeout)
+                    mod_details = await self.runeforge_scraper.get_mod_details(mod_url)
+                    
+                    # Use author from details if available
+                    if mod_details.get('author'):
+                        author_name = mod_details['author']
+                    
+                    # Build embed
+                    embed = discord.Embed(
+                        title=f"🎲 Random Mod: {mod_details.get('name', mod_name)}",
+                        description=mod_details.get('description', 'No description available')[:500],
+                        color=0xFF6B35,
+                        url=mod_url,
+                        timestamp=datetime.now()
+                    )
+                    
+                    # Set image
+                    if mod_details.get('image_url'):
+                        embed.set_image(url=mod_details['image_url'])
+                    
+                    # Author (moved to top for visibility)
+                    embed.set_author(
+                        name=f"By {author_name}",
+                        url=f"https://runeforge.dev/users/{author_name}" if author_name != 'Unknown' else None
+                    )
+                    
+                    # Stats
+                    stats = []
+                    if mod_details.get('views'):
+                        stats.append(f"👁️ {mod_details['views']:,} views")
+                    if mod_details.get('likes'):
+                        stats.append(f"❤️ {mod_details['likes']:,} likes")
+                    if stats:
+                        embed.add_field(name="📊 Stats", value=" • ".join(stats), inline=False)
+                    
+                    # Version
+                    if mod_details.get('version'):
+                        embed.add_field(name="🔖 Version", value=f"`{mod_details['version']}`", inline=True)
+                    
+                    embed.add_field(name="🌐 Platform", value="RuneForge", inline=True)
+                    
+                    # Tags
+                    if mod_details.get('tags'):
+                        tags_str = " • ".join([f"`{tag}`" for tag in mod_details['tags'][:5]])
+                        embed.add_field(name="🏷️ Tags", value=tags_str, inline=False)
+                    
+                    embed.set_footer(text="🎲 Random mod from RuneForge", icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f3b2.png")
+                    
+                    await interaction.followup.send(embed=embed)
+                    logger.info("🎲 Random mod sent to %s: %s by %s", interaction.user, mod_name, author_name)
         
         except Exception as e:
             logger.error("❌ Random mod error: %s", e)
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            # Try to send error message (may fail if interaction already timed out)
+            try:
+                await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            except:
+                pass
 
 
 async def setup(bot: commands.Bot):
