@@ -711,6 +711,66 @@ class DivineSkinsScraper:
                                 if skins:
                                     logger.info("✅ Parsed %s skins from __NEXT_DATA__ for %s", len(skins), username)
                                     return skins
+                            # If not in common shapes, recursively scan pageProps for candidate items
+                            def _collect_candidates(node, results: list):
+                                try:
+                                    if isinstance(node, list):
+                                        for el in node:
+                                            _collect_candidates(el, results)
+                                    elif isinstance(node, dict):
+                                        # Heuristic: a dict representing a work/skin typically has title/name and slug or url
+                                        title = node.get('title') or node.get('name')
+                                        slug = node.get('slug') or node.get('id')
+                                        urlp = node.get('url') or node.get('path')
+                                        looks_like_item = title and (slug or urlp)
+                                        if looks_like_item:
+                                            results.append(node)
+                                        for v in node.values():
+                                            _collect_candidates(v, results)
+                                except Exception:
+                                    return
+
+                            candidates: list = []
+                            _collect_candidates(props, candidates)
+                            added = 0
+                            for w in candidates[:100]:  # limit
+                                try:
+                                    slug = (w.get('slug') or w.get('id') or '').strip()
+                                    name = (w.get('title') or w.get('name') or '').strip() or 'Untitled'
+                                    url_path = (w.get('url') or w.get('path') or '').strip()
+                                    # Prefer explicit url that includes /{username}/
+                                    if isinstance(url_path, str) and f'/{username}/' in url_path:
+                                        skin_url = url_path if url_path.startswith('http') else f"{self.BASE_URL}{url_path}"
+                                    elif slug:
+                                        skin_url = f"{self.BASE_URL}/{username}/{slug}"
+                                    else:
+                                        continue
+                                    item = {
+                                        'id': slug or skin_url.rstrip('/').split('/')[-1],
+                                        'name': name,
+                                        'url': skin_url,
+                                        'updated_at': w.get('updatedAt', '')
+                                    }
+                                    v = w.get('views') or w.get('viewCount')
+                                    if isinstance(v, int):
+                                        item['views'] = v
+                                    l = w.get('likes') or w.get('likeCount')
+                                    if isinstance(l, int):
+                                        item['likes'] = l
+                                    skins.append(item)
+                                    added += 1
+                                except Exception:
+                                    continue
+                            if added:
+                                # Deduplicate by URL
+                                seenu = set()
+                                uniq = []
+                                for s in skins:
+                                    if s['url'] not in seenu:
+                                        seenu.add(s['url'])
+                                        uniq.append(s)
+                                logger.info("✅ Parsed %s skins from __NEXT_DATA__ (recursive) for %s", len(uniq), username)
+                                return uniq
                     except Exception as e:
                         logger.warning("⚠️ Failed parsing __NEXT_DATA__ on DivineSkins profile: %s", e)
 
@@ -720,8 +780,8 @@ class DivineSkinsScraper:
                     # Look for links to mod pages: /username/mod-name format
                     for link in soup.find_all('a', href=True):
                         href = link['href']
-                        # DivineSkins mod URLs: /username/mod-slug
-                        if href.startswith(f'/{username}/') and href != f'/{username}':
+                        # DivineSkins mod URLs: /username/mod-slug (sometimes absolute or different base)
+                        if (href.startswith(f'/{username}/') or (f'/{username}/' in href)) and href != f'/{username}':
                             skin_url = f"{self.BASE_URL}{href}" if not href.startswith('http') else href
                             # Extract mod slug (last part of URL)
                             skin_id = href.split('/')[-1]
