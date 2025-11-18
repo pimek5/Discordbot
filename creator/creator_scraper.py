@@ -371,6 +371,79 @@ class DivineSkinsScraper:
                         'author_avatar': None,
                         'category': ''
                     }
+
+                    # Prefer structured Next.js data if available
+                    try:
+                        import json
+                        m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+                        if m:
+                            next_json = json.loads(m.group(1))
+                            props = next_json.get('props', {}).get('pageProps', {})
+                            # Try common payload shapes for a work/skin page
+                            work = (
+                                props.get('work')
+                                or props.get('skin')
+                                or props.get('item')
+                                or props.get('mod')
+                                or props.get('data')
+                            )
+                            if isinstance(work, dict):
+                                def pick(obj, keys, default=None):
+                                    for k in keys:
+                                        if k in obj and obj[k] not in (None, ''):
+                                            return obj[k]
+                                    return default
+
+                                # Basic fields
+                                details['name'] = pick(work, ['title', 'name', 'slug'], details['name'])
+                                details['description'] = pick(work, ['description', 'summary', 'content'], details['description'])
+                                details['version'] = pick(work, ['version', 'release'], details['version'])
+                                details['updated_at'] = pick(work, ['updatedAt', 'updated_at', 'modifiedAt'], details['updated_at'])
+                                details['created_at'] = pick(work, ['createdAt', 'created_at'], details['created_at'])
+
+                                # Stats
+                                details['views'] = int(pick(work, ['views', 'viewCount', 'viewsCount'], 0) or 0)
+                                details['likes'] = int(pick(work, ['likes', 'likeCount', 'likesCount'], 0) or 0)
+                                details['downloads'] = int(pick(work, ['downloads', 'downloadCount'], 0) or 0)
+
+                                # Tags / Categories
+                                tags = []
+                                cats = pick(work, ['categories', 'tags'], []) or []
+                                if isinstance(cats, list):
+                                    for c in cats:
+                                        if isinstance(c, dict):
+                                            name = c.get('name') or c.get('title')
+                                            if name:
+                                                tags.append(name)
+                                        elif isinstance(c, str):
+                                            tags.append(c)
+                                details['tags'] = tags[:5]
+
+                                # Image selection
+                                # Try explicit fields first
+                                image_candidates = [
+                                    pick(work, ['thumbnail', 'image', 'cover', 'preview', 'banner', 'previewImage', 'preview_image']),
+                                ]
+                                # Arrays of images/attachments
+                                for arr_key in ['images', 'attachments', 'assets', 'media']:
+                                    arr = work.get(arr_key)
+                                    if isinstance(arr, list):
+                                        for item in arr:
+                                            if isinstance(item, dict):
+                                                image_candidates.append(item.get('url') or item.get('src'))
+                                            elif isinstance(item, str):
+                                                image_candidates.append(item)
+                                # Pick the first valid image
+                                img = next((x for x in image_candidates if isinstance(x, str) and x.strip()), None)
+                                if img:
+                                    img = self._strip_cdn_proxy(img)
+                                    if img.startswith('/'):
+                                        img = f"{self.BASE_URL}{img}"
+                                    details['image_url'] = img
+
+                                logger.info("[DivineSkins] ✅ Parsed mod via __NEXT_DATA__")
+                    except Exception as e:
+                        logger.warning("⚠️ DivineSkins __NEXT_DATA__ parse failed: %s", e)
                     
                     # Try to extract from meta tags first
                     title_tag = soup.find('meta', property='og:title')
@@ -384,32 +457,25 @@ class DivineSkinsScraper:
                     # Get image
                     details['image_url'] = await self.get_mod_image(mod_url)
                     
-                    # Parse page text for stats - DivineSkins format: "98Views" "15Downloads" "0Likes" "0Comments"
+                    # If some stats still missing, fallback to parsing page text
                     page_text = soup.get_text()
-                    logger.info(f"[DivineSkins] Searching in page text...")
+                    logger.info(f"[DivineSkins] Searching in page text for fallbacks...")
                     
-                    # DivineSkins specific: numbers directly before keywords (no spaces)
-                    # Pattern: \d+Views, \d+Downloads, \d+Likes
-                    views_match = re.search(r'(\d+)\s*Views?', page_text, re.I)
-                    if views_match:
-                        details['views'] = int(views_match.group(1))
-                        logger.info(f"[DivineSkins] ✅ Views: {views_match.group(1)} -> {details['views']}")
-                    else:
-                        logger.warning("[DivineSkins] ❌ No views found")
-                    
-                    downloads_match = re.search(r'(\d+)\s*Downloads?', page_text, re.I)
-                    if downloads_match:
-                        details['downloads'] = int(downloads_match.group(1))
-                        logger.info(f"[DivineSkins] ✅ Downloads: {downloads_match.group(1)} -> {details['downloads']}")
-                    else:
-                        logger.warning("[DivineSkins] ❌ No downloads found")
-                    
-                    likes_match = re.search(r'(\d+)\s*Likes?', page_text, re.I)
-                    if likes_match:
-                        details['likes'] = int(likes_match.group(1))
-                        logger.info(f"[DivineSkins] ✅ Likes: {likes_match.group(1)} -> {details['likes']}")
-                    else:
-                        logger.warning("[DivineSkins] ❌ No likes found")
+                    if not details.get('views'):
+                        views_match = re.search(r'(\d+)\s*Views?', page_text, re.I)
+                        if views_match:
+                            details['views'] = int(views_match.group(1))
+                            logger.info(f"[DivineSkins] ✅ Views: {views_match.group(1)} -> {details['views']}")
+                    if not details.get('downloads'):
+                        downloads_match = re.search(r'(\d+)\s*Downloads?', page_text, re.I)
+                        if downloads_match:
+                            details['downloads'] = int(downloads_match.group(1))
+                            logger.info(f"[DivineSkins] ✅ Downloads: {downloads_match.group(1)} -> {details['downloads']}")
+                    if not details.get('likes'):
+                        likes_match = re.search(r'(\d+)\s*Likes?', page_text, re.I)
+                        if likes_match:
+                            details['likes'] = int(likes_match.group(1))
+                            logger.info(f"[DivineSkins] ✅ Likes: {likes_match.group(1)} -> {details['likes']}")
                     
                     # Comments (bonus)
                     comments_match = re.search(r'(\d+)\s*Comments?', page_text, re.I)
@@ -428,11 +494,12 @@ class DivineSkinsScraper:
                         details['version'] = version_match.group(1)
                         logger.info(f"[DivineSkins] ✅ Version: {version_match.group(1)}")
                     
-                    # Categories - look for "Main Category" or category links
-                    category_links = soup.find_all('a', href=re.compile(r'/explore-mods\?categoryId='))
-                    if category_links:
-                        details['tags'] = [link.get_text(strip=True) for link in category_links[:5]]
-                        logger.info(f"[DivineSkins] ✅ Categories: {details['tags']}")
+                    # Categories - if still empty, look for category links
+                    if not details['tags']:
+                        category_links = soup.find_all('a', href=re.compile(r'/explore-mods\?categoryId='))
+                        if category_links:
+                            details['tags'] = [link.get_text(strip=True) for link in category_links[:5]]
+                            logger.info(f"[DivineSkins] ✅ Categories (fallback): {details['tags']}")
                     
                     logger.info(f"✅ Fetched DivineSkins details: {details.get('name', mod_url)}")
                     return details
@@ -625,12 +692,20 @@ class DivineSkinsScraper:
                                         name = w.get('title') or w.get('name') or 'Untitled'
                                         url_path = w.get('url') or f"/{username}/{slug}"
                                         skin_url = url_path if url_path.startswith('http') else f"{self.BASE_URL}{url_path}"
-                                        skins.append({
+                                        item = {
                                             'id': str(slug),
                                             'name': name,
                                             'url': skin_url,
                                             'updated_at': w.get('updatedAt', '')
-                                        })
+                                        }
+                                        # Optional stats if provided
+                                        v = w.get('views') or w.get('viewCount')
+                                        if isinstance(v, int):
+                                            item['views'] = v
+                                        l = w.get('likes') or w.get('likeCount')
+                                        if isinstance(l, int):
+                                            item['likes'] = l
+                                        skins.append(item)
                                     except Exception:
                                         continue
                                 if skins:
