@@ -89,6 +89,7 @@ class CreatorBot(commands.Bot):
                 if platform == 'runeforge':
                     await self.check_runeforge_updates(creator_id, profile_url, discord_user_id)
                 elif platform == 'divineskins':
+                    # [Not working for now] - DivineSkins requires JavaScript execution (CSR)
                     await self.check_divineskins_updates(creator_id, profile_url, discord_user_id)
                 
                 # Rate limiting (be nice)
@@ -148,6 +149,7 @@ class CreatorBot(commands.Bot):
             logger.error("❌ Error checking RuneForge for %s: %s", profile_url, e)
     
     async def check_divineskins_updates(self, creator_id: int, profile_url: str, discord_user_id: int):
+        """[Not working for now] - DivineSkins requires JavaScript execution (CSR)"""
         try:
             username = profile_url.rstrip('/').split('/')[-1]
             skins = await self.divineskins_scraper.get_user_skins(username)

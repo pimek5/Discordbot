@@ -56,6 +56,14 @@ class CreatorCommands(commands.Cog):
             elif 'divineskins.gg' in url.lower():
                 platform = 'divineskins'
                 username = url.rstrip('/').split('/')[-1]
+                # [Not working for now] - DivineSkins requires JavaScript execution
+                await interaction.followup.send(
+                    "⚠️ **DivineSkins tracking not working for now**\n"
+                    "DivineSkins uses client-side rendering (CSR) which requires JavaScript execution.\n"
+                    "Please use RuneForge for now, or wait for headless browser implementation.",
+                    ephemeral=True
+                )
+                return
             else:
                 await interaction.followup.send(
                     "❌ Invalid URL! Must be from RuneForge.dev or DivineSkins.gg",
@@ -69,6 +77,7 @@ class CreatorCommands(commands.Cog):
             if platform == 'runeforge':
                 profile_data = await self.runeforge_scraper.get_profile_data(username)
             else:
+                # [Not working for now] - DivineSkins requires JavaScript execution (CSR)
                 profile_data = await self.divineskins_scraper.get_profile_data(username)
             
             if not profile_data:
@@ -284,6 +293,7 @@ class CreatorCommands(commands.Cog):
                 profile = await self.runeforge_scraper.get_profile_data(username)
                 mods = await self.runeforge_scraper.get_user_mods(username)
             else:
+                # [Not working for now] - DivineSkins requires JavaScript execution (CSR)
                 profile = await self.divineskins_scraper.get_profile_data(username)
                 mods = await self.divineskins_scraper.get_user_skins(username)
             
@@ -301,7 +311,10 @@ class CreatorCommands(commands.Cog):
                 embed.add_field(name="❌ Profile Failed", value="Could not fetch profile", inline=False)
             
             if mods:
-                embed.add_field(name="✅ Content Found", value=f"{len(mods)} items", inline=False)
+                mods_label = "✅ Content Found"
+                if platform == 'divineskins':
+                    mods_label = "⚠️ Content Found [Not working for now]"
+                embed.add_field(name=mods_label, value=f"{len(mods)} items", inline=False)
                 recent = mods[:3]
                 items_text = "\n".join([f"• [{m['name']}]({m['url']})" for m in recent])
                 embed.add_field(name="Recent Items (3)", value=items_text, inline=False)
