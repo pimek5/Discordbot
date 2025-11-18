@@ -320,6 +320,16 @@ class RuneForgeScraper:
                     if updated_match:
                         details['updated_at'] = updated_match.group(1).strip()
                     
+                    # Author - find link to /users/username
+                    author_link = soup.find('a', href=re.compile(r'^/users/[^/]+$'))
+                    if author_link:
+                        # Extract username from href like /users/p1mek
+                        href = author_link.get('href', '')
+                        username = href.split('/users/')[-1] if '/users/' in href else ''
+                        if username:
+                            details['author'] = username
+                            logger.info(f"[RuneForge] Author: {username}")
+                    
                     # Tags/Categories
                     tag_elements = soup.find_all('a', href=re.compile(r'/tags?/|/categories?/'))
                     details['tags'] = [tag.get_text(strip=True) for tag in tag_elements[:5]]

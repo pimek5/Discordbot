@@ -502,12 +502,12 @@ class CreatorCommands(commands.Cog):
                     mod_name = mod.get('name') or mod.get('title', 'Unknown Mod')
                     mod_url = mod.get('url', f"https://runeforge.dev/mods/{mod_id}")
                     
-                    # Extract author info properly
-                    author = mod.get('author') or mod.get('creator', {})
-                    if isinstance(author, dict):
-                        author_name = author.get('username') or author.get('name', 'Unknown')
+                    # Extract author info properly - RuneForge API uses 'publisher'
+                    publisher = mod.get('publisher', {})
+                    if isinstance(publisher, dict):
+                        author_name = publisher.get('username', 'Unknown')
                     else:
-                        author_name = str(author) if author else 'Unknown'
+                        author_name = str(publisher) if publisher else 'Unknown'
                     
                     # Fetch detailed info (with timeout)
                     mod_details = await self.runeforge_scraper.get_mod_details(mod_url)
