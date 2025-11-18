@@ -474,13 +474,38 @@ class CreatorCommands(commands.Cog):
             import aiohttp
             import random
             
-            # Fetch recent mods from RuneForge API
-            api_url = "https://runeforge.dev/api/mods?page=0&limit=50"
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
             
             async with aiohttp.ClientSession() as session:
+                # Step 1: Get total count to calculate random page
+                total_api_url = "https://runeforge.dev/api/mods?page=0&limit=1"
+                async with session.get(total_api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                    if response.status != 200:
+                        await interaction.followup.send(
+                            f"❌ Failed to fetch mods from RuneForge (Status: {response.status})",
+                            ephemeral=True
+                        )
+                        return
+                    
+                    data = await response.json()
+                    total_mods = data.get('total', 0) if isinstance(data, dict) else 0
+                    
+                    if total_mods == 0:
+                        await interaction.followup.send("❌ No mods available!", ephemeral=True)
+                        return
+                    
+                    # RuneForge API returns 24 mods per page
+                    mods_per_page = 24
+                    total_pages = (total_mods + mods_per_page - 1) // mods_per_page  # Ceiling division
+                    
+                    # Pick random page
+                    random_page = random.randint(0, max(0, total_pages - 1))
+                    logger.info(f"🎲 Random mod: picking from page {random_page}/{total_pages} (total: {total_mods} mods)")
+                
+                # Step 2: Fetch random page
+                api_url = f"https://runeforge.dev/api/mods?page={random_page}"
                 async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                     if response.status != 200:
                         await interaction.followup.send(
@@ -490,13 +515,13 @@ class CreatorCommands(commands.Cog):
                         return
                     
                     data = await response.json()
-                    mods = data if isinstance(data, list) else data.get('mods', [])
+                    mods = data.get('mods', []) if isinstance(data, dict) else data
                     
                     if not mods:
-                        await interaction.followup.send("❌ No mods found!", ephemeral=True)
+                        await interaction.followup.send("❌ No mods found on this page!", ephemeral=True)
                         return
                     
-                    # Pick a random mod
+                    # Pick a random mod from the page
                     mod = random.choice(mods)
                     mod_id = mod.get('id') or mod.get('slug', '')
                     mod_name = mod.get('name') or mod.get('title', 'Unknown Mod')
@@ -558,7 +583,7 @@ class CreatorCommands(commands.Cog):
                     embed.set_footer(text="🎲 Random mod from RuneForge", icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f3b2.png")
                     
                     await interaction.followup.send(embed=embed)
-                    logger.info("🎲 Random mod sent to %s: %s by %s", interaction.user, mod_name, author_name)
+                    logger.info("🎲 Random mod sent to %s: %s by %s (from %d total mods)", interaction.user, mod_name, author_name, total_mods)
         
         except Exception as e:
             logger.error("❌ Random mod error: %s", e)
