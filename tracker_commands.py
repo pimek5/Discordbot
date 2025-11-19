@@ -15,6 +15,7 @@ from io import BytesIO
 from PIL import Image
 
 from database import get_db
+from permissions import has_admin_permissions
 
 logger = logging.getLogger('tracker_commands')
 
@@ -123,6 +124,27 @@ class BettingDatabase:
         # Remove resolved bets
         cursor.execute('DELETE FROM active_bets WHERE game_id = %s', (game_id,))
         conn.commit()
+    
+    def modify_balance(self, discord_id: int, amount: int) -> int:
+        """Add or remove coins from user balance (admin command)"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        # Ensure user exists
+        cursor.execute('''
+            INSERT INTO user_balance (discord_id) VALUES (%s)
+            ON CONFLICT (discord_id) DO NOTHING
+        ''', (discord_id,))
+        
+        # Modify balance
+        cursor.execute('''
+            UPDATE user_balance SET balance = balance + %s WHERE discord_id = %s
+            RETURNING balance
+        ''', (amount, discord_id))
+        result = cursor.fetchone()
+        conn.commit()
+        
+        return result[0] if result else 0
 
 betting_db = BettingDatabase()
 
@@ -633,6 +655,58 @@ class TrackerCommands(commands.Cog):
                 f"💰 Your balance: **{balance}** coins",
                 ephemeral=True
             )
+    
+    @app_commands.command(name="coins", description="[ADMIN] Manage user coin balance")
+    @app_commands.describe(
+        action="Add or remove coins",
+        user="Target user",
+        amount="Amount of coins"
+    )
+    async def coins(
+        self, 
+        interaction: discord.Interaction, 
+        action: discord.app_commands.Choice[str],
+        user: discord.Member,
+        amount: int
+    ):
+        """Admin command to manage coin balances"""
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission to use this command!",
+                ephemeral=True
+            )
+            return
+        
+        if amount <= 0:
+            await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+            return
+        
+        # Add or remove
+        coins_change = amount if action.value == "add" else -amount
+        new_balance = self.betting_db.modify_balance(user.id, coins_change)
+        
+        action_text = "added to" if action.value == "add" else "removed from"
+        embed = discord.Embed(
+            title="💰 Balance Updated",
+            description=f"**{amount}** coins {action_text} {user.mention}",
+            color=0x00FF00 if action.value == "add" else 0xFF0000
+        )
+        embed.add_field(name="New Balance", value=f"**{new_balance}** coins")
+        embed.set_footer(text=f"Action by {interaction.user.name}")
+        
+        await interaction.response.send_message(embed=embed)
+    
+    @coins.autocomplete('action')
+    async def coins_action_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        actions = [
+            app_commands.Choice(name="Add coins", value="add"),
+            app_commands.Choice(name="Remove coins", value="remove")
+        ]
+        return actions
 
 async def setup(bot: commands.Bot, riot_api, guild_id: int):
     await bot.add_cog(TrackerCommands(bot, riot_api, guild_id))
