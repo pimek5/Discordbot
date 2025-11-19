@@ -11,6 +11,8 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 import aiohttp
+from io import BytesIO
+from PIL import Image
 
 from database import get_db
 
@@ -194,6 +196,9 @@ class TrackerCommands(commands.Cog):
         self.riot_api = riot_api
         self.guild_id = guild_id
         self.betting_db = BettingDatabase()
+        # Data Dragon cache
+        self.dd_version: Optional[str] = None
+        self.champions_by_key: Dict[int, Dict] = {}
         self.active_trackers: Dict[int, dict] = {}  # thread_id -> tracker info
         self.tracker_loop.start()
     
@@ -304,22 +309,28 @@ class TrackerCommands(commands.Cog):
     
     async def _send_game_embed(self, thread, user, account, spectator_data, game_id: str):
         """Send live game tracking embed"""
-        # Get champion data
-        champion_id = spectator_data.get('championId')
-        champion_name = await self._get_champion_name(champion_id)
+        # Get player and champion data
+        champion_id = None
+        player_data = None
+        for participant in spectator_data.get('participants', []):
+            if participant.get('puuid') == account['puuid']:
+                player_data = participant
+                champion_id = participant.get('championId')
+                break
+        champion_name = await self._get_champion_name(champion_id or 0)
         
         # Calculate game time
         game_start = spectator_data.get('gameStartTime', 0)
         game_length = spectator_data.get('gameLength', 0)
         
-        # Find player in participants
-        player_data = None
-        for participant in spectator_data.get('participants', []):
-            if participant.get('puuid') == account['puuid']:
-                player_data = participant
-                break
-        
         team_id = player_data.get('teamId', 100) if player_data else 100
+        
+        # Build drafts
+        participants = spectator_data.get('participants', [])
+        blue_ids = [p.get('championId') for p in participants if p.get('teamId') == 100]
+        red_ids = [p.get('championId') for p in participants if p.get('teamId') == 200]
+        blue_names = [await self._get_champion_name(cid or 0) for cid in blue_ids]
+        red_names = [await self._get_champion_name(cid or 0) for cid in red_ids]
         
         # Create embed
         embed = discord.Embed(
@@ -328,6 +339,11 @@ class TrackerCommands(commands.Cog):
             color=0x0099FF if team_id == 100 else 0xFF4444,
             timestamp=datetime.now()
         )
+        # Set player's champion icon as thumbnail
+        if champion_id is not None:
+            icon_url = await self._get_champion_icon_url(champion_id)
+            if icon_url:
+                embed.set_thumbnail(url=icon_url)
         
         # Game info
         game_mode = spectator_data.get('gameMode', 'Unknown')
@@ -349,6 +365,20 @@ class TrackerCommands(commands.Cog):
             value=f"**{champion_name}**",
             inline=True
         )
+        
+        # Drafts (names)
+        if blue_names:
+            embed.add_field(
+                name="🔵 Blue Draft",
+                value=" | ".join([f"**{n}**" for n in blue_names]),
+                inline=False
+            )
+        if red_names:
+            embed.add_field(
+                name="🔴 Red Draft",
+                value=" | ".join([f"**{n}**" for n in red_names]),
+                inline=False
+            )
         
         # Find high elo players / streamers
         pros_in_game = await self._find_notable_players(spectator_data)
@@ -374,16 +404,113 @@ class TrackerCommands(commands.Cog):
             inline=False
         )
         
+        # Add combined draft image with champion icons
+        file, attachment_url = await self._build_draft_image(blue_ids, red_ids)
+        if attachment_url:
+            embed.set_image(url=attachment_url)
+        
         embed.set_footer(text=f"Game ID: {game_id} • Auto-updates every 30s")
         
         # Send with betting buttons
         view = BetView(game_id, thread.id)
-        await thread.send(embed=embed, view=view)
+        if file:
+            await thread.send(embed=embed, view=view, file=file)
+        else:
+            await thread.send(embed=embed, view=view)
     
+    async def _ensure_champion_data(self):
+        """Ensure Data Dragon version and champion mappings are loaded"""
+        if self.dd_version and self.champions_by_key:
+            return
+        # Fetch latest version
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get("https://ddragon.leagueoflegends.com/api/versions.json") as resp:
+                    versions = await resp.json()
+                    self.dd_version = versions[0]
+                # Fetch champion data
+                champs_url = f"https://ddragon.leagueoflegends.com/cdn/{self.dd_version}/data/en_US/champion.json"
+                async with session.get(champs_url) as resp:
+                    data = await resp.json()
+                    mapping: Dict[int, Dict] = {}
+                    for champ_key, champ in data.get('data', {}).items():
+                        key_int = int(champ.get('key'))
+                        mapping[key_int] = {
+                            'id': champ.get('id'),   # e.g., Aatrox
+                            'name': champ.get('name')  # e.g., Aatrox
+                        }
+                    self.champions_by_key = mapping
+        except Exception as e:
+            logger.error(f"Failed to load Data Dragon champion data: {e}")
+            # Fallback minimal
+            self.dd_version = self.dd_version or "13.1.1"
+            if not self.champions_by_key:
+                self.champions_by_key = {}
+
     async def _get_champion_name(self, champion_id: int) -> str:
-        """Get champion name from ID"""
-        # This would use Data Dragon or cached champion data
-        return f"Champion {champion_id}"  # Placeholder
+        """Get champion name from numeric ID"""
+        await self._ensure_champion_data()
+        info = self.champions_by_key.get(int(champion_id)) if champion_id else None
+        return info.get('name') if info else f"Champion {champion_id}"
+
+    async def _get_champion_icon_url(self, champion_id: int) -> Optional[str]:
+        """Get champion square icon URL from numeric ID"""
+        await self._ensure_champion_data()
+        info = self.champions_by_key.get(int(champion_id)) if champion_id else None
+        if not info or not self.dd_version:
+            return None
+        champ_id = info['id']  # e.g., Aatrox
+        return f"https://ddragon.leagueoflegends.com/cdn/{self.dd_version}/img/champion/{champ_id}.png"
+
+    async def _build_draft_image(self, blue_ids: List[Optional[int]], red_ids: List[Optional[int]]):
+        """Build a 2x5 grid image of champion icons and return (discord.File, attachment_url)"""
+        try:
+            await self._ensure_champion_data()
+            size = 80
+            padding = 4
+            cols = 5
+            rows = 2
+            width = cols * size + (cols + 1) * padding
+            height = rows * size + (rows + 1) * padding
+            canvas = Image.new('RGBA', (width, height), (24, 24, 24, 255))
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                # helper to fetch and paste
+                async def fetch_icon(cid: Optional[int]):
+                    url = await self._get_champion_icon_url(cid or 0)
+                    if not url:
+                        return None
+                    try:
+                        async with session.get(url) as resp:
+                            if resp.status == 200:
+                                data = await resp.read()
+                                img = Image.open(BytesIO(data)).convert('RGBA')
+                                return img.resize((size, size), Image.LANCZOS)
+                    except Exception:
+                        return None
+                    return None
+                # Blue row
+                for i, cid in enumerate(blue_ids[:5]):
+                    img = await fetch_icon(cid)
+                    x = padding + i * (size + padding)
+                    y = padding
+                    if img:
+                        canvas.paste(img, (x, y), img)
+                # Red row
+                for i, cid in enumerate(red_ids[:5]):
+                    img = await fetch_icon(cid)
+                    x = padding + i * (size + padding)
+                    y = padding * 2 + size
+                    if img:
+                        canvas.paste(img, (x, y), img)
+            bio = BytesIO()
+            canvas.save(bio, format='PNG')
+            bio.seek(0)
+            file = discord.File(bio, filename='draft.png')
+            return file, 'attachment://draft.png'
+        except Exception as e:
+            logger.warning(f"Failed generating draft image: {e}")
+            return None, None
     
     async def _find_notable_players(self, spectator_data) -> List[Dict]:
         """Find high elo players or known streamers in game"""
