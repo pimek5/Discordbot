@@ -942,6 +942,83 @@ class TrackerCommands(commands.Cog):
             del self.active_trackers[tid]
         await interaction.response.send_message("✅ Continuous tracking disabled.", ephemeral=True)
     
+    @app_commands.command(name="resolve", description="[ADMIN] Manually resolve bets for a finished game")
+    @app_commands.describe(
+        game_id="Game ID from the tracking thread",
+        result="Did the tracked player win or lose?"
+    )
+    async def resolve(
+        self,
+        interaction: discord.Interaction,
+        game_id: str,
+        result: str
+    ):
+        """Admin command to manually resolve bets when auto-resolution fails"""
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission to use this command!",
+                ephemeral=True
+            )
+            return
+        
+        if result.lower() not in ["win", "lose"]:
+            await interaction.response.send_message(
+                "❌ Result must be 'win' or 'lose'!",
+                ephemeral=True
+            )
+            return
+        
+        # Check if there are bets for this game
+        conn = self.betting_db.db.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM active_bets WHERE game_id = %s', (game_id,))
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                await interaction.response.send_message(
+                    f"❌ No active bets found for game ID: `{game_id}`",
+                    ephemeral=True
+                )
+                return
+            
+            # Resolve bets
+            self.betting_db.resolve_bet(game_id, result.lower())
+            
+            result_emoji = "🎉" if result.lower() == "win" else "💔"
+            embed = discord.Embed(
+                title=f"{result_emoji} Bets Resolved",
+                description=f"Game ID: `{game_id}`\nResult: **{result.upper()}**",
+                color=0x00FF00 if result.lower() == "win" else 0xFF0000
+            )
+            embed.add_field(
+                name="Bets Processed",
+                value=f"**{count}** bets have been resolved."
+            )
+            embed.set_footer(text=f"Resolved by {interaction.user.name}")
+            
+            await interaction.response.send_message(embed=embed)
+            
+            # Stop active tracker if exists
+            for tid, info in list(self.active_trackers.items()):
+                if info.get('game_id') == game_id:
+                    del self.active_trackers[tid]
+                    break
+                    
+        finally:
+            self.betting_db.db.return_connection(conn)
+    
+    @resolve.autocomplete('result')
+    async def resolve_result_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        return [
+            app_commands.Choice(name="Win", value="win"),
+            app_commands.Choice(name="Lose", value="lose")
+        ]
+    
     @app_commands.command(name="coins", description="[ADMIN] Manage user coin balance")
     @app_commands.describe(
         action="Add or remove coins",
