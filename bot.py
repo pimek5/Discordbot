@@ -7,7 +7,7 @@ TABLE OF CONTENTS:
 1. IMPORTS & SETUP (Lines 1-100)
    - Discord imports
    - Kassalytics integration
-   - Logging setup
+   - Logging setup 
 
 2. CONFIGURATION (Lines 100-200)
    - Intents & timeouts
