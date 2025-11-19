@@ -396,22 +396,21 @@ class LeaderboardCommands(commands.Cog):
                 else:
                     rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
                 
-                # Get user display name with fallback chain
+                # Get user display - use mention for clickable profile
                 user_display = None
                 if member:
-                    # Try display_name first
-                    if member.display_name and not member.display_name.startswith('<@'):
-                        user_display = f"**{member.display_name}**"
-                    else:
-                        # Fallback: try to fetch user globally
-                        try:
-                            fetched_user = await self.bot.fetch_user(member.id)
-                            if fetched_user:
-                                user_display = f"**{fetched_user.name}**"
-                        except:
-                            pass
+                    # Use mention (clickable) - Discord will show their current username/nick
+                    user_display = member.mention
+                else:
+                    # Fallback: try to fetch user globally and use mention
+                    try:
+                        fetched_user = await self.bot.fetch_user(member.id) if member else None
+                        if fetched_user:
+                            user_display = f"<@{fetched_user.id}>"
+                    except:
+                        pass
                 
-                # Final fallback: use riot name
+                # Final fallback: use riot name (not clickable)
                 if not user_display:
                     user_display = f"**{data.get('riot_name', 'Unknown')}**"
                 
