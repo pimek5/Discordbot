@@ -179,7 +179,7 @@ class LeaderboardCommands(commands.Cog):
         except:
             pass
     
-    @app_commands.command(name="ranktop", description="View TOP20 ranked players on this server")
+    @app_commands.command(name="ranktop", description="View TOP20 ranked players on this server") 
     @app_commands.describe(
         user="Show specific user's position in ranking (optional)",
         region="Filter by specific region (optional)"
