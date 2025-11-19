@@ -534,9 +534,58 @@ class TrackerCommands(commands.Cog):
                 )
                 
                 if not spectator_data:
-                    # Game ended
-                    await thread.send("🏁 **Game has ended!**")
-                    # TODO: Resolve bets based on match history
+                    # Game ended - check match history for result
+                    await thread.send("🏁 **Game has ended! Checking results...**")
+                    
+                    # Wait a bit for match to be recorded
+                    await asyncio.sleep(10)
+                    
+                    # Get recent match
+                    game_id = tracker_info['game_id']
+                    user_id = tracker_info['user_id']
+                    try:
+                        matches = await self.riot_api.get_match_history(
+                            account['puuid'],
+                            account['region'],
+                            count=1
+                        )
+                        
+                        if matches:
+                            match_id = matches[0]
+                            match_details = await self.riot_api.get_match_details(
+                                match_id,
+                                account['region']
+                            )
+                            
+                            # Find player in match
+                            if match_details:
+                                participants = match_details.get('info', {}).get('participants', [])
+                                player_won = None
+                                for p in participants:
+                                    if p.get('puuid') == account['puuid']:
+                                        player_won = p.get('win', False)
+                                        break
+                                
+                                if player_won is not None:
+                                    result = 'win' if player_won else 'lose'
+                                    self.betting_db.resolve_bet(game_id, result)
+                                    
+                                    result_emoji = "🎉" if player_won else "💔"
+                                    result_text = "**WON**" if player_won else "**LOST**"
+                                    await thread.send(
+                                        f"{result_emoji} Game result: {result_text}\n"
+                                        f"All bets have been resolved! Check `/balance` to see your winnings."
+                                    )
+                                else:
+                                    await thread.send("⚠️ Could not determine game result. Bets not resolved.")
+                            else:
+                                await thread.send("⚠️ Match details not found. Bets not resolved.")
+                        else:
+                            await thread.send("⚠️ Match not found in history yet. Bets not resolved.")
+                    except Exception as e:
+                        logger.error(f"Error resolving bets: {e}")
+                        await thread.send("⚠️ Error checking game result. Bets not resolved.")
+                    
                     del self.active_trackers[thread_id]
                     continue
                 
