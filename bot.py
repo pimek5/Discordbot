@@ -1,5 +1,5 @@
 """
-HEXRTBRXEN BOT - Discord Bot for League of Legends Community
+HEXRTBRXEN BOT - Discord Bot for League of Legends Community 
 ===============================================================
 
 TABLE OF CONTENTS: 
