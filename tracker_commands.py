@@ -251,29 +251,48 @@ class TrackerCommands(commands.Cog):
             await interaction.followup.send("❌ Tracking channel not found!", ephemeral=True)
             return
         
-        thread_name = f"Tracking {target_user.display_name}"
+        thread_name = f"🎮 {target_user.display_name}'s Game"
+        
+        # Store tracker info temporarily (we'll get thread after creation)
+        game_id = str(spectator_data.get('gameId', ''))
+        
+        # For ForumChannel, we need to create thread with initial message
+        # Create initial embed first
+        champion_id = spectator_data.get('championId')
+        champion_name = await self._get_champion_name(champion_id)
+        
+        initial_embed = discord.Embed(
+            title=f"🎮 Live Game Tracking",
+            description=f"Tracking **{target_user.display_name}**'s live game",
+            color=0x0099FF,
+            timestamp=datetime.now()
+        )
+        initial_embed.add_field(name="🦸 Champion", value=champion_name, inline=True)
+        initial_embed.add_field(name="⏱️ Status", value="Loading game data...", inline=True)
+        
+        # Create thread in forum with initial embed and betting view
+        bet_view = BetView(self.betting_db, target_user.id, game_id)
         thread = await channel.create_thread(
             name=thread_name,
-            type=discord.ChannelType.public_thread,
-            auto_archive_duration=60
+            embed=initial_embed,
+            view=bet_view
         )
         
         # Store tracker info
-        game_id = str(spectator_data.get('gameId', ''))
-        self.active_trackers[thread.id] = {
+        self.active_trackers[thread.thread.id] = {
             'user_id': target_user.id,
             'account': account,
             'game_id': game_id,
             'spectator_data': spectator_data,
-            'thread': thread,
+            'thread': thread.thread,
             'start_time': datetime.now()
         }
         
-        # Send initial embed
-        await self._send_game_embed(thread, target_user, account, spectator_data, game_id)
+        # Send full game embed
+        await self._send_game_embed(thread.thread, target_user, account, spectator_data, game_id)
         
         await interaction.followup.send(
-            f"✅ Started tracking {target_user.mention}'s game in {thread.mention}!",
+            f"✅ Started tracking {target_user.mention}'s game in {thread.thread.mention}!",
             ephemeral=True
         )
     
