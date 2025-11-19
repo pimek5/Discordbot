@@ -714,8 +714,8 @@ class TrackerCommands(commands.Cog):
                         if member:
                             # Rebuild embed with updated data
                             updated_embed = await self._build_game_embed(member, account, spectator_data, game_id)
-                            view = BetView(game_id, thread_id)
-                            await embed_message.edit(embed=updated_embed, view=view)
+                            # Don't edit view - keep original buttons to preserve interactions
+                            await embed_message.edit(embed=updated_embed)
                 except Exception as e:
                     logger.error(f"Error editing embed for tracker {thread_id}: {e}")
                 
