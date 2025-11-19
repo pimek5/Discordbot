@@ -62,11 +62,12 @@ class BettingDatabase:
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT OR IGNORE INTO user_balance (discord_id) VALUES (?)
+            INSERT INTO user_balance (discord_id) VALUES (%s)
+            ON CONFLICT (discord_id) DO NOTHING
         ''', (discord_id,))
         conn.commit()
         
-        cursor.execute('SELECT balance FROM user_balance WHERE discord_id = ?', (discord_id,))
+        cursor.execute('SELECT balance FROM user_balance WHERE discord_id = %s', (discord_id,))
         result = cursor.fetchone()
         return result[0] if result else 1000
     
@@ -81,13 +82,13 @@ class BettingDatabase:
         
         # Deduct balance
         cursor.execute('''
-            UPDATE user_balance SET balance = balance - ? WHERE discord_id = ?
+            UPDATE user_balance SET balance = balance - %s WHERE discord_id = %s
         ''', (amount, discord_id))
         
         # Add bet
         cursor.execute('''
             INSERT INTO active_bets (discord_id, thread_id, game_id, bet_type, amount)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
         ''', (discord_id, thread_id, game_id, bet_type, amount))
         
         conn.commit()
@@ -99,7 +100,7 @@ class BettingDatabase:
         cursor = conn.cursor()
         
         # Get all bets for this game
-        cursor.execute('SELECT discord_id, bet_type, amount FROM active_bets WHERE game_id = ?', (game_id,))
+        cursor.execute('SELECT discord_id, bet_type, amount FROM active_bets WHERE game_id = %s', (game_id,))
         bets = cursor.fetchall()
         
         for discord_id, bet_type, amount in bets:
@@ -108,19 +109,19 @@ class BettingDatabase:
                 payout = amount * 2
                 cursor.execute('''
                     UPDATE user_balance 
-                    SET balance = balance + ?, total_won = total_won + ?, bet_count = bet_count + 1
-                    WHERE discord_id = ?
+                    SET balance = balance + %s, total_won = total_won + %s, bet_count = bet_count + 1
+                    WHERE discord_id = %s
                 ''', (payout, amount, discord_id))
             else:
                 # Lose: already deducted
                 cursor.execute('''
                     UPDATE user_balance 
-                    SET total_lost = total_lost + ?, bet_count = bet_count + 1
-                    WHERE discord_id = ?
+                    SET total_lost = total_lost + %s, bet_count = bet_count + 1
+                    WHERE discord_id = %s
                 ''', (amount, discord_id))
         
         # Remove resolved bets
-        cursor.execute('DELETE FROM active_bets WHERE game_id = ?', (game_id,))
+        cursor.execute('DELETE FROM active_bets WHERE game_id = %s', (game_id,))
         conn.commit()
 
 betting_db = BettingDatabase()
@@ -559,7 +560,7 @@ class TrackerCommands(commands.Cog):
         cursor = conn.cursor()
         cursor.execute('''
             SELECT total_won, total_lost, bet_count 
-            FROM user_balance WHERE discord_id = ?
+            FROM user_balance WHERE discord_id = %s
         ''', (interaction.user.id,))
         result = cursor.fetchone()
         
