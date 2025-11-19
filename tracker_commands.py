@@ -273,6 +273,44 @@ class TrackerCommands(commands.Cog):
         )
         conn.commit()
     
+    def _get_active_bets_display(self, game_id: str) -> Optional[str]:
+        """Get formatted display of active bets for this game"""
+        conn = self.betting_db.db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT discord_id, bet_type, amount FROM active_bets WHERE game_id = %s ORDER BY created_at ASC',
+            (game_id,)
+        )
+        bets = cursor.fetchall()
+        
+        if not bets:
+            return None
+        
+        win_bets = []
+        lose_bets = []
+        total_win = 0
+        total_lose = 0
+        
+        for discord_id, bet_type, amount in bets:
+            user_mention = f"<@{discord_id}>"
+            bet_str = f"{user_mention}: **{amount}** coins"
+            if bet_type == 'win':
+                win_bets.append(bet_str)
+                total_win += amount
+            else:
+                lose_bets.append(bet_str)
+                total_lose += amount
+        
+        lines = []
+        if win_bets:
+            lines.append(f"🟢 **WIN** ({total_win} total):")
+            lines.extend([f"  {b}" for b in win_bets])
+        if lose_bets:
+            lines.append(f"🔴 **LOSE** ({total_lose} total):")
+            lines.extend([f"  {b}" for b in lose_bets])
+        
+        return "\n".join(lines) if lines else None
+    
     @app_commands.command(name="track", description="Track a player's live game")
     @app_commands.describe(user="User to track (defaults to you)")
     async def track(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
@@ -524,6 +562,28 @@ class TrackerCommands(commands.Cog):
         embed.add_field(
             name=f"📈 Your {champion_name} Stats",
             value="Games: **25** | WR: **56%** | KDA: **3.2**",
+            inline=False
+        )
+        
+        # Active bets display
+        bets_info = self._get_active_bets_display(game_id)
+        if bets_info:
+            embed.add_field(
+                name="💰 Active Bets",
+                value=bets_info,
+                inline=False
+            )
+        
+        # Betting info
+        embed.add_field(
+            name="🎲 How Betting Works",
+            value=(
+                "**Multiplier:** 2.0x (win doubles your bet)\n"
+                "• Bet **WIN** if you think the player wins\n"
+                "• Bet **LOSE** if you think the player loses\n"
+                "• Correct bet: Get back **2x** your amount\n"
+                "• Wrong bet: Lose your bet amount"
+            ),
             inline=False
         )
         
