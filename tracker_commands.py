@@ -397,10 +397,28 @@ class TrackerCommands(commands.Cog):
         
         team_id = player_data.get('teamId', 100) if player_data else 100
         
-        # Build drafts
+        # Build drafts - sort by role heuristic
         participants = spectator_data.get('participants', [])
-        blue_ids = [p.get('championId') for p in participants if p.get('teamId') == 100]
-        red_ids = [p.get('championId') for p in participants if p.get('teamId') == 200]
+        
+        def get_role_priority(p):
+            """Heuristic role detection: Smite=Jungle(1), otherwise use pick order"""
+            spell1 = p.get('spell1Id', 0)
+            spell2 = p.get('spell2Id', 0)
+            # Smite ID = 11
+            if spell1 == 11 or spell2 == 11:
+                return 1  # Jungle
+            # Default to participant order (usually correct)
+            return participants.index(p)
+        
+        blue_team = [p for p in participants if p.get('teamId') == 100]
+        red_team = [p for p in participants if p.get('teamId') == 200]
+        
+        # Sort with jungle detection
+        blue_team.sort(key=get_role_priority)
+        red_team.sort(key=get_role_priority)
+        
+        blue_ids = [p.get('championId') for p in blue_team]
+        red_ids = [p.get('championId') for p in red_team]
         blue_names = [await self._get_champion_name(cid or 0) for cid in blue_ids]
         red_names = [await self._get_champion_name(cid or 0) for cid in red_ids]
         
