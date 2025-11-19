@@ -193,6 +193,7 @@ class TrackerCommands(commands.Cog):
         self.bot = bot
         self.riot_api = riot_api
         self.guild_id = guild_id
+        self.betting_db = BettingDatabase()
         self.active_trackers: Dict[int, dict] = {}  # thread_id -> tracker info
         self.tracker_loop.start()
     
