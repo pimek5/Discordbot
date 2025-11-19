@@ -30,7 +30,7 @@ class BettingDatabase:
         # User balance table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_balance (
-                discord_id INTEGER PRIMARY KEY,
+                discord_id BIGINT PRIMARY KEY,
                 balance INTEGER DEFAULT 1000,
                 total_won INTEGER DEFAULT 0,
                 total_lost INTEGER DEFAULT 0,
@@ -41,9 +41,9 @@ class BettingDatabase:
         # Active bets table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS active_bets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                discord_id INTEGER,
-                thread_id INTEGER,
+                id SERIAL PRIMARY KEY,
+                discord_id BIGINT,
+                thread_id BIGINT,
                 game_id TEXT,
                 bet_type TEXT,
                 amount INTEGER,
