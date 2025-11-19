@@ -60,17 +60,20 @@ class BettingDatabase:
     def get_balance(self, discord_id: int) -> int:
         """Get user's current balance"""
         conn = self.db.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            INSERT INTO user_balance (discord_id) VALUES (%s)
-            ON CONFLICT (discord_id) DO NOTHING
-        ''', (discord_id,))
-        conn.commit()
-        
-        cursor.execute('SELECT balance FROM user_balance WHERE discord_id = %s', (discord_id,))
-        result = cursor.fetchone()
-        return result[0] if result else 1000
+        try:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO user_balance (discord_id) VALUES (%s)
+                ON CONFLICT (discord_id) DO NOTHING
+            ''', (discord_id,))
+            conn.commit()
+            
+            cursor.execute('SELECT balance FROM user_balance WHERE discord_id = %s', (discord_id,))
+            result = cursor.fetchone()
+            return result[0] if result else 1000
+        finally:
+            self.db.return_connection(conn)
     
     def place_bet(self, discord_id: int, thread_id: int, game_id: str, bet_type: str, amount: int) -> bool:
         """Place a bet on a game"""
@@ -79,72 +82,81 @@ class BettingDatabase:
             return False
         
         conn = self.db.get_connection()
-        cursor = conn.cursor()
-        
-        # Deduct balance
-        cursor.execute('''
-            UPDATE user_balance SET balance = balance - %s WHERE discord_id = %s
-        ''', (amount, discord_id))
-        
-        # Add bet
-        cursor.execute('''
-            INSERT INTO active_bets (discord_id, thread_id, game_id, bet_type, amount)
-            VALUES (%s, %s, %s, %s, %s)
-        ''', (discord_id, thread_id, game_id, bet_type, amount))
-        
-        conn.commit()
-        return True
+        try:
+            cursor = conn.cursor()
+            
+            # Deduct balance
+            cursor.execute('''
+                UPDATE user_balance SET balance = balance - %s WHERE discord_id = %s
+            ''', (amount, discord_id))
+            
+            # Add bet
+            cursor.execute('''
+                INSERT INTO active_bets (discord_id, thread_id, game_id, bet_type, amount)
+                VALUES (%s, %s, %s, %s, %s)
+            ''', (discord_id, thread_id, game_id, bet_type, amount))
+            
+            conn.commit()
+            return True
+        finally:
+            self.db.return_connection(conn)
     
     def resolve_bet(self, game_id: str, result: str):
         """Resolve all bets for a game (result: 'win' or 'lose')"""
         conn = self.db.get_connection()
-        cursor = conn.cursor()
-        
-        # Get all bets for this game
-        cursor.execute('SELECT discord_id, bet_type, amount FROM active_bets WHERE game_id = %s', (game_id,))
-        bets = cursor.fetchall()
-        
-        for discord_id, bet_type, amount in bets:
-            if bet_type == result:
-                # Win: return bet + winnings (2x)
-                payout = amount * 2
-                cursor.execute('''
-                    UPDATE user_balance 
-                    SET balance = balance + %s, total_won = total_won + %s, bet_count = bet_count + 1
-                    WHERE discord_id = %s
-                ''', (payout, amount, discord_id))
-            else:
-                # Lose: already deducted
-                cursor.execute('''
-                    UPDATE user_balance 
-                    SET total_lost = total_lost + %s, bet_count = bet_count + 1
-                    WHERE discord_id = %s
-                ''', (amount, discord_id))
-        
-        # Remove resolved bets
-        cursor.execute('DELETE FROM active_bets WHERE game_id = %s', (game_id,))
-        conn.commit()
+        try:
+            cursor = conn.cursor()
+            
+            # Get all bets for this game
+            cursor.execute('SELECT discord_id, bet_type, amount FROM active_bets WHERE game_id = %s', (game_id,))
+            bets = cursor.fetchall()
+            
+            for discord_id, bet_type, amount in bets:
+                if bet_type == result:
+                    # Win: return bet + winnings (2x)
+                    payout = amount * 2
+                    cursor.execute('''
+                        UPDATE user_balance 
+                        SET balance = balance + %s, total_won = total_won + %s, bet_count = bet_count + 1
+                        WHERE discord_id = %s
+                    ''', (payout, amount, discord_id))
+                else:
+                    # Lose: already deducted
+                    cursor.execute('''
+                        UPDATE user_balance 
+                        SET total_lost = total_lost + %s, bet_count = bet_count + 1
+                        WHERE discord_id = %s
+                    ''', (amount, discord_id))
+            
+            # Remove resolved bets
+            cursor.execute('DELETE FROM active_bets WHERE game_id = %s', (game_id,))
+            conn.commit()
+        finally:
+            self.db.return_connection(conn)
     
     def modify_balance(self, discord_id: int, amount: int) -> int:
         """Add or remove coins from user balance (admin command)"""
         conn = self.db.get_connection()
-        cursor = conn.cursor()
-        
-        # Ensure user exists
-        cursor.execute('''
-            INSERT INTO user_balance (discord_id) VALUES (%s)
-            ON CONFLICT (discord_id) DO NOTHING
-        ''', (discord_id,))
-        
-        # Modify balance
-        cursor.execute('''
-            UPDATE user_balance SET balance = balance + %s WHERE discord_id = %s
-            RETURNING balance
-        ''', (amount, discord_id))
-        result = cursor.fetchone()
-        conn.commit()
-        
-        return result[0] if result else 0
+        try:
+            cursor = conn.cursor()
+            
+            # Ensure user exists
+            cursor.execute('''
+                INSERT INTO user_balance (discord_id) VALUES (%s)
+                ON CONFLICT (discord_id) DO NOTHING
+            ''', (discord_id,))
+            
+            # Modify balance
+            cursor.execute('''
+                UPDATE user_balance SET balance = balance + %s WHERE discord_id = %s
+                RETURNING balance
+            ''', (amount, discord_id))
+            result = cursor.fetchone()
+            conn.commit()
+            
+            return result[0] if result else 0
+        finally:
+            self.db.return_connection(conn)
 
 betting_db = BettingDatabase()
 
@@ -276,40 +288,43 @@ class TrackerCommands(commands.Cog):
     def _get_active_bets_display(self, game_id: str) -> Optional[str]:
         """Get formatted display of active bets for this game"""
         conn = self.betting_db.db.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            'SELECT discord_id, bet_type, amount FROM active_bets WHERE game_id = %s ORDER BY created_at ASC',
-            (game_id,)
-        )
-        bets = cursor.fetchall()
-        
-        if not bets:
-            return None
-        
-        win_bets = []
-        lose_bets = []
-        total_win = 0
-        total_lose = 0
-        
-        for discord_id, bet_type, amount in bets:
-            user_mention = f"<@{discord_id}>"
-            bet_str = f"{user_mention}: **{amount}** coins"
-            if bet_type == 'win':
-                win_bets.append(bet_str)
-                total_win += amount
-            else:
-                lose_bets.append(bet_str)
-                total_lose += amount
-        
-        lines = []
-        if win_bets:
-            lines.append(f"🟢 **WIN** ({total_win} total):")
-            lines.extend([f"  {b}" for b in win_bets])
-        if lose_bets:
-            lines.append(f"🔴 **LOSE** ({total_lose} total):")
-            lines.extend([f"  {b}" for b in lose_bets])
-        
-        return "\n".join(lines) if lines else None
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT discord_id, bet_type, amount FROM active_bets WHERE game_id = %s ORDER BY created_at ASC',
+                (game_id,)
+            )
+            bets = cursor.fetchall()
+            
+            if not bets:
+                return None
+            
+            win_bets = []
+            lose_bets = []
+            total_win = 0
+            total_lose = 0
+            
+            for discord_id, bet_type, amount in bets:
+                user_mention = f"<@{discord_id}>"
+                bet_str = f"{user_mention}: **{amount}** coins"
+                if bet_type == 'win':
+                    win_bets.append(bet_str)
+                    total_win += amount
+                else:
+                    lose_bets.append(bet_str)
+                    total_lose += amount
+            
+            lines = []
+            if win_bets:
+                lines.append(f"🟢 **WIN** ({total_win} total):")
+                lines.extend([f"  {b}" for b in win_bets])
+            if lose_bets:
+                lines.append(f"🔴 **LOSE** ({total_lose} total):")
+                lines.extend([f"  {b}" for b in lose_bets])
+            
+            return "\n".join(lines) if lines else None
+        finally:
+            self.betting_db.db.return_connection(conn)
     
     @app_commands.command(name="track", description="Track a player's live game")
     @app_commands.describe(user="User to track (defaults to you)")
@@ -770,6 +785,7 @@ class TrackerCommands(commands.Cog):
                     embed_message = tracker_info.get('embed_message')
                     if embed_message:
                         user_id = tracker_info['user_id']
+                        game_id = tracker_info['game_id']
                         member = thread.guild.get_member(user_id)
                         if member:
                             # Rebuild embed with updated data
@@ -880,33 +896,36 @@ class TrackerCommands(commands.Cog):
         balance = betting_db.get_balance(interaction.user.id)
         
         conn = betting_db.db.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT total_won, total_lost, bet_count 
-            FROM user_balance WHERE discord_id = %s
-        ''', (interaction.user.id,))
-        result = cursor.fetchone()
-        
-        if result:
-            total_won, total_lost, bet_count = result
-            net_profit = total_won - total_lost
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT total_won, total_lost, bet_count 
+                FROM user_balance WHERE discord_id = %s
+            ''', (interaction.user.id,))
+            result = cursor.fetchone()
             
-            embed = discord.Embed(
-                title="💰 Your Betting Stats",
-                color=0xFFD700
-            )
-            embed.add_field(name="Balance", value=f"**{balance}** coins", inline=True)
-            embed.add_field(name="Total Bets", value=f"**{bet_count}**", inline=True)
-            embed.add_field(name="Net Profit", value=f"**{net_profit:+}** coins", inline=True)
-            embed.add_field(name="Won", value=f"**{total_won}** coins", inline=True)
-            embed.add_field(name="Lost", value=f"**{total_lost}** coins", inline=True)
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                f"💰 Your balance: **{balance}** coins",
-                ephemeral=True
-            )
+            if result:
+                total_won, total_lost, bet_count = result
+                net_profit = total_won - total_lost
+                
+                embed = discord.Embed(
+                    title="💰 Your Betting Stats",
+                    color=0xFFD700
+                )
+                embed.add_field(name="Balance", value=f"**{balance}** coins", inline=True)
+                embed.add_field(name="Total Bets", value=f"**{bet_count}**", inline=True)
+                embed.add_field(name="Net Profit", value=f"**{net_profit:+}** coins", inline=True)
+                embed.add_field(name="Won", value=f"**{total_won}** coins", inline=True)
+                embed.add_field(name="Lost", value=f"**{total_lost}** coins", inline=True)
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(
+                    f"💰 Your balance: **{balance}** coins",
+                    ephemeral=True
+                )
+        finally:
+            betting_db.db.return_connection(conn)
 
     @app_commands.command(name="untrack", description="Disable continuous tracking for your account")
     async def untrack(self, interaction: discord.Interaction):
