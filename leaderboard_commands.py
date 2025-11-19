@@ -396,24 +396,21 @@ class LeaderboardCommands(commands.Cog):
                 else:
                     rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
                 
-                # ALWAYS display clean username, never show IDs
+                # Display priority: display_name (server nick) > global username > riot name
                 user_display = None
-                fetched_user = None
                 
-                # Try to fetch user globally first (most reliable)
-                if member:
+                # Priority 1: Try member display_name (server nickname)
+                if member and hasattr(member, 'display_name') and member.display_name:
+                    user_display = f"**{member.display_name}**"
+                
+                # Priority 2: Fetch global username if display_name not available
+                if not user_display and member:
                     try:
                         fetched_user = await self.bot.fetch_user(member.id)
+                        if fetched_user and fetched_user.name:
+                            user_display = f"**{fetched_user.name}**"
                     except:
                         pass
-                
-                # Build display string
-                if fetched_user and fetched_user.name:
-                    # Use fetched username (clean, always works)
-                    user_display = f"**{fetched_user.name}**"
-                elif member and hasattr(member, 'display_name'):
-                    # Fallback to member display_name
-                    user_display = f"**{member.display_name}**"
                 
                 # Final fallback: use riot name
                 if not user_display:
