@@ -665,7 +665,7 @@ class TrackerCommands(commands.Cog):
     async def coins(
         self, 
         interaction: discord.Interaction, 
-        action: discord.app_commands.Choice[str],
+        action: str,
         user: discord.Member,
         amount: int
     ):
@@ -681,15 +681,19 @@ class TrackerCommands(commands.Cog):
             await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
             return
         
+        if action not in ["add", "remove"]:
+            await interaction.response.send_message("❌ Invalid action! Use 'add' or 'remove'.", ephemeral=True)
+            return
+        
         # Add or remove
-        coins_change = amount if action.value == "add" else -amount
+        coins_change = amount if action == "add" else -amount
         new_balance = self.betting_db.modify_balance(user.id, coins_change)
         
-        action_text = "added to" if action.value == "add" else "removed from"
+        action_text = "added to" if action == "add" else "removed from"
         embed = discord.Embed(
             title="💰 Balance Updated",
             description=f"**{amount}** coins {action_text} {user.mention}",
-            color=0x00FF00 if action.value == "add" else 0xFF0000
+            color=0x00FF00 if action == "add" else 0xFF0000
         )
         embed.add_field(name="New Balance", value=f"**{new_balance}** coins")
         embed.set_footer(text=f"Action by {interaction.user.name}")
