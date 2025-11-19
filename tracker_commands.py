@@ -223,10 +223,55 @@ class TrackerCommands(commands.Cog):
         self.dd_version: Optional[str] = None
         self.champions_by_key: Dict[int, Dict] = {}
         self.active_trackers: Dict[int, dict] = {}  # thread_id -> tracker info
+        # Initialize tracking subscriptions table
+        self._init_tracking_tables()
         self.tracker_loop.start()
+        self.auto_tracker_loop.start()
     
     def cog_unload(self):
         self.tracker_loop.cancel()
+        self.auto_tracker_loop.cancel()
+
+    def _init_tracking_tables(self):
+        """Create subscriptions table for persistent tracking"""
+        db = get_db()
+        conn = db.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tracking_subscriptions (
+                discord_id BIGINT PRIMARY KEY,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.commit()
+
+    def _subscribe_user(self, discord_id: int):
+        db = get_db()
+        conn = db.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO tracking_subscriptions (discord_id, enabled)
+            VALUES (%s, TRUE)
+            ON CONFLICT (discord_id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = CURRENT_TIMESTAMP
+            """,
+            (discord_id,)
+        )
+        conn.commit()
+
+    def _unsubscribe_user(self, discord_id: int):
+        db = get_db()
+        conn = db.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE tracking_subscriptions SET enabled = FALSE, updated_at = CURRENT_TIMESTAMP WHERE discord_id = %s",
+            (discord_id,)
+        )
+        conn.commit()
     
     @app_commands.command(name="track", description="Track a player's live game")
     @app_commands.describe(user="User to track (defaults to you)")
@@ -271,8 +316,11 @@ class TrackerCommands(commands.Cog):
                 logger.error(f"Error checking live game for {acc['summoner_name']}: {e}")
         
         if not account or not spectator_data:
+            # Enable persistent tracking even if not currently in game
+            self._subscribe_user(target_user.id)
             await interaction.followup.send(
-                f"❌ {target_user.mention} is not in a live game on any linked account!",
+                f"✅ Enabled continuous tracking for {target_user.mention}.\n"
+                f"I'll automatically start tracking next time you enter a game.",
                 ephemeral=True
             )
             return
@@ -326,7 +374,8 @@ class TrackerCommands(commands.Cog):
         await self._send_game_embed(thread.thread, target_user, account, spectator_data, game_id)
         
         await interaction.followup.send(
-            f"✅ Started tracking {target_user.mention}'s game in {thread.thread.mention}!",
+            f"✅ Started tracking {target_user.mention}'s game in {thread.thread.mention}!\n"
+            f"🟢 Continuous tracking enabled — future games will auto-start.",
             ephemeral=True
         )
     
@@ -616,9 +665,96 @@ class TrackerCommands(commands.Cog):
                 
             except Exception as e:
                 logger.error(f"Error updating tracker {thread_id}: {e}")
+
+    @tasks.loop(seconds=60)
+    async def auto_tracker_loop(self):
+        """Automatically start tracking for subscribed users when they go into a game"""
+        try:
+            db = get_db()
+            conn = db.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT discord_id FROM tracking_subscriptions WHERE enabled = TRUE")
+            rows = cur.fetchall()
+            guild = self.bot.get_guild(self.guild_id)
+            if not guild:
+                return
+            
+            for (discord_id,) in rows:
+                member = guild.get_member(discord_id)
+                if not member:
+                    continue
+                # Skip if already tracking a thread for this user
+                if any(info.get('user_id') == discord_id for info in self.active_trackers.values()):
+                    continue
+                
+                # Find verified accounts
+                db_user = db.get_user_by_discord_id(discord_id)
+                if not db_user:
+                    continue
+                accounts = db.get_user_accounts(db_user['id'])
+                verified_accounts = [a for a in accounts if a.get('verified')]
+                if not verified_accounts:
+                    continue
+                
+                # Check if any account is in game
+                chosen = None
+                data = None
+                for acc in verified_accounts:
+                    try:
+                        sd = await self.riot_api.get_active_game(acc['puuid'], acc['region'])
+                        if sd:
+                            chosen = acc
+                            data = sd
+                            break
+                    except Exception:
+                        continue
+                if not chosen or not data:
+                    continue
+                
+                # Start thread like in /track
+                channel = self.bot.get_channel(1440713433887805470)
+                if not channel:
+                    continue
+                thread_name = f"🎮 {member.display_name}'s Game"
+                # Prepare initial embed
+                champion_id = None
+                for p in data.get('participants', []):
+                    if p.get('puuid') == chosen['puuid']:
+                        champion_id = p.get('championId')
+                        break
+                champion_name = await self._get_champion_name(champion_id or 0)
+                initial_embed = discord.Embed(
+                    title="🎮 Live Game Tracking",
+                    description=f"Tracking **{member.display_name}**'s live game",
+                    color=0x0099FF,
+                    timestamp=datetime.now()
+                )
+                initial_embed.add_field(name="🦸 Champion", value=champion_name, inline=True)
+                initial_embed.add_field(name="⏱️ Status", value="Loading game data...", inline=True)
+                
+                created = await channel.create_thread(name=thread_name, embed=initial_embed)
+                game_id = str(data.get('gameId', ''))
+                bet_view = BetView(game_id, created.thread.id)
+                await created.message.edit(view=bet_view)
+                
+                self.active_trackers[created.thread.id] = {
+                    'user_id': member.id,
+                    'account': chosen,
+                    'game_id': game_id,
+                    'spectator_data': data,
+                    'thread': created.thread,
+                    'start_time': datetime.now()
+                }
+                await self._send_game_embed(created.thread, member, chosen, data, game_id)
+        except Exception as e:
+            logger.error(f"auto_tracker_loop error: {e}")
     
     @tracker_loop.before_loop
     async def before_tracker_loop(self):
+        await self.bot.wait_until_ready()
+
+    @auto_tracker_loop.before_loop
+    async def before_auto_tracker_loop(self):
         await self.bot.wait_until_ready()
     
     # Betting commands
@@ -655,6 +791,21 @@ class TrackerCommands(commands.Cog):
                 f"💰 Your balance: **{balance}** coins",
                 ephemeral=True
             )
+
+    @app_commands.command(name="untrack", description="Disable continuous tracking for your account")
+    async def untrack(self, interaction: discord.Interaction):
+        """Disable persistent auto-tracking and stop active trackers"""
+        self._unsubscribe_user(interaction.user.id)
+        # Stop active trackers for this user
+        to_remove = [tid for tid, info in self.active_trackers.items() if info.get('user_id') == interaction.user.id]
+        for tid in to_remove:
+            try:
+                thread = self.active_trackers[tid]['thread']
+                await thread.send("🛑 Tracking disabled by user. This thread will no longer auto-update.")
+            except Exception:
+                pass
+            del self.active_trackers[tid]
+        await interaction.response.send_message("✅ Continuous tracking disabled.", ephemeral=True)
     
     @app_commands.command(name="coins", description="[ADMIN] Manage user coin balance")
     @app_commands.describe(
