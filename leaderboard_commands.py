@@ -396,10 +396,23 @@ class LeaderboardCommands(commands.Cog):
                 else:
                     rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
                 
-                # Use display name instead of mention for cleaner look
+                # Get user display name with fallback chain
+                user_display = None
                 if member:
-                    user_display = f"**{member.display_name}**"
-                else:
+                    # Try display_name first
+                    if member.display_name and not member.display_name.startswith('<@'):
+                        user_display = f"**{member.display_name}**"
+                    else:
+                        # Fallback: try to fetch user globally
+                        try:
+                            fetched_user = await self.bot.fetch_user(member.id)
+                            if fetched_user:
+                                user_display = f"**{fetched_user.name}**"
+                        except:
+                            pass
+                
+                # Final fallback: use riot name
+                if not user_display:
                     user_display = f"**{data.get('riot_name', 'Unknown')}**"
                 
                 entry_text = f"{i}. {user_display} {region_flag} **{data['region']}**\n"
