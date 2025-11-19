@@ -360,18 +360,19 @@ class TrackerCommands(commands.Cog):
         bet_view = BetView(game_id, thread.thread.id)
         await thread.message.edit(view=bet_view)
         
-        # Store tracker info
+        # Send full game embed and store message
+        embed_message = await self._send_game_embed(thread.thread, target_user, account, spectator_data, game_id)
+        
+        # Store tracker info with message reference
         self.active_trackers[thread.thread.id] = {
             'user_id': target_user.id,
             'account': account,
             'game_id': game_id,
             'spectator_data': spectator_data,
             'thread': thread.thread,
+            'embed_message': embed_message,
             'start_time': datetime.now()
         }
-        
-        # Send full game embed
-        await self._send_game_embed(thread.thread, target_user, account, spectator_data, game_id)
         
         await interaction.followup.send(
             f"✅ Started tracking {target_user.mention}'s game in {thread.thread.mention}!\n"
@@ -381,6 +382,38 @@ class TrackerCommands(commands.Cog):
     
     async def _send_game_embed(self, thread, user, account, spectator_data, game_id: str):
         """Send live game tracking embed"""
+        embed = await self._build_game_embed(user, account, spectator_data, game_id)
+        
+        # Generate draft image for initial send only
+        participants = spectator_data.get('participants', [])
+        def get_role_priority(p):
+            spell1 = p.get('spell1Id', 0)
+            spell2 = p.get('spell2Id', 0)
+            if spell1 == 11 or spell2 == 11:
+                return 1
+            return participants.index(p)
+        
+        blue_team = [p for p in participants if p.get('teamId') == 100]
+        red_team = [p for p in participants if p.get('teamId') == 200]
+        blue_team.sort(key=get_role_priority)
+        red_team.sort(key=get_role_priority)
+        blue_ids = [p.get('championId') for p in blue_team]
+        red_ids = [p.get('championId') for p in red_team]
+        
+        file, attachment_url = await self._build_draft_image(blue_ids, red_ids)
+        if attachment_url:
+            embed.set_image(url=attachment_url)
+        
+        # Send with betting buttons
+        view = BetView(game_id, thread.id)
+        if file:
+            msg = await thread.send(embed=embed, view=view, file=file)
+        else:
+            msg = await thread.send(embed=embed, view=view)
+        return msg
+    
+    async def _build_game_embed(self, user, account, spectator_data, game_id: str) -> discord.Embed:
+        """Build game tracking embed (for initial send or update)"""
         # Get player and champion data
         champion_id = None
         player_data = None
@@ -494,19 +527,10 @@ class TrackerCommands(commands.Cog):
             inline=False
         )
         
-        # Add combined draft image with champion icons
-        file, attachment_url = await self._build_draft_image(blue_ids, red_ids)
-        if attachment_url:
-            embed.set_image(url=attachment_url)
-        
         embed.set_footer(text=f"Game ID: {game_id} • Auto-updates every 30s")
         
-        # Send with betting buttons
-        view = BetView(game_id, thread.id)
-        if file:
-            await thread.send(embed=embed, view=view, file=file)
-        else:
-            await thread.send(embed=embed, view=view)
+        return embed
+        return msg
     
     async def _ensure_champion_data(self):
         """Ensure Data Dragon version and champion mappings are loaded"""
@@ -678,8 +702,22 @@ class TrackerCommands(commands.Cog):
                     del self.active_trackers[thread_id]
                     continue
                 
-                # Update tracker
+                # Update tracker data
                 tracker_info['spectator_data'] = spectator_data
+                
+                # Update embed in place
+                try:
+                    embed_message = tracker_info.get('embed_message')
+                    if embed_message:
+                        user_id = tracker_info['user_id']
+                        member = thread.guild.get_member(user_id)
+                        if member:
+                            # Rebuild embed with updated data
+                            updated_embed = await self._build_game_embed(member, account, spectator_data, game_id)
+                            view = BetView(game_id, thread_id)
+                            await embed_message.edit(embed=updated_embed, view=view)
+                except Exception as e:
+                    logger.error(f"Error editing embed for tracker {thread_id}: {e}")
                 
             except Exception as e:
                 logger.error(f"Error updating tracker {thread_id}: {e}")
