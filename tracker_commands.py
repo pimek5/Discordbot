@@ -233,7 +233,7 @@ class TrackerCommands(commands.Cog):
         
         # Check if in game
         try:
-            spectator_data = await self.riot_api.get_spectator_data(account['puuid'], account['region'])
+            spectator_data = await self.riot_api.get_active_game(account['puuid'], account['region'])
             if not spectator_data:
                 await interaction.followup.send(
                     f"❌ {target_user.mention} is not in a live game right now!",
@@ -375,7 +375,7 @@ class TrackerCommands(commands.Cog):
                 account = tracker_info['account']
                 
                 # Check if game still active
-                spectator_data = await self.riot_api.get_spectator_data(
+                spectator_data = await self.riot_api.get_active_game(
                     account['puuid'],
                     account['region']
                 )
