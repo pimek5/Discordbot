@@ -716,6 +716,12 @@ class MyBot(commands.Bot):
                 await help_commands.setup(self, GUILD_ID)
                 print("  ✅ Help commands loaded")
                 
+                # Load tracker commands
+                print("🔄 Loading TrackerCommands...")
+                import tracker_commands
+                await tracker_commands.setup(self, riot_api, GUILD_ID)
+                print("  ✅ TrackerCommands loaded")
+                
                 print("✅ Kassalytics commands registered")
                 
                 orianna_initialized = True
