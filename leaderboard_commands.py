@@ -396,21 +396,24 @@ class LeaderboardCommands(commands.Cog):
                 else:
                     rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
                 
-                # Smart user display: use mention if available, otherwise fetch name
+                # ALWAYS display clean username, never show IDs
                 user_display = None
+                fetched_user = None
+                
+                # Try to fetch user globally first (most reliable)
                 if member:
-                    # Check if bot can see the member properly (has display_name that's not an ID)
-                    if hasattr(member, 'display_name') and member.display_name and not member.display_name.startswith('<@'):
-                        # Member is visible - use clickable mention
-                        user_display = member.mention
-                    else:
-                        # Member not properly cached - fetch globally and display as text
-                        try:
-                            fetched_user = await self.bot.fetch_user(member.id)
-                            if fetched_user and fetched_user.name:
-                                user_display = f"**{fetched_user.name}**"
-                        except:
-                            pass
+                    try:
+                        fetched_user = await self.bot.fetch_user(member.id)
+                    except:
+                        pass
+                
+                # Build display string
+                if fetched_user and fetched_user.name:
+                    # Use fetched username (clean, always works)
+                    user_display = f"**{fetched_user.name}**"
+                elif member and hasattr(member, 'display_name'):
+                    # Fallback to member display_name
+                    user_display = f"**{member.display_name}**"
                 
                 # Final fallback: use riot name
                 if not user_display:
