@@ -230,6 +230,7 @@ class TrackerCommands(commands.Cog):
         self.bot = bot
         self.riot_api = riot_api
         self.guild_id = guild_id
+        self.guild = discord.Object(id=guild_id)
         self.betting_db = BettingDatabase()
         # Data Dragon cache
         self.dd_version: Optional[str] = None
@@ -239,6 +240,12 @@ class TrackerCommands(commands.Cog):
         self._init_tracking_tables()
         self.tracker_loop.start()
         self.auto_tracker_loop.start()
+    
+    # Override app_commands guild to make all commands guild-specific
+    def cog_load(self):
+        # Set commands to be guild-specific
+        for cmd in self.__cog_app_commands__:
+            cmd.guilds = [self.guild]
     
     def cog_unload(self):
         self.tracker_loop.cancel()
