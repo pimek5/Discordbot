@@ -271,13 +271,15 @@ class TrackerCommands(commands.Cog):
         initial_embed.add_field(name="🦸 Champion", value=champion_name, inline=True)
         initial_embed.add_field(name="⏱️ Status", value="Loading game data...", inline=True)
         
-        # Create thread in forum with initial embed and betting view
-        bet_view = BetView(self.betting_db, target_user.id, game_id)
+        # Create thread in forum with initial embed (without view first)
         thread = await channel.create_thread(
             name=thread_name,
-            embed=initial_embed,
-            view=bet_view
+            embed=initial_embed
         )
+        
+        # Now add betting view with thread_id
+        bet_view = BetView(game_id, thread.thread.id)
+        await thread.message.edit(view=bet_view)
         
         # Store tracker info
         self.active_trackers[thread.thread.id] = {
