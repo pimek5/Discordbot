@@ -229,21 +229,24 @@ class TrackerCommands(commands.Cog):
             )
             return
         
-        # Use first verified account
-        account = verified_accounts[0]
+        # Sprawdź wszystkie zweryfikowane konta i wybierz to, które jest w grze
+        account = None
+        spectator_data = None
+        for acc in verified_accounts:
+            try:
+                data = await self.riot_api.get_active_game(acc['puuid'], acc['region'])
+                if data:
+                    account = acc
+                    spectator_data = data
+                    break
+            except Exception as e:
+                logger.error(f"Error checking live game for {acc['summoner_name']}: {e}")
         
-        # Check if in game
-        try:
-            spectator_data = await self.riot_api.get_active_game(account['puuid'], account['region'])
-            if not spectator_data:
-                await interaction.followup.send(
-                    f"❌ {target_user.mention} is not in a live game right now!",
-                    ephemeral=True
-                )
-                return
-        except Exception as e:
-            logger.error(f"Error checking live game: {e}")
-            await interaction.followup.send(f"❌ Error checking live game: {str(e)}", ephemeral=True)
+        if not account or not spectator_data:
+            await interaction.followup.send(
+                f"❌ {target_user.mention} is not in a live game on any linked account!",
+                ephemeral=True
+            )
             return
         
         # Create tracking thread
