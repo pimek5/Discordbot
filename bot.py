@@ -2,7 +2,7 @@
 HEXRTBRXEN BOT - Discord Bot for League of Legends Community
 ==============================================================
 
-TABLE OF CONTENTS:
+TABLE OF CONTENTS: 
 ------------------
 1. IMPORTS & SETUP (Lines 1-100)
    - Discord imports
