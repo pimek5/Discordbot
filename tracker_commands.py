@@ -248,42 +248,51 @@ class TrackerCommands(commands.Cog):
         """Create subscriptions table for persistent tracking"""
         db = get_db()
         conn = db.get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tracking_subscriptions (
-                discord_id BIGINT PRIMARY KEY,
-                enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tracking_subscriptions (
+                    discord_id BIGINT PRIMARY KEY,
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
             )
-            """
-        )
-        conn.commit()
+            conn.commit()
+        finally:
+            db.return_connection(conn)
 
     def _subscribe_user(self, discord_id: int):
         db = get_db()
         conn = db.get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO tracking_subscriptions (discord_id, enabled)
-            VALUES (%s, TRUE)
-            ON CONFLICT (discord_id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = CURRENT_TIMESTAMP
-            """,
-            (discord_id,)
-        )
-        conn.commit()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO tracking_subscriptions (discord_id, enabled)
+                VALUES (%s, TRUE)
+                ON CONFLICT (discord_id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = CURRENT_TIMESTAMP
+                """,
+                (discord_id,)
+            )
+            conn.commit()
+        finally:
+            db.return_connection(conn)
 
     def _unsubscribe_user(self, discord_id: int):
         db = get_db()
         conn = db.get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE tracking_subscriptions SET enabled = FALSE, updated_at = CURRENT_TIMESTAMP WHERE discord_id = %s",
-            (discord_id,)
-        )
-        conn.commit()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE tracking_subscriptions SET enabled = FALSE, updated_at = CURRENT_TIMESTAMP WHERE discord_id = %s",
+                (discord_id,)
+            )
+            conn.commit()
+        finally:
+            db.return_connection(conn)
     
     def _get_active_bets_display(self, game_id: str) -> Optional[str]:
         """Get formatted display of active bets for this game"""
@@ -801,8 +810,9 @@ class TrackerCommands(commands.Cog):
     @tasks.loop(seconds=60)
     async def auto_tracker_loop(self):
         """Automatically start tracking for subscribed users when they go into a game"""
+        db = get_db()
+        conn = None
         try:
-            db = get_db()
             conn = db.get_connection()
             cur = conn.cursor()
             cur.execute("SELECT discord_id FROM tracking_subscriptions WHERE enabled = TRUE")
@@ -880,6 +890,9 @@ class TrackerCommands(commands.Cog):
                 await self._send_game_embed(created.thread, member, chosen, data, game_id)
         except Exception as e:
             logger.error(f"auto_tracker_loop error: {e}")
+        finally:
+            if conn:
+                db.return_connection(conn)
     
     @tracker_loop.before_loop
     async def before_tracker_loop(self):
