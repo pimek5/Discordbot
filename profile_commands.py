@@ -1564,13 +1564,6 @@ class ProfileCommands(commands.Cog):
                 )
                 return
         
-            # Cancel keep-alive and delete loading message
-            keep_alive_task.cancel()
-            try:
-                await interaction.delete_original_response()
-            except:
-                pass  # If deletion fails, continue anyway
-            
             # Get today's date range
             from datetime import datetime, timedelta
             now = datetime.now()
