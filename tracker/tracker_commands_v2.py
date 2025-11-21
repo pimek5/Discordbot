@@ -300,53 +300,78 @@ class TrackerCommandsV2(commands.Cog):
         # Take top players by LP
         sorted_entries = sorted(entries, key=lambda x: x.get('leaguePoints', 0), reverse=True)[:limit]
         
+        players_to_save = []
+        
+        for entry in sorted_entries:
+            try:
+                summoner_id = entry.get('summonerId')
+                summoner_name = entry.get('summonerName', 'Unknown')
+                
+                if not summoner_id:
+                    continue
+                
+                # Get summoner details (contains puuid)
+                summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                if not summoner:
+                    continue
+                
+                puuid = summoner.get('puuid')
+                if not puuid:
+                    continue
+                
+                # Add to memory immediately
+                self.tracked_players[puuid] = {
+                    'name': summoner_name,
+                    'puuid': puuid,
+                    'region': region,
+                    'tier': tier,
+                    'lp': entry.get('leaguePoints', 0),
+                    'wins': entry.get('wins', 0),
+                    'losses': entry.get('losses', 0)
+                }
+                
+                # Collect for batch DB insert
+                players_to_save.append({
+                    'name': summoner_name,
+                    'puuid': puuid,
+                    'summoner_id': summoner_id,
+                    'region': region,
+                    'tier': tier,
+                    'lp': entry.get('leaguePoints', 0),
+                    'wins': entry.get('wins', 0),
+                    'losses': entry.get('losses', 0)
+                })
+                
+                await asyncio.sleep(0.05)  # Small rate limit protection
+                
+            except Exception as e:
+                logger.debug(f"Error processing entry: {e}")
+                continue
+        
+        # Batch save to database
+        if players_to_save:
+            await self._batch_save_players(players_to_save)
+        
+        logger.info(f"✅ Processed {len(players_to_save)} players from {region} {tier}")
+    
+    async def _batch_save_players(self, players: List[Dict]):
+        """Batch save players to database"""
         conn = self.db.get_connection()
         try:
             cur = conn.cursor()
             
-            for entry in sorted_entries:
+            for player in players:
                 try:
-                    summoner_id = entry.get('summonerId')
-                    if not summoner_id:
-                        continue
-                    
-                    # Get summoner details
-                    summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
-                    if not summoner:
-                        continue
-                    
-                    puuid = summoner.get('puuid')
-                    if not puuid:
-                        continue
-                    
-                    # Get account for name
-                    account = await self.riot_api.get_account_by_puuid(puuid, region)
-                    game_name = account.get('gameName', 'Unknown') if account else 'Unknown'
-                    tag_line = account.get('tagLine', 'XXX') if account else 'XXX'
-                    
-                    # Add to memory
-                    if puuid not in self.tracked_players:
-                        self.tracked_players[puuid] = {
-                            'name': game_name,
-                            'puuid': puuid,
-                            'region': region,
-                            'tier': tier,
-                            'lp': entry.get('leaguePoints', 0),
-                            'wins': entry.get('wins', 0),
-                            'losses': entry.get('losses', 0)
-                        }
-                    
-                    # Save to database (upsert)
-                    # First, get or create tracked_pros entry
+                    # Get or create tracked_pros entry
                     cur.execute("""
                         INSERT INTO tracked_pros (player_name, region, enabled)
                         VALUES (%s, %s, TRUE)
                         ON CONFLICT (player_name) DO UPDATE SET updated_at = NOW()
                         RETURNING id
-                    """, (game_name, region))
+                    """, (player['name'], player['region']))
                     pro_id = cur.fetchone()[0]
                     
-                    # Then upsert pro_accounts
+                    # Upsert pro_accounts
                     cur.execute("""
                         INSERT INTO pro_accounts (
                             pro_id, game_name, tag_line, region, puuid, summoner_id,
@@ -359,21 +384,18 @@ class TrackerCommandsV2(commands.Cog):
                             losses = EXCLUDED.losses,
                             updated_at = NOW()
                     """, (
-                        pro_id, game_name, tag_line, region, puuid, summoner_id,
-                        tier, entry.get('leaguePoints', 0),
-                        entry.get('wins', 0), entry.get('losses', 0)
+                        pro_id, player['name'], 'XXX', player['region'], 
+                        player['puuid'], player['summoner_id'],
+                        player['tier'], player['lp'], player['wins'], player['losses']
                     ))
-                    
-                    await asyncio.sleep(0.1)  # Small delay
-                    
                 except Exception as e:
-                    logger.debug(f"Error processing entry: {e}")
+                    logger.debug(f"Error saving player {player['name']}: {e}")
                     continue
             
             conn.commit()
             
         except Exception as e:
-            logger.error(f"Error in _process_league_entries: {e}")
+            logger.error(f"Error in batch save: {e}")
             conn.rollback()
         finally:
             self.db.return_connection(conn)
