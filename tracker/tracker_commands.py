@@ -267,6 +267,135 @@ class BetModal(discord.ui.Modal, title="Place Your Bet"):
         except ValueError:
             await interaction.response.send_message("❌ Invalid amount!", ephemeral=True)
 
+class PlayerSearchView(discord.ui.View):
+    """View with buttons to switch between accounts list and player info"""
+    def __init__(self, player_name: str, source: str, accounts: list, player_data: dict, tracker_commands):
+        super().__init__(timeout=300)  # 5 minutes timeout
+        self.player_name = player_name
+        self.source = source
+        self.accounts = accounts
+        self.player_data = player_data
+        self.tracker_commands = tracker_commands
+        self.current_view = 'accounts'  # 'accounts' or 'info'
+    
+    def _create_accounts_embed(self) -> discord.Embed:
+        """Create embed showing accounts list"""
+        embed = discord.Embed(
+            title=f"🌟 {self.player_name}",
+            description=f"Found on **{self.source}**",
+            color=0x5865F2,
+            timestamp=datetime.now()
+        )
+        
+        # Build accounts list
+        accounts_text = ""
+        for i, acc in enumerate(self.accounts[:20], 1):  # Max 20 accounts
+            acc_name = acc.get('summoner_name', 'Unknown')
+            acc_tag = acc.get('tag', '')
+            acc_region = acc.get('region', 'Unknown')
+            acc_lp = acc.get('lp', 0)
+            acc_rank = acc.get('rank', '')
+            
+            if acc_tag:
+                accounts_text += f"**{i}.** {self.tracker_commands._format_account_display(acc_name, acc_tag, acc_region, acc_rank, acc_lp)}\n"
+            else:
+                flag = self.tracker_commands._get_region_flag(acc_region)
+                accounts_text += f"**{i}.** `{acc_name}` • {flag} {acc_region.upper()} • {acc_lp} LP\n"
+        
+        if len(self.accounts) > 20:
+            accounts_text += f"\n*...and {len(self.accounts) - 20} more accounts*"
+        
+        embed.add_field(
+            name=f"📋 Known Accounts ({len(self.accounts)})",
+            value=accounts_text or "No accounts found",
+            inline=False
+        )
+        
+        embed.set_footer(text="🔍 Checking for active Ranked Solo/Duo games...")
+        
+        return embed
+    
+    def _create_info_embed(self) -> discord.Embed:
+        """Create embed showing player info"""
+        embed = discord.Embed(
+            title=f"🌟 {self.player_name}",
+            description=f"Found on **{self.source}**",
+            color=0xFF6B6B,
+            timestamp=datetime.now()
+        )
+        
+        embed.add_field(
+            name="📊 Status",
+            value="No active **Ranked Solo/Duo** games found",
+            inline=False
+        )
+        
+        # Player details
+        details = ""
+        region = self.player_data.get('region', None)
+        team = self.player_data.get('team', None)
+        role = self.player_data.get('role', None)
+        
+        if region:
+            flag = self.tracker_commands._get_region_flag(region)
+            details += f"**Region:** {flag} {region.upper()}\n"
+        else:
+            details += "**Region:** Unknown\n"
+        
+        if team:
+            details += f"**Team:** {team}\n"
+        else:
+            details += "**Team:** Unknown\n"
+        
+        if role:
+            details += f"**Role:** {role}\n"
+        else:
+            details += "**Role:** Unknown\n"
+        
+        details += f"**Known accounts:** {len(self.accounts)}"
+        
+        embed.add_field(
+            name="ℹ️ Player Info",
+            value=details,
+            inline=False
+        )
+        
+        embed.set_footer(text="⚠️ Only tracking Ranked Solo/Duo games (queue 420)")
+        
+        return embed
+    
+    @discord.ui.button(label="📋 Accounts", style=discord.ButtonStyle.primary, custom_id="view_accounts")
+    async def accounts_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Switch to accounts view"""
+        if self.current_view == 'accounts':
+            await interaction.response.send_message("Already showing accounts list!", ephemeral=True)
+            return
+        
+        self.current_view = 'accounts'
+        embed = self._create_accounts_embed()
+        
+        # Update button styles
+        self.accounts_button.style = discord.ButtonStyle.primary
+        self.info_button.style = discord.ButtonStyle.secondary
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="ℹ️ Player Info", style=discord.ButtonStyle.secondary, custom_id="view_info")
+    async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Switch to player info view"""
+        if self.current_view == 'info':
+            await interaction.response.send_message("Already showing player info!", ephemeral=True)
+            return
+        
+        self.current_view = 'info'
+        embed = self._create_info_embed()
+        
+        # Update button styles
+        self.accounts_button.style = discord.ButtonStyle.secondary
+        self.info_button.style = discord.ButtonStyle.primary
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+
 class TrackerCommands(commands.Cog):
     def __init__(self, bot: commands.Bot, riot_api, guild_id: int):
         self.bot = bot
@@ -903,27 +1032,12 @@ class TrackerCommands(commands.Cog):
             accounts = player_data.get('accounts', [])
             source = player_data.get('source', 'Unknown')
             
-            # Build accounts list text
-            accounts_text = ""
-            for i, acc in enumerate(accounts, 1):
-                acc_name = acc.get('summoner_name', 'Unknown')
-                acc_tag = acc.get('tag', '')
-                acc_region = acc.get('region', 'Unknown')
-                acc_lp = acc.get('lp', 0)
-                acc_rank = acc.get('rank', '')
-                
-                if acc_tag:
-                    accounts_text += f"{i}. {self._format_account_display(acc_name, acc_tag, acc_region, acc_rank, acc_lp)}\n"
-                else:
-                    flag = self._get_region_flag(acc_region)
-                    accounts_text += f"{i}. `{acc_name}` • {flag} {acc_region.upper()} • {acc_lp} LP\n"
+            # Create view with buttons
+            view = PlayerSearchView(player_name, source, accounts, player_data, self)
+            embed = view._create_accounts_embed()
             
-            await status_msg.edit(
-                content=f"✅ Found **{player_name}** on {source}!\n"
-                        f"📊 Found {len(accounts)} account(s):\n\n"
-                        f"{accounts_text}\n"
-                        f"🔍 Checking for active games..."
-            )
+            # Send embed with view
+            await status_msg.edit(content=None, embed=embed, view=view)
             
             # Check each account for active games
             for account in accounts:
@@ -988,17 +1102,15 @@ class TrackerCommands(commands.Cog):
                     logger.debug(f"Error checking account {summoner_name} in {region}: {e}")
                     continue
             
-            # No active games found
-            await status_msg.edit(
-                content=f"📊 Found **{player_name}** on {source}!\n"
-                        f"But no active **Ranked Solo/Duo** games on their known accounts.\n\n"
-                        f"**Player Info:**\n"
-                        f"• Region: {player_data.get('region', 'Unknown')}\n"
-                        f"• Team: {player_data.get('team', 'Unknown')}\n"
-                        f"• Role: {player_data.get('role', 'Unknown')}\n"
-                        f"• Known accounts: {len(accounts)}\n\n"
-                        f"⚠️ Note: Only tracking Ranked Solo/Duo games"
-            )
+            # No active games found - switch to info view
+            view.current_view = 'info'
+            embed = view._create_info_embed()
+            
+            # Update button styles
+            view.accounts_button.style = discord.ButtonStyle.secondary
+            view.info_button.style = discord.ButtonStyle.primary
+            
+            await status_msg.edit(content=None, embed=embed, view=view)
             return
         
         # Not found on any platform - fallback to Challenger search
