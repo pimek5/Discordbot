@@ -57,6 +57,20 @@ async def on_ready():
     db = get_tracker_db()
     logger.info("✅ Database connection established")
     
+    # Sync commands NOW (after bot is ready)
+    try:
+        if GUILD_ID:
+            guild = discord.Object(id=GUILD_ID)
+            synced = await bot.tree.sync(guild=guild)
+            logger.info(f"✅ Commands synced to guild {GUILD_ID}: {[cmd.name for cmd in synced]}")
+        else:
+            synced = await bot.tree.sync()
+            logger.info(f"✅ Commands synced globally: {[cmd.name for cmd in synced]}")
+    except Exception as e:
+        logger.error(f"❌ Error syncing commands: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+    
     logger.info(f"✅ Bot is ready with {len(bot.tree.get_commands())} commands")
 
 @bot.event
@@ -77,22 +91,7 @@ async def main():
         logger.info(f"📋 Available commands in tree: {commands_list}")
         logger.info(f"📊 Total commands: {len(commands_list)}")
         
-        # Sync commands
-        try:
-            if GUILD_ID:
-                guild = discord.Object(id=GUILD_ID)
-                bot.tree.copy_global_to(guild=guild)
-                synced = await bot.tree.sync(guild=guild)
-                logger.info(f"✅ Commands synced to guild {GUILD_ID}: {[cmd.name for cmd in synced]}")
-            else:
-                synced = await bot.tree.sync()
-                logger.info(f"✅ Commands synced globally: {[cmd.name for cmd in synced]}")
-        except Exception as e:
-            logger.error(f"❌ Error syncing commands: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-        
-        # Start bot
+        # Start bot (sync will happen in on_ready)
         await bot.start(TRACKER_BOT_TOKEN)
 
 if __name__ == '__main__':
