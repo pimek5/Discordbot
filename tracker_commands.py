@@ -135,6 +135,41 @@ class BettingDatabase:
         finally:
             self.db.return_connection(conn)
     
+    def get_game_bet_stats(self, game_id: str) -> Optional[Dict]:
+        """Get betting statistics for a game"""
+        conn = self.db.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # Get all bets for this game
+            cursor.execute('''
+                SELECT bet_type, amount FROM active_bets WHERE game_id = %s
+            ''', (game_id,))
+            bets = cursor.fetchall()
+            
+            if not bets:
+                return None
+            
+            total_bets = len(bets)
+            win_bets = sum(1 for bet_type, _ in bets if bet_type == 'win')
+            lose_bets = sum(1 for bet_type, _ in bets if bet_type == 'lose')
+            total_wagered = sum(amount for _, amount in bets)
+            win_wagered = sum(amount for bet_type, amount in bets if bet_type == 'win')
+            lose_wagered = sum(amount for bet_type, amount in bets if bet_type == 'lose')
+            
+            return {
+                'total_bets': total_bets,
+                'total_wagered': total_wagered,
+                'win_bets': win_bets,
+                'lose_bets': lose_bets,
+                'win_wagered': win_wagered,
+                'lose_wagered': lose_wagered,
+                'total_won': win_wagered * 2,  # Winners get 2x
+                'total_lost': lose_wagered
+            }
+        finally:
+            self.db.return_connection(conn)
+    
     def modify_balance(self, discord_id: int, amount: int) -> int:
         """Add or remove coins from user balance (admin command)"""
         conn = self.db.get_connection()
@@ -1543,6 +1578,176 @@ class TrackerCommands(commands.Cog):
         # or check rank of all players
         return []
     
+    async def _create_post_game_summary(
+        self,
+        thread: discord.Thread,
+        tracker_info: Dict,
+        match_details: Dict,
+        account: Dict,
+        game_id: str
+    ):
+        """Create comprehensive post-game summary with stats and betting results"""
+        
+        info = match_details.get('info', {})
+        participants = info.get('participants', [])
+        
+        # Find tracked player
+        tracked_player = None
+        player_won = None
+        for p in participants:
+            if p.get('puuid') == account['puuid']:
+                tracked_player = p
+                player_won = p.get('win', False)
+                break
+        
+        if not tracked_player:
+            await thread.send("⚠️ Could not find player in match data.")
+            return
+        
+        # Resolve bets
+        result = 'win' if player_won else 'lose'
+        self.betting_db.resolve_bet(game_id, result)
+        
+        # Calculate game duration
+        game_duration_seconds = info.get('gameDuration', 0)
+        minutes = game_duration_seconds // 60
+        seconds = game_duration_seconds % 60
+        
+        # Get team stats
+        teams = info.get('teams', [])
+        player_team_id = tracked_player.get('teamId')
+        player_team = next((t for t in teams if t.get('teamId') == player_team_id), {})
+        enemy_team = next((t for t in teams if t.get('teamId') != player_team_id), {})
+        
+        # Build comprehensive summary embed
+        result_color = 0x00FF00 if player_won else 0xFF0000
+        result_emoji = "🎉 VICTORY" if player_won else "💔 DEFEAT"
+        
+        summary_embed = discord.Embed(
+            title=f"{result_emoji}",
+            description=f"**Game Summary** • {minutes}:{seconds:02d}",
+            color=result_color,
+            timestamp=datetime.now()
+        )
+        
+        # Player Performance
+        kills = tracked_player.get('kills', 0)
+        deaths = tracked_player.get('deaths', 0)
+        assists = tracked_player.get('assists', 0)
+        kda = (kills + assists) / max(deaths, 1)
+        
+        cs = tracked_player.get('totalMinionsKilled', 0) + tracked_player.get('neutralMinionsKilled', 0)
+        cs_per_min = cs / max(minutes, 1)
+        
+        damage_dealt = tracked_player.get('totalDamageDealtToChampions', 0)
+        damage_taken = tracked_player.get('totalDamageTaken', 0)
+        gold = tracked_player.get('goldEarned', 0)
+        
+        vision_score = tracked_player.get('visionScore', 0)
+        
+        champion_name = await self._get_champion_name(tracked_player.get('championId', 0))
+        
+        performance = (
+            f"**{champion_name}** • Level {tracked_player.get('champLevel', 0)}\n"
+            f"**KDA:** {kills}/{deaths}/{assists} ({kda:.2f})\n"
+            f"**CS:** {cs} ({cs_per_min:.1f}/min)\n"
+            f"**Damage:** {damage_dealt:,} dealt • {damage_taken:,} taken\n"
+            f"**Gold:** {gold:,} • **Vision:** {vision_score}"
+        )
+        
+        summary_embed.add_field(
+            name="📊 Your Performance",
+            value=performance,
+            inline=False
+        )
+        
+        # Team objectives
+        player_team_objectives = player_team.get('objectives', {})
+        enemy_team_objectives = enemy_team.get('objectives', {})
+        
+        baron_kills = player_team_objectives.get('baron', {}).get('kills', 0)
+        dragon_kills = player_team_objectives.get('dragon', {}).get('kills', 0)
+        tower_kills = player_team_objectives.get('tower', {}).get('kills', 0)
+        
+        enemy_baron = enemy_team_objectives.get('baron', {}).get('kills', 0)
+        enemy_dragon = enemy_team_objectives.get('dragon', {}).get('kills', 0)
+        enemy_tower = enemy_team_objectives.get('tower', {}).get('kills', 0)
+        
+        objectives = (
+            f"🐉 Dragons: **{dragon_kills}** vs {enemy_dragon}\n"
+            f"🦈 Barons: **{baron_kills}** vs {enemy_baron}\n"
+            f"🗼 Towers: **{tower_kills}** vs {enemy_tower}"
+        )
+        
+        summary_embed.add_field(
+            name="🎯 Objectives",
+            value=objectives,
+            inline=True
+        )
+        
+        # Team totals
+        team_kills = sum(p.get('kills', 0) for p in participants if p.get('teamId') == player_team_id)
+        team_deaths = sum(p.get('deaths', 0) for p in participants if p.get('teamId') == player_team_id)
+        team_gold = sum(p.get('goldEarned', 0) for p in participants if p.get('teamId') == player_team_id)
+        
+        enemy_kills = sum(p.get('kills', 0) for p in participants if p.get('teamId') != player_team_id)
+        enemy_gold = sum(p.get('goldEarned', 0) for p in participants if p.get('teamId') != player_team_id)
+        
+        team_stats = (
+            f"⚔️ Kills: **{team_kills}** vs {enemy_kills}\n"
+            f"💀 Deaths: **{team_deaths}**\n"
+            f"💰 Gold: **{team_gold:,}** vs {enemy_gold:,}"
+        )
+        
+        summary_embed.add_field(
+            name="👥 Team Stats",
+            value=team_stats,
+            inline=True
+        )
+        
+        # Get betting statistics for this game
+        bet_stats = self.betting_db.get_game_bet_stats(game_id)
+        
+        if bet_stats:
+            total_bets = bet_stats.get('total_bets', 0)
+            total_wagered = bet_stats.get('total_wagered', 0)
+            win_bets = bet_stats.get('win_bets', 0)
+            lose_bets = bet_stats.get('lose_bets', 0)
+            total_won = bet_stats.get('total_won', 0)
+            total_lost = bet_stats.get('total_lost', 0)
+            
+            if total_bets > 0:
+                betting_summary = (
+                    f"🎲 **Total Bets:** {total_bets}\n"
+                    f"💵 **Wagered:** {total_wagered:,} coins\n"
+                    f"📈 **Bets on {'Victory' if player_won else 'Defeat'}:** {win_bets if player_won else lose_bets}\n"
+                    f"📉 **Bets on {'Defeat' if player_won else 'Victory'}:** {lose_bets if player_won else win_bets}\n"
+                    f"✅ **Paid out:** {total_won:,} coins\n"
+                    f"❌ **Lost:** {total_lost:,} coins"
+                )
+                
+                summary_embed.add_field(
+                    name="🎰 Betting Results",
+                    value=betting_summary,
+                    inline=False
+                )
+        
+        # Edit the original embed message to show summary
+        embed_message = tracker_info.get('embed_message')
+        if embed_message:
+            try:
+                await embed_message.edit(embed=summary_embed, view=None)  # Remove betting buttons
+            except:
+                await thread.send(embed=summary_embed)
+        else:
+            await thread.send(embed=summary_embed)
+        
+        # Send additional message with results
+        await thread.send(
+            f"{'🎊 **Congratulations!**' if player_won else '💪 **Better luck next time!**'}\n"
+            f"All bets have been resolved. Check `/balance` to see your updated balance!"
+        )
+    
     @tasks.loop(seconds=30)
     async def tracker_loop(self):
         """Update all active game trackers"""
@@ -1558,8 +1763,8 @@ class TrackerCommands(commands.Cog):
                 )
                 
                 if not spectator_data:
-                    # Game ended - check match history for result
-                    await thread.send("🏁 **Game has ended! Checking results...**")
+                    # Game ended - create post-game summary
+                    await thread.send("🏁 **Game has ended! Generating post-game summary...**")
                     
                     # Wait a bit for match to be recorded
                     await asyncio.sleep(10)
@@ -1567,6 +1772,7 @@ class TrackerCommands(commands.Cog):
                     # Get recent match
                     game_id = tracker_info['game_id']
                     user_id = tracker_info['user_id']
+                    
                     try:
                         matches = await self.riot_api.get_match_history(
                             account['puuid'],
@@ -1583,32 +1789,20 @@ class TrackerCommands(commands.Cog):
                             
                             # Find player in match
                             if match_details:
-                                participants = match_details.get('info', {}).get('participants', [])
-                                player_won = None
-                                for p in participants:
-                                    if p.get('puuid') == account['puuid']:
-                                        player_won = p.get('win', False)
-                                        break
-                                
-                                if player_won is not None:
-                                    result = 'win' if player_won else 'lose'
-                                    self.betting_db.resolve_bet(game_id, result)
-                                    
-                                    result_emoji = "🎉" if player_won else "💔"
-                                    result_text = "**WON**" if player_won else "**LOST**"
-                                    await thread.send(
-                                        f"{result_emoji} Game result: {result_text}\n"
-                                        f"All bets have been resolved! Check `/balance` to see your winnings."
-                                    )
-                                else:
-                                    await thread.send("⚠️ Could not determine game result. Bets not resolved.")
+                                await self._create_post_game_summary(
+                                    thread,
+                                    tracker_info,
+                                    match_details,
+                                    account,
+                                    game_id
+                                )
                             else:
-                                await thread.send("⚠️ Match details not found. Bets not resolved.")
+                                await thread.send("⚠️ Match details not found. Could not generate summary.")
                         else:
-                            await thread.send("⚠️ Match not found in history yet. Bets not resolved.")
+                            await thread.send("⚠️ Match not found in history yet. Could not generate summary.")
                     except Exception as e:
-                        logger.error(f"Error resolving bets: {e}")
-                        await thread.send("⚠️ Error checking game result. Bets not resolved.")
+                        logger.error(f"Error creating post-game summary: {e}")
+                        await thread.send("⚠️ Error generating post-game summary.")
                     
                     del self.active_trackers[thread_id]
                     continue
