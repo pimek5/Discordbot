@@ -286,6 +286,8 @@ class TrackerCommands(commands.Cog):
         conn = db.get_connection()
         try:
             cur = conn.cursor()
+            
+            # User subscriptions
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tracking_subscriptions (
@@ -296,6 +298,26 @@ class TrackerCommands(commands.Cog):
                 )
                 """
             )
+            
+            # Tracked pros/streamers
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tracked_pros (
+                    id SERIAL PRIMARY KEY,
+                    player_name TEXT NOT NULL,
+                    puuid TEXT NOT NULL UNIQUE,
+                    region TEXT NOT NULL,
+                    summoner_name TEXT,
+                    source TEXT,
+                    team TEXT,
+                    role TEXT,
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            
             conn.commit()
         finally:
             db.return_connection(conn)
@@ -327,6 +349,74 @@ class TrackerCommands(commands.Cog):
                 (discord_id,)
             )
             conn.commit()
+        finally:
+            db.return_connection(conn)
+    
+    def _add_tracked_pro(self, player_name: str, puuid: str, region: str, summoner_name: str, source: str = None, team: str = None, role: str = None):
+        """Add a pro player to auto-tracking database"""
+        db = get_db()
+        conn = db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO tracked_pros (player_name, puuid, region, summoner_name, source, team, role, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+                ON CONFLICT (puuid) DO UPDATE SET 
+                    player_name = EXCLUDED.player_name,
+                    summoner_name = EXCLUDED.summoner_name,
+                    source = EXCLUDED.source,
+                    team = EXCLUDED.team,
+                    role = EXCLUDED.role,
+                    enabled = TRUE,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (player_name, puuid, region, summoner_name, source, team, role)
+            )
+            conn.commit()
+        finally:
+            db.return_connection(conn)
+    
+    def _remove_tracked_pro(self, puuid: str):
+        """Remove a pro player from auto-tracking"""
+        db = get_db()
+        conn = db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE tracked_pros SET enabled = FALSE, updated_at = CURRENT_TIMESTAMP WHERE puuid = %s",
+                (puuid,)
+            )
+            conn.commit()
+        finally:
+            db.return_connection(conn)
+    
+    def _get_tracked_pros(self) -> List[Dict]:
+        """Get all enabled tracked pros"""
+        db = get_db()
+        conn = db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT player_name, puuid, region, summoner_name, source, team, role
+                FROM tracked_pros
+                WHERE enabled = TRUE
+                """
+            )
+            rows = cur.fetchall()
+            return [
+                {
+                    'name': row[0],
+                    'puuid': row[1],
+                    'region': row[2],
+                    'summoner_name': row[3],
+                    'source': row[4],
+                    'team': row[5],
+                    'role': row[6]
+                }
+                for row in rows
+            ]
         finally:
             db.return_connection(conn)
     
@@ -1041,6 +1131,22 @@ class TrackerCommands(commands.Cog):
         deeplol_data: Optional[Dict]
     ):
         """Create a tracking thread for a pro player"""
+        
+        # Add pro to tracked database for future auto-tracking
+        source = deeplol_data.get('source') if deeplol_data else None
+        team = deeplol_data.get('team') if deeplol_data else None
+        role = deeplol_data.get('role') if deeplol_data else None
+        
+        self._add_tracked_pro(
+            player_name=player_name,
+            puuid=puuid,
+            region=region,
+            summoner_name=summoner_name,
+            source=source,
+            team=team,
+            role=role
+        )
+        
         channel = self.bot.get_channel(1440713433887805470)
         if not channel:
             await status_msg.edit(content="❌ Tracking channel not found!")
@@ -2042,6 +2148,100 @@ class TrackerCommands(commands.Cog):
                     'start_time': datetime.now()
                 }
                 await self._send_game_embed(created.thread, member, chosen, data, game_id)
+            
+            # Part 2: Check tracked pros
+            tracked_pros = self._get_tracked_pros()
+            
+            for pro in tracked_pros:
+                # Skip if already tracking this pro's PUUID
+                if any(info.get('account', {}).get('puuid') == pro['puuid'] for info in self.active_trackers.values()):
+                    continue
+                
+                try:
+                    spectator_data = await self.riot_api.get_active_game(pro['puuid'], pro['region'])
+                    
+                    if spectator_data:
+                        # Only track Ranked Solo/Duo (queue 420)
+                        queue_id = spectator_data.get('gameQueueConfigId', 0)
+                        if queue_id != 420:
+                            continue
+                        
+                        # Create tracking thread for this pro
+                        channel = self.bot.get_channel(1440713433887805470)
+                        if not channel:
+                            continue
+                        
+                        game_id = str(spectator_data.get('gameId', ''))
+                        thread_name = f"⭐ {pro['name']} - {pro['region'].upper()}"
+                        
+                        # Get champion
+                        champion_id = None
+                        for p in spectator_data.get('participants', []):
+                            if p.get('puuid') == pro['puuid']:
+                                champion_id = p.get('championId')
+                                break
+                        
+                        champion_name = await self._get_champion_name(champion_id or 0)
+                        
+                        initial_embed = discord.Embed(
+                            title=f"⭐ {pro['name']} is live!",
+                            description=f"Auto-tracking **{pro['summoner_name']}** ({pro['name']})",
+                            color=0xFFD700,
+                            timestamp=datetime.now()
+                        )
+                        initial_embed.add_field(name="🦸 Champion", value=champion_name, inline=True)
+                        
+                        if pro.get('team'):
+                            initial_embed.add_field(name="🏢 Team", value=pro['team'], inline=True)
+                        if pro.get('role'):
+                            initial_embed.add_field(name="🎮 Role", value=pro['role'], inline=True)
+                        
+                        created = await channel.create_thread(name=thread_name, embed=initial_embed)
+                        
+                        bet_view = BetView(game_id, created.thread.id)
+                        await created.message.edit(view=bet_view)
+                        
+                        class FakeUser:
+                            def __init__(self, name):
+                                self.display_name = name
+                                self.mention = f"**{name}**"
+                        
+                        fake_user = FakeUser(pro['name'])
+                        
+                        fake_account = {
+                            'puuid': pro['puuid'],
+                            'summoner_name': pro['summoner_name'],
+                            'region': pro['region'],
+                            'rank': 'Challenger'
+                        }
+                        
+                        embed_message = await self._send_game_embed(
+                            created.thread,
+                            fake_user,
+                            fake_account,
+                            spectator_data,
+                            game_id
+                        )
+                        
+                        # Store tracker
+                        self.active_trackers[created.thread.id] = {
+                            'user_id': 0,
+                            'account': fake_account,
+                            'game_id': game_id,
+                            'spectator_data': spectator_data,
+                            'thread': created.thread,
+                            'embed_message': embed_message,
+                            'start_time': datetime.now(),
+                            'is_pro': True,
+                            'pro_name': pro['name']
+                        }
+                        
+                        logger.info(f"✅ Auto-started tracking for {pro['name']}")
+                        
+                except Exception as e:
+                    logger.debug(f"Error checking tracked pro {pro['name']}: {e}")
+                    continue
+                    
         except Exception as e:
             logger.error(f"auto_tracker_loop error: {e}")
         finally:
