@@ -988,16 +988,16 @@ class TrackerCommands(commands.Cog):
         )
     
     async def _fetch_lolpros_data(self) -> List[Dict]:
-        """Fetch pro players - using Riot API to get Challenger players"""
-        # Instead of scraping lolpros.gg, we fetch top Challenger players from Riot API
+        """Fetch pro players - using Riot API to get high elo players"""
+        # Fetch top Challenger, Grandmaster, and Master players from Riot API
         # This gives us real players who are currently active and high elo
         
-        logger.info("Fetching top Challenger players from Riot API...")
+        logger.info("Fetching high elo players from Riot API...")
         
         try:
             pro_list = []
             
-            # Regions to check for Challengers
+            # Regions to check
             regions_to_check = [
                 ('euw', 'EUW'),
                 ('kr', 'KR'),
@@ -1006,21 +1006,36 @@ class TrackerCommands(commands.Cog):
             
             for region_code, region_name in regions_to_check:
                 try:
-                    # Get Challenger league entries (top ~300 players per region)
-                    challengers = await self.riot_api.get_challenger_league(region_code)
+                    # Fetch from all three top tiers
+                    all_entries = []
                     
-                    if not challengers or 'entries' not in challengers:
-                        logger.warning(f"No Challenger data for {region_name}")
+                    # Get Challenger league entries
+                    challengers = await self.riot_api.get_challenger_league(region_code)
+                    if challengers and 'entries' in challengers:
+                        all_entries.extend([(e, 'Challenger') for e in challengers['entries']])
+                    
+                    # Get Grandmaster league entries
+                    grandmasters = await self.riot_api.get_grandmaster_league(region_code)
+                    if grandmasters and 'entries' in grandmasters:
+                        all_entries.extend([(e, 'Grandmaster') for e in grandmasters['entries']])
+                    
+                    # Get Master league entries
+                    masters = await self.riot_api.get_master_league(region_code)
+                    if masters and 'entries' in masters:
+                        all_entries.extend([(e, 'Master') for e in masters['entries']])
+                    
+                    if not all_entries:
+                        logger.warning(f"No high elo data for {region_name}")
                         continue
                     
-                    # Take top 100 from each region (by LP)
-                    entries = sorted(
-                        challengers['entries'],
-                        key=lambda x: x.get('leaguePoints', 0),
+                    # Sort by LP and take top 150 from each region
+                    sorted_entries = sorted(
+                        all_entries,
+                        key=lambda x: x[0].get('leaguePoints', 0),
                         reverse=True
-                    )[:100]
+                    )[:150]
                     
-                    for entry in entries:
+                    for entry, tier_name in sorted_entries:
                         summoner_id = entry.get('summonerId')
                         if not summoner_id:
                             continue
@@ -1040,30 +1055,30 @@ class TrackerCommands(commands.Cog):
                                         'name': game_name,
                                         'puuid': summoner['puuid'],
                                         'region': region_code,
-                                        'team': f"Challenger {entry.get('leaguePoints', 0)} LP"
+                                        'team': f"{tier_name} {entry.get('leaguePoints', 0)} LP"
                                     })
                         except Exception as e:
                             logger.debug(f"Error fetching summoner details: {e}")
                             continue
                     
-                    logger.info(f"✅ Loaded {len([p for p in pro_list if p['region'] == region_code])} Challengers from {region_name}")
+                    logger.info(f"✅ Loaded {len([p for p in pro_list if p['region'] == region_code])} high elo players from {region_name}")
                     
                     # Rate limit protection
                     await asyncio.sleep(1)
                     
                 except Exception as e:
-                    logger.error(f"Error fetching Challengers from {region_name}: {e}")
+                    logger.error(f"Error fetching high elo players from {region_name}: {e}")
                     continue
             
             if pro_list:
                 logger.info(f"✅ Total: {len(pro_list)} high elo players loaded")
                 return pro_list
             else:
-                logger.warning("No Challenger players found, using curated list")
+                logger.warning("No high elo players found, using curated list")
                 return self._get_curated_pros()
                 
         except Exception as e:
-            logger.error(f"Error fetching Challenger data: {e}")
+            logger.error(f"Error fetching high elo data: {e}")
             return self._get_curated_pros()
     
     def _get_curated_pros(self) -> List[Dict]:

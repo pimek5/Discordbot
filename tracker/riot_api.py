@@ -393,6 +393,66 @@ class RiotAPI:
         
         return None
     
+    async def get_grandmaster_league(self, region: str, queue: str = 'RANKED_SOLO_5x5', retries: int = 3) -> Optional[Dict]:
+        """Get Grandmaster league entries for a region"""
+        if not self.api_key:
+            return None
+        
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        url = f"https://{platform}.api.riotgames.com/lol/league/v4/grandmasterleagues/by-queue/{queue}"
+        
+        logger.info(f"🔍 Fetching Grandmaster league from {platform}")
+        
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            logger.info(f"✅ Got {len(data.get('entries', []))} Grandmaster entries from {platform}")
+                            return data
+                        elif response.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+            except Exception as e:
+                logger.error(f"Error getting Grandmaster league: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                continue
+        
+        return None
+    
+    async def get_master_league(self, region: str, queue: str = 'RANKED_SOLO_5x5', retries: int = 3) -> Optional[Dict]:
+        """Get Master league entries for a region"""
+        if not self.api_key:
+            return None
+        
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        url = f"https://{platform}.api.riotgames.com/lol/league/v4/masterleagues/by-queue/{queue}"
+        
+        logger.info(f"🔍 Fetching Master league from {platform}")
+        
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            logger.info(f"✅ Got {len(data.get('entries', []))} Master entries from {platform}")
+                            return data
+                        elif response.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+            except Exception as e:
+                logger.error(f"Error getting Master league: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                continue
+        
+        return None
+    
     async def get_summoner_by_id(self, summoner_id: str, region: str, retries: int = 3) -> Optional[Dict]:
         """Get summoner data by summoner ID"""
         if not self.api_key:
