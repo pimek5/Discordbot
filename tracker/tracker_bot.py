@@ -65,6 +65,12 @@ class TrackerBot(commands.Bot):
         commands_list = [cmd.name for cmd in self.tree.get_commands()]
         logger.info(f"📋 Available commands in tree: {commands_list}")
         logger.info(f"📊 Total commands: {len(commands_list)}")
+        
+        # Copy commands to guild for faster sync
+        if GUILD_ID:
+            guild = discord.Object(id=GUILD_ID)
+            self.tree.copy_global_to(guild=guild)
+            logger.info(f"📋 Commands copied to guild {GUILD_ID}")
 
 bot = TrackerBot()
 
