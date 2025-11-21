@@ -223,30 +223,36 @@ class TrackerCommandsV2(commands.Cog):
         logger.info("🔄 Auto-fetching high elo players...")
         
         try:
-            regions = ['euw', 'kr', 'na']
+            # More regions for better coverage
+            regions = ['euw', 'kr', 'na', 'eune', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp']
             
             for region in regions:
-                # Fetch Challenger
+                # Fetch Challenger (top 30)
                 challengers = await self.riot_api.get_challenger_league(region)
                 if challengers and 'entries' in challengers:
-                    await self._process_league_entries(challengers['entries'], region, 'Challenger')
+                    await self._process_league_entries(challengers['entries'], region, 'Challenger', 30)
                 
-                # Fetch Grandmaster
+                # Fetch Grandmaster (top 30)
                 grandmasters = await self.riot_api.get_grandmaster_league(region)
                 if grandmasters and 'entries' in grandmasters:
-                    await self._process_league_entries(grandmasters['entries'], region, 'Grandmaster')
+                    await self._process_league_entries(grandmasters['entries'], region, 'Grandmaster', 30)
                 
-                await asyncio.sleep(2)  # Rate limit
+                # Fetch Master (top 20)
+                masters = await self.riot_api.get_master_league(region)
+                if masters and 'entries' in masters:
+                    await self._process_league_entries(masters['entries'], region, 'Master', 20)
+                
+                await asyncio.sleep(3)  # Rate limit between regions
             
-            logger.info(f"✅ Tracking {len(self.tracked_players)} high elo players")
+            logger.info(f"✅ Tracking {len(self.tracked_players)} high elo players across all regions")
             
         except Exception as e:
             logger.error(f"Error fetching high elo: {e}")
     
-    async def _process_league_entries(self, entries: List[Dict], region: str, tier: str):
+    async def _process_league_entries(self, entries: List[Dict], region: str, tier: str, limit: int = 50):
         """Process league entries and add to tracking"""
-        # Take top 50 from each league
-        sorted_entries = sorted(entries, key=lambda x: x.get('leaguePoints', 0), reverse=True)[:50]
+        # Take top players by LP
+        sorted_entries = sorted(entries, key=lambda x: x.get('leaguePoints', 0), reverse=True)[:limit]
         
         for entry in sorted_entries:
             try:
