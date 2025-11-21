@@ -1006,193 +1006,164 @@ class TrackerCommands(commands.Cog):
         category: 'pro' for professionals or 'strm' for streamers
         """
         try:
-            # Clean player name for URL
             clean_name = player_name.strip().replace(' ', '%20')
             url = f"https://www.deeplol.gg/{category}/{clean_name}"
+            
+            logger.info(f"🔍 DeepLoL {category.upper()}: {url}")
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
+                        logger.info(f"  ❌ Not found (status {resp.status})")
                         return None
                     
                     html = await resp.text()
                     
-                    # Parse HTML to extract data
-                    data = {
-                        'name': player_name,
-                        'region': None,
-                        'team': None,
-                        'role': None,
-                        'accounts': [],
-                        'source': f'DeepLoL {"Pro" if category == "pro" else "Streamer"}'
-                    }
+                    # Parse accounts - DeepLoL uses JSON embedded in page
+                    # Look for account data in script tags
+                    accounts = []
                     
-                    # Extract region (e.g., "RegionSouth Korea")
-                    region_match = re.search(r'Region([^<]+)', html)
-                    if region_match:
-                        data['region'] = region_match.group(1).strip()
+                    # Try to find JSON data with accounts
+                    json_match = re.search(r'window\.__INITIAL_STATE__\s*=\s*({.+?});', html, re.DOTALL)
+                    if json_match:
+                        try:
+                            import json
+                            data = json.loads(json_match.group(1))
+                            # Navigate JSON structure to find accounts
+                            if 'player' in data and 'accounts' in data['player']:
+                                for acc in data['player']['accounts']:
+                                    accounts.append({
+                                        'summoner_name': acc.get('gameName', ''),
+                                        'tag': acc.get('tagLine', ''),
+                                        'region': acc.get('region', '').lower(),
+                                        'lp': acc.get('leaguePoints', 0)
+                                    })
+                        except:
+                            pass
                     
-                    # Extract team (e.g., "TeamT1")
-                    team_match = re.search(r'Team([^<]+)', html)
-                    if team_match:
-                        data['team'] = team_match.group(1).strip()
+                    # Fallback: Parse HTML table/list
+                    if not accounts:
+                        # Look for account entries in HTML
+                        # Pattern: GameName#TAG with region nearby
+                        account_blocks = re.findall(
+                            r'<div[^>]*class="[^"]*account[^"]*"[^>]*>(.*?)</div>',
+                            html,
+                            re.IGNORECASE | re.DOTALL
+                        )
+                        
+                        for block in account_blocks[:10]:
+                            # Extract GameName#Tag
+                            riot_id = re.search(r'([A-Za-z0-9][A-Za-z0-9\s]{1,16})#([A-Za-z0-9]{3,5})', block)
+                            if riot_id:
+                                name, tag = riot_id.groups()
+                                # Extract region
+                                region = re.search(r'\b(EUW|EUNE|KR|NA|BR|LAN|LAS|OCE|TR|RU|JP)\b', block, re.IGNORECASE)
+                                region_str = region.group(1).lower() if region else 'euw'
+                                
+                                # Extract LP
+                                lp = re.search(r'(\d+)\s*LP', block)
+                                lp_val = int(lp.group(1)) if lp else 0
+                                
+                                accounts.append({
+                                    'summoner_name': name.strip(),
+                                    'tag': tag.strip(),
+                                    'region': region_str,
+                                    'lp': lp_val
+                                })
                     
-                    # Extract role (e.g., "RoleMid")
-                    role_match = re.search(r'Role([^<]+)', html)
-                    if role_match:
-                        data['role'] = role_match.group(1).strip()
+                    if accounts:
+                        logger.info(f"  ✅ Found {len(accounts)} accounts")
+                        return {
+                            'name': player_name,
+                            'accounts': accounts,
+                            'source': f'DeepLoL {category.upper()}',
+                            'region': None,
+                            'team': None,
+                            'role': None
+                        }
                     
-                    # Extract accounts (e.g., "KR DIAMOND hideonbush#kr1")
-                    # Pattern: [REGION TIER summonerName#tag ...]
-                    account_pattern = r'\[([A-Z]+)\s+[A-Z0-9\s]+\s+([^#\s]+)#([^\s\]]+)'
-                    accounts_found = re.findall(account_pattern, html)
-                    
-                    for region_code, summoner, tag in accounts_found:
-                        data['accounts'].append({
-                            'region': region_code.lower(),
-                            'summoner_name': summoner.replace('%20', ' '),
-                            'tag': tag,
-                            'lp': 0
-                        })
-                    
-                    # Return data if we found at least basic info
-                    if data['region'] or data['team'] or data['accounts']:
-                        logger.info(f"✅ Found {player_name} on DeepLoL {category}: {len(data['accounts'])} accounts")
-                        return data
-                    
+                    logger.info(f"  ❌ No accounts found in HTML")
                     return None
                     
         except Exception as e:
-            logger.debug(f"Error fetching DeepLoL {category} data for {player_name}: {e}")
+            logger.error(f"❌ Error fetching DeepLoL {category} for {player_name}: {e}")
             return None
     
     async def _fetch_lolpros_player(self, player_name: str) -> Optional[Dict]:
-        """Fetch player data from LoLPros.gg"""
+        """Fetch player data from LoLPros.gg - rebuilt from scratch"""
         try:
-            # Clean player name for URL (lowercase with hyphens)
             clean_name = player_name.strip().lower().replace(' ', '-')
             
-            # Try with -1 suffix (common pattern on lolpros)
-            url = f"https://lolpros.gg/player/{clean_name}-1"
+            # Try multiple URL patterns
+            urls_to_try = [
+                f"https://lolpros.gg/player/{clean_name}",
+                f"https://lolpros.gg/player/{clean_name}-1"
+            ]
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status != 200:
-                        # Try without -1 suffix
-                        url = f"https://lolpros.gg/player/{clean_name}"
-                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp2:
-                            if resp2.status != 200:
-                                return None
-                            html = await resp2.text()
-                    else:
-                        html = await resp.text()
-                    
-                    # Parse HTML to extract data
-                    data = {
-                        'name': player_name,
-                        'region': None,
-                        'team': None,
-                        'role': None,
-                        'accounts': [],
-                        'source': 'LoLPros'
-                    }
-                    
-                    # Extract team name
-                    team_match = re.search(r'<div[^>]*class="[^"]*team[^"]*"[^>]*>([^<]+)</div>', html, re.IGNORECASE)
-                    if team_match:
-                        data['team'] = team_match.group(1).strip()
-                    
-                    # Extract role
-                    role_match = re.search(r'<div[^>]*class="[^"]*role[^"]*"[^>]*>([^<]+)</div>', html, re.IGNORECASE)
-                    if role_match:
-                        data['role'] = role_match.group(1).strip()
-                    
-                    # Extract accounts - LoLPros typically shows account info differently
-                    # They might not use Riot ID format, try multiple approaches
-                    accounts_found = []
-                    
-                    # Try 1: Look for Riot ID format (GameName#TAG) but exclude common false positives
-                    riot_id_pattern = r'([A-Za-z][A-Za-z0-9\s]{0,19})#([A-Za-z0-9]{3,5})\b'
-                    potential_accounts = re.findall(riot_id_pattern, html)
-                    
-                    # Blacklist of false positive patterns
-                    blacklist = ['search by', 'gamename', 'example', 'player', 'account']
-                    
-                    logger.info(f"🔍 Found {len(potential_accounts)} potential Riot ID accounts for {player_name}")
-                    
-                    for summoner, tag in potential_accounts:
-                        summoner = summoner.strip()
-                        tag = tag.strip()
-                        
-                        logger.info(f"  🔎 Checking: '{summoner}#{tag}'")
-                        
-                        # Skip blacklisted patterns
-                        if any(word in summoner.lower() for word in blacklist):
-                            logger.info(f"    ❌ Filtered (blacklisted word): {summoner}")
-                            continue
-                        
-                        # Skip if looks like CSS (hex color, rgba, etc)
-                        if tag.lower() in ['fff', 'ffff', '000', '0000', 'rgba']:
-                            logger.info(f"    ❌ Filtered (CSS tag): {tag}")
-                            continue
-                        # Skip 6-char hex codes (CSS colors)
-                        if len(tag) == 6 and all(c in '0123456789abcdefABCDEF' for c in tag):
-                            logger.info(f"    ❌ Filtered (6-char hex): {tag}")
-                            continue
-                        # Skip 5-char numeric tags
-                        if len(tag) == 5 and all(c in '0123456789' for c in tag):
-                            logger.info(f"    ❌ Filtered (5-digit tag): {tag}")
-                            continue
-                        if summoner.replace(' ', '').isdigit():
-                            logger.info(f"    ❌ Filtered (numeric name): {summoner}")
-                            continue
-                        
-                        # Looks valid!
-                        accounts_found.append((summoner, tag))
-                        logger.info(f"    ✅ Valid account: {summoner}#{tag}")
-                    
-                    # Try 2: If no Riot IDs found, look for op.gg/summoners links or account tables
-                    if not accounts_found:
-                        logger.info(f"🔍 No Riot IDs found, trying alternative formats...")
-                        # Look for op.gg summoner links
-                        opgg_pattern = r'op\.gg/summoners/([^/]+)/([^/"]+)'
-                        opgg_accounts = re.findall(opgg_pattern, html)
-                        for region, summoner in opgg_accounts[:5]:
-                            # Decode URL encoding
-                            summoner = summoner.replace('%20', ' ').replace('+', ' ')
-                            accounts_found.append((summoner, region.upper()))
-                            logger.info(f"    ✅ Found from op.gg: {summoner} ({region})")
-                    
-                    # Remove duplicates while preserving order
-                    seen = set()
-                    accounts_found = [x for x in accounts_found if not (x in seen or seen.add(x))]
-                    
-                    logger.info(f"✅ After filtering: {len(accounts_found)} accounts")
-                    
-                    # Also look for region indicators
-                    region_pattern = r'\b(EUW|EUNE|KR|NA|BR|LAN|LAS|OCE|TR|RU|JP|PH|SG|TH|TW|VN)\b'
-                    regions_found = re.findall(region_pattern, html)
-                    
-                    # Match accounts with regions (best effort)
-                    for i, (summoner, tag) in enumerate(accounts_found[:5]):  # Limit to 5 accounts
-                        region = regions_found[i].lower() if i < len(regions_found) else 'euw'
-                        
-                        data['accounts'].append({
-                            'region': region,
-                            'summoner_name': summoner.strip(),
-                            'tag': tag.strip(),
-                            'lp': 0
-                        })
-                    
-                    # If we found any useful data, return it
-                    if data['team'] or data['role'] or data['accounts']:
-                        logger.info(f"✅ Found {player_name} on LoLPros: {len(data['accounts'])} accounts")
-                        return data
-                    
-                    return None
+            html = None
+            for url in urls_to_try:
+                logger.info(f"🔍 LoLPros: {url}")
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            html = await resp.text()
+                            logger.info(f"  ✅ Found (status 200)")
+                            break
+                        logger.info(f"  ❌ Not found (status {resp.status})")
+            
+            if not html:
+                return None
+            
+            # Parse accounts from op.gg links (most reliable)
+            accounts = []
+            opgg_pattern = r'op\.gg/summoners/([^/]+)/([^/"?]+)'
+            opgg_matches = re.findall(opgg_pattern, html)
+            
+            logger.info(f"  Found {len(opgg_matches)} op.gg links")
+            
+            for region, summoner_encoded in opgg_matches[:10]:
+                # Decode URL encoding
+                summoner = summoner_encoded.replace('%20', ' ').replace('+', ' ').replace('-', ' ')
+                summoner = re.sub(r'%([0-9A-Fa-f]{2})', lambda m: chr(int(m.group(1), 16)), summoner)
+                
+                # Clean region
+                region = region.lower()
+                if region not in ['euw', 'eune', 'kr', 'na', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp']:
+                    continue
+                
+                accounts.append({
+                    'summoner_name': summoner.strip(),
+                    'tag': '',  # op.gg links don't have tags
+                    'region': region,
+                    'lp': 0
+                })
+                logger.info(f"    ✅ {summoner} ({region})")
+            
+            # Remove duplicates
+            seen = set()
+            unique_accounts = []
+            for acc in accounts:
+                key = (acc['summoner_name'].lower(), acc['region'])
+                if key not in seen:
+                    seen.add(key)
+                    unique_accounts.append(acc)
+            
+            if unique_accounts:
+                logger.info(f"  ✅ Total: {len(unique_accounts)} unique accounts")
+                return {
+                    'name': player_name,
+                    'accounts': unique_accounts,
+                    'source': 'LoLPros',
+                    'region': None,
+                    'team': None,
+                    'role': None
+                }
+            
+            logger.info(f"  ❌ No accounts found")
+            return None
                     
         except Exception as e:
-            logger.debug(f"Error fetching LoLPros data for {player_name}: {e}")
+            logger.error(f"❌ Error fetching LoLPros for {player_name}: {e}")
             return None
     
     async def _create_pro_tracking_thread(
