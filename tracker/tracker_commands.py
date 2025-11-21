@@ -1114,12 +1114,27 @@ class TrackerCommands(commands.Cog):
             if not html:
                 return None
             
+            # Debug: Save HTML to see structure (first 2000 chars)
+            logger.info(f"  HTML preview: {html[:2000]}")
+            
             # Parse accounts from op.gg links (most reliable)
             accounts = []
-            opgg_pattern = r'op\.gg/summoners/([^/]+)/([^/"?]+)'
-            opgg_matches = re.findall(opgg_pattern, html)
             
-            logger.info(f"  Found {len(opgg_matches)} op.gg links")
+            # Try multiple op.gg patterns
+            patterns = [
+                r'op\.gg/summoners/([^/]+)/([^/"?]+)',  # op.gg/summoners/region/name
+                r'op\.gg/summoner/([^/]+)/([^/"?]+)',   # op.gg/summoner/region/name
+                r'www\.op\.gg/summoner/userName=([^&"]+)[^>]*region=([^&"]+)',  # old format
+            ]
+            
+            opgg_matches = []
+            for pattern in patterns:
+                matches = re.findall(pattern, html, re.IGNORECASE)
+                if matches:
+                    logger.info(f"  Pattern '{pattern[:30]}...' found {len(matches)} matches")
+                    opgg_matches.extend(matches)
+            
+            logger.info(f"  Found {len(opgg_matches)} total op.gg links")
             
             for region, summoner_encoded in opgg_matches[:10]:
                 # Decode URL encoding
