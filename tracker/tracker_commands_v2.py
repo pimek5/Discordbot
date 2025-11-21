@@ -253,48 +253,130 @@ class TrackerCommandsV2(commands.Cog):
     
     @auto_fetch_high_elo.before_loop
     async def before_auto_fetch(self):
-        """Wait for bot to be ready, then fetch immediately"""
+        """Wait for bot to be ready, then load from DB or fetch"""
         await self.bot.wait_until_ready()
-        logger.info("🚀 Bot ready - starting initial player fetch...")
-        # First run happens immediately after bot is ready
+        logger.info("🚀 Bot ready - loading tracked players...")
+        
+        # Try to load from database first
+        await self._load_tracked_players_from_db()
+        
+        if len(self.tracked_players) == 0:
+            logger.info("📥 No players in database - will fetch from Riot API")
+        else:
+            logger.info(f"✅ Loaded {len(self.tracked_players)} players from database")
+    
+    async def _load_tracked_players_from_db(self):
+        """Load tracked players from database"""
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT pa.puuid, pa.game_name, pa.region, pa.tier, pa.rank, 
+                       pa.league_points, pa.wins, pa.losses
+                FROM pro_accounts pa
+                WHERE pa.puuid IS NOT NULL
+            """)
+            
+            rows = cur.fetchall()
+            for row in rows:
+                puuid, name, region, tier, rank, lp, wins, losses = row
+                self.tracked_players[puuid] = {
+                    'name': name,
+                    'puuid': puuid,
+                    'region': region,
+                    'tier': tier,
+                    'rank': rank,
+                    'lp': lp or 0,
+                    'wins': wins or 0,
+                    'losses': losses or 0
+                }
+        except Exception as e:
+            logger.error(f"Error loading players from DB: {e}")
+        finally:
+            self.db.return_connection(conn)
     
     async def _process_league_entries(self, entries: List[Dict], region: str, tier: str, limit: int = 50):
-        """Process league entries and add to tracking"""
+        """Process league entries and add to tracking + database"""
         # Take top players by LP
         sorted_entries = sorted(entries, key=lambda x: x.get('leaguePoints', 0), reverse=True)[:limit]
         
-        for entry in sorted_entries:
-            try:
-                summoner_id = entry.get('summonerId')
-                if not summoner_id:
-                    continue
-                
-                # Get summoner details
-                summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
-                if not summoner:
-                    continue
-                
-                puuid = summoner.get('puuid')
-                if puuid and puuid not in self.tracked_players:
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            
+            for entry in sorted_entries:
+                try:
+                    summoner_id = entry.get('summonerId')
+                    if not summoner_id:
+                        continue
+                    
+                    # Get summoner details
+                    summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                    if not summoner:
+                        continue
+                    
+                    puuid = summoner.get('puuid')
+                    if not puuid:
+                        continue
+                    
                     # Get account for name
                     account = await self.riot_api.get_account_by_puuid(puuid, region)
-                    name = account.get('gameName', 'Unknown') if account else 'Unknown'
+                    game_name = account.get('gameName', 'Unknown') if account else 'Unknown'
+                    tag_line = account.get('tagLine', 'XXX') if account else 'XXX'
                     
-                    self.tracked_players[puuid] = {
-                        'name': name,
-                        'puuid': puuid,
-                        'region': region,
-                        'tier': tier,
-                        'lp': entry.get('leaguePoints', 0),
-                        'wins': entry.get('wins', 0),
-                        'losses': entry.get('losses', 0)
-                    }
-                
-                await asyncio.sleep(0.1)  # Small delay
-                
-            except Exception as e:
-                logger.debug(f"Error processing entry: {e}")
-                continue
+                    # Add to memory
+                    if puuid not in self.tracked_players:
+                        self.tracked_players[puuid] = {
+                            'name': game_name,
+                            'puuid': puuid,
+                            'region': region,
+                            'tier': tier,
+                            'lp': entry.get('leaguePoints', 0),
+                            'wins': entry.get('wins', 0),
+                            'losses': entry.get('losses', 0)
+                        }
+                    
+                    # Save to database (upsert)
+                    # First, get or create tracked_pros entry
+                    cur.execute("""
+                        INSERT INTO tracked_pros (player_name, region, enabled)
+                        VALUES (%s, %s, TRUE)
+                        ON CONFLICT (player_name) DO UPDATE SET updated_at = NOW()
+                        RETURNING id
+                    """, (game_name, region))
+                    pro_id = cur.fetchone()[0]
+                    
+                    # Then upsert pro_accounts
+                    cur.execute("""
+                        INSERT INTO pro_accounts (
+                            pro_id, game_name, tag_line, region, puuid, summoner_id,
+                            tier, league_points, wins, losses
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (puuid) DO UPDATE SET
+                            tier = EXCLUDED.tier,
+                            league_points = EXCLUDED.league_points,
+                            wins = EXCLUDED.wins,
+                            losses = EXCLUDED.losses,
+                            updated_at = NOW()
+                    """, (
+                        pro_id, game_name, tag_line, region, puuid, summoner_id,
+                        tier, entry.get('leaguePoints', 0),
+                        entry.get('wins', 0), entry.get('losses', 0)
+                    ))
+                    
+                    await asyncio.sleep(0.1)  # Small delay
+                    
+                except Exception as e:
+                    logger.debug(f"Error processing entry: {e}")
+                    continue
+            
+            conn.commit()
+            
+        except Exception as e:
+            logger.error(f"Error in _process_league_entries: {e}")
+            conn.rollback()
+        finally:
+            self.db.return_connection(conn)
     
     @tasks.loop(minutes=2)
     async def monitor_games(self):
