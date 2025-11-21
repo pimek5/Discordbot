@@ -72,18 +72,25 @@ async def main():
         await bot.add_cog(TrackerCommands(bot, riot_api, GUILD_ID))
         logger.info("✅ Tracker commands loaded")
         
+        # Log available commands
+        commands_list = [cmd.name for cmd in bot.tree.get_commands()]
+        logger.info(f"📋 Available commands in tree: {commands_list}")
+        logger.info(f"📊 Total commands: {len(commands_list)}")
+        
         # Sync commands
         try:
             if GUILD_ID:
                 guild = discord.Object(id=GUILD_ID)
                 bot.tree.copy_global_to(guild=guild)
-                await bot.tree.sync(guild=guild)
-                logger.info(f"✅ Commands synced to guild {GUILD_ID}")
+                synced = await bot.tree.sync(guild=guild)
+                logger.info(f"✅ Commands synced to guild {GUILD_ID}: {[cmd.name for cmd in synced]}")
             else:
-                await bot.tree.sync()
-                logger.info("✅ Commands synced globally")
+                synced = await bot.tree.sync()
+                logger.info(f"✅ Commands synced globally: {[cmd.name for cmd in synced]}")
         except Exception as e:
             logger.error(f"❌ Error syncing commands: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         
         # Start bot
         await bot.start(TRACKER_BOT_TOKEN)
