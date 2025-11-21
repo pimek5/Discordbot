@@ -11,9 +11,13 @@ from discord import app_commands
 from discord.ext import commands
 from typing import Optional
 import logging
-from database import get_db
+from tracker_database import get_tracker_db
 
 logger = logging.getLogger('config_commands')
+
+def get_db():
+    """Wrapper to use tracker database"""
+    return get_tracker_db()
 
 class ConfigView(discord.ui.View):
     """Main configuration panel with category buttons"""
