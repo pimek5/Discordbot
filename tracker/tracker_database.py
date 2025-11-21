@@ -61,6 +61,8 @@ class TrackerDatabase:
             try:
                 cur.execute("SELECT * FROM users WHERE user_discord_id = %s", (discord_id,))
             except:
+                # Rollback failed transaction
+                conn.rollback()
                 # Fallback to discord_id if column doesn't exist
                 cur.execute("SELECT * FROM users WHERE discord_id = %s", (discord_id,))
             row = cur.fetchone()
@@ -70,6 +72,7 @@ class TrackerDatabase:
             return None
         except Exception as e:
             logger.error(f"Error getting user by discord_id: {e}")
+            conn.rollback()
             return None
         finally:
             self.return_connection(conn)
