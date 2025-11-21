@@ -300,6 +300,8 @@ class TrackerCommandsV2(commands.Cog):
         # Take top players by LP
         sorted_entries = sorted(entries, key=lambda x: x.get('leaguePoints', 0), reverse=True)[:limit]
         
+        logger.info(f"📊 Processing {len(sorted_entries)} entries from {region} {tier}")
+        
         players_to_save = []
         
         for entry in sorted_entries:
@@ -308,15 +310,18 @@ class TrackerCommandsV2(commands.Cog):
                 summoner_name = entry.get('summonerName', 'Unknown')
                 
                 if not summoner_id:
+                    logger.debug(f"⚠️ No summonerId in entry: {entry}")
                     continue
                 
                 # Get summoner details (contains puuid)
                 summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
                 if not summoner:
+                    logger.debug(f"⚠️ Could not get summoner for {summoner_id}")
                     continue
                 
                 puuid = summoner.get('puuid')
                 if not puuid:
+                    logger.debug(f"⚠️ No puuid in summoner data for {summoner_name}")
                     continue
                 
                 # Add to memory immediately
