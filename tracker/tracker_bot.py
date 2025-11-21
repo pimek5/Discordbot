@@ -47,7 +47,26 @@ intents.message_content = True
 intents.guilds = True
 intents.members = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+class TrackerBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix='!', intents=intents)
+        self.riot_api = None
+    
+    async def setup_hook(self):
+        """Setup hook called before bot starts - load cogs here"""
+        # Initialize Riot API
+        self.riot_api = RiotAPI(RIOT_API_KEY)
+        
+        # Add tracker cog
+        await self.add_cog(TrackerCommands(self, self.riot_api, GUILD_ID))
+        logger.info("✅ Tracker commands loaded")
+        
+        # Log available commands
+        commands_list = [cmd.name for cmd in self.tree.get_commands()]
+        logger.info(f"📋 Available commands in tree: {commands_list}")
+        logger.info(f"📊 Total commands: {len(commands_list)}")
+
+bot = TrackerBot()
 
 @bot.event
 async def on_ready():
@@ -76,23 +95,6 @@ async def on_ready():
 @bot.event
 async def on_error(event, *args, **kwargs):
     logger.error(f"Bot error in {event}", exc_info=True)
-
-async def setup_hook():
-    """Setup hook called before bot starts - load cogs here"""
-    # Initialize Riot API
-    riot_api = RiotAPI(RIOT_API_KEY)
-    
-    # Add tracker cog
-    await bot.add_cog(TrackerCommands(bot, riot_api, GUILD_ID))
-    logger.info("✅ Tracker commands loaded")
-    
-    # Log available commands
-    commands_list = [cmd.name for cmd in bot.tree.get_commands()]
-    logger.info(f"📋 Available commands in tree: {commands_list}")
-    logger.info(f"📊 Total commands: {len(commands_list)}")
-
-# Assign setup_hook to bot
-bot.setup_hook = setup_hook
 
 async def main():
     async with bot:
