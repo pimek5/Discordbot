@@ -227,20 +227,20 @@ class TrackerCommandsV2(commands.Cog):
             regions = ['euw', 'kr', 'na', 'eune', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp']
             
             for region in regions:
-                # Fetch Challenger (top 30)
+                # Fetch ALL Challengers (~300 per region)
                 challengers = await self.riot_api.get_challenger_league(region)
                 if challengers and 'entries' in challengers:
-                    await self._process_league_entries(challengers['entries'], region, 'Challenger', 30)
+                    await self._process_league_entries(challengers['entries'], region, 'Challenger', 999)
                 
-                # Fetch Grandmaster (top 30)
+                # Fetch ALL Grandmasters (~700 per region)
                 grandmasters = await self.riot_api.get_grandmaster_league(region)
                 if grandmasters and 'entries' in grandmasters:
-                    await self._process_league_entries(grandmasters['entries'], region, 'Grandmaster', 30)
+                    await self._process_league_entries(grandmasters['entries'], region, 'Grandmaster', 999)
                 
-                # Fetch Master (top 20)
+                # Fetch top 50 Masters (there's too many, ~2000+)
                 masters = await self.riot_api.get_master_league(region)
                 if masters and 'entries' in masters:
-                    await self._process_league_entries(masters['entries'], region, 'Master', 20)
+                    await self._process_league_entries(masters['entries'], region, 'Master', 50)
                 
                 await asyncio.sleep(3)  # Rate limit between regions
             
