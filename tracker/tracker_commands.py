@@ -1444,9 +1444,10 @@ class TrackerCommands(commands.Cog):
                     
                     # Look for embedded JSON patterns
                     json_patterns = [
-                        r'window\.__INITIAL_STATE__\s*=\s*({.+?});',
+                        r'<script id="__NEXT_DATA__"[^>]*type="application/json">([^<]+)</script>',
+                        r'<script id="__NEXT_DATA__"[^>]*>([^<]+)</script>',
                         r'window\.__NEXT_DATA__\s*=\s*({.+?})</script>',
-                        r'<script id="__NEXT_DATA__"[^>]*>({.+?})</script>',
+                        r'window\.__INITIAL_STATE__\s*=\s*({.+?});',
                         r'data-player=[\'"]([\{].+?})[\'"]',
                     ]
                     
@@ -1457,28 +1458,56 @@ class TrackerCommands(commands.Cog):
                                 import json
                                 json_str = match.group(1)
                                 data = json.loads(json_str)
-                                logger.info(f"  ✅ Found JSON in page!")
-                                logger.info(f"  JSON keys: {list(data.keys())[:10]}")
+                                logger.info(f"  ✅ Found JSON in page with pattern!")
+                                
+                                # Debug: Show structure
+                                if isinstance(data, dict):
+                                    logger.info(f"  JSON top keys: {list(data.keys())[:20]}")
+                                    
+                                    # Check for Next.js structure
+                                    if 'props' in data:
+                                        logger.info(f"  props keys: {list(data['props'].keys()) if isinstance(data['props'], dict) else type(data['props'])}")
+                                        if isinstance(data['props'], dict) and 'pageProps' in data['props']:
+                                            logger.info(f"  pageProps keys: {list(data['props']['pageProps'].keys()) if isinstance(data['props']['pageProps'], dict) else type(data['props']['pageProps'])}")
                                 
                                 # Try to extract accounts from various structures
                                 accounts = []
                                 
-                                # Structure 1: data.player.accounts
-                                if 'player' in data and isinstance(data['player'], dict):
+                                # Structure 1: data.props.pageProps.streamer.accounts (DeepLoL strm)
+                                if 'props' in data and isinstance(data['props'], dict):
+                                    page_props = data['props'].get('pageProps', {})
+                                    if isinstance(page_props, dict):
+                                        # Check for streamer or player
+                                        entity = page_props.get('streamer') or page_props.get('player')
+                                        if entity and isinstance(entity, dict) and 'accounts' in entity:
+                                            logger.info(f"  Found {len(entity['accounts'])} accounts in entity")
+                                            for acc in entity['accounts']:
+                                                # DeepLoL uses different field names
+                                                game_name = acc.get('gameName') or acc.get('summonerName') or acc.get('name', '')
+                                                tag_line = acc.get('tagLine') or acc.get('tag', '')
+                                                region = acc.get('region', acc.get('server', 'euw')).lower()
+                                                
+                                                # Get rank info
+                                                rank_info = acc.get('soloQueue') or acc.get('rank') or {}
+                                                if isinstance(rank_info, dict):
+                                                    tier = rank_info.get('tier', '')
+                                                    lp = rank_info.get('lp', rank_info.get('leaguePoints', 0))
+                                                else:
+                                                    tier = ''
+                                                    lp = acc.get('lp', acc.get('leaguePoints', 0))
+                                                
+                                                accounts.append({
+                                                    'summoner_name': game_name,
+                                                    'tag': tag_line,
+                                                    'region': region,
+                                                    'rank': tier,
+                                                    'lp': lp
+                                                })
+                                
+                                # Structure 2: Old format - data.player.accounts
+                                if not accounts and 'player' in data and isinstance(data['player'], dict):
                                     if 'accounts' in data['player']:
                                         for acc in data['player']['accounts']:
-                                            accounts.append({
-                                                'summoner_name': acc.get('gameName', acc.get('summonerName', '')),
-                                                'tag': acc.get('tagLine', acc.get('tag', '')),
-                                                'region': acc.get('region', 'euw').lower(),
-                                                'lp': acc.get('leaguePoints', acc.get('lp', 0))
-                                            })
-                                
-                                # Structure 2: data.props.pageProps.player
-                                if 'props' in data and 'pageProps' in data['props']:
-                                    page_props = data['props']['pageProps']
-                                    if 'player' in page_props and 'accounts' in page_props['player']:
-                                        for acc in page_props['player']['accounts']:
                                             accounts.append({
                                                 'summoner_name': acc.get('gameName', acc.get('summonerName', '')),
                                                 'tag': acc.get('tagLine', acc.get('tag', '')),
@@ -1496,8 +1525,12 @@ class TrackerCommands(commands.Cog):
                                         'team': None,
                                         'role': None
                                     }
+                                else:
+                                    logger.info(f"  ⚠️ Found JSON but no accounts extracted")
                             except Exception as e:
                                 logger.info(f"  ❌ JSON parse error: {e}")
+                                import traceback
+                                logger.debug(traceback.format_exc())
                     
                     logger.info(f"  ❌ No JSON data found")
                     return None
