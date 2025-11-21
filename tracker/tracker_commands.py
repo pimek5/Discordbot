@@ -204,18 +204,26 @@ betting_db = BettingDatabase()
 
 class BetView(discord.ui.View):
     """Betting buttons for live games"""
-    def __init__(self, game_id: str, thread_id: int):
+    def __init__(self, game_id: str, thread_id: int, win_chance: int = 50, win_multiplier: float = 2.0, lose_multiplier: float = 2.0):
         super().__init__(timeout=None)
         self.game_id = game_id
         self.thread_id = thread_id
+        self.win_chance = win_chance
+        self.lose_chance = 100 - win_chance
+        self.win_multiplier = win_multiplier
+        self.lose_multiplier = lose_multiplier
     
     @discord.ui.button(label="🟢 Bet WIN", style=discord.ButtonStyle.success, custom_id="bet_win")
     async def bet_win(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(BetModal(self.game_id, self.thread_id, "win"))
+        # Update button label to show multiplier
+        button.label = f"🟢 WIN ({self.win_chance}%) x{self.win_multiplier}"
+        await interaction.response.send_modal(BetModal(self.game_id, self.thread_id, "win", self.win_multiplier))
     
     @discord.ui.button(label="🔴 Bet LOSE", style=discord.ButtonStyle.danger, custom_id="bet_lose")
     async def bet_lose(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(BetModal(self.game_id, self.thread_id, "lose"))
+        # Update button label to show multiplier
+        button.label = f"🔴 LOSE ({self.lose_chance}%) x{self.lose_multiplier}"
+        await interaction.response.send_modal(BetModal(self.game_id, self.thread_id, "lose", self.lose_multiplier))
 
 class BetModal(discord.ui.Modal, title="Place Your Bet"):
     """Modal for entering bet amount"""
@@ -226,11 +234,12 @@ class BetModal(discord.ui.Modal, title="Place Your Bet"):
         max_length=10
     )
     
-    def __init__(self, game_id: str, thread_id: int, bet_type: str):
+    def __init__(self, game_id: str, thread_id: int, bet_type: str, multiplier: float = 2.0):
         super().__init__()
         self.game_id = game_id
         self.thread_id = thread_id
         self.bet_type = bet_type
+        self.multiplier = multiplier
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -257,8 +266,10 @@ class BetModal(discord.ui.Modal, title="Place Your Bet"):
             
             if success:
                 new_balance = betting_db.get_balance(interaction.user.id)
+                potential_win = int(bet_amount * self.multiplier)
                 await interaction.response.send_message(
                     f"✅ Bet placed! **{bet_amount}** coins on **{self.bet_type.upper()}**\n"
+                    f"💰 Potential win: **{potential_win}** coins (x{self.multiplier})\n"
                     f"New balance: **{new_balance}** coins",
                     ephemeral=True
                 )
@@ -476,6 +487,107 @@ class TrackerCommands(commands.Cog):
             account_str += f" • {lp} LP"
         
         return account_str
+    
+    async def _calculate_team_strength(self, participants: list, team_id: int, region: str) -> tuple[int, list]:
+        """Calculate team strength based on player ranks. Returns (total_mmr, player_details)"""
+        rank_mmr = {
+            'IRON': 400, 'BRONZE': 800, 'SILVER': 1200, 'GOLD': 1600,
+            'PLATINUM': 2000, 'EMERALD': 2400, 'DIAMOND': 2800,
+            'MASTER': 3200, 'GRANDMASTER': 3600, 'CHALLENGER': 4000
+        }
+        
+        team_players = [p for p in participants if p.get('teamId') == team_id]
+        total_mmr = 0
+        player_details = []
+        
+        for player in team_players:
+            puuid = player.get('puuid')
+            summoner_name = player.get('riotId', player.get('summonerName', 'Unknown')).split('#')[0]
+            
+            # Try to get rank from Riot API
+            rank = 'UNRANKED'
+            lp = 0
+            mmr = 1200  # Default MMR for unranked
+            
+            try:
+                # Get summoner by PUUID
+                summoner = await self.riot_api.get_summoner_by_puuid(puuid, region)
+                if summoner:
+                    summoner_id = summoner.get('id')
+                    ranked_data = await self.riot_api.get_ranked_stats(summoner_id, region)
+                    
+                    # Find Solo/Duo queue
+                    for queue in ranked_data:
+                        if queue.get('queueType') == 'RANKED_SOLO_5x5':
+                            tier = queue.get('tier', 'UNRANKED')
+                            rank_division = queue.get('rank', 'IV')
+                            lp = queue.get('leaguePoints', 0)
+                            wins = queue.get('wins', 0)
+                            losses = queue.get('losses', 0)
+                            
+                            # Calculate MMR
+                            base_mmr = rank_mmr.get(tier, 1200)
+                            division_bonus = {'I': 300, 'II': 200, 'III': 100, 'IV': 0}.get(rank_division, 0)
+                            lp_bonus = lp * 3  # Each LP = 3 MMR
+                            wr = wins / max(wins + losses, 1)
+                            wr_bonus = (wr - 0.5) * 200  # +/-100 MMR based on WR
+                            
+                            mmr = base_mmr + division_bonus + lp_bonus + wr_bonus
+                            rank = f"{tier} {rank_division}"
+                            break
+            except Exception as e:
+                logger.debug(f"Could not fetch rank for {summoner_name}: {e}")
+            
+            total_mmr += mmr
+            champion_id = player.get('championId', 0)
+            champion_name = await self._get_champion_name(champion_id)
+            
+            player_details.append({
+                'name': summoner_name,
+                'champion': champion_name,
+                'rank': rank,
+                'lp': lp,
+                'mmr': int(mmr),
+                'wr': f"{int(wr * 100)}%" if 'wr' in locals() else "N/A"
+            })
+        
+        return total_mmr, player_details
+    
+    async def _calculate_win_chance(self, spectator_data: dict, tracked_team_id: int, region: str) -> dict:
+        """Calculate win chance for both teams based on player ranks and stats"""
+        participants = spectator_data.get('participants', [])
+        
+        # Get team strengths
+        blue_mmr, blue_details = await self._calculate_team_strength(participants, 100, region)
+        red_mmr, red_details = await self._calculate_team_strength(participants, 200, region)
+        
+        # Calculate win probabilities
+        total_mmr = blue_mmr + red_mmr
+        blue_chance = int((blue_mmr / total_mmr) * 100) if total_mmr > 0 else 50
+        red_chance = 100 - blue_chance
+        
+        # Determine tracked player's team
+        if tracked_team_id == 100:
+            win_chance = blue_chance
+            lose_chance = red_chance
+            win_team = blue_details
+            lose_team = red_details
+        else:
+            win_chance = red_chance
+            lose_chance = blue_chance
+            win_team = red_details
+            lose_team = blue_details
+        
+        return {
+            'win_chance': win_chance,
+            'lose_chance': lose_chance,
+            'win_team': win_team,
+            'lose_team': lose_team,
+            'blue_chance': blue_chance,
+            'red_chance': red_chance,
+            'blue_team': blue_details,
+            'red_team': red_details
+        }
 
     def _init_tracking_tables(self):
         """Create subscriptions table for persistent tracking"""
@@ -1954,7 +2066,18 @@ class TrackerCommands(commands.Cog):
     
     async def _send_game_embed(self, thread, user, account, spectator_data, game_id: str):
         """Send live game tracking embed"""
-        embed = await self._build_game_embed(user, account, spectator_data, game_id)
+        # Get player's team ID first
+        player_team_id = 100
+        for p in spectator_data.get('participants', []):
+            if p.get('puuid') == account['puuid']:
+                player_team_id = p.get('teamId', 100)
+                break
+        
+        # Calculate win chances
+        region = account.get('region', 'euw')
+        win_data = await self._calculate_win_chance(spectator_data, player_team_id, region)
+        
+        embed = await self._build_game_embed(user, account, spectator_data, game_id, win_data)
         
         # Generate draft image for initial send only
         participants = spectator_data.get('participants', [])
@@ -1976,15 +2099,19 @@ class TrackerCommands(commands.Cog):
         if attachment_url:
             embed.set_image(url=attachment_url)
         
-        # Send with betting buttons
-        view = BetView(game_id, thread.id)
+        # Send with betting buttons (with win chance and multipliers)
+        win_chance = win_data['win_chance'] if win_data else 50
+        win_multiplier = round(100 / win_chance, 2) if win_chance > 0 else 2.0
+        lose_multiplier = round(100 / (100 - win_chance), 2) if win_chance < 100 else 2.0
+        
+        view = BetView(game_id, thread.id, win_chance, win_multiplier, lose_multiplier)
         if file:
             msg = await thread.send(embed=embed, view=view, file=file)
         else:
             msg = await thread.send(embed=embed, view=view)
         return msg
     
-    async def _build_game_embed(self, user, account, spectator_data, game_id: str) -> discord.Embed:
+    async def _build_game_embed(self, user, account, spectator_data, game_id: str, win_data: dict = None) -> discord.Embed:
         """Build game tracking embed (for initial send or update)"""
         # Get player and champion data
         champion_id = None
@@ -2110,7 +2237,37 @@ class TrackerCommands(commands.Cog):
             inline=True
         )
         
-        # Enhanced draft display with player names and ranks
+        # Win Chance Display (inspired by ARAM betting)
+        if win_data:
+            win_chance = win_data['win_chance']
+            lose_chance = win_data['lose_chance']
+            
+            # Calculate multipliers (lower chance = higher payout)
+            win_multiplier = round(100 / win_chance, 2) if win_chance > 0 else 2.0
+            lose_multiplier = round(100 / lose_chance, 2) if lose_chance > 0 else 2.0
+            
+            chance_text = f"**Win Chance: {win_chance}%**\n"
+            
+            # Show Your Team (tracked player's team)
+            your_team_data = win_data['win_team']
+            chance_text += f"\n**🟢 Your Team (x{win_multiplier})**\n"
+            for player in your_team_data[:5]:
+                rank_emoji = self._get_rank_emoji(player['rank'].split()[0].lower() if ' ' in player['rank'] else player['rank'].lower())
+                chance_text += f"{rank_emoji} **{player['name'][:8]}** • {player['champion'][:8]} • {player['rank']} • {player['wr']}\n"
+            
+            chance_text += f"\n**🔴 Enemy Team (x{lose_multiplier})**\n"
+            enemy_team_data = win_data['lose_team']
+            for player in enemy_team_data[:5]:
+                rank_emoji = self._get_rank_emoji(player['rank'].split()[0].lower() if ' ' in player['rank'] else player['rank'].lower())
+                chance_text += f"{rank_emoji} **{player['name'][:8]}** • {player['champion'][:8]} • {player['rank']} • {player['wr']}\n"
+            
+            embed.add_field(
+                name="📊 Match Betting",
+                value=chance_text,
+                inline=False
+            )
+        
+        # Enhanced draft display with player names and ranks (original teams for quick view)
         if blue_team:
             blue_lines = []
             for i, p in enumerate(blue_team, 1):
