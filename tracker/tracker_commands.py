@@ -830,9 +830,24 @@ class TrackerCommands(commands.Cog):
             accounts = player_data.get('accounts', [])
             source = player_data.get('source', 'Unknown')
             
+            # Build accounts list text
+            accounts_text = ""
+            for i, acc in enumerate(accounts, 1):
+                acc_name = acc.get('summoner_name', 'Unknown')
+                acc_tag = acc.get('tag', '')
+                acc_region = acc.get('region', 'Unknown').upper()
+                acc_lp = acc.get('lp', 0)
+                
+                if acc_tag:
+                    accounts_text += f"{i}. **{acc_name}#{acc_tag}** ({acc_region}) - {acc_lp} LP\n"
+                else:
+                    accounts_text += f"{i}. **{acc_name}** ({acc_region}) - {acc_lp} LP\n"
+            
             await status_msg.edit(
                 content=f"✅ Found **{player_name}** on {source}!\n"
-                        f"📊 Found {len(accounts)} account(s). Checking for active games..."
+                        f"📊 Found {len(accounts)} account(s):\n\n"
+                        f"{accounts_text}\n"
+                        f"🔍 Checking for active games..."
             )
             
             # Check each account for active games
