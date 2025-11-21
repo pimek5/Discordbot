@@ -1107,22 +1107,33 @@ class TrackerCommands(commands.Cog):
                     if role_match:
                         data['role'] = role_match.group(1).strip()
                     
-                    # Extract accounts - LoLPros typically shows summoner names with regions
-                    # Look for Riot ID format in specific HTML contexts (avoid CSS)
-                    # Pattern: gameName#tag but NOT in style attributes or CSS
-                    account_pattern = r'(?<!style=")(?<!rgba\()(?<!rgb\()([A-Za-z][A-Za-z0-9\s]{2,15})#([A-Za-z0-9]{3,5})(?![^<]*</style>)'
-                    accounts_raw = re.findall(account_pattern, html)
-                    
-                    # Filter out CSS/hex codes (check if it looks like a valid summoner name)
+                    # Extract accounts - LoLPros shows accounts in specific format
+                    # Look for account entries - try multiple patterns
                     accounts_found = []
-                    for summoner, tag in accounts_raw:
-                        # Skip if summoner is all numbers or looks like CSS
-                        if summoner.strip().replace(' ', '').isdigit():
+                    
+                    # Pattern 1: Look for Riot ID format (GameName#TAG)
+                    # But skip obvious CSS/hex codes
+                    riot_id_pattern = r'([A-Za-z][A-Za-z0-9\s]{1,20})#([A-Za-z0-9]{3,5})\b'
+                    potential_accounts = re.findall(riot_id_pattern, html)
+                    
+                    for summoner, tag in potential_accounts:
+                        summoner = summoner.strip()
+                        tag = tag.strip()
+                        
+                        # Skip if looks like CSS (hex color, rgba, etc)
+                        if tag.lower() in ['fff', 'ffff', '000', '0000']:
                             continue
-                        # Skip if tag is all hex digits (could be color code)
-                        if len(tag) == 6 and all(c in '0123456789abcdefABCDEF' for c in tag):
+                        if all(c in '0123456789abcdefABCDEF' for c in tag) and len(tag) == 6:
                             continue
+                        if summoner.replace(' ', '').isdigit():
+                            continue
+                        
+                        # Looks valid!
                         accounts_found.append((summoner, tag))
+                    
+                    # Remove duplicates while preserving order
+                    seen = set()
+                    accounts_found = [x for x in accounts_found if not (x in seen or seen.add(x))]
                     
                     # Also look for region indicators
                     region_pattern = r'\b(EUW|EUNE|KR|NA|BR|LAN|LAS|OCE|TR|RU|JP|PH|SG|TH|TW|VN)\b'
