@@ -57,19 +57,7 @@ async def on_ready():
     db = get_tracker_db()
     logger.info("✅ Database connection established")
     
-    try:
-        # Sync commands
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-            logger.info(f"✅ Commands synced to guild {GUILD_ID}")
-        else:
-            await bot.tree.sync()
-            logger.info("✅ Commands synced globally")
-            
-    except Exception as e:
-        logger.error(f"❌ Error syncing commands: {e}")
+    logger.info(f"✅ Bot is ready with {len(bot.tree.get_commands())} commands")
 
 @bot.event
 async def on_error(event, *args, **kwargs):
@@ -80,9 +68,22 @@ async def main():
         # Initialize Riot API
         riot_api = RiotAPI(RIOT_API_KEY)
         
-        # Add tracker cog
+        # Add tracker cog BEFORE starting bot
         await bot.add_cog(TrackerCommands(bot, riot_api, GUILD_ID))
         logger.info("✅ Tracker commands loaded")
+        
+        # Sync commands
+        try:
+            if GUILD_ID:
+                guild = discord.Object(id=GUILD_ID)
+                bot.tree.copy_global_to(guild=guild)
+                await bot.tree.sync(guild=guild)
+                logger.info(f"✅ Commands synced to guild {GUILD_ID}")
+            else:
+                await bot.tree.sync()
+                logger.info("✅ Commands synced globally")
+        except Exception as e:
+            logger.error(f"❌ Error syncing commands: {e}")
         
         # Start bot
         await bot.start(TRACKER_BOT_TOKEN)
