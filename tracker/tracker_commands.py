@@ -278,6 +278,26 @@ class TrackerCommands(commands.Cog):
         self.dd_version: Optional[str] = None
         self.champions_by_key: Dict[int, Dict] = {}
         self.active_trackers: Dict[int, dict] = {}  # thread_id -> tracker info
+        # Region flags
+        self.region_flags = {
+            'euw': '🇪🇺', 'eune': '🇪🇺', 'na': '🇺🇸', 'kr': '🇰🇷',
+            'jp': '🇯🇵', 'br': '🇧🇷', 'lan': '🇲🇽', 'las': '🇦🇷',
+            'oce': '🇦🇺', 'ru': '🇷🇺', 'tr': '🇹🇷', 'sg': '🇸🇬',
+            'ph': '🇵🇭', 'th': '🇹🇭', 'tw': '🇹🇼', 'vn': '🇻🇳'
+        }
+        # Rank emoji names
+        self.rank_emoji_names = {
+            'iron': 'rank_Iron',
+            'bronze': 'rank_Bronze',
+            'silver': 'rank_Silver',
+            'gold': 'rank_Gold',
+            'platinum': 'rank_Platinum',
+            'emerald': 'rank_Emerald',
+            'diamond': 'rank_Diamond',
+            'master': 'rank_Master',
+            'grandmaster': 'rank_Grandmaster',
+            'challenger': 'rank_Challenger',
+        }
         # Initialize tracking subscriptions table
         self._init_tracking_tables()
         self.tracker_loop.start()
@@ -288,6 +308,45 @@ class TrackerCommands(commands.Cog):
         self.tracker_loop.cancel()
         self.auto_tracker_loop.cancel()
         self.pro_monitoring_loop.cancel()
+    
+    def _get_rank_emoji(self, rank_name: str) -> str:
+        """Get rank emoji for given rank name"""
+        try:
+            if not rank_name:
+                return ''
+            key = rank_name.strip().lower()
+            emoji_name = self.rank_emoji_names.get(key)
+            if not emoji_name:
+                return ''
+            guild = self.bot.get_guild(self.guild_id)
+            if not guild:
+                return ''
+            emoji = discord.utils.get(guild.emojis, name=emoji_name)
+            return str(emoji) if emoji else ''
+        except Exception:
+            return ''
+    
+    def _get_region_flag(self, region: str) -> str:
+        """Get flag emoji for region"""
+        return self.region_flags.get(region.lower(), '🌍')
+    
+    def _format_account_display(self, summoner_name: str, tag: str, region: str, rank: str = '', lp: int = 0) -> str:
+        """Format account display with flag, rank emoji and full details"""
+        region_lower = region.lower()
+        flag = self._get_region_flag(region_lower)
+        region_upper = region.upper()
+        
+        # Build account string
+        account_str = f"`{summoner_name}#{tag}` • {flag} {region_upper}"
+        
+        # Add rank and LP if available
+        if rank and lp > 0:
+            rank_emoji = self._get_rank_emoji(rank)
+            account_str += f" • {rank_emoji} {rank} {lp} LP"
+        elif lp > 0:
+            account_str += f" • {lp} LP"
+        
+        return account_str
 
     def _init_tracking_tables(self):
         """Create subscriptions table for persistent tracking"""
@@ -849,13 +908,15 @@ class TrackerCommands(commands.Cog):
             for i, acc in enumerate(accounts, 1):
                 acc_name = acc.get('summoner_name', 'Unknown')
                 acc_tag = acc.get('tag', '')
-                acc_region = acc.get('region', 'Unknown').upper()
+                acc_region = acc.get('region', 'Unknown')
                 acc_lp = acc.get('lp', 0)
+                acc_rank = acc.get('rank', '')
                 
                 if acc_tag:
-                    accounts_text += f"{i}. **{acc_name}#{acc_tag}** ({acc_region}) - {acc_lp} LP\n"
+                    accounts_text += f"{i}. {self._format_account_display(acc_name, acc_tag, acc_region, acc_rank, acc_lp)}\n"
                 else:
-                    accounts_text += f"{i}. **{acc_name}** ({acc_region}) - {acc_lp} LP\n"
+                    flag = self._get_region_flag(acc_region)
+                    accounts_text += f"{i}. `{acc_name}` • {flag} {acc_region.upper()} • {acc_lp} LP\n"
             
             await status_msg.edit(
                 content=f"✅ Found **{player_name}** on {source}!\n"
@@ -1349,7 +1410,8 @@ class TrackerCommands(commands.Cog):
                                         'summoner_name': summoner.strip(),
                                         'tag': tag.strip(),
                                         'region': region,
-                                        'lp': lp
+                                        'lp': lp,
+                                        'rank': rank  # Add rank name (Challenger, Grandmaster, etc.)
                                     })
                                     
                                     if lp > 0:
@@ -2868,6 +2930,7 @@ class TrackerCommands(commands.Cog):
             summoner = await self.riot_api.get_summoner_by_puuid(puuid, region)
             
             lp = 0
+            rank = ''
             if summoner:
                 summoner_id = summoner.get('id')
                 ranked_data = await self.riot_api.get_ranked_stats(summoner_id, region)
@@ -2876,6 +2939,9 @@ class TrackerCommands(commands.Cog):
                 for queue in ranked_data:
                     if queue.get('queueType') == 'RANKED_SOLO_5x5':
                         lp = queue.get('leaguePoints', 0)
+                        tier = queue.get('tier', '')
+                        if tier:
+                            rank = tier.capitalize()  # CHALLENGER -> Challenger
                         break
             
             # Add account to list
@@ -2883,7 +2949,8 @@ class TrackerCommands(commands.Cog):
                 'summoner_name': summoner_name,
                 'tag': tag,
                 'region': region,
-                'lp': lp
+                'lp': lp,
+                'rank': rank
             }
             accounts.append(new_account)
             
@@ -2895,9 +2962,14 @@ class TrackerCommands(commands.Cog):
             conn.commit()
             conn.close()
             
+            # Format display
+            flag = self._get_region_flag(region)
+            rank_emoji = self._get_rank_emoji(rank) if rank else ''
+            rank_display = f"{rank_emoji} {rank} {lp} LP" if rank else f"{lp} LP"
+            
             await interaction.followup.send(
-                f"✅ Added **{summoner_name}#{tag}** ({region.upper()}) to **{player_name}**'s tracked accounts!\n"
-                f"📊 Rank: {lp} LP\n"
+                f"✅ Added `{summoner_name}#{tag}` • {flag} {region.upper()} to **{player_name}**'s tracked accounts!\n"
+                f"📊 Rank: {rank_display}\n"
                 f"🎮 Total accounts: {len(accounts)}\n\n"
                 f"This account will now be checked for live games when tracking {player_name}."
             )
@@ -3298,19 +3370,17 @@ class TrackerCommands(commands.Cog):
             for i, acc in enumerate(accounts[:10], 1):  # Max 10 accounts
                 summoner = acc.get('summoner_name', 'Unknown')
                 tag = acc.get('tag', '')
-                region = acc.get('region', 'Unknown').upper()
+                region = acc.get('region', 'Unknown')
                 lp = acc.get('lp', 0)
                 rank = acc.get('rank', '')
                 
                 if tag:
-                    accounts_text += f"**{i}.** `{summoner}#{tag}` • {region}"
+                    accounts_text += f"**{i}.** {self._format_account_display(summoner, tag, region, rank, lp)}"
                 else:
-                    accounts_text += f"**{i}.** `{summoner}` • {region}"
-                
-                if lp > 0:
-                    accounts_text += f" • {lp} LP"
-                if rank:
-                    accounts_text += f" • {rank}"
+                    flag = self._get_region_flag(region)
+                    accounts_text += f"**{i}.** `{summoner}` • {flag} {region.upper()}"
+                    if lp > 0:
+                        accounts_text += f" • {lp} LP"
                 accounts_text += "\n"
             
             if len(accounts) > 10:
