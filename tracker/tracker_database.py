@@ -57,14 +57,8 @@ class TrackerDatabase:
         conn = self.get_connection()
         try:
             cur = conn.cursor()
-            # Try user_discord_id first (main bot schema)
-            try:
-                cur.execute("SELECT * FROM users WHERE user_discord_id = %s", (discord_id,))
-            except:
-                # Rollback failed transaction
-                conn.rollback()
-                # Fallback to discord_id if column doesn't exist
-                cur.execute("SELECT * FROM users WHERE discord_id = %s", (discord_id,))
+            # Main bot schema uses 'snowflake' column
+            cur.execute("SELECT * FROM users WHERE snowflake = %s", (discord_id,))
             row = cur.fetchone()
             if row:
                 cols = [desc[0] for desc in cur.description]

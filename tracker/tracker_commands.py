@@ -272,6 +272,7 @@ class TrackerCommands(commands.Cog):
         self.bot = bot
         self.riot_api = riot_api
         self.guild_id = guild_id
+        self.db = get_tracker_db()  # Database connection for pro player tracking
         self.betting_db = BettingDatabase()
         # Data Dragon cache
         self.dd_version: Optional[str] = None
