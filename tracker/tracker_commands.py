@@ -1494,28 +1494,22 @@ class TrackerCommands(commands.Cog):
     
     async def _track_random_pros(self, interaction: discord.Interaction, count: int):
         """Track random pro players (original functionality)"""
-        # Fetch pro players from lolpros.gg API
+        # Fetch pro players from Riot API
         pro_players = await self._fetch_lolpros_data()
         
         if not pro_players:
             await interaction.followup.send(
-                "❌ Failed to load pro players database.\n"
-                "The pro player list may need to be updated.",
+                "❌ Failed to load Challenger players from Riot API.\n"
+                "This could be due to:\n"
+                "• Riot API rate limits\n"
+                "• Temporary API issues\n"
+                "• Network connectivity problems\n\n"
+                "Please try again in a few moments.",
                 ephemeral=True
             )
             return
         
-        # Filter out placeholders that need real PUUIDs
-        pro_players = [p for p in pro_players if not p['puuid'].startswith('NEED_REAL_PUUID')]
-        
-        if not pro_players:
-            await interaction.followup.send(
-                "⚠️ Pro player tracking is not yet configured.\n"
-                "The database needs to be populated with real PUUIDs.\n"
-                "Please contact an administrator to set this up.",
-                ephemeral=True
-            )
-            return
+        logger.info(f"✅ Loaded {len(pro_players)} Challenger players for random search")
         
         channel = self.bot.get_channel(1440713433887805470)
         if not channel:
