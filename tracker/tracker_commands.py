@@ -1123,21 +1123,27 @@ class TrackerCommands(commands.Cog):
                         summoner = summoner.strip()
                         tag = tag.strip()
                         
+                        logger.info(f"  🔎 Checking: '{summoner}#{tag}'")
+                        
                         # Skip if looks like CSS (hex color, rgba, etc)
                         if tag.lower() in ['fff', 'ffff', '000', '0000', 'rgba']:
+                            logger.info(f"    ❌ Filtered (CSS tag): {tag}")
                             continue
                         # Skip 6-char hex codes (CSS colors)
                         if len(tag) == 6 and all(c in '0123456789abcdefABCDEF' for c in tag):
+                            logger.info(f"    ❌ Filtered (6-char hex): {tag}")
                             continue
                         # Skip 5-char common CSS patterns
                         if len(tag) == 5 and all(c in '0123456789' for c in tag):
+                            logger.info(f"    ❌ Filtered (5-digit tag): {tag}")
                             continue
                         if summoner.replace(' ', '').isdigit():
+                            logger.info(f"    ❌ Filtered (numeric name): {summoner}")
                             continue
                         
                         # Looks valid!
                         accounts_found.append((summoner, tag))
-                        logger.debug(f"  ✅ Valid account: {summoner}#{tag}")
+                        logger.info(f"    ✅ Valid account: {summoner}#{tag}")
                     
                     # Remove duplicates while preserving order
                     seen = set()
