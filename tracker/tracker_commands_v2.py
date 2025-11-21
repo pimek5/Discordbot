@@ -251,6 +251,13 @@ class TrackerCommandsV2(commands.Cog):
         except Exception as e:
             logger.error(f"Error fetching high elo: {e}")
     
+    @auto_fetch_high_elo.before_loop
+    async def before_auto_fetch(self):
+        """Wait for bot to be ready, then fetch immediately"""
+        await self.bot.wait_until_ready()
+        logger.info("🚀 Bot ready - starting initial player fetch...")
+        # First run happens immediately after bot is ready
+    
     async def _process_league_entries(self, entries: List[Dict], region: str, tier: str, limit: int = 50):
         """Process league entries and add to tracking"""
         # Take top players by LP
@@ -331,6 +338,16 @@ class TrackerCommandsV2(commands.Cog):
             except Exception as e:
                 logger.debug(f"Error checking player {player.get('name')}: {e}")
                 continue
+    
+    @monitor_games.before_loop
+    async def before_monitor_games(self):
+        """Wait for bot to be ready and players to be fetched"""
+        await self.bot.wait_until_ready()
+        # Wait for first fetch to complete
+        while len(self.tracked_players) == 0:
+            logger.info("⏳ Waiting for players to be fetched...")
+            await asyncio.sleep(30)
+        logger.info(f"✅ Ready to monitor {len(self.tracked_players)} players")
     
     async def _create_betting_game(self, game_id: int, game_data: Dict, tracked_player: Dict):
         """Create a new betting game embed"""
