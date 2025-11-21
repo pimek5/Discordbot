@@ -1108,10 +1108,21 @@ class TrackerCommands(commands.Cog):
                         data['role'] = role_match.group(1).strip()
                     
                     # Extract accounts - LoLPros typically shows summoner names with regions
-                    # Pattern varies, look for game names and tags
-                    # Common pattern: gameName#tag with region indicator
-                    account_pattern = r'([A-Za-z0-9\s]+)#([A-Za-z0-9]+)'
-                    accounts_found = re.findall(account_pattern, html)
+                    # Look for Riot ID format in specific HTML contexts (avoid CSS)
+                    # Pattern: gameName#tag but NOT in style attributes or CSS
+                    account_pattern = r'(?<!style=")(?<!rgba\()(?<!rgb\()([A-Za-z][A-Za-z0-9\s]{2,15})#([A-Za-z0-9]{3,5})(?![^<]*</style>)'
+                    accounts_raw = re.findall(account_pattern, html)
+                    
+                    # Filter out CSS/hex codes (check if it looks like a valid summoner name)
+                    accounts_found = []
+                    for summoner, tag in accounts_raw:
+                        # Skip if summoner is all numbers or looks like CSS
+                        if summoner.strip().replace(' ', '').isdigit():
+                            continue
+                        # Skip if tag is all hex digits (could be color code)
+                        if len(tag) == 6 and all(c in '0123456789abcdefABCDEF' for c in tag):
+                            continue
+                        accounts_found.append((summoner, tag))
                     
                     # Also look for region indicators
                     region_pattern = r'\b(EUW|EUNE|KR|NA|BR|LAN|LAS|OCE|TR|RU|JP|PH|SG|TH|TW|VN)\b'
