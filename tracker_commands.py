@@ -13,6 +13,7 @@ from typing import Optional, List, Dict
 import aiohttp
 from io import BytesIO
 from PIL import Image
+import re
 
 from database import get_db
 from permissions import has_admin_permissions
@@ -622,16 +623,353 @@ class TrackerCommands(commands.Cog):
     
     @app_commands.command(name="trackpros", description="Track random pro player games from multiple regions")
     @app_commands.describe(
-        count="Number of pro games to search for (1-5)"
+        count="Number of pro games to search for (1-5)",
+        player_name="Optional: Search for specific player (e.g., 'Caps', 'Faker', 'desperate nasus')"
     )
-    async def trackpros(self, interaction: discord.Interaction, count: Optional[int] = 1):
-        """Track live games of professional players"""
+    async def trackpros(self, interaction: discord.Interaction, count: Optional[int] = 1, player_name: Optional[str] = None):
+        """Track live games of professional players or search for specific player"""
         await interaction.response.defer()
         
         if count < 1 or count > 5:
             await interaction.followup.send("❌ Count must be between 1 and 5!", ephemeral=True)
             return
         
+        # If player_name is provided, search for that specific player
+        if player_name:
+            await self._track_specific_player(interaction, player_name)
+            return
+        
+        # Otherwise, do random pro search
+        await self._track_random_pros(interaction, count)
+    
+    async def _track_specific_player(self, interaction: discord.Interaction, player_name: str):
+        """Track a specific player by name"""
+        status_msg = await interaction.followup.send(
+            f"🔍 Searching for **{player_name}**...\n"
+            f"Checking DeepLoL and all regions..."
+        )
+        
+        # First, try to get DeepLoL data for the player
+        deeplol_data = await self._fetch_deeplol_data(player_name)
+        
+        if deeplol_data:
+            # Found on DeepLoL! Get their accounts
+            accounts = deeplol_data.get('accounts', [])
+            
+            await status_msg.edit(
+                content=f"✅ Found **{player_name}** on DeepLoL!\n"
+                        f"📊 Found {len(accounts)} account(s). Checking for active games..."
+            )
+            
+            # Check each account for active games
+            for account in accounts:
+                region = account.get('region', '').lower()
+                summoner_name = account.get('summoner_name', '')
+                
+                if not region or not summoner_name:
+                    continue
+                
+                try:
+                    # Get account data via Riot API
+                    # Try to find by summoner name in Challenger/GM/Master
+                    challengers = await self.riot_api.get_challenger_league(region)
+                    
+                    if challengers and 'entries' in challengers:
+                        matching_entries = [
+                            e for e in challengers['entries']
+                            if summoner_name.lower() in e.get('summonerName', '').lower()
+                        ]
+                        
+                        if matching_entries:
+                            entry = matching_entries[0]
+                            summoner = await self.riot_api.get_summoner_by_id(entry['summonerId'], region)
+                            
+                            if summoner and summoner.get('puuid'):
+                                puuid = summoner['puuid']
+                                spectator_data = await self.riot_api.get_active_game(puuid, region)
+                                
+                                if spectator_data:
+                                    # Found active game!
+                                    await self._create_pro_tracking_thread(
+                                        status_msg,
+                                        player_name,
+                                        summoner_name,
+                                        puuid,
+                                        region,
+                                        spectator_data,
+                                        entry.get('leaguePoints', 0),
+                                        deeplol_data
+                                    )
+                                    return
+                    
+                except Exception as e:
+                    logger.debug(f"Error checking account {summoner_name} in {region}: {e}")
+                    continue
+            
+            # No active games found for DeepLoL accounts
+            await status_msg.edit(
+                content=f"📊 Found **{player_name}** on DeepLoL!\n"
+                        f"But no active games on their known accounts.\n\n"
+                        f"**DeepLoL Stats:**\n"
+                        f"• Region: {deeplol_data.get('region', 'Unknown')}\n"
+                        f"• Team: {deeplol_data.get('team', 'Unknown')}\n"
+                        f"• Role: {deeplol_data.get('role', 'Unknown')}\n"
+                        f"• Known accounts: {len(accounts)}"
+            )
+            return
+        
+        # DeepLoL not found, fallback to Challenger search
+        await status_msg.edit(
+            content=f"🔍 Searching for **{player_name}**...\n"
+                    f"Not found on DeepLoL. Checking Challenger leagues..."
+        )
+        
+        # Search in all regions
+        regions_to_check = ['euw', 'eune', 'kr', 'na', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp']
+        
+        for region in regions_to_check:
+            try:
+                # Try to find the player by name (search in Challenger/Grandmaster/Master)
+                # First, get Challenger players and search for name match
+                challengers = await self.riot_api.get_challenger_league(region)
+                
+                if challengers and 'entries' in challengers:
+                    # Search for player name (case insensitive, partial match)
+                    matching_entries = [
+                        e for e in challengers['entries']
+                        if player_name.lower() in e.get('summonerName', '').lower()
+                    ]
+                    
+                    if matching_entries:
+                        # Found match! Get their PUUID and check if in game
+                        for entry in matching_entries[:3]:  # Check top 3 matches
+                            try:
+                                summoner = await self.riot_api.get_summoner_by_id(entry['summonerId'], region)
+                                if not summoner or not summoner.get('puuid'):
+                                    continue
+                                
+                                puuid = summoner['puuid']
+                                
+                                # Check if in game
+                                spectator_data = await self.riot_api.get_active_game(puuid, region)
+                                
+                                if spectator_data:
+                                    # Found them in a game!
+                                    await self._create_pro_tracking_thread(
+                                        status_msg,
+                                        player_name,
+                                        entry.get('summonerName', player_name),
+                                        puuid,
+                                        region,
+                                        spectator_data,
+                                        entry.get('leaguePoints', 0),
+                                        None
+                                    )
+                                    return
+                                
+                            except Exception as e:
+                                logger.debug(f"Error checking summoner: {e}")
+                                continue
+                
+                # Update search status
+                await status_msg.edit(
+                    content=f"🔍 Searching for **{player_name}**...\n"
+                            f"Checked: {regions_to_check.index(region) + 1}/{len(regions_to_check)} regions"
+                )
+                
+                await asyncio.sleep(0.5)  # Rate limit protection
+                
+            except Exception as e:
+                logger.error(f"Error searching in {region}: {e}")
+                continue
+        
+        # Not found
+        await status_msg.edit(
+            content=f"❌ Could not find **{player_name}** in any Challenger games.\n"
+                    f"Checked all regions. Player might be:\n"
+                    f"• Not currently in game\n"
+                    f"• Not in Challenger rank\n"
+                    f"• Using a different summoner name\n\n"
+                    f"Try checking the exact name on op.gg or deeplol.gg"
+        )
+    
+    async def _fetch_deeplol_data(self, player_name: str) -> Optional[Dict]:
+        """Fetch player data from DeepLoL"""
+        try:
+            # Clean player name for URL
+            clean_name = player_name.strip().replace(' ', '%20')
+            url = f"https://www.deeplol.gg/pro/{clean_name}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        return None
+                    
+                    html = await resp.text()
+                    
+                    # Parse HTML to extract data
+                    data = {
+                        'name': player_name,
+                        'region': None,
+                        'team': None,
+                        'role': None,
+                        'accounts': []
+                    }
+                    
+                    # Extract region (e.g., "RegionSouth Korea")
+                    region_match = re.search(r'Region([^<]+)', html)
+                    if region_match:
+                        data['region'] = region_match.group(1).strip()
+                    
+                    # Extract team (e.g., "TeamT1")
+                    team_match = re.search(r'Team([^<]+)', html)
+                    if team_match:
+                        data['team'] = team_match.group(1).strip()
+                    
+                    # Extract role (e.g., "RoleMid")
+                    role_match = re.search(r'Role([^<]+)', html)
+                    if role_match:
+                        data['role'] = role_match.group(1).strip()
+                    
+                    # Extract accounts (e.g., "KR DIAMOND hideonbush#kr1")
+                    # Pattern: [REGION TIER summonerName#tag ...]
+                    account_pattern = r'\[([A-Z]+)\s+[A-Z0-9\s]+\s+([^#\s]+)#([^\s\]]+)'
+                    accounts_found = re.findall(account_pattern, html)
+                    
+                    for region_code, summoner, tag in accounts_found:
+                        data['accounts'].append({
+                            'region': region_code.lower(),
+                            'summoner_name': summoner.replace('%20', ' '),
+                            'tag': tag
+                        })
+                    
+                    # Return data if we found at least basic info
+                    if data['region'] or data['team'] or data['accounts']:
+                        return data
+                    
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Error fetching DeepLoL data for {player_name}: {e}")
+            return None
+    
+    async def _create_pro_tracking_thread(
+        self, 
+        status_msg,
+        player_name: str,
+        summoner_name: str,
+        puuid: str,
+        region: str,
+        spectator_data: Dict,
+        lp: int,
+        deeplol_data: Optional[Dict]
+    ):
+        """Create a tracking thread for a pro player"""
+        channel = self.bot.get_channel(1440713433887805470)
+        if not channel:
+            await status_msg.edit(content="❌ Tracking channel not found!")
+            return
+        
+        game_id = str(spectator_data.get('gameId', ''))
+        
+        thread_name = f"⭐ {player_name} - {region.upper()} Challenger"
+        
+        # Get champion
+        champion_id = None
+        for p in spectator_data.get('participants', []):
+            if p.get('puuid') == puuid:
+                champion_id = p.get('championId')
+                break
+        
+        champion_name = await self._get_champion_name(champion_id or 0)
+        
+        initial_embed = discord.Embed(
+            title=f"⭐ Found {player_name}!",
+            description=f"Tracking **{summoner_name}** ({player_name})" if summoner_name != player_name else f"Tracking **{player_name}**",
+            color=0xFFD700,
+            timestamp=datetime.now()
+        )
+        
+        initial_embed.add_field(name="🦸 Champion", value=champion_name, inline=True)
+        initial_embed.add_field(name="🏆 Rank", value=f"Challenger {lp} LP", inline=True)
+        initial_embed.add_field(name="🌍 Region", value=region.upper(), inline=True)
+        
+        # Add DeepLoL data if available
+        if deeplol_data:
+            deeplol_info = []
+            if deeplol_data.get('team'):
+                deeplol_info.append(f"🏢 **Team:** {deeplol_data['team']}")
+            if deeplol_data.get('role'):
+                deeplol_info.append(f"🎮 **Role:** {deeplol_data['role']}")
+            if deeplol_data.get('region'):
+                deeplol_info.append(f"🌏 **Home:** {deeplol_data['region']}")
+            
+            if deeplol_info:
+                initial_embed.add_field(
+                    name="📊 Pro Info (DeepLoL)",
+                    value="\n".join(deeplol_info),
+                    inline=False
+                )
+        
+        thread = await channel.create_thread(
+            name=thread_name,
+            embed=initial_embed
+        )
+        
+        class FakeUser:
+            def __init__(self, name):
+                self.display_name = name
+                self.mention = f"**{name}**"
+        
+        fake_user = FakeUser(player_name)
+        
+        fake_account = {
+            'puuid': puuid,
+            'summoner_name': summoner_name,
+            'region': region,
+            'rank': f'Challenger {lp} LP'
+        }
+        
+        bet_view = BetView(game_id, thread.thread.id)
+        await thread.message.edit(view=bet_view)
+        
+        embed_message = await self._send_game_embed(
+            thread.thread,
+            fake_user,
+            fake_account,
+            spectator_data,
+            game_id
+        )
+        
+        # Store tracker
+        self.active_trackers[thread.thread.id] = {
+            'user_id': 0,
+            'account': fake_account,
+            'game_id': game_id,
+            'spectator_data': spectator_data,
+            'thread': thread.thread,
+            'embed_message': embed_message,
+            'start_time': datetime.now(),
+            'is_pro': True,
+            'pro_name': player_name,
+            'deeplol_data': deeplol_data
+        }
+        
+        success_msg = f"✅ Found **{player_name}** in a live game!\n"
+        success_msg += f"Region: {region.upper()} • Rank: Challenger {lp} LP\n"
+        
+        if deeplol_data:
+            if deeplol_data.get('team'):
+                success_msg += f"Team: {deeplol_data['team']} "
+            if deeplol_data.get('role'):
+                success_msg += f"• Role: {deeplol_data['role']}\n"
+        
+        success_msg += f"Thread: {thread.thread.mention}"
+        
+        await status_msg.edit(content=success_msg)
+    
+    async def _track_random_pros(self, interaction: discord.Interaction, count: int):
+        """Track random pro players (original functionality)"""
         # Fetch pro players from lolpros.gg API
         pro_players = await self._fetch_lolpros_data()
         
