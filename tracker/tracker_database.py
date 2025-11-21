@@ -71,12 +71,26 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
     
-    def get_user_accounts(self, user_id: int):
-        """Get all accounts for a user"""
+    def get_user_league_accounts(self, user_id: int):
+        """Get all league accounts for a user from main bot schema"""
         conn = self.get_connection()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT * FROM accounts WHERE user_id = %s", (user_id,))
+            cur.execute("SELECT * FROM league_accounts WHERE user_id = %s", (user_id,))
+            rows = cur.fetchall()
+            if rows:
+                cols = [desc[0] for desc in cur.description]
+                return [dict(zip(cols, row)) for row in rows]
+            return []
+        finally:
+            self.return_connection(conn)
+    
+    def get_pro_accounts(self, pro_id: int):
+        """Get all accounts for a pro player"""
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM pro_accounts WHERE pro_id = %s", (pro_id,))
             rows = cur.fetchall()
             if rows:
                 cols = [desc[0] for desc in cur.description]
@@ -189,6 +203,29 @@ class TrackerDatabase:
                 conn.commit()
         finally:
             self.return_connection(conn)
+    
+    def initialize_schema(self):
+        """Initialize tracker database schema"""
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            
+            # Read schema file
+            import os
+            schema_path = os.path.join(os.path.dirname(__file__), 'tracker_schema.sql')
+            if os.path.exists(schema_path):
+                with open(schema_path, 'r') as f:
+                    schema = f.read()
+                cur.execute(schema)
+                conn.commit()
+                logger.info("✅ Tracker schema initialized")
+            else:
+                logger.warning("⚠️ tracker_schema.sql not found")
+        except Exception as e:
+            logger.error(f"❌ Error initializing schema: {e}")
+            conn.rollback()
+        finally:
+            self.return_connection(conn)
 
 # Global database instance
 _tracker_db = None
@@ -198,4 +235,5 @@ def get_tracker_db():
     global _tracker_db
     if _tracker_db is None:
         _tracker_db = TrackerDatabase()
+        _tracker_db.initialize_schema()
     return _tracker_db

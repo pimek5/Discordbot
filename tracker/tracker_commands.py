@@ -812,7 +812,7 @@ class TrackerCommands(commands.Cog):
             return
         
         # Get verified accounts
-        accounts = db.get_user_accounts(db_user['id'])
+        accounts = db.get_user_league_accounts(db_user['id'])
         verified_accounts = [acc for acc in accounts if acc.get('verified')]
         
         if not verified_accounts:
@@ -2794,7 +2794,7 @@ class TrackerCommands(commands.Cog):
                 db_user = db.get_user_by_discord_id(discord_id)
                 if not db_user:
                     continue
-                accounts = db.get_user_accounts(db_user['id'])
+                accounts = db.get_user_league_accounts(db_user['id'])
                 verified_accounts = [a for a in accounts if a.get('verified')]
                 if not verified_accounts:
                     continue
@@ -3227,7 +3227,7 @@ class TrackerCommands(commands.Cog):
         cursor = conn.cursor()
         
         cursor.execute(
-            "SELECT id, accounts FROM tracked_pros WHERE LOWER(player_name) = LOWER(%s)",
+            "SELECT id FROM tracked_pros WHERE LOWER(player_name) = LOWER(%s)",
             (player_name,)
         )
         result = cursor.fetchone()
@@ -3242,16 +3242,24 @@ class TrackerCommands(commands.Cog):
             conn.close()
             return
         
-        player_id, existing_accounts = result
+        player_id = result[0]
         
-        # Parse existing accounts (stored as JSON array)
-        accounts = json.loads(existing_accounts) if existing_accounts else []
+        # Get existing accounts from pro_accounts table
+        cursor.execute(
+            "SELECT * FROM pro_accounts WHERE pro_id = %s",
+            (player_id,)
+        )
+        accounts_rows = cursor.fetchall()
+        accounts = []
+        if accounts_rows:
+            cols = [desc[0] for desc in cursor.description]
+            accounts = [dict(zip(cols, row)) for row in accounts_rows]
         
         # Check if account already exists
-        account_key = f"{summoner_name.lower()}#{tag.lower()}|{region}"
         for acc in accounts:
-            existing_key = f"{acc.get('summoner_name', '').lower()}#{acc.get('tag', '').lower()}|{acc.get('region', '')}"
-            if existing_key == account_key:
+            if (acc.get('game_name', '').lower() == summoner_name.lower() and 
+                acc.get('tag_line', '').lower() == tag.lower() and 
+                acc.get('region', '').lower() == region.lower()):
                 await interaction.followup.send(
                     f"⚠️ Account **{summoner_name}#{tag}** ({region.upper()}) is already tracked for {player_name}!",
                     ephemeral=True
@@ -3275,48 +3283,50 @@ class TrackerCommands(commands.Cog):
             puuid = riot_account.get('puuid')
             summoner = await self.riot_api.get_summoner_by_puuid(puuid, region)
             
+            tier = None
+            rank_division = None
             lp = 0
-            rank = ''
+            wins = 0
+            losses = 0
+            
             if summoner:
                 summoner_id = summoner.get('id')
+                account_id = summoner.get('accountId')
                 ranked_data = await self.riot_api.get_ranked_stats(summoner_id, region)
                 
                 # Find Solo/Duo queue rank
                 for queue in ranked_data:
                     if queue.get('queueType') == 'RANKED_SOLO_5x5':
-                        lp = queue.get('leaguePoints', 0)
                         tier = queue.get('tier', '')
-                        if tier:
-                            rank = tier.capitalize()  # CHALLENGER -> Challenger
+                        rank_division = queue.get('rank', '')
+                        lp = queue.get('leaguePoints', 0)
+                        wins = queue.get('wins', 0)
+                        losses = queue.get('losses', 0)
                         break
             
-            # Add account to list
-            new_account = {
-                'summoner_name': summoner_name,
-                'tag': tag,
-                'region': region,
-                'lp': lp,
-                'rank': rank
-            }
-            accounts.append(new_account)
-            
-            # Update database
+            # Insert into pro_accounts table
             cursor.execute(
-                "UPDATE tracked_pros SET accounts = %s WHERE id = %s",
-                (json.dumps(accounts), player_id)
+                """INSERT INTO pro_accounts 
+                   (pro_id, game_name, tag_line, region, puuid, summoner_id, account_id, 
+                    tier, rank, league_points, wins, losses, is_primary)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (player_id, summoner_name, tag, region, puuid, 
+                 summoner.get('id') if summoner else None,
+                 summoner.get('accountId') if summoner else None,
+                 tier, rank_division, lp, wins, losses, len(accounts) == 0)  # First account is primary
             )
             conn.commit()
             conn.close()
             
             # Format display
             flag = self._get_region_flag(region)
-            rank_emoji = self._get_rank_emoji(rank) if rank else ''
-            rank_display = f"{rank_emoji} {rank} {lp} LP" if rank else f"{lp} LP"
+            rank_emoji = self._get_rank_emoji(tier) if tier else ''
+            rank_display = f"{rank_emoji} {tier} {rank_division} {lp} LP" if tier else f"{lp} LP"
             
             await interaction.followup.send(
                 f"✅ Added `{summoner_name}#{tag}` • {flag} {region.upper()} to **{player_name}**'s tracked accounts!\n"
                 f"📊 Rank: {rank_display}\n"
-                f"🎮 Total accounts: {len(accounts)}\n\n"
+                f"🎮 Total accounts: {len(accounts) + 1}\n\n"
                 f"This account will now be checked for live games when tracking {player_name}."
             )
             
