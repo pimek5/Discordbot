@@ -1112,28 +1112,38 @@ class TrackerCommands(commands.Cog):
                     accounts_found = []
                     
                     # Pattern 1: Look for Riot ID format (GameName#TAG)
-                    # But skip obvious CSS/hex codes
-                    riot_id_pattern = r'([A-Za-z][A-Za-z0-9\s]{1,20})#([A-Za-z0-9]{3,5})\b'
+                    # GameName: starts with letter, 1-20 chars (letters, numbers, spaces)
+                    # TAG: 3-5 alphanumeric characters
+                    riot_id_pattern = r'([A-Za-z][A-Za-z0-9\s]{0,19})#([A-Za-z0-9]{3,5})\b'
                     potential_accounts = re.findall(riot_id_pattern, html)
+                    
+                    logger.info(f"🔍 Found {len(potential_accounts)} potential accounts for {player_name}")
                     
                     for summoner, tag in potential_accounts:
                         summoner = summoner.strip()
                         tag = tag.strip()
                         
                         # Skip if looks like CSS (hex color, rgba, etc)
-                        if tag.lower() in ['fff', 'ffff', '000', '0000']:
+                        if tag.lower() in ['fff', 'ffff', '000', '0000', 'rgba']:
                             continue
-                        if all(c in '0123456789abcdefABCDEF' for c in tag) and len(tag) == 6:
+                        # Skip 6-char hex codes (CSS colors)
+                        if len(tag) == 6 and all(c in '0123456789abcdefABCDEF' for c in tag):
+                            continue
+                        # Skip 5-char common CSS patterns
+                        if len(tag) == 5 and all(c in '0123456789' for c in tag):
                             continue
                         if summoner.replace(' ', '').isdigit():
                             continue
                         
                         # Looks valid!
                         accounts_found.append((summoner, tag))
+                        logger.debug(f"  ✅ Valid account: {summoner}#{tag}")
                     
                     # Remove duplicates while preserving order
                     seen = set()
                     accounts_found = [x for x in accounts_found if not (x in seen or seen.add(x))]
+                    
+                    logger.info(f"✅ After filtering: {len(accounts_found)} accounts")
                     
                     # Also look for region indicators
                     region_pattern = r'\b(EUW|EUNE|KR|NA|BR|LAN|LAS|OCE|TR|RU|JP|PH|SG|TH|TW|VN)\b'
