@@ -281,10 +281,12 @@ class TrackerCommands(commands.Cog):
         self._init_tracking_tables()
         self.tracker_loop.start()
         self.auto_tracker_loop.start()
+        self.pro_monitoring_loop.start()  # NEW: Monitor all tracked pros
     
     def cog_unload(self):
         self.tracker_loop.cancel()
         self.auto_tracker_loop.cancel()
+        self.pro_monitoring_loop.cancel()
 
     def _init_tracking_tables(self):
         """Create subscriptions table for persistent tracking"""
@@ -314,9 +316,14 @@ class TrackerCommands(commands.Cog):
                     puuid TEXT NOT NULL UNIQUE,
                     region TEXT NOT NULL,
                     summoner_name TEXT,
+                    accounts JSONB DEFAULT '[]'::jsonb,
                     source TEXT,
                     team TEXT,
                     role TEXT,
+                    wins INTEGER DEFAULT 0,
+                    losses INTEGER DEFAULT 0,
+                    total_games INTEGER DEFAULT 0,
+                    avg_kda FLOAT DEFAULT 0.0,
                     enabled BOOLEAN NOT NULL DEFAULT TRUE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -358,26 +365,31 @@ class TrackerCommands(commands.Cog):
         finally:
             db.return_connection(conn)
     
-    def _add_tracked_pro(self, player_name: str, puuid: str, region: str, summoner_name: str, source: str = None, team: str = None, role: str = None):
-        """Add a pro player to auto-tracking database"""
+    def _add_tracked_pro(self, player_name: str, puuid: str, region: str, summoner_name: str, 
+                        source: str = None, team: str = None, role: str = None, accounts: list = None):
+        """Add a pro player to auto-tracking database with all their accounts"""
         db = get_tracker_db()
         conn = db.get_connection()
         try:
+            import json
+            accounts_json = json.dumps(accounts) if accounts else '[]'
+            
             cur = conn.cursor()
             cur.execute(
                 """
-                INSERT INTO tracked_pros (player_name, puuid, region, summoner_name, source, team, role, enabled)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+                INSERT INTO tracked_pros (player_name, puuid, region, summoner_name, accounts, source, team, role, enabled)
+                VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, TRUE)
                 ON CONFLICT (puuid) DO UPDATE SET 
                     player_name = EXCLUDED.player_name,
                     summoner_name = EXCLUDED.summoner_name,
+                    accounts = EXCLUDED.accounts,
                     source = EXCLUDED.source,
                     team = EXCLUDED.team,
                     role = EXCLUDED.role,
                     enabled = TRUE,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (player_name, puuid, region, summoner_name, source, team, role)
+                (player_name, puuid, region, summoner_name, accounts_json, source, team, role)
             )
             conn.commit()
         finally:
@@ -1377,6 +1389,7 @@ class TrackerCommands(commands.Cog):
         source = deeplol_data.get('source') if deeplol_data else None
         team = deeplol_data.get('team') if deeplol_data else None
         role = deeplol_data.get('role') if deeplol_data else None
+        accounts = deeplol_data.get('accounts', []) if deeplol_data else []
         
         self._add_tracked_pro(
             player_name=player_name,
@@ -1385,7 +1398,8 @@ class TrackerCommands(commands.Cog):
             summoner_name=summoner_name,
             source=source,
             team=team,
-            role=role
+            role=role,
+            accounts=accounts
         )
         
         channel = self.bot.get_channel(1440713433887805470)
@@ -2491,6 +2505,186 @@ class TrackerCommands(commands.Cog):
     async def before_auto_tracker_loop(self):
         await self.bot.wait_until_ready()
     
+    @tasks.loop(minutes=5)
+    async def pro_monitoring_loop(self):
+        """Automatically monitor all tracked pro players for live games"""
+        try:
+            logger.info("🔍 Pro monitoring: Checking all tracked players...")
+            
+            # Get all tracked pros from database
+            all_pros = self.db.get_all_tracked_pros(limit=200)
+            
+            if not all_pros:
+                logger.info("  ⚠️ No pros in database yet")
+                return
+            
+            logger.info(f"  📊 Monitoring {len(all_pros)} pro players...")
+            
+            channel = self.bot.get_channel(1440713433887805470)
+            if not channel:
+                logger.warning("  ❌ Tracking channel not found!")
+                return
+            
+            checked = 0
+            found_games = 0
+            
+            for pro in all_pros:
+                checked += 1
+                
+                player_name = pro.get('player_name', 'Unknown')
+                
+                # Parse accounts from JSON
+                import json
+                accounts = json.loads(pro.get('accounts', '[]'))
+                
+                if not accounts:
+                    continue
+                
+                # Check each account for active games
+                for account in accounts:
+                    try:
+                        summoner_name = account.get('summoner_name', '')
+                        tag = account.get('tag', '')
+                        region = account.get('region', '').lower()
+                        
+                        if not region:
+                            continue
+                        
+                        # Try to get PUUID
+                        puuid = None
+                        if summoner_name and tag:
+                            try:
+                                riot_account = await self.riot_api.get_account_by_riot_id(summoner_name, tag, region)
+                                if riot_account:
+                                    puuid = riot_account.get('puuid')
+                            except:
+                                continue
+                        
+                        if not puuid:
+                            continue
+                        
+                        # Check for active game
+                        spectator_data = await self.riot_api.get_active_game(puuid, region)
+                        
+                        if not spectator_data:
+                            continue
+                        
+                        # Only track Ranked Solo/Duo
+                        queue_id = spectator_data.get('gameQueueConfigId', 0)
+                        if queue_id != 420:
+                            continue
+                        
+                        game_id = str(spectator_data.get('gameId', ''))
+                        
+                        # Check if already tracking this game
+                        already_tracking = any(
+                            tracker.get('game_id') == game_id 
+                            for tracker in self.active_trackers.values()
+                        )
+                        
+                        if already_tracking:
+                            continue
+                        
+                        # Found new game! Create tracking thread
+                        logger.info(f"  ✅ Found game: {player_name} on {summoner_name}#{tag} ({region.upper()})")
+                        
+                        lp = account.get('lp', 0)
+                        
+                        thread_name = f"⭐ {player_name} - {region.upper()} Ranked"
+                        
+                        # Get champion
+                        champion_id = None
+                        for p in spectator_data.get('participants', []):
+                            if p.get('puuid') == puuid:
+                                champion_id = p.get('championId')
+                                break
+                        
+                        champion_name = await self._get_champion_name(champion_id or 0)
+                        
+                        initial_embed = discord.Embed(
+                            title=f"⭐ {player_name} Live!",
+                            description=f"Auto-discovered game for **{player_name}**",
+                            color=0xFFD700,
+                            timestamp=datetime.now()
+                        )
+                        
+                        initial_embed.add_field(name="🦸 Champion", value=champion_name, inline=True)
+                        initial_embed.add_field(name="🏆 Rank", value=f"{lp} LP" if lp > 0 else "Ranked", inline=True)
+                        initial_embed.add_field(name="🌍 Region", value=region.upper(), inline=True)
+                        
+                        if pro.get('team'):
+                            initial_embed.add_field(name="🏢 Team", value=pro['team'], inline=True)
+                        if pro.get('role'):
+                            initial_embed.add_field(name="🎮 Role", value=pro['role'], inline=True)
+                        
+                        thread = await channel.create_thread(
+                            name=thread_name,
+                            embed=initial_embed
+                        )
+                        
+                        class FakeUser:
+                            def __init__(self, name):
+                                self.display_name = name
+                                self.mention = f"**{name}**"
+                        
+                        fake_user = FakeUser(player_name)
+                        
+                        fake_account = {
+                            'puuid': puuid,
+                            'summoner_name': summoner_name,
+                            'region': region,
+                            'rank': f'{lp} LP' if lp > 0 else 'Ranked'
+                        }
+                        
+                        bet_view = BetView(game_id, thread.thread.id)
+                        await thread.message.edit(view=bet_view)
+                        
+                        embed_message = await self._send_game_embed(
+                            thread.thread,
+                            fake_user,
+                            fake_account,
+                            spectator_data,
+                            game_id
+                        )
+                        
+                        # Store tracker
+                        self.active_trackers[thread.thread.id] = {
+                            'user_id': 0,
+                            'account': fake_account,
+                            'game_id': game_id,
+                            'spectator_data': spectator_data,
+                            'thread': thread.thread,
+                            'embed_message': embed_message,
+                            'start_time': datetime.now(),
+                            'is_pro': True,
+                            'pro_name': player_name
+                        }
+                        
+                        found_games += 1
+                        
+                        # Rate limit protection
+                        await asyncio.sleep(1)
+                        break  # Only track one game per player
+                        
+                    except Exception as e:
+                        logger.debug(f"Error checking account {summoner_name}: {e}")
+                        continue
+                
+                # Rate limit between players
+                if checked % 10 == 0:
+                    await asyncio.sleep(2)
+            
+            logger.info(f"  📊 Monitoring complete: checked {checked}, found {found_games} new games")
+            
+        except Exception as e:
+            logger.error(f"Error in pro monitoring loop: {e}")
+    
+    @pro_monitoring_loop.before_loop
+    async def before_pro_monitoring_loop(self):
+        await self.bot.wait_until_ready()
+        # Wait 30 seconds before first check to let bot fully initialize
+        await asyncio.sleep(30)
+    
     # Betting commands
     @app_commands.command(name="balance", description="Check your betting balance")
     async def balance(self, interaction: discord.Interaction):
@@ -2994,6 +3188,231 @@ class TrackerCommands(commands.Cog):
                 f"❌ Error looking up player: {str(e)}",
                 ephemeral=True
             )
+    
+    @app_commands.command(name="playerinfo", description="View detailed information about a pro player")
+    @app_commands.describe(
+        player_name="Pro player name (e.g., 'Caps', 'Faker', 'huncho')"
+    )
+    async def playerinfo(self, interaction: discord.Interaction, player_name: str):
+        """Show detailed pro player profile"""
+        await interaction.response.defer()
+        
+        # Check database first
+        player = self.db.get_pro_player_by_name(player_name)
+        
+        if not player:
+            # Try to fetch from LoLPros/DeepLoL
+            deeplol_data = await self._fetch_deeplol_data(player_name, "pro")
+            if not deeplol_data:
+                deeplol_data = await self._fetch_deeplol_data(player_name, "strm")
+            if not deeplol_data:
+                lolpros_data = await self._fetch_lolpros_player(player_name)
+                deeplol_data = lolpros_data
+            
+            if not deeplol_data:
+                await interaction.followup.send(
+                    f"❌ Player **{player_name}** not found!\n"
+                    f"Try using `/trackpros player_name:{player_name}` first to add them to the database.",
+                    ephemeral=True
+                )
+                return
+            
+            accounts = deeplol_data.get('accounts', [])
+            team = deeplol_data.get('team', 'Unknown')
+            role = deeplol_data.get('role', 'Unknown')
+            source = deeplol_data.get('source', 'Unknown')
+        else:
+            # Parse accounts from JSON
+            import json
+            accounts = json.loads(player.get('accounts', '[]'))
+            team = player.get('team', 'Unknown')
+            role = player.get('role', 'Unknown')
+            source = player.get('source', 'Database')
+        
+        # Build embed
+        embed = discord.Embed(
+            title=f"🌟 {player_name}",
+            description=f"Professional Player Profile",
+            color=0xFFD700,
+            timestamp=datetime.now()
+        )
+        
+        # Player info
+        if team and team != 'Unknown':
+            embed.add_field(name="🏢 Team", value=team, inline=True)
+        if role and role != 'Unknown':
+            embed.add_field(name="🎮 Role", value=role, inline=True)
+        embed.add_field(name="📊 Source", value=source, inline=True)
+        
+        # Accounts list
+        if accounts:
+            accounts_text = ""
+            for i, acc in enumerate(accounts[:10], 1):  # Max 10 accounts
+                summoner = acc.get('summoner_name', 'Unknown')
+                tag = acc.get('tag', '')
+                region = acc.get('region', 'Unknown').upper()
+                lp = acc.get('lp', 0)
+                rank = acc.get('rank', '')
+                
+                if tag:
+                    accounts_text += f"**{i}.** `{summoner}#{tag}` • {region}"
+                else:
+                    accounts_text += f"**{i}.** `{summoner}` • {region}"
+                
+                if lp > 0:
+                    accounts_text += f" • {lp} LP"
+                if rank:
+                    accounts_text += f" • {rank}"
+                accounts_text += "\n"
+            
+            if len(accounts) > 10:
+                accounts_text += f"\n*...and {len(accounts) - 10} more accounts*"
+            
+            embed.add_field(
+                name=f"📋 Known Accounts ({len(accounts)})",
+                value=accounts_text or "No accounts found",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="📋 Known Accounts",
+                value="No accounts tracked yet",
+                inline=False
+            )
+        
+        # Stats (if available)
+        if player and player.get('total_games', 0) > 0:
+            wins = player.get('wins', 0)
+            losses = player.get('losses', 0)
+            total = player.get('total_games', 0)
+            winrate = (wins / total * 100) if total > 0 else 0
+            kda = player.get('avg_kda', 0.0)
+            
+            stats_text = f"**Games:** {total}\n"
+            stats_text += f"**W/L:** {wins}W - {losses}L ({winrate:.1f}% WR)\n"
+            if kda > 0:
+                stats_text += f"**Avg KDA:** {kda:.2f}"
+            
+            embed.add_field(
+                name="📊 Statistics",
+                value=stats_text,
+                inline=False
+            )
+        
+        # Add usage hint
+        embed.set_footer(text=f"Track this player's games with /trackpros player_name:{player_name}")
+        
+        await interaction.followup.send(embed=embed)
+    
+    @app_commands.command(name="players", description="Browse list of tracked pro players")
+    @app_commands.describe(
+        region="Filter by region (euw, kr, na, etc.)",
+        role="Filter by role (top, jungle, mid, adc, support)",
+        team="Filter by team name",
+        search="Search by player name"
+    )
+    async def players(
+        self,
+        interaction: discord.Interaction,
+        region: Optional[str] = None,
+        role: Optional[str] = None,
+        team: Optional[str] = None,
+        search: Optional[str] = None
+    ):
+        """List all tracked pro players with filters"""
+        await interaction.response.defer()
+        
+        # Search database
+        players = self.db.search_pro_players(
+            query=search,
+            region=region,
+            role=role,
+            team=team,
+            limit=50
+        )
+        
+        if not players:
+            filters_text = []
+            if search:
+                filters_text.append(f"name: {search}")
+            if region:
+                filters_text.append(f"region: {region.upper()}")
+            if role:
+                filters_text.append(f"role: {role}")
+            if team:
+                filters_text.append(f"team: {team}")
+            
+            filter_str = ", ".join(filters_text) if filters_text else "no filters"
+            
+            await interaction.followup.send(
+                f"❌ No players found with {filter_str}!\n"
+                f"Use `/trackpros player_name:NAME` to add players to the database.",
+                ephemeral=True
+            )
+            return
+        
+        # Build embed
+        embed = discord.Embed(
+            title="🌟 Tracked Pro Players",
+            description=f"Found **{len(players)}** player(s)",
+            color=0x5865F2,
+            timestamp=datetime.now()
+        )
+        
+        # Group by region if no region filter
+        if not region:
+            by_region = {}
+            for p in players:
+                r = p.get('region', 'Unknown').upper()
+                if r not in by_region:
+                    by_region[r] = []
+                by_region[r].append(p)
+            
+            for reg, reg_players in sorted(by_region.items())[:5]:  # Max 5 regions
+                players_text = ""
+                for player in reg_players[:10]:  # Max 10 per region
+                    name = player.get('player_name', 'Unknown')
+                    p_team = player.get('team', '')
+                    p_role = player.get('role', '')
+                    
+                    players_text += f"• **{name}**"
+                    if p_team:
+                        players_text += f" ({p_team})"
+                    if p_role:
+                        players_text += f" - {p_role}"
+                    players_text += "\n"
+                
+                if len(reg_players) > 10:
+                    players_text += f"*...and {len(reg_players) - 10} more*"
+                
+                embed.add_field(
+                    name=f"🌍 {reg} ({len(reg_players)})",
+                    value=players_text or "None",
+                    inline=False
+                )
+        else:
+            # Show all if region filter applied
+            players_text = ""
+            for i, player in enumerate(players[:30], 1):
+                name = player.get('player_name', 'Unknown')
+                p_team = player.get('team', '')
+                p_role = player.get('role', '')
+                
+                players_text += f"**{i}.** {name}"
+                if p_team:
+                    players_text += f" ({p_team})"
+                if p_role:
+                    players_text += f" - {p_role}"
+                players_text += "\n"
+            
+            if len(players) > 30:
+                players_text += f"\n*...and {len(players) - 30} more*"
+            
+            embed.description += f"\n\n{players_text}"
+        
+        embed.set_footer(text="Use /playerinfo <name> to see detailed player information")
+        
+        await interaction.followup.send(embed=embed)
 
 async def setup(bot: commands.Bot, riot_api, guild_id: int):
     await bot.add_cog(TrackerCommands(bot, riot_api, guild_id))
