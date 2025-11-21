@@ -442,6 +442,229 @@ class TrackerCommands(commands.Cog):
             ephemeral=True
         )
     
+    @app_commands.command(name="tracktest", description="Test tracking system with dummy data")
+    async def tracktest(self, interaction: discord.Interaction):
+        """Create a test tracking thread with fake game data for testing UI"""
+        await interaction.response.defer(ephemeral=True)
+        
+        channel = self.bot.get_channel(1440713433887805470)
+        if not channel:
+            await interaction.followup.send("❌ Tracking channel not found!", ephemeral=True)
+            return
+        
+        # Create test data
+        test_game_id = f"TEST_{interaction.user.id}_{int(datetime.now().timestamp())}"
+        thread_name = f"🧪 TEST: {interaction.user.display_name}'s Game"
+        
+        initial_embed = discord.Embed(
+            title="🧪 TEST Game Tracking",
+            description=f"**This is a test thread** - Tracking UI preview for {interaction.user.display_name}",
+            color=0xFF6B00,
+            timestamp=datetime.now()
+        )
+        initial_embed.add_field(name="⚠️ Note", value="This is test data - not a real game", inline=False)
+        
+        thread = await channel.create_thread(
+            name=thread_name,
+            embed=initial_embed
+        )
+        
+        # Create fake spectator data
+        fake_spectator_data = {
+            'gameId': int(test_game_id.split('_')[-1]),
+            'gameStartTime': int((datetime.now() - timedelta(minutes=15)).timestamp() * 1000),
+            'gameLength': 900,  # 15 minutes
+            'gameQueueConfigId': 420,  # Ranked Solo
+            'gameMode': 'CLASSIC',
+            'participants': [
+                # Blue team
+                {'puuid': 'test1', 'championId': 64, 'teamId': 100, 'summonerName': 'TestPlayer1', 'spell1Id': 4, 'spell2Id': 14},  # Lee Sin
+                {'puuid': 'test2', 'championId': 157, 'teamId': 100, 'summonerName': 'TestPlayer2', 'spell1Id': 4, 'spell2Id': 14},  # Yasuo
+                {'puuid': 'test3', 'championId': 103, 'teamId': 100, 'summonerName': 'TestPlayer3', 'spell1Id': 4, 'spell2Id': 14},  # Ahri
+                {'puuid': 'test4', 'championId': 222, 'teamId': 100, 'summonerName': 'TestPlayer4', 'spell1Id': 4, 'spell2Id': 7},  # Jinx
+                {'puuid': 'test5', 'championId': 111, 'teamId': 100, 'summonerName': 'TestPlayer5', 'spell1Id': 4, 'spell2Id': 14},  # Nautilus
+                # Red team
+                {'puuid': 'enemy1', 'championId': 122, 'teamId': 200, 'summonerName': 'Enemy1', 'spell1Id': 4, 'spell2Id': 12},  # Darius
+                {'puuid': 'enemy2', 'championId': 238, 'teamId': 200, 'summonerName': 'Enemy2', 'spell1Id': 4, 'spell2Id': 14},  # Zed
+                {'puuid': 'enemy3', 'championId': 99, 'teamId': 200, 'summonerName': 'Enemy3', 'spell1Id': 4, 'spell2Id': 14},  # Lux
+                {'puuid': 'enemy4', 'championId': 51, 'teamId': 200, 'summonerName': 'Enemy4', 'spell1Id': 4, 'spell2Id': 7},  # Caitlyn
+                {'puuid': 'enemy5', 'championId': 412, 'teamId': 200, 'summonerName': 'Enemy5', 'spell1Id': 4, 'spell2Id': 14},  # Thresh
+            ]
+        }
+        
+        fake_account = {
+            'puuid': 'test1',
+            'summoner_name': interaction.user.display_name,
+            'region': 'euw',
+            'rank': 'Diamond II'
+        }
+        
+        bet_view = BetView(test_game_id, thread.thread.id)
+        await thread.message.edit(view=bet_view)
+        
+        embed_message = await self._send_game_embed(thread.thread, interaction.user, fake_account, fake_spectator_data, test_game_id)
+        
+        # Don't add to active trackers since it's just a test
+        
+        await interaction.followup.send(
+            f"✅ Created test tracking thread: {thread.thread.mention}\n"
+            f"This is for UI testing only - not a real game!",
+            ephemeral=True
+        )
+    
+    @app_commands.command(name="trackpros", description="Track random pro player games from multiple regions")
+    @app_commands.describe(
+        count="Number of pro games to search for (1-5)"
+    )
+    async def trackpros(self, interaction: discord.Interaction, count: Optional[int] = 1):
+        """Track live games of professional players"""
+        await interaction.response.defer()
+        
+        if count < 1 or count > 5:
+            await interaction.followup.send("❌ Count must be between 1 and 5!", ephemeral=True)
+            return
+        
+        # Database of known pro players with their PUUIDs and regions
+        # This is a curated list - could be expanded
+        pro_players = [
+            # EUW
+            {'name': 'Faker', 'puuid': 'FAKE_PUUID_1', 'region': 'kr', 'team': 'T1'},
+            {'name': 'Caps', 'puuid': 'FAKE_PUUID_2', 'region': 'euw', 'team': 'G2'},
+            {'name': 'Rekkles', 'puuid': 'FAKE_PUUID_3', 'region': 'euw', 'team': 'KC'},
+            {'name': 'Jankos', 'puuid': 'FAKE_PUUID_4', 'region': 'euw', 'team': 'Heretics'},
+            # NA
+            {'name': 'Doublelift', 'puuid': 'FAKE_PUUID_5', 'region': 'na', 'team': 'Retired'},
+            {'name': 'Bjergsen', 'puuid': 'FAKE_PUUID_6', 'region': 'na', 'team': 'TL'},
+            # KR
+            {'name': 'Showmaker', 'puuid': 'FAKE_PUUID_7', 'region': 'kr', 'team': 'DK'},
+            {'name': 'Chovy', 'puuid': 'FAKE_PUUID_8', 'region': 'kr', 'team': 'GenG'},
+            # CN
+            {'name': 'Rookie', 'puuid': 'FAKE_PUUID_9', 'region': 'kr', 'team': 'IG'},
+            {'name': 'TheShy', 'puuid': 'FAKE_PUUID_10', 'region': 'kr', 'team': 'WBG'},
+        ]
+        
+        channel = self.bot.get_channel(1440713433887805470)
+        if not channel:
+            await interaction.followup.send("❌ Tracking channel not found!", ephemeral=True)
+            return
+        
+        found_games = 0
+        checked_count = 0
+        
+        status_msg = await interaction.followup.send(
+            f"🔍 Searching for live pro player games...\n"
+            f"Checked: 0/{len(pro_players)}"
+        )
+        
+        # Shuffle to get random pros
+        import random
+        random.shuffle(pro_players)
+        
+        for pro in pro_players:
+            if found_games >= count:
+                break
+            
+            checked_count += 1
+            
+            # Update status every 3 checks
+            if checked_count % 3 == 0:
+                try:
+                    await status_msg.edit(
+                        content=f"🔍 Searching for live pro player games...\n"
+                                f"Checked: {checked_count}/{len(pro_players)} | Found: {found_games}"
+                    )
+                except:
+                    pass
+            
+            try:
+                # Check if pro is in a game
+                spectator_data = await self.riot_api.get_active_game(pro['puuid'], pro['region'])
+                
+                if spectator_data:
+                    # Found a game! Create tracking thread
+                    game_id = str(spectator_data.get('gameId', ''))
+                    thread_name = f"⭐ {pro['name']} ({pro['team']}) - PRO GAME"
+                    
+                    # Get champion
+                    champion_id = None
+                    for p in spectator_data.get('participants', []):
+                        if p.get('puuid') == pro['puuid']:
+                            champion_id = p.get('championId')
+                            break
+                    
+                    champion_name = await self._get_champion_name(champion_id or 0)
+                    
+                    initial_embed = discord.Embed(
+                        title=f"⭐ PRO PLAYER Live Game",
+                        description=f"Tracking **{pro['name']}** ({pro['team']})",
+                        color=0xFFD700,
+                        timestamp=datetime.now()
+                    )
+                    initial_embed.add_field(name="🦸 Champion", value=champion_name, inline=True)
+                    initial_embed.add_field(name="🌍 Region", value=pro['region'].upper(), inline=True)
+                    
+                    thread = await channel.create_thread(
+                        name=thread_name,
+                        embed=initial_embed
+                    )
+                    
+                    # Create fake user object for embed building
+                    class FakeUser:
+                        def __init__(self, name):
+                            self.display_name = name
+                            self.mention = f"**{name}**"
+                    
+                    fake_user = FakeUser(f"{pro['name']} ({pro['team']})")
+                    
+                    fake_account = {
+                        'puuid': pro['puuid'],
+                        'summoner_name': pro['name'],
+                        'region': pro['region'],
+                        'rank': 'Challenger'
+                    }
+                    
+                    bet_view = BetView(game_id, thread.thread.id)
+                    await thread.message.edit(view=bet_view)
+                    
+                    embed_message = await self._send_game_embed(
+                        thread.thread,
+                        fake_user,
+                        fake_account,
+                        spectator_data,
+                        game_id
+                    )
+                    
+                    # Store tracker
+                    self.active_trackers[thread.thread.id] = {
+                        'user_id': 0,  # No Discord user
+                        'account': fake_account,
+                        'game_id': game_id,
+                        'spectator_data': spectator_data,
+                        'thread': thread.thread,
+                        'embed_message': embed_message,
+                        'start_time': datetime.now(),
+                        'is_pro': True,
+                        'pro_name': pro['name']
+                    }
+                    
+                    found_games += 1
+                    
+            except Exception as e:
+                logger.error(f"Error checking pro player {pro['name']}: {e}")
+                continue
+        
+        # Final update
+        if found_games > 0:
+            await status_msg.edit(
+                content=f"✅ Found and started tracking **{found_games}** pro player game(s)!\n"
+                        f"Check the tracking channel for live updates."
+            )
+        else:
+            await status_msg.edit(
+                content=f"❌ No pro players currently in game.\n"
+                        f"Checked {checked_count} players. Try again later!"
+            )
+    
     async def _send_game_embed(self, thread, user, account, spectator_data, game_id: str):
         """Send live game tracking embed"""
         embed = await self._build_game_embed(user, account, spectator_data, game_id)
