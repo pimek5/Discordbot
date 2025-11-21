@@ -700,12 +700,12 @@ class TrackerCommands(commands.Cog):
                         logger.warning(f"No Challenger data for {region_name}")
                         continue
                     
-                    # Take top 30 from each region (by LP)
+                    # Take top 100 from each region (by LP)
                     entries = sorted(
                         challengers['entries'],
                         key=lambda x: x.get('leaguePoints', 0),
                         reverse=True
-                    )[:30]
+                    )[:100]
                     
                     for entry in entries:
                         summoner_id = entry.get('summonerId')
