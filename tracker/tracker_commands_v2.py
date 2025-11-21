@@ -807,6 +807,86 @@ class TrackerCommandsV2(commands.Cog):
             
         finally:
             self.db.return_connection(conn)
+    
+    @app_commands.command(name="trackerstats", description="Show tracker bot statistics")
+    async def tracker_stats(self, interaction: discord.Interaction):
+        """Show statistics about tracked players and active games"""
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            
+            # Get total tracked players
+            cur.execute("SELECT COUNT(*) FROM tracked_pros")
+            total_players = cur.fetchone()[0]
+            
+            # Get players by region
+            cur.execute("""
+                SELECT region, COUNT(*) 
+                FROM tracked_pros 
+                GROUP BY region 
+                ORDER BY COUNT(*) DESC
+            """)
+            regions = cur.fetchall()
+            
+            # Get total accounts
+            cur.execute("SELECT COUNT(*) FROM pro_accounts")
+            total_accounts = cur.fetchone()[0]
+            
+            # Active games
+            active_games_count = len(self.active_games)
+            
+            # Create embed
+            embed = discord.Embed(
+                title="📊 Tracker Bot Statistics",
+                color=discord.Color.blue(),
+                timestamp=datetime.utcnow()
+            )
+            
+            embed.add_field(
+                name="👥 Tracked Players",
+                value=f"**Total:** {total_players:,}\n**Accounts:** {total_accounts:,}",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="🎮 Active Games",
+                value=f"**Current:** {active_games_count}/3",
+                inline=True
+            )
+            
+            # Region breakdown
+            region_text = "\n".join([f"**{r[0].upper()}:** {r[1]:,}" for r in regions[:6]])
+            if len(regions) > 6:
+                region_text += f"\n*+{len(regions)-6} more regions*"
+            
+            embed.add_field(
+                name="🌍 By Region (Top 6)",
+                value=region_text or "No data",
+                inline=False
+            )
+            
+            # Task status
+            tasks_status = "✅ Running" if self.monitor_games.is_running() else "❌ Stopped"
+            fetch_status = "✅ Running" if self.auto_fetch_high_elo.is_running() else "❌ Stopped"
+            
+            embed.add_field(
+                name="⚙️ Background Tasks",
+                value=f"**Game Monitor:** {tasks_status}\n**Auto Fetch:** {fetch_status}",
+                inline=True
+            )
+            
+            embed.set_footer(text="Use /balance to check your betting points")
+            
+            await interaction.response.send_message(embed=embed)
+            
+        except Exception as e:
+            logger.error(f"Error in trackerstats: {e}")
+            await interaction.response.send_message(
+                "❌ Error fetching statistics",
+                ephemeral=True
+            )
+        finally:
+            self.db.return_connection(conn)
 
 
 async def setup(bot: commands.Bot):
