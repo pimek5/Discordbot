@@ -15,6 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tracker_database import get_tracker_db
 from riot_api import RiotAPI
 from tracker_commands import TrackerCommands
+import config_commands
 
 # Load environment variables
 load_dotenv()
@@ -60,6 +61,10 @@ class TrackerBot(commands.Bot):
         # Add tracker cog
         await self.add_cog(TrackerCommands(self, self.riot_api, GUILD_ID))
         logger.info("✅ Tracker commands loaded")
+        
+        # Add config commands
+        await config_commands.setup(self)
+        logger.info("✅ ConfigCommands loaded")
         
         # Log available commands
         commands_list = [cmd.name for cmd in self.tree.get_commands()]
