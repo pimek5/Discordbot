@@ -337,12 +337,25 @@ class TrackerCommands(commands.Cog):
             self.betting_db.db.return_connection(conn)
     
     @app_commands.command(name="track", description="Track a player's live game")
-    @app_commands.describe(user="User to track (defaults to you)")
-    async def track(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+    @app_commands.describe(
+        user="User to track (defaults to you)",
+        mode="Tracking mode: 'just_now' for current game only, 'always_on' for continuous auto-tracking"
+    )
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="Just Now (current game only)", value="just_now"),
+        app_commands.Choice(name="Always On (auto-track future games)", value="always_on")
+    ])
+    async def track(
+        self, 
+        interaction: discord.Interaction, 
+        user: Optional[discord.Member] = None,
+        mode: Optional[app_commands.Choice[str]] = None
+    ):
         """Start tracking a player's live games"""
         await interaction.response.defer()
         
         target_user = user if user else interaction.user
+        tracking_mode = mode.value if mode else "just_now"  # Default to just_now
         
         # Get user from database
         db = get_db()
@@ -379,14 +392,25 @@ class TrackerCommands(commands.Cog):
                 logger.error(f"Error checking live game for {acc['summoner_name']}: {e}")
         
         if not account or not spectator_data:
-            # Enable persistent tracking even if not currently in game
-            self._subscribe_user(target_user.id)
-            await interaction.followup.send(
-                f"✅ Enabled continuous tracking for {target_user.mention}.\n"
-                f"I'll automatically start tracking next time you enter a game.",
-                ephemeral=True
-            )
+            # Handle based on mode
+            if tracking_mode == "always_on":
+                self._subscribe_user(target_user.id)
+                await interaction.followup.send(
+                    f"✅ **Always On** tracking enabled for {target_user.mention}.\n"
+                    f"🔔 I'll automatically start tracking when you enter a game.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"❌ {target_user.mention} is not currently in a game.\n"
+                    f"💡 Tip: Use mode **Always On** to auto-track future games!",
+                    ephemeral=True
+                )
             return
+        
+        # Enable auto-tracking if always_on mode
+        if tracking_mode == "always_on":
+            self._subscribe_user(target_user.id)
         
         # Create tracking thread
         channel = self.bot.get_channel(1440713433887805470)
@@ -437,11 +461,14 @@ class TrackerCommands(commands.Cog):
             'start_time': datetime.now()
         }
         
-        await interaction.followup.send(
-            f"✅ Started tracking {target_user.mention}'s game in {thread.thread.mention}!\n"
-            f"🟢 Continuous tracking enabled — future games will auto-start.",
-            ephemeral=True
-        )
+        # Success message based on mode
+        success_msg = f"✅ Started tracking {target_user.mention}'s game in {thread.thread.mention}!"
+        if tracking_mode == "always_on":
+            success_msg += f"\n🔔 **Always On** mode enabled — future games will auto-track."
+        else:
+            success_msg += f"\n⏱️ **Just Now** mode — only this game will be tracked."
+        
+        await interaction.followup.send(success_msg, ephemeral=True)
     
     @app_commands.command(name="tracktest", description="Test tracking system with dummy data")
     async def tracktest(self, interaction: discord.Interaction):
