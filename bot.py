@@ -698,6 +698,11 @@ class MyBot(commands.Bot):
                 await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
                 print("  ✅ LeaderboardCommands loaded")
                 
+                # Load configuration commands
+                import config_commands
+                await config_commands.setup(self)
+                print("  ✅ ConfigCommands loaded")
+                
                 # Load settings commands
                 print("🔄 Loading SettingsCommands...")
                 from settings_commands import SettingsCommands

@@ -195,3 +195,22 @@ CREATE INDEX IF NOT EXISTS idx_user_bans_active ON user_bans(active) WHERE activ
 CREATE INDEX IF NOT EXISTS idx_user_bans_expires ON user_bans(expires_at) WHERE expires_at IS NOT NULL AND active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_ban_appeals_ban ON ban_appeals(ban_id);
 CREATE INDEX IF NOT EXISTS idx_ban_appeals_status ON ban_appeals(status);
+
+-- ================================
+--    GUILD SETTINGS TABLE
+-- ================================
+
+-- Guild-specific configuration for all bots
+CREATE TABLE IF NOT EXISTS guild_settings (
+    id SERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    key VARCHAR(100) NOT NULL,
+    value TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(guild_id, key)
+);
+
+-- Index for guild settings
+CREATE INDEX IF NOT EXISTS idx_guild_settings_guild ON guild_settings(guild_id);
+CREATE INDEX IF NOT EXISTS idx_guild_settings_key ON guild_settings(guild_id, key);
