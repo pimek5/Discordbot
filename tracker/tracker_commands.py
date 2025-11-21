@@ -1003,86 +1003,112 @@ class TrackerCommands(commands.Cog):
     async def _fetch_deeplol_data(self, player_name: str, category: str = "pro") -> Optional[Dict]:
         """
         Fetch player data from DeepLoL
-        category: 'pro' for professionals or 'strm' for streamers
+        Try API first, then page parsing
         """
         try:
             clean_name = player_name.strip().replace(' ', '%20')
-            url = f"https://www.deeplol.gg/{category}/{clean_name}"
             
-            logger.info(f"🔍 DeepLoL {category.upper()}: {url}")
+            # Try 1: Look for API endpoint
+            api_url = f"https://www.deeplol.gg/api/{category}/{clean_name}"
+            logger.info(f"🔍 DeepLoL API: {api_url}")
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        try:
+                            data = await resp.json()
+                            logger.info(f"  ✅ Got JSON from API!")
+                            # Process JSON data
+                            accounts = []
+                            if isinstance(data, dict) and 'accounts' in data:
+                                for acc in data['accounts']:
+                                    accounts.append({
+                                        'summoner_name': acc.get('gameName', acc.get('name', '')),
+                                        'tag': acc.get('tagLine', acc.get('tag', '')),
+                                        'region': acc.get('region', 'euw').lower(),
+                                        'lp': acc.get('leaguePoints', acc.get('lp', 0))
+                                    })
+                            if accounts:
+                                return {
+                                    'name': player_name,
+                                    'accounts': accounts,
+                                    'source': f'DeepLoL {category.upper()}',
+                                    'region': None,
+                                    'team': None,
+                                    'role': None
+                                }
+                        except:
+                            pass
+                
+                # Try 2: Get page and look for JSON
+                page_url = f"https://www.deeplol.gg/{category}/{clean_name}"
+                logger.info(f"🔍 DeepLoL Page: {page_url}")
+                
+                async with session.get(page_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
                         logger.info(f"  ❌ Not found (status {resp.status})")
                         return None
                     
                     html = await resp.text()
                     
-                    # Parse accounts - DeepLoL uses JSON embedded in page
-                    # Look for account data in script tags
-                    accounts = []
+                    # Look for embedded JSON patterns
+                    json_patterns = [
+                        r'window\.__INITIAL_STATE__\s*=\s*({.+?});',
+                        r'window\.__NEXT_DATA__\s*=\s*({.+?})</script>',
+                        r'<script id="__NEXT_DATA__"[^>]*>({.+?})</script>',
+                        r'data-player=[\'"]([\{].+?})[\'"]',
+                    ]
                     
-                    # Try to find JSON data with accounts
-                    json_match = re.search(r'window\.__INITIAL_STATE__\s*=\s*({.+?});', html, re.DOTALL)
-                    if json_match:
-                        try:
-                            import json
-                            data = json.loads(json_match.group(1))
-                            # Navigate JSON structure to find accounts
-                            if 'player' in data and 'accounts' in data['player']:
-                                for acc in data['player']['accounts']:
-                                    accounts.append({
-                                        'summoner_name': acc.get('gameName', ''),
-                                        'tag': acc.get('tagLine', ''),
-                                        'region': acc.get('region', '').lower(),
-                                        'lp': acc.get('leaguePoints', 0)
-                                    })
-                        except:
-                            pass
-                    
-                    # Fallback: Parse HTML table/list
-                    if not accounts:
-                        # Look for account entries in HTML
-                        # Pattern: GameName#TAG with region nearby
-                        account_blocks = re.findall(
-                            r'<div[^>]*class="[^"]*account[^"]*"[^>]*>(.*?)</div>',
-                            html,
-                            re.IGNORECASE | re.DOTALL
-                        )
-                        
-                        for block in account_blocks[:10]:
-                            # Extract GameName#Tag
-                            riot_id = re.search(r'([A-Za-z0-9][A-Za-z0-9\s]{1,16})#([A-Za-z0-9]{3,5})', block)
-                            if riot_id:
-                                name, tag = riot_id.groups()
-                                # Extract region
-                                region = re.search(r'\b(EUW|EUNE|KR|NA|BR|LAN|LAS|OCE|TR|RU|JP)\b', block, re.IGNORECASE)
-                                region_str = region.group(1).lower() if region else 'euw'
+                    for pattern in json_patterns:
+                        match = re.search(pattern, html, re.DOTALL)
+                        if match:
+                            try:
+                                import json
+                                json_str = match.group(1)
+                                data = json.loads(json_str)
+                                logger.info(f"  ✅ Found JSON in page!")
+                                logger.info(f"  JSON keys: {list(data.keys())[:10]}")
                                 
-                                # Extract LP
-                                lp = re.search(r'(\d+)\s*LP', block)
-                                lp_val = int(lp.group(1)) if lp else 0
+                                # Try to extract accounts from various structures
+                                accounts = []
                                 
-                                accounts.append({
-                                    'summoner_name': name.strip(),
-                                    'tag': tag.strip(),
-                                    'region': region_str,
-                                    'lp': lp_val
-                                })
+                                # Structure 1: data.player.accounts
+                                if 'player' in data and isinstance(data['player'], dict):
+                                    if 'accounts' in data['player']:
+                                        for acc in data['player']['accounts']:
+                                            accounts.append({
+                                                'summoner_name': acc.get('gameName', acc.get('summonerName', '')),
+                                                'tag': acc.get('tagLine', acc.get('tag', '')),
+                                                'region': acc.get('region', 'euw').lower(),
+                                                'lp': acc.get('leaguePoints', acc.get('lp', 0))
+                                            })
+                                
+                                # Structure 2: data.props.pageProps.player
+                                if 'props' in data and 'pageProps' in data['props']:
+                                    page_props = data['props']['pageProps']
+                                    if 'player' in page_props and 'accounts' in page_props['player']:
+                                        for acc in page_props['player']['accounts']:
+                                            accounts.append({
+                                                'summoner_name': acc.get('gameName', acc.get('summonerName', '')),
+                                                'tag': acc.get('tagLine', acc.get('tag', '')),
+                                                'region': acc.get('region', 'euw').lower(),
+                                                'lp': acc.get('leaguePoints', acc.get('lp', 0))
+                                            })
+                                
+                                if accounts:
+                                    logger.info(f"  ✅ Extracted {len(accounts)} accounts from JSON")
+                                    return {
+                                        'name': player_name,
+                                        'accounts': accounts,
+                                        'source': f'DeepLoL {category.upper()}',
+                                        'region': None,
+                                        'team': None,
+                                        'role': None
+                                    }
+                            except Exception as e:
+                                logger.info(f"  ❌ JSON parse error: {e}")
                     
-                    if accounts:
-                        logger.info(f"  ✅ Found {len(accounts)} accounts")
-                        return {
-                            'name': player_name,
-                            'accounts': accounts,
-                            'source': f'DeepLoL {category.upper()}',
-                            'region': None,
-                            'team': None,
-                            'role': None
-                        }
-                    
-                    logger.info(f"  ❌ No accounts found in HTML")
+                    logger.info(f"  ❌ No JSON data found")
                     return None
                     
         except Exception as e:
@@ -1090,20 +1116,102 @@ class TrackerCommands(commands.Cog):
             return None
     
     async def _fetch_lolpros_player(self, player_name: str) -> Optional[Dict]:
-        """Fetch player data from LoLPros.gg - rebuilt from scratch"""
+        """Fetch player data from LoLPros.gg - try API and database dumps first"""
         try:
             clean_name = player_name.strip().lower().replace(' ', '-')
             
-            # Try multiple URL patterns
-            urls_to_try = [
-                f"https://lolpros.gg/player/{clean_name}",
-                f"https://lolpros.gg/player/{clean_name}-1"
-            ]
-            
-            html = None
-            for url in urls_to_try:
-                logger.info(f"🔍 LoLPros: {url}")
-                async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession() as session:
+                # Try 1: Check for API endpoint
+                api_urls = [
+                    f"https://lolpros.gg/api/player/{clean_name}",
+                    f"https://api.lolpros.gg/player/{clean_name}",
+                    f"https://lolpros.gg/api/players/{clean_name}",
+                ]
+                
+                for api_url in api_urls:
+                    logger.info(f"🔍 LoLPros API: {api_url}")
+                    try:
+                        async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                logger.info(f"  ✅ Got JSON from API!")
+                                logger.info(f"  JSON keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}")
+                                
+                                # Process JSON
+                                accounts = []
+                                if isinstance(data, dict):
+                                    # Try various JSON structures
+                                    accounts_data = data.get('accounts', data.get('summoners', []))
+                                    for acc in accounts_data:
+                                        accounts.append({
+                                            'summoner_name': acc.get('name', acc.get('summonerName', '')),
+                                            'tag': acc.get('tag', ''),
+                                            'region': acc.get('region', 'euw').lower(),
+                                            'lp': acc.get('lp', acc.get('leaguePoints', 0))
+                                        })
+                                
+                                if accounts:
+                                    return {
+                                        'name': player_name,
+                                        'accounts': accounts,
+                                        'source': 'LoLPros API',
+                                        'region': None,
+                                        'team': None,
+                                        'role': None
+                                    }
+                    except:
+                        pass
+                
+                # Try 2: Check for players database dump
+                db_urls = [
+                    "https://lolpros.gg/players.json",
+                    "https://lolpros.gg/api/players",
+                    "https://lolpros.gg/data/players.json",
+                ]
+                
+                for db_url in db_urls:
+                    logger.info(f"🔍 LoLPros DB: {db_url}")
+                    try:
+                        async with session.get(db_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                logger.info(f"  ✅ Got players database!")
+                                
+                                # Search for player in database
+                                players = data if isinstance(data, list) else data.get('players', [])
+                                for player in players:
+                                    if player.get('name', '').lower() == player_name.lower():
+                                        accounts = []
+                                        for acc in player.get('accounts', []):
+                                            accounts.append({
+                                                'summoner_name': acc.get('name', ''),
+                                                'tag': acc.get('tag', ''),
+                                                'region': acc.get('region', 'euw').lower(),
+                                                'lp': acc.get('lp', 0)
+                                            })
+                                        
+                                        if accounts:
+                                            logger.info(f"  ✅ Found {player_name} in database with {len(accounts)} accounts")
+                                            return {
+                                                'name': player_name,
+                                                'accounts': accounts,
+                                                'source': 'LoLPros DB',
+                                                'region': None,
+                                                'team': player.get('team'),
+                                                'role': player.get('role')
+                                            }
+                    except:
+                        pass
+                
+                # Try 3: Parse HTML page as fallback
+                urls_to_try = [
+                    f"https://lolpros.gg/player/{clean_name}",
+                    f"https://lolpros.gg/player/{clean_name}-1"
+                ]
+                
+                html = None
+                for url in urls_to_try:
+                    logger.info(f"🔍 LoLPros Page: {url}")
                     async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         if resp.status == 200:
                             html = await resp.text()
