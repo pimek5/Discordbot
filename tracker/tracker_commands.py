@@ -1225,42 +1225,112 @@ class TrackerCommands(commands.Cog):
             # Debug: Save HTML to see structure (first 2000 chars)
             logger.info(f"  HTML preview: {html[:2000]}")
             
-            # Parse accounts from op.gg links (most reliable)
+            # Try to extract JSON from Nuxt.js page
             accounts = []
-            
-            # Try multiple op.gg patterns
-            patterns = [
-                r'op\.gg/summoners/([^/]+)/([^/"?]+)',  # op.gg/summoners/region/name
-                r'op\.gg/summoner/([^/]+)/([^/"?]+)',   # op.gg/summoner/region/name
-                r'www\.op\.gg/summoner/userName=([^&"]+)[^>]*region=([^&"]+)',  # old format
+            json_patterns = [
+                r'<script[^>]*>window\.__NUXT__\s*=\s*({.+?})</script>',
+                r'<script[^>]*id="__NUXT_DATA__"[^>]*>(.+?)</script>',
+                r'<script[^>]*type="application/json"[^>]*>(.+?)</script>',
+                r'window\.__INITIAL_STATE__\s*=\s*({.+?});',
             ]
             
-            opgg_matches = []
-            for pattern in patterns:
-                matches = re.findall(pattern, html, re.IGNORECASE)
-                if matches:
-                    logger.info(f"  Pattern '{pattern[:30]}...' found {len(matches)} matches")
-                    opgg_matches.extend(matches)
+            json_data = None
+            for pattern in json_patterns:
+                match = re.search(pattern, html, re.DOTALL)
+                if match:
+                    try:
+                        json_str = match.group(1)
+                        json_data = json.loads(json_str)
+                        logger.info(f"  ✅ Found JSON in page with pattern: {pattern[:40]}...")
+                        logger.info(f"  JSON top keys: {list(json_data.keys())[:10] if isinstance(json_data, dict) else type(json_data)}")
+                        break
+                    except:
+                        continue
             
-            logger.info(f"  Found {len(opgg_matches)} total op.gg links")
+            # If JSON found, try to extract accounts from various structures
+            if json_data and isinstance(json_data, dict):
+                # Nuxt.js typically uses: data -> player -> accounts
+                # or: state -> player -> accounts
+                # or: fetch -> player -> accounts
+                possible_paths = [
+                    ['data', 'player', 'accounts'],
+                    ['data', 'player', 'summoners'],
+                    ['state', 'player', 'accounts'],
+                    ['fetch', 'player', 'accounts'],
+                    ['player', 'accounts'],
+                    ['player', 'summoners'],
+                    ['accounts'],
+                    ['summoners'],
+                ]
+                
+                for path in possible_paths:
+                    current = json_data
+                    for key in path:
+                        if isinstance(current, dict) and key in current:
+                            current = current[key]
+                        else:
+                            current = None
+                            break
+                    
+                    if current and isinstance(current, list):
+                        logger.info(f"  ✅ Found accounts at path: {' -> '.join(path)}")
+                        for acc in current[:20]:  # Max 20 accounts
+                            if isinstance(acc, dict):
+                                summoner = acc.get('name', acc.get('summonerName', acc.get('gameName', '')))
+                                tag = acc.get('tag', acc.get('tagLine', ''))
+                                region = acc.get('region', acc.get('platformId', 'euw')).lower()
+                                lp = acc.get('lp', acc.get('leaguePoints', 0))
+                                
+                                if summoner:
+                                    accounts.append({
+                                        'summoner_name': summoner.strip(),
+                                        'tag': tag.strip() if tag else '',
+                                        'region': region.replace('1', ''),  # euw1 -> euw
+                                        'lp': lp
+                                    })
+                                    logger.info(f"    ✅ {summoner}#{tag} ({region}) - {lp} LP")
+                        break
             
-            for region, summoner_encoded in opgg_matches[:10]:
-                # Decode URL encoding
-                summoner = summoner_encoded.replace('%20', ' ').replace('+', ' ').replace('-', ' ')
-                summoner = re.sub(r'%([0-9A-Fa-f]{2})', lambda m: chr(int(m.group(1), 16)), summoner)
+            # If no JSON accounts found, parse accounts from op.gg links (fallback)
+            if not accounts:
+                logger.info(f"  ⚠️ No JSON accounts found, trying op.gg links...")
+            # If no JSON accounts found, parse accounts from op.gg links (fallback)
+            if not accounts:
+                logger.info(f"  ⚠️ No JSON accounts found, trying op.gg links...")
+            
+                # Try multiple op.gg patterns
+                patterns = [
+                    r'op\.gg/summoners/([^/]+)/([^/"?]+)',  # op.gg/summoners/region/name
+                    r'op\.gg/summoner/([^/]+)/([^/"?]+)',   # op.gg/summoner/region/name
+                    r'www\.op\.gg/summoner/userName=([^&"]+)[^>]*region=([^&"]+)',  # old format
+                ]
                 
-                # Clean region
-                region = region.lower()
-                if region not in ['euw', 'eune', 'kr', 'na', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp']:
-                    continue
+                opgg_matches = []
+                for pattern in patterns:
+                    matches = re.findall(pattern, html, re.IGNORECASE)
+                    if matches:
+                        logger.info(f"  Pattern '{pattern[:30]}...' found {len(matches)} matches")
+                        opgg_matches.extend(matches)
                 
-                accounts.append({
-                    'summoner_name': summoner.strip(),
-                    'tag': '',  # op.gg links don't have tags
-                    'region': region,
-                    'lp': 0
-                })
-                logger.info(f"    ✅ {summoner} ({region})")
+                logger.info(f"  Found {len(opgg_matches)} total op.gg links")
+                
+                for region, summoner_encoded in opgg_matches[:10]:
+                    # Decode URL encoding
+                    summoner = summoner_encoded.replace('%20', ' ').replace('+', ' ').replace('-', ' ')
+                    summoner = re.sub(r'%([0-9A-Fa-f]{2})', lambda m: chr(int(m.group(1), 16)), summoner)
+                    
+                    # Clean region
+                    region = region.lower()
+                    if region not in ['euw', 'eune', 'kr', 'na', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp']:
+                        continue
+                    
+                    accounts.append({
+                        'summoner_name': summoner.strip(),
+                        'tag': '',  # op.gg links don't have tags
+                        'region': region,
+                        'lp': 0
+                    })
+                    logger.info(f"    ✅ {summoner} ({region})")
             
             # Remove duplicates
             seen = set()
