@@ -205,6 +205,8 @@ class TrackerCommandsV2(commands.Cog):
         # Active games tracking
         self.active_games: Dict[int, Dict] = {}  # game_id -> game_info
         self.tracked_players: Dict[str, Dict] = {}  # puuid -> player_info
+        self.active_threads: Dict[int, discord.Thread] = {}  # game_id -> thread
+        self.max_active_games = 3  # Maximum 3 concurrent games
         
         # Start background tasks
         self.auto_fetch_high_elo.start()
@@ -292,7 +294,17 @@ class TrackerCommandsV2(commands.Cog):
         """Monitor tracked players for active games"""
         logger.info("🔍 Checking for active games...")
         
+        # Check if we have space for more games
+        active_count = len([g for g in self.active_games.values() if not g.get('resolved')])
+        if active_count >= self.max_active_games:
+            logger.info(f"⚠️ Already tracking {active_count} games (max: {self.max_active_games})")
+            return
+        
         for puuid, player in list(self.tracked_players.items()):
+            # Stop if we hit the limit
+            if len([g for g in self.active_games.values() if not g.get('resolved')]) >= self.max_active_games:
+                break
+            
             try:
                 # Check if player is in game
                 game_data = await self.riot_api.get_active_game(puuid, player['region'])
@@ -476,14 +488,14 @@ class TrackerCommandsV2(commands.Cog):
         return avg_mmr, avg_wr
     
     async def _send_betting_embed(self, game_id: int):
-        """Send betting embed to channel"""
+        """Send betting embed to channel as a thread"""
         try:
             game = self.active_games.get(game_id)
             if not game:
                 return
             
             # Get channel
-            channel = self.bot.get_channel(1440713433887805470)  # Replace with your channel ID
+            channel = self.bot.get_channel(1440713433887805470)
             if not channel:
                 logger.error("Betting channel not found!")
                 return
@@ -552,12 +564,52 @@ class TrackerCommandsV2(commands.Cog):
                 game['expires_at']
             )
             
-            # Send message
-            message = await channel.send(embed=embed, view=view)
+            # Create thread instead of message
+            thread_name = f"🎮 {game['tracked_player']} ({game['region'].upper()})"
+            thread = await channel.create_thread(
+                name=thread_name,
+                type=discord.ChannelType.public_thread,
+                auto_archive_duration=60  # Archive after 1 hour of inactivity
+            )
             
-            # Store message ID for later updates
+            # Send embed to thread
+            message = await thread.send(embed=embed, view=view)
+            
+            # Store thread and message references
+            game['thread_id'] = thread.id
             game['message_id'] = message.id
             game['channel_id'] = channel.id
+            self.active_threads[game_id] = thread
+            
+            logger.info(f"✅ Created thread for game {game_id}")
+            
+            # Schedule thread cleanup (5 minutes after game ends)
+            asyncio.create_task(self._schedule_thread_cleanup(game_id, thread))
+            
+        except Exception as e:
+            logger.error(f"Error sending betting embed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    async def _schedule_thread_cleanup(self, game_id: int, thread: discord.Thread):
+        """Clean up thread 5 minutes after betting closes"""
+        try:
+            # Wait for betting to close (3 minutes) + 5 minutes grace period
+            await asyncio.sleep(8 * 60)  # 8 minutes total
+            
+            # Delete thread
+            if thread and not thread.archived:
+                await thread.delete()
+                logger.info(f"🗑️ Deleted thread for game {game_id}")
+            
+            # Clean up from tracking
+            if game_id in self.active_games:
+                self.active_games[game_id]['resolved'] = True
+            if game_id in self.active_threads:
+                del self.active_threads[game_id]
+                
+        except Exception as e:
+            logger.error(f"Error cleaning up thread {game_id}: {e}")
             
         except Exception as e:
             logger.error(f"Error sending betting embed: {e}")
