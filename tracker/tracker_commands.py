@@ -16,6 +16,7 @@ from PIL import Image
 import re
 import sys
 import os
+import json
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2548,6 +2549,130 @@ class TrackerCommands(commands.Cog):
                 pass
             del self.active_trackers[tid]
         await interaction.response.send_message("✅ Continuous tracking disabled.", ephemeral=True)
+    
+    @app_commands.command(name="addaccount", description="Add smurf/alt account to tracked pro player")
+    @app_commands.describe(
+        player_name="Pro player name (e.g., 'huncho', 'Caps')",
+        summoner_name="Summoner name (game name)",
+        tag="Tag line (e.g., 'EUW', 'fear')",
+        region="Region (euw, na, kr, etc.)"
+    )
+    async def addaccount(
+        self,
+        interaction: discord.Interaction,
+        player_name: str,
+        summoner_name: str,
+        tag: str,
+        region: str
+    ):
+        """Add additional account to pro player's tracked accounts"""
+        await interaction.response.defer()
+        
+        # Validate region
+        valid_regions = ['euw', 'eune', 'kr', 'na', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp']
+        region = region.lower().replace('1', '')  # euw1 -> euw
+        if region not in valid_regions:
+            await interaction.followup.send(
+                f"❌ Invalid region! Valid regions: {', '.join(valid_regions)}",
+                ephemeral=True
+            )
+            return
+        
+        # Check if player exists in database
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT id, accounts FROM tracked_pros WHERE LOWER(player_name) = LOWER(%s)",
+            (player_name,)
+        )
+        result = cursor.fetchone()
+        
+        if not result:
+            # Player doesn't exist - ask to track first
+            await interaction.followup.send(
+                f"❌ **{player_name}** is not being tracked yet!\n"
+                f"Use `/trackpros player_name:{player_name}` first to add them to tracking.",
+                ephemeral=True
+            )
+            conn.close()
+            return
+        
+        player_id, existing_accounts = result
+        
+        # Parse existing accounts (stored as JSON array)
+        accounts = json.loads(existing_accounts) if existing_accounts else []
+        
+        # Check if account already exists
+        account_key = f"{summoner_name.lower()}#{tag.lower()}|{region}"
+        for acc in accounts:
+            existing_key = f"{acc.get('summoner_name', '').lower()}#{acc.get('tag', '').lower()}|{acc.get('region', '')}"
+            if existing_key == account_key:
+                await interaction.followup.send(
+                    f"⚠️ Account **{summoner_name}#{tag}** ({region.upper()}) is already tracked for {player_name}!",
+                    ephemeral=True
+                )
+                conn.close()
+                return
+        
+        # Verify account exists via Riot API
+        try:
+            riot_account = await self.riot_api.get_account_by_riot_id(summoner_name, tag, region)
+            if not riot_account:
+                await interaction.followup.send(
+                    f"❌ Account **{summoner_name}#{tag}** not found on {region.upper()}!\n"
+                    f"Check spelling and region.",
+                    ephemeral=True
+                )
+                conn.close()
+                return
+            
+            # Get rank info
+            puuid = riot_account.get('puuid')
+            summoner = await self.riot_api.get_summoner_by_puuid(puuid, region)
+            
+            lp = 0
+            if summoner:
+                summoner_id = summoner.get('id')
+                ranked_data = await self.riot_api.get_ranked_stats(summoner_id, region)
+                
+                # Find Solo/Duo queue rank
+                for queue in ranked_data:
+                    if queue.get('queueType') == 'RANKED_SOLO_5x5':
+                        lp = queue.get('leaguePoints', 0)
+                        break
+            
+            # Add account to list
+            new_account = {
+                'summoner_name': summoner_name,
+                'tag': tag,
+                'region': region,
+                'lp': lp
+            }
+            accounts.append(new_account)
+            
+            # Update database
+            cursor.execute(
+                "UPDATE tracked_pros SET accounts = %s WHERE id = %s",
+                (json.dumps(accounts), player_id)
+            )
+            conn.commit()
+            conn.close()
+            
+            await interaction.followup.send(
+                f"✅ Added **{summoner_name}#{tag}** ({region.upper()}) to **{player_name}**'s tracked accounts!\n"
+                f"📊 Rank: {lp} LP\n"
+                f"🎮 Total accounts: {len(accounts)}\n\n"
+                f"This account will now be checked for live games when tracking {player_name}."
+            )
+            
+        except Exception as e:
+            logger.error(f"Error verifying/adding account: {e}")
+            await interaction.followup.send(
+                f"❌ Error verifying account: {str(e)}",
+                ephemeral=True
+            )
+            conn.close()
     
     @app_commands.command(name="betleaderboard", description="View top betting performers")
     @app_commands.describe(
