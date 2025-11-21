@@ -413,16 +413,19 @@ class TrackerCommands(commands.Cog):
             )
             return
         
-        # Sprawdź wszystkie zweryfikowane konta i wybierz to, które jest w grze
+        # Sprawdź wszystkie zweryfikowane konta i wybierz to, które jest w grze RANKED SOLO
         account = None
         spectator_data = None
         for acc in verified_accounts:
             try:
                 data = await self.riot_api.get_active_game(acc['puuid'], acc['region'])
                 if data:
-                    account = acc
-                    spectator_data = data
-                    break
+                    # Only track Ranked Solo/Duo (queue 420)
+                    queue_id = data.get('gameQueueConfigId', 0)
+                    if queue_id == 420:
+                        account = acc
+                        spectator_data = data
+                        break
             except Exception as e:
                 logger.error(f"Error checking live game for {acc['summoner_name']}: {e}")
         
@@ -432,13 +435,13 @@ class TrackerCommands(commands.Cog):
                 self._subscribe_user(target_user.id)
                 await interaction.followup.send(
                     f"✅ **Always On** tracking enabled for {target_user.mention}.\n"
-                    f"🔔 I'll automatically start tracking when you enter a game.",
+                    f"🔔 I'll automatically start tracking when you enter a **Ranked Solo/Duo** game.",
                     ephemeral=True
                 )
             else:
                 await interaction.followup.send(
-                    f"❌ {target_user.mention} is not currently in a game.\n"
-                    f"💡 Tip: Use mode **Always On** to auto-track future games!",
+                    f"❌ {target_user.mention} is not currently in a **Ranked Solo/Duo** game.\n"
+                    f"💡 Tip: Use mode **Always On** to auto-track future Solo Queue games!",
                     ephemeral=True
                 )
             return
@@ -778,7 +781,12 @@ class TrackerCommands(commands.Cog):
                         spectator_data = await self.riot_api.get_active_game(puuid, region)
                         
                         if spectator_data:
-                            # Found active game!
+                            # Only track Ranked Solo/Duo (queue 420)
+                            queue_id = spectator_data.get('gameQueueConfigId', 0)
+                            if queue_id != 420:
+                                continue
+                            
+                            # Found active Solo Queue game!
                             await self._create_pro_tracking_thread(
                                 status_msg,
                                 player_name,
@@ -798,12 +806,13 @@ class TrackerCommands(commands.Cog):
             # No active games found
             await status_msg.edit(
                 content=f"📊 Found **{player_name}** on {source}!\n"
-                        f"But no active games on their known accounts.\n\n"
+                        f"But no active **Ranked Solo/Duo** games on their known accounts.\n\n"
                         f"**Player Info:**\n"
                         f"• Region: {player_data.get('region', 'Unknown')}\n"
                         f"• Team: {player_data.get('team', 'Unknown')}\n"
                         f"• Role: {player_data.get('role', 'Unknown')}\n"
-                        f"• Known accounts: {len(accounts)}"
+                        f"• Known accounts: {len(accounts)}\n\n"
+                        f"⚠️ Note: Only tracking Ranked Solo/Duo games"
             )
             return
         
@@ -837,6 +846,11 @@ class TrackerCommands(commands.Cog):
                                 spectator_data = await self.riot_api.get_active_game(puuid, region)
                                 
                                 if spectator_data:
+                                    # Only track Ranked Solo/Duo (queue 420)
+                                    queue_id = spectator_data.get('gameQueueConfigId', 0)
+                                    if queue_id != 420:
+                                        continue
+                                    
                                     await self._create_pro_tracking_thread(
                                         status_msg,
                                         player_name,
@@ -866,10 +880,11 @@ class TrackerCommands(commands.Cog):
         
         # Not found anywhere
         await status_msg.edit(
-            content=f"❌ Could not find **{player_name}** anywhere.\n"
+            content=f"❌ Could not find **{player_name}** in any **Ranked Solo/Duo** games.\n"
                     f"Checked: LoLPros, DeepLoL Pro, DeepLoL Streamers, and all Challenger leagues.\n\n"
                     f"Player might be:\n"
                     f"• Not currently in game\n"
+                    f"• Playing a different game mode (only Solo Queue tracked)\n"
                     f"• Not in Challenger rank\n"
                     f"• Using a different summoner name\n\n"
                     f"Try checking: lolpros.gg/player/{player_name.lower()} or deeplol.gg"
@@ -1193,7 +1208,12 @@ class TrackerCommands(commands.Cog):
                 spectator_data = await self.riot_api.get_active_game(pro['puuid'], pro['region'])
                 
                 if spectator_data:
-                    # Found a game! Create tracking thread
+                    # Only track Ranked Solo/Duo (queue 420)
+                    queue_id = spectator_data.get('gameQueueConfigId', 0)
+                    if queue_id != 420:
+                        continue
+                    
+                    # Found a Solo Queue game! Create tracking thread
                     game_id = str(spectator_data.get('gameId', ''))
                     thread_name = f"⭐ {pro['name']} ({pro['team']}) - PRO GAME"
                     
@@ -1268,13 +1288,14 @@ class TrackerCommands(commands.Cog):
         # Final update
         if found_games > 0:
             await status_msg.edit(
-                content=f"✅ Found and started tracking **{found_games}** pro player game(s)!\n"
+                content=f"✅ Found and started tracking **{found_games}** **Ranked Solo/Duo** pro game(s)!\n"
                         f"Check the tracking channel for live updates."
             )
         else:
             await status_msg.edit(
-                content=f"❌ No pro players currently in game.\n"
-                        f"Checked {checked_count} players. Try again later!"
+                content=f"❌ No pro players currently in **Ranked Solo/Duo** games.\n"
+                        f"Checked {checked_count} players. Try again later!\n\n"
+                        f"⚠️ Note: Only tracking Ranked Solo/Duo games"
             )
     
     async def _send_game_embed(self, thread, user, account, spectator_data, game_id: str):
@@ -1862,6 +1883,14 @@ class TrackerCommands(commands.Cog):
                     account['region']
                 )
                 
+                # Stop tracking if not Solo Queue anymore (should not happen but safety check)
+                if spectator_data:
+                    queue_id = spectator_data.get('gameQueueConfigId', 0)
+                    if queue_id != 420:
+                        await thread.send("⚠️ Game mode changed - stopping tracker (Solo Queue only)")
+                        del self.active_trackers[thread_id]
+                        continue
+                
                 if not spectator_data:
                     # Game ended - create post-game summary
                     await thread.send("🏁 **Game has ended! Generating post-game summary...**")
@@ -1966,6 +1995,10 @@ class TrackerCommands(commands.Cog):
                     try:
                         sd = await self.riot_api.get_active_game(acc['puuid'], acc['region'])
                         if sd:
+                            # Only auto-track Ranked Solo/Duo (queue 420)
+                            queue_id = sd.get('gameQueueConfigId', 0)
+                            if queue_id != 420:
+                                continue
                             chosen = acc
                             data = sd
                             break
