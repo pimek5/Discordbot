@@ -1006,6 +1006,83 @@ class TrackerCommands(commands.Cog):
     
     async def _track_specific_player(self, interaction: discord.Interaction, player_name: str):
         """Track a specific player by name"""
+        # Check if player is already in database
+        existing_player = self.db.get_pro_player_by_name(player_name)
+        
+        if existing_player:
+            # Player already tracked - show info
+            import json
+            accounts = json.loads(existing_player.get('accounts', '[]'))
+            
+            embed = discord.Embed(
+                title="⚠️ Player Already Tracked",
+                description=f"**{player_name}** is already in the tracking database!",
+                color=0xFFA500,
+                timestamp=datetime.now()
+            )
+            
+            # Player details
+            details = ""
+            region = existing_player.get('region')
+            team = existing_player.get('team')
+            role = existing_player.get('role')
+            source = existing_player.get('source', 'Unknown')
+            
+            if team:
+                details += f"**Team:** {team}\n"
+            if role:
+                details += f"**Role:** {role}\n"
+            if region:
+                flag = self._get_region_flag(region)
+                details += f"**Region:** {flag} {region.upper()}\n"
+            details += f"**Source:** {source}\n"
+            details += f"**Tracked Accounts:** {len(accounts)}\n"
+            details += f"**Added:** {existing_player.get('created_at', 'Unknown')}"
+            
+            embed.add_field(
+                name="📊 Current Tracking Info",
+                value=details,
+                inline=False
+            )
+            
+            # Show first 5 accounts
+            if accounts:
+                accounts_text = ""
+                for i, acc in enumerate(accounts[:5], 1):
+                    acc_name = acc.get('summoner_name', 'Unknown')
+                    acc_tag = acc.get('tag', '')
+                    acc_region = acc.get('region', 'Unknown')
+                    acc_lp = acc.get('lp', 0)
+                    acc_rank = acc.get('rank', '')
+                    
+                    if acc_tag:
+                        accounts_text += f"**{i}.** {self._format_account_display(acc_name, acc_tag, acc_region, acc_rank, acc_lp)}\n"
+                    else:
+                        flag = self._get_region_flag(acc_region)
+                        accounts_text += f"**{i}.** `{acc_name}` • {flag} {acc_region.upper()} • {acc_lp} LP\n"
+                
+                if len(accounts) > 5:
+                    accounts_text += f"\n*...and {len(accounts) - 5} more accounts*"
+                
+                embed.add_field(
+                    name="📋 Tracked Accounts",
+                    value=accounts_text,
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="💡 What You Can Do",
+                value=(
+                    f"• Use `/playerinfo player_name:{player_name}` to view full profile\n"
+                    f"• Use `/addaccount` to add more accounts\n"
+                    f"• Background monitoring checks this player every 5 minutes"
+                ),
+                inline=False
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
         status_msg = await interaction.followup.send(
             f"🔍 Searching for **{player_name}**...\n"
             f"Checking LoLPros, DeepLoL Pro, DeepLoL Streamers..."
