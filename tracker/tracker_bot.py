@@ -77,21 +77,26 @@ async def on_ready():
 async def on_error(event, *args, **kwargs):
     logger.error(f"Bot error in {event}", exc_info=True)
 
+async def setup_hook():
+    """Setup hook called before bot starts - load cogs here"""
+    # Initialize Riot API
+    riot_api = RiotAPI(RIOT_API_KEY)
+    
+    # Add tracker cog
+    await bot.add_cog(TrackerCommands(bot, riot_api, GUILD_ID))
+    logger.info("✅ Tracker commands loaded")
+    
+    # Log available commands
+    commands_list = [cmd.name for cmd in bot.tree.get_commands()]
+    logger.info(f"📋 Available commands in tree: {commands_list}")
+    logger.info(f"📊 Total commands: {len(commands_list)}")
+
+# Assign setup_hook to bot
+bot.setup_hook = setup_hook
+
 async def main():
     async with bot:
-        # Initialize Riot API
-        riot_api = RiotAPI(RIOT_API_KEY)
-        
-        # Add tracker cog BEFORE starting bot
-        await bot.add_cog(TrackerCommands(bot, riot_api, GUILD_ID))
-        logger.info("✅ Tracker commands loaded")
-        
-        # Log available commands
-        commands_list = [cmd.name for cmd in bot.tree.get_commands()]
-        logger.info(f"📋 Available commands in tree: {commands_list}")
-        logger.info(f"📊 Total commands: {len(commands_list)}")
-        
-        # Start bot (sync will happen in on_ready)
+        # Start bot (setup_hook will load cogs, on_ready will sync)
         await bot.start(TRACKER_BOT_TOKEN)
 
 if __name__ == '__main__':
