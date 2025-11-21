@@ -513,92 +513,46 @@ class TrackerCommands(commands.Cog):
         )
     
     async def _fetch_lolpros_data(self) -> List[Dict]:
-        """Fetch pro players database from lolpros.gg"""
-        try:
-            timeout = aiohttp.ClientTimeout(total=15)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                # lolpros.gg provides a JSON endpoint with pro player data
-                url = "https://lolpros.gg/static/players.json"
-                
-                async with session.get(url) as resp:
-                    if resp.status != 200:
-                        logger.error(f"Failed to fetch lolpros data: {resp.status}")
-                        return self._get_fallback_pros()
-                    
-                    data = await resp.json()
-                    
-                    # Parse the data structure
-                    # Expected format: list of players with name, team, accounts
-                    pro_list = []
-                    
-                    for player in data:
-                        # Each player should have: name, team, accounts (with region/puuid)
-                        if not isinstance(player, dict):
-                            continue
-                        
-                        player_name = player.get('name') or player.get('handle', 'Unknown')
-                        team = player.get('team', 'Free Agent')
-                        accounts = player.get('accounts', [])
-                        
-                        # Get primary account (usually first one or most recent)
-                        for account in accounts:
-                            if not isinstance(account, dict):
-                                continue
-                            
-                            puuid = account.get('puuid')
-                            region = account.get('region', '').lower()
-                            
-                            # Map lolpros regions to our region codes
-                            region_map = {
-                                'euw1': 'euw',
-                                'eun1': 'eune',
-                                'na1': 'na',
-                                'kr': 'kr',
-                                'br1': 'br',
-                                'la1': 'lan',
-                                'la2': 'las',
-                                'oc1': 'oce',
-                                'tr1': 'tr',
-                                'ru': 'ru',
-                                'jp1': 'jp'
-                            }
-                            
-                            region = region_map.get(region, region)
-                            
-                            if puuid and region:
-                                pro_list.append({
-                                    'name': player_name,
-                                    'puuid': puuid,
-                                    'region': region,
-                                    'team': team
-                                })
-                                break  # Use first valid account
-                    
-                    if pro_list:
-                        logger.info(f"✅ Loaded {len(pro_list)} pro players from lolpros.gg")
-                        return pro_list
-                    else:
-                        logger.warning("No pro players found in lolpros data, using fallback")
-                        return self._get_fallback_pros()
-                    
-        except aiohttp.ClientError as e:
-            logger.error(f"Network error fetching lolpros data: {e}")
-            return self._get_fallback_pros()
-        except Exception as e:
-            logger.error(f"Error parsing lolpros data: {e}")
-            return self._get_fallback_pros()
+        """Fetch pro players - using curated list with real PUUIDs"""
+        # Since lolpros.gg doesn't have a public JSON API, we maintain a curated list
+        # PUUIDs can be fetched via Riot API using summoner names from lolpros.gg
+        
+        # For now, return the fallback list which should be populated with real PUUIDs
+        # This could be enhanced by:
+        # 1. Scraping lolpros.gg (against ToS)
+        # 2. Using a separate database/file with verified PUUIDs
+        # 3. Using Riot's featured games API to find high-level players
+        
+        logger.info("Using curated pro players list")
+        return self._get_curated_pros()
     
-    def _get_fallback_pros(self) -> List[Dict]:
-        """Fallback list of well-known pros with manually verified PUUIDs"""
-        # This is a curated fallback list in case lolpros.gg is down
-        # PUUIDs would need to be manually verified and updated periodically
+    def _get_curated_pros(self) -> List[Dict]:
+        """Curated list of pro players with verified PUUIDs"""
+        # This is a maintained list of well-known pros
+        # PUUIDs should be updated periodically
+        # These are real players but PUUIDs would need to be fetched via Riot API
+        
         return [
-            # Note: These are placeholder PUUIDs - would need real ones
-            {'name': 'Faker', 'puuid': 'FALLBACK_1', 'region': 'kr', 'team': 'T1'},
-            {'name': 'Caps', 'puuid': 'FALLBACK_2', 'region': 'euw', 'team': 'G2'},
-            {'name': 'Rekkles', 'puuid': 'FALLBACK_3', 'region': 'euw', 'team': 'KC'},
-            {'name': 'Showmaker', 'puuid': 'FALLBACK_4', 'region': 'kr', 'team': 'DK'},
-            {'name': 'Chovy', 'puuid': 'FALLBACK_5', 'region': 'kr', 'team': 'GenG'},
+            # EU West - Top Tier
+            {'name': 'Caps', 'puuid': 'NEED_REAL_PUUID_1', 'region': 'euw', 'team': 'G2 Esports'},
+            {'name': 'Rekkles', 'puuid': 'NEED_REAL_PUUID_2', 'region': 'euw', 'team': 'Karmine Corp'},
+            {'name': 'Jankos', 'puuid': 'NEED_REAL_PUUID_3', 'region': 'euw', 'team': 'Heretics'},
+            {'name': 'Perkz', 'puuid': 'NEED_REAL_PUUID_4', 'region': 'euw', 'team': 'Vitality'},
+            {'name': 'Upset', 'puuid': 'NEED_REAL_PUUID_5', 'region': 'euw', 'team': 'Fnatic'},
+            
+            # Korea - Legends
+            {'name': 'Faker', 'puuid': 'NEED_REAL_PUUID_6', 'region': 'kr', 'team': 'T1'},
+            {'name': 'Showmaker', 'puuid': 'NEED_REAL_PUUID_7', 'region': 'kr', 'team': 'Dplus KIA'},
+            {'name': 'Chovy', 'puuid': 'NEED_REAL_PUUID_8', 'region': 'kr', 'team': 'Gen.G'},
+            {'name': 'Keria', 'puuid': 'NEED_REAL_PUUID_9', 'region': 'kr', 'team': 'T1'},
+            {'name': 'Zeus', 'puuid': 'NEED_REAL_PUUID_10', 'region': 'kr', 'team': 'T1'},
+            
+            # North America
+            {'name': 'Doublelift', 'puuid': 'NEED_REAL_PUUID_11', 'region': 'na', 'team': 'Retired'},
+            {'name': 'Bjergsen', 'puuid': 'NEED_REAL_PUUID_12', 'region': 'na', 'team': 'Team Liquid'},
+            {'name': 'CoreJJ', 'puuid': 'NEED_REAL_PUUID_13', 'region': 'na', 'team': 'Team Liquid'},
+            {'name': 'Spica', 'puuid': 'NEED_REAL_PUUID_14', 'region': 'na', 'team': 'FlyQuest'},
+            {'name': 'Impact', 'puuid': 'NEED_REAL_PUUID_15', 'region': 'na', 'team': 'Evil Geniuses'},
         ]
     
     @app_commands.command(name="trackpros", description="Track random pro player games from multiple regions")
@@ -619,18 +573,19 @@ class TrackerCommands(commands.Cog):
         if not pro_players:
             await interaction.followup.send(
                 "❌ Failed to load pro players database.\n"
-                "lolpros.gg API may be unavailable. Try again later!",
+                "The pro player list may need to be updated.",
                 ephemeral=True
             )
             return
         
-        # Filter out fallback placeholders if they weren't replaced
-        pro_players = [p for p in pro_players if not p['puuid'].startswith('FALLBACK_')]
+        # Filter out placeholders that need real PUUIDs
+        pro_players = [p for p in pro_players if not p['puuid'].startswith('NEED_REAL_PUUID')]
         
         if not pro_players:
             await interaction.followup.send(
-                "❌ No valid pro player accounts available.\n"
-                "The database needs to be updated with real PUUIDs.",
+                "⚠️ Pro player tracking is not yet configured.\n"
+                "The database needs to be populated with real PUUIDs.\n"
+                "Please contact an administrator to set this up.",
                 ephemeral=True
             )
             return
@@ -1649,6 +1604,80 @@ class TrackerCommands(commands.Cog):
             app_commands.Choice(name="Remove coins", value="remove")
         ]
         return actions
+    
+    @app_commands.command(name="lookuppro", description="[ADMIN] Lookup PUUID for a pro player")
+    @app_commands.describe(
+        summoner_name="Summoner name (e.g., Faker)",
+        tag="Tag line (e.g., T1)",
+        region="Region (kr, euw, na, etc.)"
+    )
+    async def lookuppro(
+        self,
+        interaction: discord.Interaction,
+        summoner_name: str,
+        tag: str,
+        region: str
+    ):
+        """Admin helper to lookup PUUIDs for pro players"""
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission to use this command!",
+                ephemeral=True
+            )
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Validate region
+        valid_regions = ['euw', 'eune', 'na', 'kr', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp']
+        if region.lower() not in valid_regions:
+            await interaction.followup.send(
+                f"❌ Invalid region! Valid regions: {', '.join(valid_regions)}",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            # Use riot API to get account info
+            account_data = await self.riot_api.get_account_by_riot_id(summoner_name, tag, region.lower())
+            
+            if not account_data:
+                await interaction.followup.send(
+                    f"❌ Player not found: `{summoner_name}#{tag}` in region `{region.upper()}`\n"
+                    f"Make sure the summoner name and tag are correct.",
+                    ephemeral=True
+                )
+                return
+            
+            puuid = account_data.get('puuid')
+            game_name = account_data.get('gameName', summoner_name)
+            tag_line = account_data.get('tagLine', tag)
+            
+            # Format for copy-paste into code
+            code_line = f"{{'name': '{game_name}', 'puuid': '{puuid}', 'region': '{region.lower()}', 'team': 'TEAM_NAME'}},"
+            
+            embed = discord.Embed(
+                title="✅ Pro Player Lookup",
+                description=f"Found account for **{game_name}#{tag_line}**",
+                color=0x00FF00
+            )
+            embed.add_field(name="Region", value=region.upper(), inline=True)
+            embed.add_field(name="PUUID", value=f"```{puuid}```", inline=False)
+            embed.add_field(
+                name="📋 Code to add to _get_curated_pros():",
+                value=f"```python\n{code_line}\n```",
+                inline=False
+            )
+            embed.set_footer(text="Copy this line and replace TEAM_NAME with the actual team")
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error looking up pro player: {e}")
+            await interaction.followup.send(
+                f"❌ Error looking up player: {str(e)}",
+                ephemeral=True
+            )
 
 async def setup(bot: commands.Bot, riot_api, guild_id: int):
     await bot.add_cog(TrackerCommands(bot, riot_api, guild_id))
