@@ -51,6 +51,34 @@ class TrackerDatabase:
         if self.connection_pool:
             self.connection_pool.closeall()
             logger.info("✅ All database connections closed")
+    
+    def get_user_by_discord_id(self, discord_id: int):
+        """Get user by Discord ID"""
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM users WHERE discord_id = %s", (discord_id,))
+            row = cur.fetchone()
+            if row:
+                cols = [desc[0] for desc in cur.description]
+                return dict(zip(cols, row))
+            return None
+        finally:
+            self.return_connection(conn)
+    
+    def get_user_accounts(self, user_id: int):
+        """Get all accounts for a user"""
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM accounts WHERE user_id = %s", (user_id,))
+            rows = cur.fetchall()
+            if rows:
+                cols = [desc[0] for desc in cur.description]
+                return [dict(zip(cols, row)) for row in rows]
+            return []
+        finally:
+            self.return_connection(conn)
 
 # Global database instance
 _tracker_db = None
