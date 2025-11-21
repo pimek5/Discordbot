@@ -1,0 +1,100 @@
+[
+  {
+    "player_name": "Caps",
+    "team": "G2 Esports",
+    "role": "Mid",
+    "region": "EUW",
+    "source": "manual"
+  },
+  {
+    "player_name": "Faker",
+    "team": "T1",
+    "role": "Mid",
+    "region": "KR",
+    "source": "manual"
+  },
+  {
+    "player_name": "Chovy",
+    "team": "Gen.G",
+    "role": "Mid",
+    "region": "KR",
+    "source": "manual"
+  },
+  {
+    "player_name": "Showmaker",
+    "team": "Dplus KIA",
+    "role": "Mid",
+    "region": "KR",
+    "source": "manual"
+  },
+  {
+    "player_name": "Rekkles",
+    "team": "Karmine Corp",
+    "role": "ADC",
+    "region": "EUW",
+    "source": "manual"
+  },
+  {
+    "player_name": "Perkz",
+    "team": "Vitality",
+    "role": "Mid",
+    "region": "EUW",
+    "source": "manual"
+  },
+  {
+    "player_name": "Jankos",
+    "team": "Heretics",
+    "role": "Jungle",
+    "region": "EUW",
+    "source": "manual"
+  },
+  {
+    "player_name": "huncho",
+    "team": "Content Creator",
+    "role": "Jungle",
+    "region": "NA",
+    "source": "manual"
+  },
+  {
+    "player_name": "desperate nasus",
+    "team": "Streamer",
+    "role": "Top",
+    "region": "NA",
+    "source": "manual"
+  },
+  {
+    "player_name": "Tyler1",
+    "team": "Streamer",
+    "role": "ADC",
+    "region": "NA",
+    "source": "manual"
+  },
+  {
+    "player_name": "Thebausffs",
+    "team": "Streamer",
+    "role": "Top",
+    "region": "EUW",
+    "source": "manual"
+  },
+  {
+    "player_name": "Drututt",
+    "team": "Streamer",
+    "role": "Top",
+    "region": "EUW",
+    "source": "manual"
+  },
+  {
+    "player_name": "Nemesis",
+    "team": "Streamer",
+    "role": "Mid",
+    "region": "EUW",
+    "source": "manual"
+  },
+  {
+    "player_name": "Caedrel",
+    "team": "Caster/Streamer",
+    "role": "Jungle",
+    "region": "EUW",
+    "source": "manual"
+  }
+]
