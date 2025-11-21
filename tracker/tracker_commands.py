@@ -1107,23 +1107,29 @@ class TrackerCommands(commands.Cog):
                     if role_match:
                         data['role'] = role_match.group(1).strip()
                     
-                    # Extract accounts - LoLPros shows accounts in specific format
-                    # Look for account entries - try multiple patterns
+                    # Extract accounts - LoLPros typically shows account info differently
+                    # They might not use Riot ID format, try multiple approaches
                     accounts_found = []
                     
-                    # Pattern 1: Look for Riot ID format (GameName#TAG)
-                    # GameName: starts with letter, 1-20 chars (letters, numbers, spaces)
-                    # TAG: 3-5 alphanumeric characters
+                    # Try 1: Look for Riot ID format (GameName#TAG) but exclude common false positives
                     riot_id_pattern = r'([A-Za-z][A-Za-z0-9\s]{0,19})#([A-Za-z0-9]{3,5})\b'
                     potential_accounts = re.findall(riot_id_pattern, html)
                     
-                    logger.info(f"🔍 Found {len(potential_accounts)} potential accounts for {player_name}")
+                    # Blacklist of false positive patterns
+                    blacklist = ['search by', 'gamename', 'example', 'player', 'account']
+                    
+                    logger.info(f"🔍 Found {len(potential_accounts)} potential Riot ID accounts for {player_name}")
                     
                     for summoner, tag in potential_accounts:
                         summoner = summoner.strip()
                         tag = tag.strip()
                         
                         logger.info(f"  🔎 Checking: '{summoner}#{tag}'")
+                        
+                        # Skip blacklisted patterns
+                        if any(word in summoner.lower() for word in blacklist):
+                            logger.info(f"    ❌ Filtered (blacklisted word): {summoner}")
+                            continue
                         
                         # Skip if looks like CSS (hex color, rgba, etc)
                         if tag.lower() in ['fff', 'ffff', '000', '0000', 'rgba']:
@@ -1133,7 +1139,7 @@ class TrackerCommands(commands.Cog):
                         if len(tag) == 6 and all(c in '0123456789abcdefABCDEF' for c in tag):
                             logger.info(f"    ❌ Filtered (6-char hex): {tag}")
                             continue
-                        # Skip 5-char common CSS patterns
+                        # Skip 5-char numeric tags
                         if len(tag) == 5 and all(c in '0123456789' for c in tag):
                             logger.info(f"    ❌ Filtered (5-digit tag): {tag}")
                             continue
@@ -1144,6 +1150,18 @@ class TrackerCommands(commands.Cog):
                         # Looks valid!
                         accounts_found.append((summoner, tag))
                         logger.info(f"    ✅ Valid account: {summoner}#{tag}")
+                    
+                    # Try 2: If no Riot IDs found, look for op.gg/summoners links or account tables
+                    if not accounts_found:
+                        logger.info(f"🔍 No Riot IDs found, trying alternative formats...")
+                        # Look for op.gg summoner links
+                        opgg_pattern = r'op\.gg/summoners/([^/]+)/([^/"]+)'
+                        opgg_accounts = re.findall(opgg_pattern, html)
+                        for region, summoner in opgg_accounts[:5]:
+                            # Decode URL encoding
+                            summoner = summoner.replace('%20', ' ').replace('+', ' ')
+                            accounts_found.append((summoner, region.upper()))
+                            logger.info(f"    ✅ Found from op.gg: {summoner} ({region})")
                     
                     # Remove duplicates while preserving order
                     seen = set()
