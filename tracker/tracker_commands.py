@@ -1304,12 +1304,59 @@ class TrackerCommands(commands.Cog):
                                     logger.info(f"    ✅ {summoner}#{tag} ({region}) - {lp} LP")
                         break
             
-            # If no JSON accounts found, parse accounts from op.gg links (fallback)
+            # If no JSON accounts found, try meta description (LoLPros fallback)
             if not accounts:
-                logger.info(f"  ⚠️ No JSON accounts found, trying op.gg links...")
-            # If no JSON accounts found, parse accounts from op.gg links (fallback)
+                logger.info(f"  ⚠️ No JSON accounts found, trying meta description...")
+                
+                # Try to extract from meta description (LoLPros stores data here)
+                meta_match = re.search(r'data-hid="description"[^>]*content="([^"]+)"', html)
+                if meta_match:
+                    description = meta_match.group(1)
+                    logger.info(f"  ✅ Found meta description ({len(description)} chars)")
+                    
+                    # Parse: "Role | Country | Account#Tag [Rank LP] | Account#Tag [Rank LP] ..."
+                    parts = description.split(' | ')
+                    
+                    if len(parts) > 2:
+                        # Skip first 2 parts (role, country), rest are accounts
+                        account_strings = parts[2:]
+                        logger.info(f"  Found {len(account_strings)} potential accounts in meta")
+                        
+                        for acc_str in account_strings[:50]:  # Max 50 accounts
+                            # Parse: "Jennifer Holland#EUW11 [Grandmaster 1014LP]"
+                            match = re.match(r'(.+?)#([^\s\[]+)\s*\[(.+?)\s*(\d+)?\s*LP?\]', acc_str)
+                            if match:
+                                summoner = match.group(1).strip()
+                                tag = match.group(2).strip()
+                                rank = match.group(3).strip()
+                                lp = int(match.group(4)) if match.group(4) else 0
+                                
+                                # Determine region from tag (EUW, NA1, KR, etc.)
+                                region = 'euw'  # default
+                                if 'EUW' in tag.upper():
+                                    region = 'euw'
+                                elif 'NA' in tag.upper():
+                                    region = 'na'
+                                elif 'KR' in tag.upper():
+                                    region = 'kr'
+                                elif 'EUN' in tag.upper():
+                                    region = 'eune'
+                                
+                                # Skip unranked/leveling accounts (unless high count already)
+                                if 'Unranked' not in rank or len(accounts) < 10:
+                                    accounts.append({
+                                        'summoner_name': summoner.strip(),
+                                        'tag': tag.strip(),
+                                        'region': region,
+                                        'lp': lp
+                                    })
+                                    
+                                    if lp > 0:
+                                        logger.info(f"    ✅ {summoner}#{tag} ({region.upper()}) - {rank} {lp} LP")
+            
+            # Last resort: Try op.gg links
             if not accounts:
-                logger.info(f"  ⚠️ No JSON accounts found, trying op.gg links...")
+                logger.info(f"  ⚠️ No meta accounts found, trying op.gg links...")
             
                 # Try multiple op.gg patterns
                 patterns = [
