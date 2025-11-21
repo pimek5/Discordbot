@@ -513,18 +513,83 @@ class TrackerCommands(commands.Cog):
         )
     
     async def _fetch_lolpros_data(self) -> List[Dict]:
-        """Fetch pro players - using curated list with real PUUIDs"""
-        # Since lolpros.gg doesn't have a public JSON API, we maintain a curated list
-        # PUUIDs can be fetched via Riot API using summoner names from lolpros.gg
+        """Fetch pro players - using Riot API to get Challenger players"""
+        # Instead of scraping lolpros.gg, we fetch top Challenger players from Riot API
+        # This gives us real players who are currently active and high elo
         
-        # For now, return the fallback list which should be populated with real PUUIDs
-        # This could be enhanced by:
-        # 1. Scraping lolpros.gg (against ToS)
-        # 2. Using a separate database/file with verified PUUIDs
-        # 3. Using Riot's featured games API to find high-level players
+        logger.info("Fetching top Challenger players from Riot API...")
         
-        logger.info("Using curated pro players list")
-        return self._get_curated_pros()
+        try:
+            pro_list = []
+            
+            # Regions to check for Challengers
+            regions_to_check = [
+                ('euw', 'EUW'),
+                ('kr', 'KR'),
+                ('na', 'NA'),
+            ]
+            
+            for region_code, region_name in regions_to_check:
+                try:
+                    # Get Challenger league entries (top ~300 players per region)
+                    challengers = await self.riot_api.get_challenger_league(region_code)
+                    
+                    if not challengers or 'entries' not in challengers:
+                        logger.warning(f"No Challenger data for {region_name}")
+                        continue
+                    
+                    # Take top 30 from each region (by LP)
+                    entries = sorted(
+                        challengers['entries'],
+                        key=lambda x: x.get('leaguePoints', 0),
+                        reverse=True
+                    )[:30]
+                    
+                    for entry in entries:
+                        summoner_id = entry.get('summonerId')
+                        if not summoner_id:
+                            continue
+                        
+                        try:
+                            # Get summoner details to get PUUID
+                            summoner = await self.riot_api.get_summoner_by_id(summoner_id, region_code)
+                            
+                            if summoner and summoner.get('puuid'):
+                                # Get account info for riot ID
+                                account = await self.riot_api.get_account_by_puuid(summoner['puuid'], region_code)
+                                
+                                if account:
+                                    game_name = account.get('gameName', entry.get('summonerName', 'Unknown'))
+                                    
+                                    pro_list.append({
+                                        'name': game_name,
+                                        'puuid': summoner['puuid'],
+                                        'region': region_code,
+                                        'team': f"Challenger {entry.get('leaguePoints', 0)} LP"
+                                    })
+                        except Exception as e:
+                            logger.debug(f"Error fetching summoner details: {e}")
+                            continue
+                    
+                    logger.info(f"✅ Loaded {len([p for p in pro_list if p['region'] == region_code])} Challengers from {region_name}")
+                    
+                    # Rate limit protection
+                    await asyncio.sleep(1)
+                    
+                except Exception as e:
+                    logger.error(f"Error fetching Challengers from {region_name}: {e}")
+                    continue
+            
+            if pro_list:
+                logger.info(f"✅ Total: {len(pro_list)} high elo players loaded")
+                return pro_list
+            else:
+                logger.warning("No Challenger players found, using curated list")
+                return self._get_curated_pros()
+                
+        except Exception as e:
+            logger.error(f"Error fetching Challenger data: {e}")
+            return self._get_curated_pros()
     
     def _get_curated_pros(self) -> List[Dict]:
         """Curated list of pro players with verified PUUIDs"""

@@ -363,6 +363,89 @@ class RiotAPI:
         logger.warning(f"⚠️ Failed to get ranked stats after {retries} attempts")
         return None
     
+    async def get_challenger_league(self, region: str, queue: str = 'RANKED_SOLO_5x5', retries: int = 3) -> Optional[Dict]:
+        """Get Challenger league entries for a region"""
+        if not self.api_key:
+            return None
+        
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        url = f"https://{platform}.api.riotgames.com/lol/league/v4/challengerleagues/by-queue/{queue}"
+        
+        logger.info(f"🔍 Fetching Challenger league from {platform}")
+        
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            logger.info(f"✅ Got {len(data.get('entries', []))} Challenger entries from {platform}")
+                            return data
+                        elif response.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+            except Exception as e:
+                logger.error(f"Error getting Challenger league: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                continue
+        
+        return None
+    
+    async def get_summoner_by_id(self, summoner_id: str, region: str, retries: int = 3) -> Optional[Dict]:
+        """Get summoner data by summoner ID"""
+        if not self.api_key:
+            return None
+        
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        url = f"https://{platform}.api.riotgames.com/lol/summoner/v4/summoners/{summoner_id}"
+        
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        elif response.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+            except Exception as e:
+                logger.debug(f"Error getting summoner by ID: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                continue
+        
+        return None
+    
+    async def get_account_by_puuid(self, puuid: str, region: str, retries: int = 3) -> Optional[Dict]:
+        """Get account info (gameName, tagLine) by PUUID"""
+        if not self.api_key:
+            return None
+        
+        # Use regional routing for account API
+        regional_route = RIOT_REGIONS.get(region.lower(), 'europe')
+        url = f"https://{regional_route}.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
+        
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        elif response.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+            except Exception as e:
+                logger.debug(f"Error getting account by PUUID: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                continue
+        
+        return None
+    
     async def get_champion_mastery(self, puuid: str, region: str, 
                                    count: int = 200, retries: int = 5) -> Optional[List[Dict]]:
         """Get top champion masteries - uses platform endpoint"""
