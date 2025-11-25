@@ -1430,7 +1430,7 @@ class TrackerCommandsV3(commands.Cog):
                     puuid = account_data['puuid']
                     logger.info(f"✅ Got PUUID: {puuid}")
                 
-                # Get summoner data for summoner_id
+                # Get summoner name
                 summoner_url = f"https://{region_lower}1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
                 async with session.get(summoner_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
                     if resp.status != 200:
@@ -1438,12 +1438,11 @@ class TrackerCommandsV3(commands.Cog):
                         return
                     
                     summoner_data = await resp.json()
-                    summoner_id = summoner_data['id']
-                    summoner_name = summoner_data['name']
-                    logger.info(f"✅ Got summoner_id: {summoner_id} for {summoner_name}")
+                    summoner_name = summoner_data.get('name', game_name)
+                    logger.info(f"✅ Got summoner name: {summoner_name}")
                 
-                # Check for live game
-                spectator_url = f"https://{region_lower}1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{summoner_id}"
+                # Check for live game using PUUID (Spectator V5 supports PUUID)
+                spectator_url = f"https://{region_lower}1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
                 async with session.get(spectator_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
                     if resp.status == 404:
                         await interaction.followup.send(f"🔍 **{summoner_name}** (`{riot_id}`) is **NOT** in a live game right now.")
