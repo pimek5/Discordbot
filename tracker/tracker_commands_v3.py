@@ -265,6 +265,64 @@ class TrackerCommandsV3(commands.Cog):
         # Register persistent views
         self.bot.add_view(TrackingControlView())
         logger.info("✅ Registered persistent TrackingControlView")
+        
+        # Restore view to existing control panel message
+        await self._restore_control_panel_view()
+    
+    async def _restore_control_panel_view(self):
+        """Restore persistent view to existing control panel message"""
+        await self.bot.wait_until_ready()
+        
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            
+            # Get stored control panel message
+            cur.execute("""
+                SELECT value FROM guild_settings 
+                WHERE guild_id = %s AND key = 'tracking_control_message'
+            """, (self.guild_id,))
+            
+            result = cur.fetchone()
+            if not result:
+                logger.info("ℹ️ No control panel message found in database")
+                return
+            
+            message_data = result[0].split(':')  # format: "channel_id:message_id"
+            if len(message_data) != 2:
+                return
+            
+            channel_id = int(message_data[0])
+            message_id = int(message_data[1])
+            
+            # Get channel and message
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                logger.warning(f"⚠️ Control panel channel {channel_id} not found")
+                return
+            
+            try:
+                message = await channel.fetch_message(message_id)
+                
+                # Re-attach the view
+                view = TrackingControlView()
+                await message.edit(view=view)
+                
+                logger.info(f"✅ Restored control panel view to message {message_id}")
+                
+            except discord.NotFound:
+                logger.warning(f"⚠️ Control panel message {message_id} not found")
+                # Clean up database
+                cur.execute("""
+                    DELETE FROM guild_settings 
+                    WHERE guild_id = %s AND key = 'tracking_control_message'
+                """, (self.guild_id,))
+                conn.commit()
+            
+        except Exception as e:
+            logger.error(f"Error restoring control panel: {e}")
+        finally:
+            self.db.return_connection(conn)
     
     async def cog_unload(self):
         """Cleanup on unload"""
@@ -635,7 +693,31 @@ class TrackerCommandsV3(commands.Cog):
         
         await interaction.response.send_message(embed=embed, view=view)
         
-        logger.info(f"✅ Tracking control panel sent by {interaction.user.name}")
+        # Get the message and save to database
+        message = await interaction.original_response()
+        
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            
+            # Save message location to database
+            message_data = f"{message.channel.id}:{message.id}"
+            cur.execute("""
+                INSERT INTO guild_settings (guild_id, key, value)
+                VALUES (%s, 'tracking_control_message', %s)
+                ON CONFLICT (guild_id, key) DO UPDATE SET
+                    value = EXCLUDED.value,
+                    updated_at = NOW()
+            """, (interaction.guild_id, message_data))
+            
+            conn.commit()
+            
+            logger.info(f"✅ Tracking control panel sent and saved to database by {interaction.user.name}")
+            
+        except Exception as e:
+            logger.error(f"Error saving control panel to database: {e}")
+        finally:
+            self.db.return_connection(conn)
 
 
 async def setup(bot: commands.Bot):
