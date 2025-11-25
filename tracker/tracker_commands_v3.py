@@ -1532,6 +1532,165 @@ class TrackerCommandsV3(commands.Cog):
             logger.error(f"❌ Error in checklive: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error checking live game: {str(e)}")
     
+    @app_commands.command(name="testapi", description="Test Spectator API with PUUID (debugging)")
+    @app_commands.describe(
+        puuid="Full PUUID from database",
+        region="Region (euw, eune, na, etc.)"
+    )
+    async def testapi(self, interaction: discord.Interaction, puuid: str, region: str):
+        """Test Spectator API endpoint directly - for debugging 400 errors"""
+        await interaction.response.defer()
+        
+        try:
+            region_lower = region.lower()
+            platform = region_lower + '1' if region_lower in ['euw', 'eune', 'na'] else region_lower
+            
+            url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
+            
+            logger.info(f"🧪 Testing API: {url}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                    status = resp.status
+                    text = await resp.text()
+                    
+                    embed = discord.Embed(
+                        title="🧪 Spectator API Test",
+                        color=0x00ff00 if status == 200 else (0xffaa00 if status == 404 else 0xff0000)
+                    )
+                    
+                    embed.add_field(name="Status", value=f"`{status}`", inline=True)
+                    embed.add_field(name="Region", value=f"`{region_lower}` → `{platform}`", inline=True)
+                    embed.add_field(name="PUUID Length", value=f"`{len(puuid)}` chars", inline=True)
+                    embed.add_field(name="PUUID (first 30)", value=f"`{puuid[:30]}...`", inline=False)
+                    embed.add_field(name="URL", value=f"`{url[:100]}...`", inline=False)
+                    
+                    if status == 200:
+                        try:
+                            data = await resp.json() if text else {}
+                            game_id = data.get('gameId', 'N/A')
+                            queue = data.get('gameQueueConfigId', 'N/A')
+                            embed.add_field(name="✅ Success", value=f"Game ID: `{game_id}`\nQueue: `{queue}`", inline=False)
+                        except:
+                            embed.add_field(name="✅ Response", value=f"```{text[:300]}```", inline=False)
+                    elif status == 404:
+                        embed.add_field(name="ℹ️ Not in game", value="Player not currently in an active game", inline=False)
+                    else:
+                        embed.add_field(name="❌ Error", value=f"```{text[:400]}```", inline=False)
+                    
+                    await interaction.followup.send(embed=embed)
+                    
+        except Exception as e:
+            logger.error(f"❌ Error in testapi: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+    
+    @app_commands.command(name="checkgameid", description="Check if specific game ID exists (testing)")
+    @app_commands.describe(
+        game_id="Game ID to check",
+        region="Region (euw, eune, na, etc.)"
+    )
+    async def checkgameid(self, interaction: discord.Interaction, game_id: str, region: str):
+        """Check if a specific game ID is active - for bot testing"""
+        await interaction.response.defer()
+        
+        try:
+            region_lower = region.lower()
+            
+            # Validate region
+            valid_regions = ['eune', 'euw', 'na', 'br', 'lan', 'las', 'oce', 'ru', 'tr', 'jp', 'kr', 'ph', 'sg', 'th', 'tw', 'vn']
+            if region_lower not in valid_regions:
+                await interaction.followup.send(f"❌ Invalid region! Valid regions: {', '.join(valid_regions)}")
+                return
+            
+            # Try to get game data by finding an active game matching this ID
+            # Note: Riot API doesn't have direct game ID lookup, so we'll search through active featured games
+            platform = region_lower + '1' if region_lower in ['euw', 'eune', 'na'] else region_lower
+            
+            logger.info(f"🔍 Checking for game ID {game_id} on {platform}")
+            
+            # Try featured games endpoint
+            featured_url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/featured-games"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(featured_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        await interaction.followup.send(f"❌ API error {resp.status}: {error_text[:200]}")
+                        return
+                    
+                    data = await resp.json()
+                    featured_games = data.get('gameList', [])
+                    
+                    # Search for the game ID
+                    game_found = None
+                    for game in featured_games:
+                        if str(game.get('gameId')) == str(game_id):
+                            game_found = game
+                            break
+                    
+                    if not game_found:
+                        await interaction.followup.send(
+                            f"❌ Game ID `{game_id}` not found in featured games on `{region_lower}`\n"
+                            f"ℹ️ Checked {len(featured_games)} featured games.\n"
+                            f"Note: Only high-MMR games appear in featured games list."
+                        )
+                        return
+                    
+                    # Found the game!
+                    embed = discord.Embed(
+                        title="✅ Game Found!",
+                        description=f"Game ID: `{game_id}`",
+                        color=0x00ff00
+                    )
+                    
+                    game_length = game_found.get('gameLength', 0)
+                    game_mode = game_found.get('gameMode', 'UNKNOWN')
+                    game_queue = game_found.get('gameQueueConfigId', 0)
+                    
+                    queue_names = {
+                        420: "Ranked Solo/Duo",
+                        440: "Ranked Flex",
+                        400: "Normal Draft",
+                        430: "Normal Blind",
+                        450: "ARAM"
+                    }
+                    queue_name = queue_names.get(game_queue, f"Queue {game_queue}")
+                    game_time = f"{game_length // 60}:{game_length % 60:02d}" if game_length > 0 else "Loading..."
+                    
+                    embed.add_field(
+                        name="📊 Game Info",
+                        value=f"**Queue:** {queue_name}\n**Game Time:** {game_time}\n**Mode:** {game_mode}",
+                        inline=False
+                    )
+                    
+                    # Show teams
+                    blue_team = [p for p in game_found['participants'] if p['teamId'] == 100]
+                    red_team = [p for p in game_found['participants'] if p['teamId'] == 200]
+                    
+                    blue_text = ""
+                    for p in blue_team:
+                        champ_emoji = self._get_champion_emoji(p['championId'])
+                        champ_name = get_champion_name(p['championId'])
+                        summoner_name = p.get('riotId', p.get('summonerName', 'Unknown'))
+                        blue_text += f"{champ_emoji} {champ_name} - {summoner_name}\n"
+                    
+                    red_text = ""
+                    for p in red_team:
+                        champ_emoji = self._get_champion_emoji(p['championId'])
+                        champ_name = get_champion_name(p['championId'])
+                        summoner_name = p.get('riotId', p.get('summonerName', 'Unknown'))
+                        red_text += f"{champ_emoji} {champ_name} - {summoner_name}\n"
+                    
+                    embed.add_field(name="🔵 Blue Team", value=blue_text or "No data", inline=True)
+                    embed.add_field(name="🔴 Red Team", value=red_text or "No data", inline=True)
+                    
+                    await interaction.followup.send(embed=embed)
+                    logger.info(f"✅ Found game {game_id} on {platform}")
+                    
+        except Exception as e:
+            logger.error(f"❌ Error in checkgameid: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+    
     @app_commands.command(name="setup_tracking", description="[ADMIN] Setup tracking control panel")
     @app_commands.checks.has_permissions(administrator=True)
     async def setup_tracking(self, interaction: discord.Interaction):
