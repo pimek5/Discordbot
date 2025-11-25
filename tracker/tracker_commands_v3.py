@@ -1441,6 +1441,10 @@ class TrackerCommandsV3(commands.Cog):
                     summoner_data = await resp.json()
                     summoner_name = summoner_data.get('name', game_name)
                     logger.info(f"✅ Got summoner name: {summoner_name}")
+                    logger.info(f"🔍 Summoner API response fields: {list(summoner_data.keys())}")
+                    logger.info(f"🔍 Has 'id' field: {'id' in summoner_data}")
+                    if 'id' in summoner_data:
+                        logger.info(f"🔍 Summoner ID: {summoner_data['id'][:20]}...")
                 
                 # Check for live game using PUUID (Spectator V5 supports PUUID)
                 spectator_url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
