@@ -1091,6 +1091,100 @@ class TrackerCommandsV3(commands.Cog):
         
         await interaction.followup.send("✅ Account fix completed! Check logs for details.", ephemeral=True)
     
+    @app_commands.command(name="testlivegame", description="[ADMIN] Test live game embed")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def test_live_game(self, interaction: discord.Interaction):
+        """Send a test live game embed"""
+        # Create mock game data
+        game_id = 1234567890
+        blue_chance = 55.3
+        red_chance = 44.7
+        blue_odds = 1.81
+        red_odds = 2.24
+        
+        # Mock blue team
+        blue_team = [
+            {'position': 'TOP', 'champion_id': 266, 'summoner_name': 'TopLaner123', 'tier': 'DIAMOND', 'rank': 'II', 'lp': 67, 'wins': 156, 'losses': 142},
+            {'position': 'JUNGLE', 'champion_id': 64, 'summoner_name': 'JungleMain', 'tier': 'PLATINUM', 'rank': 'I', 'lp': 89, 'wins': 201, 'losses': 189},
+            {'position': 'MIDDLE', 'champion_id': 157, 'summoner_name': 'MidOrFeed', 'tier': 'DIAMOND', 'rank': 'III', 'lp': 34, 'wins': 178, 'losses': 165},
+            {'position': 'BOTTOM', 'champion_id': 498, 'summoner_name': 'ADCCarry', 'tier': 'PLATINUM', 'rank': 'II', 'lp': 55, 'wins': 145, 'losses': 138},
+            {'position': 'UTILITY', 'champion_id': 555, 'summoner_name': 'SupportGod', 'tier': 'DIAMOND', 'rank': 'IV', 'lp': 12, 'wins': 167, 'losses': 151}
+        ]
+        
+        # Mock red team
+        red_team = [
+            {'position': 'TOP', 'champion_id': 92, 'summoner_name': 'RedTopLaner', 'tier': 'PLATINUM', 'rank': 'I', 'lp': 78, 'wins': 189, 'losses': 176},
+            {'position': 'JUNGLE', 'champion_id': 11, 'summoner_name': 'RedJungler', 'tier': 'PLATINUM', 'rank': 'III', 'lp': 23, 'wins': 154, 'losses': 148},
+            {'position': 'MIDDLE', 'champion_id': 103, 'summoner_name': 'RedMidLaner', 'tier': 'DIAMOND', 'rank': 'IV', 'lp': 5, 'wins': 172, 'losses': 160},
+            {'position': 'BOTTOM', 'champion_id': 222, 'summoner_name': 'RedADC', 'tier': 'PLATINUM', 'rank': 'II', 'lp': 41, 'wins': 167, 'losses': 159},
+            {'position': 'UTILITY', 'champion_id': 412, 'summoner_name': 'RedSupport', 'tier': 'PLATINUM', 'rank': 'I', 'lp': 92, 'wins': 198, 'losses': 184}
+        ]
+        
+        blue_mmr = 2650
+        blue_wr = 52.1
+        red_mmr = 2480
+        red_wr = 50.8
+        
+        # Create embed
+        embed = discord.Embed(
+            title="🎮 Live Ranked Game!",
+            description=f"**Player:** TestPlayer#TEST • EUNE\n**Game ID:** {game_id}",
+            color=discord.Color.gold(),
+            timestamp=datetime.utcnow()
+        )
+        
+        # Blue team
+        blue_text = ""
+        for player in blue_team:
+            role_emoji = self._get_role_emoji(player['position'])
+            champ_name = get_champion_name(player['champion_id'])
+            rank_str = f"{player['tier']} {player['rank']}"
+            wr = (player['wins'] / (player['wins'] + player['losses']) * 100)
+            
+            blue_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
+            blue_text += f"   └ {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
+        
+        embed.add_field(
+            name=f"🔵 BLUE TEAM • Win Chance: {blue_chance:.1f}%",
+            value=blue_text + f"\n**Team Stats:** {blue_mmr:.0f} MMR • {blue_wr:.1f}% avg WR",
+            inline=False
+        )
+        
+        # Red team
+        red_text = ""
+        for player in red_team:
+            role_emoji = self._get_role_emoji(player['position'])
+            champ_name = get_champion_name(player['champion_id'])
+            rank_str = f"{player['tier']} {player['rank']}"
+            wr = (player['wins'] / (player['wins'] + player['losses']) * 100)
+            
+            red_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
+            red_text += f"   └ {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
+        
+        embed.add_field(
+            name=f"🔴 RED TEAM • Win Chance: {red_chance:.1f}%",
+            value=red_text + f"\n**Team Stats:** {red_mmr:.0f} MMR • {red_wr:.1f}% avg WR",
+            inline=False
+        )
+        
+        # Betting info
+        embed.add_field(
+            name="💰 Betting Info",
+            value=f"**Minimum bet:** 100 points\n"
+                  f"**Betting closes in:** 3 minutes\n"
+                  f"**Odds:** Blue x{blue_odds:.2f} • Red x{red_odds:.2f}",
+            inline=False
+        )
+        
+        embed.set_footer(text="Click buttons below to place your bet! (TEST MODE - buttons won't work)")
+        
+        # Create view with buttons (expires in 3 minutes for testing)
+        expires_at = datetime.utcnow() + timedelta(minutes=3)
+        view = BettingView(game_id, blue_odds, red_odds, expires_at)
+        
+        await interaction.response.send_message(embed=embed, view=view)
+        logger.info(f"✅ Sent test game embed")
+    
     @app_commands.command(name="setup_tracking", description="[ADMIN] Setup tracking control panel")
     @app_commands.checks.has_permissions(administrator=True)
     async def setup_tracking(self, interaction: discord.Interaction):
