@@ -197,7 +197,11 @@ class RiotAPI:
     
     async def get_summoner_by_puuid(self, puuid: str, region: str, 
                                    retries: int = 5) -> Optional[Dict]:
-        """Get summoner data by PUUID - uses platform endpoint"""
+        """Get summoner data by PUUID - uses platform endpoint
+        
+        NOTE: This endpoint NO LONGER returns 'id' field (encrypted summoner_id)
+        Use get_summoner_by_name() if you need the encrypted summoner_id
+        """
         if not self.api_key:
             return None
         
@@ -218,6 +222,62 @@ class RiotAPI:
                             return data
                         elif response.status == 404:
                             logger.warning(f"❌ Summoner not found on {platform} (404)")
+                            return None
+                        elif response.status == 429:
+                            logger.warning(f"⏳ Rate limited on {platform}")
+                            await asyncio.sleep(2)
+                            continue
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"❌ Unexpected status {response.status} from {platform}: {error_text[:200]}")
+                            return None
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ Timeout getting summoner from {platform} (attempt {attempt + 1}/{retries})")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except aiohttp.ClientError as e:
+                logger.error(f"🌐 Network error getting summoner from {platform} (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except Exception as e:
+                logger.error(f"❌ Error getting summoner: {e}")
+                return None
+        
+        logger.warning(f"⚠️ Failed to get summoner after {retries} attempts")
+        return None
+    
+    async def get_summoner_by_name(self, summoner_name: str, region: str, 
+                                   retries: int = 5) -> Optional[Dict]:
+        """Get summoner data by name - uses platform endpoint
+        
+        This endpoint DOES return 'id' field (encrypted summoner_id) which is needed for Spectator API
+        Returns: {'id': 'encrypted_summoner_id', 'accountId': '...', 'puuid': '...', 'name': '...', etc}
+        """
+        if not self.api_key:
+            return None
+        
+        # Convert region to platform (e.g., 'eune' -> 'eun1')
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        # URL encode the summoner name to handle special characters
+        import urllib.parse
+        encoded_name = urllib.parse.quote(summoner_name)
+        url = f"https://{platform}.api.riotgames.com/lol/summoner/v4/summoners/by-name/{encoded_name}"
+        
+        logger.info(f"🔍 Fetching summoner from platform: {platform} with name: {summoner_name}")
+        
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            logger.info(f"✅ Got summoner data with ID: {data.get('id', 'MISSING')[:20]}...")
+                            return data
+                        elif response.status == 404:
+                            logger.warning(f"❌ Summoner '{summoner_name}' not found on {platform} (404)")
                             return None
                         elif response.status == 429:
                             logger.warning(f"⏳ Rate limited on {platform}")
@@ -625,23 +685,45 @@ class RiotAPI:
                              retries: int = 3) -> Optional[Dict]:
         """Get current active game for a player - SPECTATOR-V5
         
-        Spectator V5 accepts PUUID directly (encrypted PUUID works as encrypted summoner ID)
+        CRITICAL: Spectator V5 requires encrypted summoner_id (NOT PUUID despite parameter name)
+        This method:
+        1. Gets summoner name from PUUID (via get_summoner_by_puuid)
+        2. Gets encrypted summoner_id from name (via get_summoner_by_name)
+        3. Calls Spectator API with summoner_id
         """
         if not self.api_key:
             return None
         
-        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
-        # Spectator V5 accepts PUUID in the encryptedPUUID parameter
-        url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
+        # Step 1: Get summoner name from PUUID
+        summoner_data = await self.get_summoner_by_puuid(puuid, region)
+        if not summoner_data or 'name' not in summoner_data:
+            logger.error(f"❌ Cannot get summoner name for PUUID {puuid[:10]}...")
+            return None
         
-        logger.debug(f"🔍 Calling Riot API: {url}")
+        summoner_name = summoner_data['name']
+        logger.debug(f"📝 Got summoner name: {summoner_name}")
+        
+        # Step 2: Get encrypted summoner_id from name (only by-name endpoint returns 'id')
+        summoner_full = await self.get_summoner_by_name(summoner_name, region)
+        if not summoner_full or 'id' not in summoner_full:
+            logger.error(f"❌ Cannot get encrypted summoner_id for {summoner_name}")
+            return None
+        
+        summoner_id = summoner_full['id']
+        logger.debug(f"🔑 Got encrypted summoner_id: {summoner_id[:20]}...")
+        
+        # Step 3: Call Spectator API with summoner_id (NOT PUUID)
+        platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{summoner_id}"
+        
+        logger.debug(f"🔍 Calling Spectator API: {url}")
         
         for attempt in range(retries):
             try:
                 timeout = aiohttp.ClientTimeout(total=15, connect=5)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
-                        logger.debug(f"📡 API Response: {response.status} for PUUID {puuid[:8]}...")
+                        logger.debug(f"📡 API Response: {response.status} for summoner_id {summoner_id[:10]}...")
                         if response.status == 200:
                             data = await response.json()
                             logger.info(f"✅ Active game found: Game ID {data.get('gameId')}, Queue {data.get('gameQueueConfigId')}")
@@ -656,7 +738,7 @@ class RiotAPI:
                             continue
                         else:
                             text = await response.text()
-                            logger.error(f"❌ Spectator API error {response.status} for PUUID {puuid}: {text[:400]}")
+                            logger.error(f"❌ Spectator API error {response.status} for summoner_id {summoner_id[:20]}: {text[:400]}")
                             return None
             except asyncio.TimeoutError:
                 logger.warning(f"⏱️ Timeout getting active game (attempt {attempt + 1}/{retries})")

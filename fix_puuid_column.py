@@ -9,11 +9,7 @@ import os
 def fix_puuid_column():
     """Alter league_accounts.puuid column to support full PUUID length"""
     
-    db_url = os.getenv('DATABASE_URL')
-    if not db_url:
-        print("❌ DATABASE_URL not found in environment")
-        print("ℹ️ Run with: railway run python fix_puuid_column.py")
-        return
+    db_url = "postgresql://postgres:VeNZZTCabRnROGyGHQbVSBcLlIIhYDuB@shinkansen.proxy.rlwy.net:23983/railway"
     
     print("🔧 Connecting to database...")
     conn = psycopg2.pool.SimpleConnectionPool(1, 1, db_url).getconn()
