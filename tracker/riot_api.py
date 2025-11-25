@@ -630,19 +630,31 @@ class RiotAPI:
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
         url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
         
+        logger.debug(f"🔍 Calling Riot API: {url}")
+        
         for attempt in range(retries):
             try:
                 timeout = aiohttp.ClientTimeout(total=15, connect=5)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
+                        logger.debug(f"📡 API Response: {response.status} for PUUID {puuid[:8]}...")
                         if response.status == 200:
-                            return await response.json()
+                            data = await response.json()
+                            logger.info(f"✅ Active game found: Game ID {data.get('gameId')}, Queue {data.get('gameQueueConfigId')}")
+                            return data
                         elif response.status == 404:
                             # Player not in game
+                            logger.debug(f"❌ 404 - Player not in game")
                             return None
                         elif response.status == 429:
+                            logger.warning(f"⚠️ Rate limit hit, retrying...")
                             await asyncio.sleep(1)
                             continue
+                        else:
+                            logger.warning(f"⚠️ Unexpected status code: {response.status}")
+                            text = await response.text()
+                            logger.debug(f"Response body: {text[:200]}")
+                            return None
             except asyncio.TimeoutError:
                 logger.warning(f"⏱️ Timeout getting active game (attempt {attempt + 1}/{retries})")
                 if attempt < retries - 1:
