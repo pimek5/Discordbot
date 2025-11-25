@@ -625,7 +625,7 @@ class TrackerCommandsV3(commands.Cog):
                         # Check each account for active game
                         for puuid, summoner_id, region, game_name, tagline in accounts:
                             try:
-                                logger.debug(f"🔍 Checking {game_name}#{tagline} ({region}) - Summoner ID: {summoner_id[:8] if summoner_id else 'None'}...")
+                                logger.info(f"🔍 Checking {game_name}#{tagline} ({region}) - Summoner ID: {summoner_id[:8] if summoner_id else 'None'}...")
                                 
                                 # Skip if no summoner_id
                                 if not summoner_id:
@@ -636,14 +636,14 @@ class TrackerCommandsV3(commands.Cog):
                                 game_key = f"{discord_id}:{puuid}"
                                 if discord_id in self.active_games:
                                     if any(g.get('game_key') == game_key for g in self.active_games[discord_id]):
-                                        logger.debug(f"⏭️ Already tracking game for {game_name}#{tagline}")
+                                        logger.info(f"⏭️ Already tracking game for {game_name}#{tagline}")
                                         continue
                                 
                                 # Get active game from Riot API using summoner_id directly
                                 game_data = await self.riot_api.get_active_game_by_summoner_id(summoner_id, region)
                                 
                                 if not game_data:
-                                    logger.debug(f"❌ No active game for {game_name}#{tagline}")
+                                    logger.info(f"❌ No active game for {game_name}#{tagline}")
                                     continue
                                 
                                 queue_id = game_data.get('gameQueueConfigId')
