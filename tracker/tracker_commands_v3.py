@@ -11,6 +11,7 @@ import logging
 import asyncio
 from datetime import datetime, timedelta
 import psycopg2
+import time
 
 from tracker_database import get_tracker_db
 from riot_api import RiotAPI
@@ -488,15 +489,306 @@ class TrackerCommandsV3(commands.Cog):
         """Monitor all tracked users for active games"""
         logger.info("🔍 Checking for active games...")
         
-        # TODO: Implement game monitoring
-        # This will query main database for riot_accounts and check for active games
-        pass
+        try:
+            # Get all users with tracking threads
+            if not self.user_threads:
+                logger.debug("No active tracking threads")
+                return
+            
+            conn = self.db.get_connection()
+            try:
+                cur = conn.cursor()
+                
+                for discord_id, thread_id in list(self.user_threads.items()):
+                    try:
+                        # Get user's League accounts from main database
+                        cur.execute("""
+                            SELECT la.puuid, la.region, la.riot_id_game_name, la.riot_id_tagline
+                            FROM league_accounts la
+                            JOIN users u ON la.user_id = u.id
+                            WHERE u.snowflake = %s AND la.show_in_profile = TRUE
+                        """, (discord_id,))
+                        
+                        accounts = cur.fetchall()
+                        
+                        if not accounts:
+                            logger.debug(f"No accounts found for user {discord_id}")
+                            continue
+                        
+                        # Check each account for active game
+                        for puuid, region, game_name, tagline in accounts:
+                            try:
+                                # Check if already tracking this game
+                                game_key = f"{discord_id}:{puuid}"
+                                if discord_id in self.active_games:
+                                    if any(g.get('game_key') == game_key for g in self.active_games[discord_id]):
+                                        continue
+                                
+                                # Get active game from Riot API
+                                game_data = await self.riot_api.get_active_game(puuid, region)
+                                
+                                if not game_data:
+                                    continue
+                                
+                                queue_id = game_data.get('gameQueueConfigId')
+                                
+                                # Only track Ranked Solo/Duo (420)
+                                if queue_id != 420:
+                                    continue
+                                
+                                game_id = game_data.get('gameId')
+                                
+                                logger.info(f"🎮 Found active game for {game_name}#{tagline} - Game ID: {game_id}")
+                                
+                                # Create game tracking
+                                await self._create_game_embed(discord_id, thread_id, game_id, game_data, game_name, tagline, region)
+                                
+                                await asyncio.sleep(0.5)  # Rate limit
+                                
+                            except Exception as e:
+                                logger.debug(f"Error checking account {game_name}#{tagline}: {e}")
+                                continue
+                        
+                        await asyncio.sleep(0.5)  # Rate limit between users
+                        
+                    except Exception as e:
+                        logger.error(f"Error monitoring user {discord_id}: {e}")
+                        continue
+            
+            finally:
+                self.db.return_connection(conn)
+                
+        except Exception as e:
+            logger.error(f"Error in monitor_user_games: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     @monitor_user_games.before_loop
     async def before_monitor(self):
         """Wait for bot to be ready"""
         await self.bot.wait_until_ready()
         logger.info("✅ Game monitor ready")
+    
+    async def _create_game_embed(self, discord_id: int, thread_id: int, game_id: int, 
+                                  game_data: Dict, player_name: str, tagline: str, region: str):
+        """Create game embed in user's thread"""
+        try:
+            logger.info(f"🎮 Creating game embed for {player_name}#{tagline} - Game ID: {game_id}")
+            
+            # Parse teams
+            participants = game_data.get('participants', [])
+            blue_team = []
+            red_team = []
+            
+            for p in participants:
+                team_id = p.get('teamId')
+                champion_id = p.get('championId')
+                summoner_id = p.get('summonerId')
+                
+                # Get rank
+                rank_data = await self.riot_api.get_ranked_stats(summoner_id, region) if summoner_id else []
+                tier = None
+                rank = None
+                lp = 0
+                wins = 0
+                losses = 0
+                
+                for queue in rank_data:
+                    if queue.get('queueType') == 'RANKED_SOLO_5x5':
+                        tier = queue.get('tier')
+                        rank = queue.get('rank')
+                        lp = queue.get('leaguePoints', 0)
+                        wins = queue.get('wins', 0)
+                        losses = queue.get('losses', 0)
+                        break
+                
+                player_info = {
+                    'summoner_name': p.get('summonerName', 'Unknown'),
+                    'champion_id': champion_id,
+                    'tier': tier,
+                    'rank': rank,
+                    'lp': lp,
+                    'wins': wins,
+                    'losses': losses,
+                    'position': p.get('teamPosition', 'UTILITY')
+                }
+                
+                if team_id == 100:
+                    blue_team.append(player_info)
+                else:
+                    red_team.append(player_info)
+            
+            # Sort by position
+            position_order = {'TOP': 0, 'JUNGLE': 1, 'MIDDLE': 2, 'BOTTOM': 3, 'UTILITY': 4}
+            blue_team.sort(key=lambda x: position_order.get(x['position'], 5))
+            red_team.sort(key=lambda x: position_order.get(x['position'], 5))
+            
+            # Calculate team stats and odds
+            blue_mmr, blue_wr = self._calculate_team_stats(blue_team)
+            red_mmr, red_wr = self._calculate_team_stats(red_team)
+            
+            total_mmr = blue_mmr + red_mmr
+            blue_chance = (blue_mmr / total_mmr) * 100 if total_mmr > 0 else 50
+            red_chance = 100 - blue_chance
+            
+            blue_odds = 100 / blue_chance if blue_chance > 0 else 2.0
+            red_odds = 100 / red_chance if red_chance > 0 else 2.0
+            
+            # Store game info
+            expires_at = datetime.utcnow() + timedelta(minutes=3)
+            game_key = f"{discord_id}:{p.get('puuid')}"
+            
+            if discord_id not in self.active_games:
+                self.active_games[discord_id] = []
+            
+            self.active_games[discord_id].append({
+                'game_id': game_id,
+                'game_key': game_key,
+                'blue_team': blue_team,
+                'red_team': red_team,
+                'blue_odds': blue_odds,
+                'red_odds': red_odds,
+                'blue_chance': blue_chance,
+                'red_chance': red_chance,
+                'expires_at': expires_at,
+                'player_name': f"{player_name}#{tagline}",
+                'region': region
+            })
+            
+            # Save to database
+            conn = self.db.get_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO active_games (game_id, region, game_start_time, betting_open)
+                    VALUES (%s, %s, %s, TRUE)
+                    ON CONFLICT (game_id) DO NOTHING
+                """, (game_id, region, int(time.time())))
+                conn.commit()
+            finally:
+                self.db.return_connection(conn)
+            
+            # Get thread and send embed
+            thread = self.bot.get_channel(thread_id)
+            if not thread:
+                logger.warning(f"Thread {thread_id} not found")
+                return
+            
+            # Create embed
+            embed = discord.Embed(
+                title="🎮 Live Ranked Game!",
+                description=f"**Player:** {player_name}#{tagline} • {region.upper()}\n**Game ID:** {game_id}",
+                color=discord.Color.gold(),
+                timestamp=datetime.utcnow()
+            )
+            
+            # Blue team
+            blue_text = ""
+            for player in blue_team:
+                role_emoji = self._get_role_emoji(player['position'])
+                champ_name = get_champion_name(player['champion_id'])
+                rank_str = f"{player['tier']} {player['rank']}" if player['tier'] else "Unranked"
+                wr = (player['wins'] / (player['wins'] + player['losses']) * 100) if (player['wins'] + player['losses']) > 0 else 0
+                
+                blue_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
+                blue_text += f"   └ {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
+            
+            embed.add_field(
+                name=f"🔵 BLUE TEAM • Win Chance: {blue_chance:.1f}%",
+                value=blue_text + f"\n**Team Stats:** {blue_mmr:.0f} MMR • {blue_wr:.1f}% avg WR",
+                inline=False
+            )
+            
+            # Red team
+            red_text = ""
+            for player in red_team:
+                role_emoji = self._get_role_emoji(player['position'])
+                champ_name = get_champion_name(player['champion_id'])
+                rank_str = f"{player['tier']} {player['rank']}" if player['tier'] else "Unranked"
+                wr = (player['wins'] / (player['wins'] + player['losses']) * 100) if (player['wins'] + player['losses']) > 0 else 0
+                
+                red_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
+                red_text += f"   └ {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
+            
+            embed.add_field(
+                name=f"🔴 RED TEAM • Win Chance: {red_chance:.1f}%",
+                value=red_text + f"\n**Team Stats:** {red_mmr:.0f} MMR • {red_wr:.1f}% avg WR",
+                inline=False
+            )
+            
+            # Betting info
+            embed.add_field(
+                name="💰 Betting Info",
+                value=f"**Minimum bet:** 100 points\n"
+                      f"**Betting closes in:** 3 minutes\n"
+                      f"**Odds:** Blue x{blue_odds:.2f} • Red x{red_odds:.2f}",
+                inline=False
+            )
+            
+            embed.set_footer(text="Click buttons below to place your bet!")
+            
+            # Create view with buttons
+            view = BettingView(game_id, blue_odds, red_odds, expires_at)
+            
+            await thread.send(embed=embed, view=view)
+            
+            logger.info(f"✅ Sent game embed to thread {thread_id}")
+            
+        except Exception as e:
+            logger.error(f"Error creating game embed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    def _calculate_team_stats(self, team: List[Dict]) -> Tuple[float, float]:
+        """Calculate team MMR and average win rate"""
+        rank_mmr = {
+            'IRON': 400, 'BRONZE': 800, 'SILVER': 1200, 'GOLD': 1600,
+            'PLATINUM': 2000, 'EMERALD': 2400, 'DIAMOND': 2800,
+            'MASTER': 3200, 'GRANDMASTER': 3600, 'CHALLENGER': 4000
+        }
+        
+        division_bonus = {'I': 300, 'II': 200, 'III': 100, 'IV': 0}
+        
+        total_mmr = 0
+        total_wr = 0
+        count = 0
+        
+        for player in team:
+            tier = player.get('tier')
+            rank = player.get('rank')
+            lp = player.get('lp', 0)
+            wins = player.get('wins', 0)
+            losses = player.get('losses', 0)
+            
+            if tier:
+                base_mmr = rank_mmr.get(tier, 1600)
+                div_bonus = division_bonus.get(rank, 0) if rank else 0
+                lp_bonus = lp * 3
+                
+                total_games = wins + losses
+                wr = (wins / total_games * 100) if total_games > 0 else 50
+                wr_adjustment = (wr - 50) * 4
+                
+                player_mmr = base_mmr + div_bonus + lp_bonus + wr_adjustment
+                total_mmr += player_mmr
+                total_wr += wr
+                count += 1
+        
+        avg_mmr = total_mmr / count if count > 0 else 1600
+        avg_wr = total_wr / count if count > 0 else 50
+        
+        return avg_mmr, avg_wr
+    
+    def _get_role_emoji(self, position: str) -> str:
+        """Get emoji for role"""
+        emojis = {
+            'TOP': '⬆️',
+            'JUNGLE': '🌳',
+            'MIDDLE': '⭐',
+            'BOTTOM': '⬇️',
+            'UTILITY': '🛡️'
+        }
+        return emojis.get(position, '❓')
     
     # Keep existing betting commands
     @app_commands.command(name="balance", description="Check your betting balance")
