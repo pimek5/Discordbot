@@ -682,11 +682,19 @@ class RiotAPI:
         return None
     
     async def get_active_game(self, puuid: str, region: str, 
+                             summoner_id: Optional[str] = None,
                              retries: int = 3) -> Optional[Dict]:
         """Get current active game for a player - SPECTATOR-V5
         
         CRITICAL: Spectator V5 requires encrypted summoner_id (NOT PUUID despite parameter name)
-        This method:
+        
+        Args:
+            puuid: Player PUUID
+            region: Region code
+            summoner_id: Optional encrypted summoner_id from database (if provided, skips 2 API calls)
+            retries: Number of retry attempts
+        
+        If summoner_id not provided:
         1. Gets summoner name from PUUID (via get_summoner_by_puuid)
         2. Gets encrypted summoner_id from name (via get_summoner_by_name)
         3. Calls Spectator API with summoner_id
@@ -694,23 +702,27 @@ class RiotAPI:
         if not self.api_key:
             return None
         
-        # Step 1: Get summoner name from PUUID
-        summoner_data = await self.get_summoner_by_puuid(puuid, region)
-        if not summoner_data or 'name' not in summoner_data:
-            logger.error(f"❌ Cannot get summoner name for PUUID {puuid[:10]}...")
-            return None
-        
-        summoner_name = summoner_data['name']
-        logger.debug(f"📝 Got summoner name: {summoner_name}")
-        
-        # Step 2: Get encrypted summoner_id from name (only by-name endpoint returns 'id')
-        summoner_full = await self.get_summoner_by_name(summoner_name, region)
-        if not summoner_full or 'id' not in summoner_full:
-            logger.error(f"❌ Cannot get encrypted summoner_id for {summoner_name}")
-            return None
-        
-        summoner_id = summoner_full['id']
-        logger.debug(f"🔑 Got encrypted summoner_id: {summoner_id[:20]}...")
+        # If summoner_id not provided, fetch it (2 API calls)
+        if not summoner_id:
+            # Step 1: Get summoner name from PUUID
+            summoner_data = await self.get_summoner_by_puuid(puuid, region)
+            if not summoner_data or 'name' not in summoner_data:
+                logger.error(f"❌ Cannot get summoner name for PUUID {puuid[:10]}...")
+                return None
+            
+            summoner_name = summoner_data['name']
+            logger.debug(f"📝 Got summoner name: {summoner_name}")
+            
+            # Step 2: Get encrypted summoner_id from name (only by-name endpoint returns 'id')
+            summoner_full = await self.get_summoner_by_name(summoner_name, region)
+            if not summoner_full or 'id' not in summoner_full:
+                logger.error(f"❌ Cannot get encrypted summoner_id for {summoner_name}")
+                return None
+            
+            summoner_id = summoner_full['id']
+            logger.debug(f"🔑 Got encrypted summoner_id: {summoner_id[:20]}...")
+        else:
+            logger.debug(f"🔑 Using summoner_id from database: {summoner_id[:20]}...")
         
         # Step 3: Call Spectator API with summoner_id (NOT PUUID)
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')

@@ -377,13 +377,24 @@ class TrackerCommandsV3(commands.Cog):
                     
                     logger.info(f"✅ Got PUUID for {game_name}#{tagline}")
                     
-                    # Update database with correct PUUID (summoner_id no longer needed - Spectator V5 uses PUUID)
+                    # Get encrypted summoner_id (needed for Spectator API)
+                    summoner_data = await self.riot_api.get_summoner_by_puuid(real_puuid, region)
+                    summoner_name = summoner_data.get('name') if summoner_data else None
+                    
+                    encrypted_summoner_id = None
+                    if summoner_name:
+                        summoner_full = await self.riot_api.get_summoner_by_name(summoner_name, region)
+                        encrypted_summoner_id = summoner_full.get('id') if summoner_full else None
+                        if encrypted_summoner_id:
+                            logger.info(f"✅ Got encrypted summoner_id for {game_name}#{tagline}")
+                    
+                    # Update database with PUUID and summoner_id
                     try:
                         cur.execute("""
                             UPDATE league_accounts
-                            SET puuid = %s, last_updated = NOW()
+                            SET puuid = %s, summoner_id = %s, last_updated = NOW()
                             WHERE id = %s
-                        """, (real_puuid, account_id))
+                        """, (real_puuid, encrypted_summoner_id, account_id))
                         
                         conn.commit()
                         updated += 1
@@ -639,8 +650,9 @@ class TrackerCommandsV3(commands.Cog):
                                         logger.info(f"⏭️ Already tracking game for {game_name}#{tagline}")
                                         continue
                                 
-                                # Get active game from Riot API using PUUID (Spectator V5 supports PUUID)
-                                game_data = await self.riot_api.get_active_game(puuid, region)
+                                # Get active game from Riot API
+                                # Pass summoner_id from DB if available (saves 2 API calls)
+                                game_data = await self.riot_api.get_active_game(puuid, region, summoner_id)
                                 
                                 if not game_data:
                                     logger.info(f"❌ No active game for {game_name}#{tagline}")
