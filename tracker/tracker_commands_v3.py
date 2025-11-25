@@ -371,12 +371,37 @@ class TrackerCommandsV3(commands.Cog):
                 )
                 return
             
-            # Create thread
-            thread = await channel.create_thread(
-                name=f"🎮 Tracking {interaction.user.name}",
-                type=discord.ChannelType.public_thread,
-                auto_archive_duration=10080  # 7 days
-            )
+            # Create thread - handle ForumChannel differently
+            if isinstance(channel, discord.ForumChannel):
+                # For forum channels, create_thread requires content/embed and creates a post
+                embed = discord.Embed(
+                    title="🎮 Personal Game Tracker",
+                    description=(
+                        "This is your personal tracking thread!\n\n"
+                        "**How it works:**\n"
+                        "• When you play Ranked Solo/Duo, I'll detect your game\n"
+                        "• Game details will appear here with betting options\n"
+                        "• You'll have 3 minutes to place bets\n"
+                        "• Use `/balance` to check your points\n\n"
+                        "Good luck! 🍀"
+                    ),
+                    color=discord.Color.blue()
+                )
+                thread = await channel.create_thread(
+                    name=f"🎮 Tracking {interaction.user.name}",
+                    embed=embed,
+                    auto_archive_duration=10080  # 7 days
+                )
+                # thread is a tuple (thread, message) for forum channels
+                if isinstance(thread, tuple):
+                    thread = thread[0]
+            else:
+                # For regular text channels
+                thread = await channel.create_thread(
+                    name=f"🎮 Tracking {interaction.user.name}",
+                    type=discord.ChannelType.public_thread,
+                    auto_archive_duration=10080  # 7 days
+                )
             
             # Save to database
             conn = self.db.get_connection()
@@ -397,12 +422,13 @@ class TrackerCommandsV3(commands.Cog):
             # Add to memory
             self.user_threads[user_id] = thread.id
             
-            # Send welcome message
-            embed = discord.Embed(
-                title="🎮 Your Personal Tracking Thread",
-                description=(
-                    "This thread will automatically track your League of Legends accounts!\n\n"
-                    "**How it works:**\n"
+            # Send welcome message (only for non-forum channels, forum already has embed)
+            if not isinstance(channel, discord.ForumChannel):
+                embed = discord.Embed(
+                    title="🎮 Your Personal Tracking Thread",
+                    description=(
+                        "This thread will automatically track your League of Legends accounts!\n\n"
+                        "**How it works:**\n"
                     "• Bot checks your registered accounts from the main bot\n"
                     "• When you're in a Ranked Solo/Duo game, it posts here\n"
                     "• Others can bet on your games using points\n"
@@ -415,9 +441,9 @@ class TrackerCommandsV3(commands.Cog):
                 color=discord.Color.green(),
                 timestamp=datetime.utcnow()
             )
-            embed.set_footer(text=f"Thread created for {interaction.user.name}")
-            
-            await thread.send(embed=embed)
+                embed.set_footer(text=f"Thread created for {interaction.user.name}")
+                
+                await thread.send(embed=embed)
             
             await interaction.followup.send(
                 f"✅ Created your tracking thread: {thread.mention}",
