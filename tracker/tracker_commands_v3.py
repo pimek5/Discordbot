@@ -15,7 +15,7 @@ import psycopg2
 import time
 
 from tracker_database import get_tracker_db
-from riot_api import RiotAPI
+from riot_api import RiotAPI, PLATFORM_ROUTES
 from champion_data import get_champion_name
 
 logger = logging.getLogger('tracker_v3')
@@ -1431,7 +1431,8 @@ class TrackerCommandsV3(commands.Cog):
                     logger.info(f"✅ Got PUUID: {puuid}")
                 
                 # Get summoner name
-                summoner_url = f"https://{region_lower}1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+                platform = PLATFORM_ROUTES.get(region_lower, 'euw1')
+                summoner_url = f"https://{platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
                 async with session.get(summoner_url, headers={'X-Riot-Token': self.riot_api.api_key}) as resp:
                     if resp.status != 200:
                         await interaction.followup.send(f"❌ Could not get summoner data: {resp.status}")
@@ -1442,7 +1443,7 @@ class TrackerCommandsV3(commands.Cog):
                     logger.info(f"✅ Got summoner name: {summoner_name}")
                 
                 # Check for live game using PUUID (Spectator V5 supports PUUID)
-                spectator_url = f"https://{region_lower}1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
+                spectator_url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
                 async with session.get(spectator_url, headers={'X-Riot-Token': self.riot_api.api_key}) as resp:
                     if resp.status == 404:
                         await interaction.followup.send(f"🔍 **{summoner_name}** (`{riot_id}`) is **NOT** in a live game right now.")
@@ -1543,7 +1544,7 @@ class TrackerCommandsV3(commands.Cog):
         
         try:
             region_lower = region.lower()
-            platform = region_lower + '1' if region_lower in ['euw', 'eune', 'na'] else region_lower
+            platform = PLATFORM_ROUTES.get(region_lower, 'euw1')
             
             url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
             
@@ -1610,7 +1611,7 @@ class TrackerCommandsV3(commands.Cog):
             
             # Try to get game data by finding an active game matching this ID
             # Note: Riot API doesn't have direct game ID lookup, so we'll search through active featured games
-            platform = region_lower + '1' if region_lower in ['euw', 'eune', 'na'] else region_lower
+            platform = PLATFORM_ROUTES.get(region_lower, 'euw1')
             
             logger.info(f"🔍 Checking for game ID {game_id} on {platform}")
             
