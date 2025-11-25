@@ -380,9 +380,10 @@ class TrackerCommandsV3(commands.Cog):
                         logger.warning(f"⚠️ Could not get summoner data for {game_name}#{tagline}")
                         continue
                     
+                    logger.info(f"📋 Summoner data keys for {game_name}#{tagline}: {list(summoner_data.keys())}")
                     summoner_id = summoner_data.get('id')
                     if not summoner_id:
-                        logger.warning(f"⚠️ No summoner_id in response for {game_name}#{tagline}")
+                        logger.warning(f"⚠️ No 'id' field in summoner response for {game_name}#{tagline}. Response: {summoner_data}")
                         continue
                     
                     # Update database with both correct PUUID and summoner_id
