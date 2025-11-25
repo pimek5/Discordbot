@@ -702,39 +702,14 @@ class RiotAPI:
         if not self.api_key:
             return None
         
-        # If summoner_id not provided, fetch it via Account API -> by-name
+        # If summoner_id not provided, use gameName directly from database
+        # CRITICAL: Account API /by-puuid/ also broken with 400 "Exception decrypting"
+        # We must use the gameName we have stored in database
         if not summoner_id:
-            # Step 1: Get game name from PUUID using Account API (regional routing)
-            regional_routing = RIOT_REGIONS.get(region.lower(), 'europe')
-            account_url = f"https://{regional_routing}.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
-            
-            try:
-                timeout = aiohttp.ClientTimeout(total=10)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(account_url, headers=self.headers) as response:
-                        if response.status == 200:
-                            account_data = await response.json()
-                            game_name = account_data.get('gameName')
-                            if not game_name:
-                                logger.error(f"❌ No gameName in Account API response for PUUID {puuid[:10]}...")
-                                return None
-                            logger.debug(f"📝 Got game name from Account API: {game_name}")
-                        else:
-                            error_text = await response.text()
-                            logger.error(f"❌ Account API error {response.status}: {error_text[:200]}")
-                            return None
-            except Exception as e:
-                logger.error(f"❌ Error calling Account API: {e}")
-                return None
-            
-            # Step 2: Get encrypted summoner_id from name (only by-name endpoint returns 'id')
-            summoner_full = await self.get_summoner_by_name(game_name, region)
-            if not summoner_full or 'id' not in summoner_full:
-                logger.error(f"❌ Cannot get encrypted summoner_id for {game_name}")
-                return None
-            
-            summoner_id = summoner_full['id']
-            logger.debug(f"🔑 Got encrypted summoner_id: {summoner_id[:20]}...")
+            # We cannot fetch gameName from PUUID anymore (all /by-puuid/ endpoints broken)
+            # The calling code MUST provide gameName or summoner_id
+            logger.error(f"❌ summoner_id not in database and cannot fetch without gameName for PUUID {puuid[:10]}...")
+            return None
         else:
             logger.debug(f"🔑 Using summoner_id from database: {summoner_id[:20]}...")
         

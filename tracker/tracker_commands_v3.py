@@ -650,7 +650,28 @@ class TrackerCommandsV3(commands.Cog):
                                         continue
                                 
                                 # Get active game from Riot API
-                                # Pass summoner_id from DB if available (saves 2 API calls)
+                                # If no summoner_id in DB, fetch it using game_name
+                                if not summoner_id:
+                                    logger.debug(f"📝 Fetching summoner_id for {game_name}...")
+                                    summoner_data = await self.riot_api.get_summoner_by_name(game_name, region)
+                                    if summoner_data and 'id' in summoner_data:
+                                        summoner_id = summoner_data['id']
+                                        # Update database with summoner_id for next time
+                                        try:
+                                            cur.execute("""
+                                                UPDATE league_accounts
+                                                SET summoner_id = %s
+                                                WHERE puuid = %s
+                                            """, (summoner_id, puuid))
+                                            conn.commit()
+                                            logger.debug(f"✅ Saved summoner_id to database for {game_name}")
+                                        except Exception as db_err:
+                                            logger.warning(f"⚠️ Failed to save summoner_id: {db_err}")
+                                            conn.rollback()
+                                    else:
+                                        logger.error(f"❌ Cannot get summoner_id for {game_name}#{tagline}")
+                                        continue
+                                
                                 game_data = await self.riot_api.get_active_game(puuid, region, summoner_id)
                                 
                                 if not game_data:
