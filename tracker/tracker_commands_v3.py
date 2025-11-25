@@ -267,8 +267,8 @@ class TrackerCommandsV3(commands.Cog):
         self.bot.add_view(TrackingControlView())
         logger.info("✅ Registered persistent TrackingControlView")
         
-        # Restore view to existing control panel message
-        await self._restore_control_panel_view()
+        # Schedule restore for when bot is ready (don't block here)
+        self.bot.loop.create_task(self._restore_control_panel_view())
     
     async def _restore_control_panel_view(self):
         """Restore persistent view to existing control panel message"""
