@@ -388,7 +388,7 @@ class TrackerCommandsV3(commands.Cog):
                     color=discord.Color.blue()
                 )
                 thread = await channel.create_thread(
-                    name=f"🎮 Tracking {interaction.user.name}",
+                    name=f"🎮 Tracking {interaction.user.display_name}",
                     embed=embed,
                     auto_archive_duration=10080  # 7 days
                 )
@@ -398,7 +398,7 @@ class TrackerCommandsV3(commands.Cog):
             else:
                 # For regular text channels
                 thread = await channel.create_thread(
-                    name=f"🎮 Tracking {interaction.user.name}",
+                    name=f"🎮 Tracking {interaction.user.display_name}",
                     type=discord.ChannelType.public_thread,
                     auto_archive_duration=10080  # 7 days
                 )
@@ -441,7 +441,7 @@ class TrackerCommandsV3(commands.Cog):
                 color=discord.Color.green(),
                 timestamp=datetime.utcnow()
             )
-                embed.set_footer(text=f"Thread created for {interaction.user.name}")
+                embed.set_footer(text=f"Thread created for {interaction.user.display_name}")
                 
                 await thread.send(embed=embed)
             
@@ -855,7 +855,7 @@ class TrackerCommandsV3(commands.Cog):
             embed.add_field(name="Bets Placed", value=f"{bets_placed}", inline=True)
             embed.add_field(name="Bets Won", value=f"{bets_won}", inline=True)
             embed.add_field(name="Win Rate", value=f"{win_rate:.1f}%", inline=True)
-            embed.set_footer(text=f"User: {interaction.user.name}")
+            embed.set_footer(text=f"User: {interaction.user.display_name}")
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
@@ -1030,7 +1030,7 @@ class TrackerCommandsV3(commands.Cog):
             
             conn.commit()
             
-            logger.info(f"✅ Tracking control panel sent and saved to database by {interaction.user.name}")
+            logger.info(f"✅ Tracking control panel sent and saved to database by {interaction.user.display_name}")
             
         except Exception as e:
             logger.error(f"Error saving control panel to database: {e}")
