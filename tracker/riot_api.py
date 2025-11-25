@@ -623,23 +623,16 @@ class RiotAPI:
     
     async def get_active_game(self, puuid: str, region: str, 
                              retries: int = 3) -> Optional[Dict]:
-        """Get current active game for a player - SPECTATOR-V5"""
+        """Get current active game for a player - SPECTATOR-V5
+        
+        Spectator V5 accepts PUUID directly (encrypted PUUID works as encrypted summoner ID)
+        """
         if not self.api_key:
             return None
         
-        # First get summoner ID from PUUID (Spectator V5 requires encrypted summoner ID)
-        summoner_data = await self.get_summoner_by_puuid(puuid, region)
-        if not summoner_data:
-            logger.warning(f"⚠️ Could not get summoner data for PUUID {puuid[:8]}...")
-            return None
-        
-        summoner_id = summoner_data.get('id')
-        if not summoner_id:
-            logger.warning(f"⚠️ No summoner ID in response for PUUID {puuid[:8]}...")
-            return None
-        
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
-        url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{summoner_id}"
+        # Spectator V5 accepts PUUID in the encryptedPUUID parameter
+        url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
         
         logger.debug(f"🔍 Calling Riot API: {url}")
         
@@ -648,7 +641,7 @@ class RiotAPI:
                 timeout = aiohttp.ClientTimeout(total=15, connect=5)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
-                        logger.debug(f"📡 API Response: {response.status} for summoner {summoner_id[:8]}...")
+                        logger.debug(f"📡 API Response: {response.status} for PUUID {puuid[:8]}...")
                         if response.status == 200:
                             data = await response.json()
                             logger.info(f"✅ Active game found: Game ID {data.get('gameId')}, Queue {data.get('gameQueueConfigId')}")
