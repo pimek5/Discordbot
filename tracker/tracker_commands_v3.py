@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 from typing import Optional, Dict, List, Tuple
 import logging
 import asyncio
+import aiohttp
 from datetime import datetime, timedelta
 import psycopg2
 import time
@@ -1387,6 +1388,160 @@ class TrackerCommandsV3(commands.Cog):
         
         await interaction.response.send_message(embed=embed, view=view)
         logger.info(f"✅ Sent test game embed")
+    
+    @app_commands.command(name="checklive", description="Check if a player is in a live game")
+    @app_commands.describe(
+        riot_id="Riot ID (e.g., Player#TAG)",
+        region="Region (eune, euw, na, kr, etc.)"
+    )
+    async def check_live(self, interaction: discord.Interaction, riot_id: str, region: str):
+        """Check if a specific player is currently in a live game"""
+        await interaction.response.defer()
+        
+        try:
+            # Parse Riot ID
+            if '#' not in riot_id:
+                await interaction.followup.send("❌ Invalid Riot ID format! Use: `Player#TAG`")
+                return
+            
+            game_name, tag_line = riot_id.split('#', 1)
+            region_lower = region.lower()
+            
+            # Validate region
+            valid_regions = ['eune', 'euw', 'na', 'br', 'lan', 'las', 'oce', 'ru', 'tr', 'jp', 'kr', 'ph', 'sg', 'th', 'tw', 'vn']
+            if region_lower not in valid_regions:
+                await interaction.followup.send(f"❌ Invalid region! Valid regions: {', '.join(valid_regions)}")
+                return
+            
+            # Get routing value for Account API
+            if region_lower in ['eune', 'euw', 'tr', 'ru']:
+                routing = 'europe'
+            elif region_lower in ['na', 'br', 'lan', 'las']:
+                routing = 'americas'
+            elif region_lower in ['kr', 'jp']:
+                routing = 'asia'
+            else:
+                routing = 'sea'
+            
+            # Get PUUID from Riot ID
+            logger.info(f"🔍 Getting PUUID for {game_name}#{tag_line} in {region_lower}")
+            account_url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(account_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                    if resp.status == 404:
+                        await interaction.followup.send(f"❌ Player `{riot_id}` not found in region `{region_lower}`")
+                        return
+                    elif resp.status != 200:
+                        await interaction.followup.send(f"❌ Riot API error: {resp.status}")
+                        return
+                    
+                    account_data = await resp.json()
+                    puuid = account_data['puuid']
+                    logger.info(f"✅ Got PUUID: {puuid}")
+                
+                # Get summoner data for summoner_id
+                summoner_url = f"https://{region_lower}1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+                async with session.get(summoner_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                    if resp.status != 200:
+                        await interaction.followup.send(f"❌ Could not get summoner data: {resp.status}")
+                        return
+                    
+                    summoner_data = await resp.json()
+                    summoner_id = summoner_data['id']
+                    summoner_name = summoner_data['name']
+                    logger.info(f"✅ Got summoner_id: {summoner_id} for {summoner_name}")
+                
+                # Check for live game
+                spectator_url = f"https://{region_lower}1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{summoner_id}"
+                async with session.get(spectator_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                    if resp.status == 404:
+                        await interaction.followup.send(f"🔍 **{summoner_name}** (`{riot_id}`) is **NOT** in a live game right now.")
+                        return
+                    elif resp.status != 200:
+                        await interaction.followup.send(f"❌ Spectator API error: {resp.status}")
+                        return
+                    
+                    game_data = await resp.json()
+                    logger.info(f"✅ Found live game for {summoner_name}")
+                
+                # Parse game data
+                game_mode = game_data.get('gameMode', 'UNKNOWN')
+                game_type = game_data.get('gameType', 'UNKNOWN')
+                game_queue = game_data.get('gameQueueConfigId', 0)
+                game_length = game_data.get('gameLength', 0)
+                
+                # Find player's team
+                player_team = None
+                for participant in game_data['participants']:
+                    if participant['puuid'] == puuid:
+                        player_team = participant['teamId']
+                        player_champ_id = participant['championId']
+                        break
+                
+                # Create embed
+                embed = discord.Embed(
+                    title=f"🔴 LIVE GAME FOUND",
+                    description=f"**Player:** {summoner_name} (`{riot_id}`)\n**Region:** {region_lower.upper()}",
+                    color=discord.Color.red()
+                )
+                
+                # Game info
+                queue_names = {
+                    420: "Ranked Solo/Duo",
+                    440: "Ranked Flex",
+                    400: "Normal Draft",
+                    430: "Normal Blind",
+                    450: "ARAM"
+                }
+                queue_name = queue_names.get(game_queue, f"Queue {game_queue}")
+                
+                game_time = f"{game_length // 60}:{game_length % 60:02d}" if game_length > 0 else "Loading..."
+                
+                embed.add_field(
+                    name="📊 Game Info",
+                    value=f"**Queue:** {queue_name}\n**Game Time:** {game_time}",
+                    inline=False
+                )
+                
+                # Show player's champion
+                player_champ_emoji = self._get_champion_emoji(player_champ_id)
+                player_champ_name = get_champion_name(player_champ_id)
+                embed.add_field(
+                    name="🎮 Playing As",
+                    value=f"{player_champ_emoji} **{player_champ_name}**",
+                    inline=False
+                )
+                
+                # Show teams
+                blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+                red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+                
+                blue_text = ""
+                for p in blue_team:
+                    champ_emoji = self._get_champion_emoji(p['championId'])
+                    champ_name = get_champion_name(p['championId'])
+                    is_player = " ⭐" if p['puuid'] == puuid else ""
+                    blue_text += f"{champ_emoji} {champ_name} - {p['riotId']}{is_player}\n"
+                
+                red_text = ""
+                for p in red_team:
+                    champ_emoji = self._get_champion_emoji(p['championId'])
+                    champ_name = get_champion_name(p['championId'])
+                    is_player = " ⭐" if p['puuid'] == puuid else ""
+                    red_text += f"{champ_emoji} {champ_name} - {p['riotId']}{is_player}\n"
+                
+                embed.add_field(name="🔵 Blue Team", value=blue_text, inline=True)
+                embed.add_field(name="🔴 Red Team", value=red_text, inline=True)
+                
+                embed.set_footer(text=f"Game ID: {game_data['gameId']}")
+                
+                await interaction.followup.send(embed=embed)
+                logger.info(f"✅ Sent live game info for {summoner_name}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error in checklive: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error checking live game: {str(e)}")
     
     @app_commands.command(name="setup_tracking", description="[ADMIN] Setup tracking control panel")
     @app_commands.checks.has_permissions(administrator=True)
