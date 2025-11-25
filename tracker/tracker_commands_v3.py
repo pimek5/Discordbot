@@ -334,70 +334,60 @@ class TrackerCommandsV3(commands.Cog):
         self.monitor_user_games.cancel()
     
     async def _update_missing_summoner_ids(self):
-        """Update league_accounts with missing summoner_ids on startup"""
+        """Update league_accounts with correct PUUIDs on startup (summoner_id no longer needed)"""
         await self.bot.wait_until_ready()
         
-        logger.info("🔧 Checking for accounts with missing summoner_ids...")
+        logger.info("🔧 Checking for accounts with missing/incorrect PUUIDs...")
         
         conn = self.db.get_connection()
         try:
             cur = conn.cursor()
             
-            # Get accounts without summoner_id
+            # Get accounts that might need PUUID update (NULL or very old)
             cur.execute("""
                 SELECT id, puuid, region, riot_id_game_name, riot_id_tagline
                 FROM league_accounts
-                WHERE summoner_id IS NULL
-                LIMIT 100
+                WHERE puuid IS NULL OR last_updated < NOW() - INTERVAL '30 days'
+                LIMIT 50
             """)
             
             accounts = cur.fetchall()
             
             if not accounts:
-                logger.info("✅ All accounts have summoner_ids")
+                logger.info("✅ All accounts have recent PUUIDs")
                 return
             
-            logger.info(f"📊 Found {len(accounts)} accounts without summoner_id, updating...")
+            logger.info(f"📊 Found {len(accounts)} accounts to update PUUID, processing...")
             
             updated = 0
             for account_id, stored_puuid, region, game_name, tagline in accounts:
                 try:
-                    # First, try to get fresh account data from Riot ID to get real PUUID
+                    # Get fresh account data from Riot ID to get real PUUID
                     logger.debug(f"🔍 Getting account data for {game_name}#{tagline}...")
                     account_data = await self.riot_api.get_account_by_riot_id(game_name, tagline, region)
                     
-                    real_puuid = None
-                    if account_data:
-                        real_puuid = account_data.get('puuid')
-                        logger.info(f"✅ Got real PUUID for {game_name}#{tagline}")
-                    else:
+                    if not account_data:
                         logger.warning(f"⚠️ Could not get account data for {game_name}#{tagline}, skipping...")
                         continue
                     
-                    # Now get summoner data with real PUUID
-                    summoner_data = await self.riot_api.get_summoner_by_puuid(real_puuid, region)
-                    
-                    if not summoner_data:
-                        logger.warning(f"⚠️ Could not get summoner data for {game_name}#{tagline}")
+                    real_puuid = account_data.get('puuid')
+                    if not real_puuid:
+                        logger.warning(f"⚠️ No PUUID in response for {game_name}#{tagline}")
                         continue
                     
-                    logger.info(f"📋 Summoner data keys for {game_name}#{tagline}: {list(summoner_data.keys())}")
-                    summoner_id = summoner_data.get('id')
-                    if not summoner_id:
-                        logger.warning(f"⚠️ No 'id' field in summoner response for {game_name}#{tagline}. Response: {summoner_data}")
-                        continue
+                    logger.info(f"✅ Got PUUID for {game_name}#{tagline}")
                     
-                    # Update database with both correct PUUID and summoner_id
+                    # Update database with correct PUUID (summoner_id no longer needed - Spectator V5 uses PUUID)
                     try:
                         cur.execute("""
                             UPDATE league_accounts
-                            SET puuid = %s, summoner_id = %s, last_updated = NOW()
+                            SET puuid = %s, last_updated = NOW()
                             WHERE id = %s
-                        """, (real_puuid, summoner_id, account_id))
+                        """, (real_puuid, account_id))
                         
                         conn.commit()
                         updated += 1
-                        logger.info(f"✅ Updated {game_name}#{tagline} with correct PUUID and summoner_id (ID: {account_id})")
+                        logger.info(f"✅ Updated {game_name}#{tagline} with PUUID (ID: {account_id})")
                     except Exception as db_error:
                         logger.error(f"❌ Database error updating {game_name}#{tagline}: {db_error}")
                         conn.rollback()
@@ -410,10 +400,10 @@ class TrackerCommandsV3(commands.Cog):
                     conn.rollback()
                     continue
             
-            logger.info(f"✅ Updated {updated}/{len(accounts)} accounts with correct data")
+            logger.info(f"✅ Updated {updated}/{len(accounts)} accounts with correct PUUIDs")
             
         except Exception as e:
-            logger.error(f"Error updating summoner_ids: {e}")
+            logger.error(f"Error updating PUUIDs: {e}")
             conn.rollback()
         finally:
             self.db.return_connection(conn)
@@ -635,11 +625,11 @@ class TrackerCommandsV3(commands.Cog):
                         # Check each account for active game
                         for puuid, summoner_id, region, game_name, tagline in accounts:
                             try:
-                                logger.info(f"🔍 Checking {game_name}#{tagline} ({region}) - Summoner ID: {summoner_id[:8] if summoner_id else 'None'}...")
+                                logger.info(f"🔍 Checking {game_name}#{tagline} ({region}) - PUUID: {puuid[:8] if puuid else 'None'}...")
                                 
-                                # Skip if no summoner_id
-                                if not summoner_id:
-                                    logger.warning(f"⚠️ No summoner_id for {game_name}#{tagline}, skipping...")
+                                # Skip if no PUUID
+                                if not puuid:
+                                    logger.warning(f"⚠️ No PUUID for {game_name}#{tagline}, skipping...")
                                     continue
                                 
                                 # Check if already tracking this game
@@ -649,8 +639,8 @@ class TrackerCommandsV3(commands.Cog):
                                         logger.info(f"⏭️ Already tracking game for {game_name}#{tagline}")
                                         continue
                                 
-                                # Get active game from Riot API using summoner_id directly
-                                game_data = await self.riot_api.get_active_game_by_summoner_id(summoner_id, region)
+                                # Get active game from Riot API using PUUID (Spectator V5 supports PUUID)
+                                game_data = await self.riot_api.get_active_game(puuid, region)
                                 
                                 if not game_data:
                                     logger.info(f"❌ No active game for {game_name}#{tagline}")
