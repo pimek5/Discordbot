@@ -913,8 +913,8 @@ class TrackerCommandsV3(commands.Cog):
     def _get_role_emoji(self, position: str) -> str:
         """Get custom emoji for role"""
         role_emojis = {
-            'TOP': '<:role_Toplane:1442838787825722116>',
-            'JUNGLE': '<:role_Jungle:1442838782415083137>',
+            'TOP': '<:role_Toplaner:1442838787825722116>',
+            'JUNGLE': '<:role_Jungler:1442838782415083137>',
             'MIDDLE': '<:role_Midlane:1442837968564912250>',
             'BOTTOM': '<:role_Bottom:1442838024479182929>',
             'UTILITY': '<:role_Support:1442837923367223460>'
@@ -1022,7 +1022,7 @@ class TrackerCommandsV3(commands.Cog):
             11: '<:champ_MasterYi:1441318560029872149>',
             902: '<:champ_Milio:1441318561792558530>',
             21: '<:champ_MissFortune:1441318565520081937>',
-            62: '<:champ_MonkeyKing:1441318566090267104>',
+            62: '<:champ_Wukong:1441318566090267104>',
             82: '<:champ_Mordekaiser:1441318569690457704>',
             25: '<:champ_Morgana:1441318568543305152>',
             267: '<:champ_Nami:1441318570772576796>',
@@ -1044,7 +1044,7 @@ class TrackerCommandsV3(commands.Cog):
             33: '<:champ_Rammus:1441318596855726210>',
             421: '<:champ_RekSai:1441318598206949942>',
             526: '<:champ_Rell:1441318599808651275>',
-            888: '<:champ_Renata:1441318601016737792>',
+            888: '<:champ_RenataGlask:1441318601016737792>',
             58: '<:champ_Renekton:1441318602618961942>',
             107: '<:champ_Rengar:1441318604099424256>',
             92: '<:champ_Riven:1441318605630210058>',
