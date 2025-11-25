@@ -655,9 +655,8 @@ class RiotAPI:
                             await asyncio.sleep(1)
                             continue
                         else:
-                            logger.warning(f"⚠️ Unexpected status code: {response.status}")
                             text = await response.text()
-                            logger.debug(f"Response body: {text[:200]}")
+                            logger.error(f"❌ Spectator API error {response.status} for PUUID {puuid}: {text[:400]}")
                             return None
             except asyncio.TimeoutError:
                 logger.warning(f"⏱️ Timeout getting active game (attempt {attempt + 1}/{retries})")
