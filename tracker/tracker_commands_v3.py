@@ -1418,7 +1418,7 @@ class TrackerCommandsV3(commands.Cog):
             account_url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(account_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                async with session.get(account_url, headers={'X-Riot-Token': self.riot_api.api_key}) as resp:
                     if resp.status == 404:
                         await interaction.followup.send(f"❌ Player `{riot_id}` not found in region `{region_lower}`")
                         return
@@ -1432,7 +1432,7 @@ class TrackerCommandsV3(commands.Cog):
                 
                 # Get summoner name
                 summoner_url = f"https://{region_lower}1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
-                async with session.get(summoner_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                async with session.get(summoner_url, headers={'X-Riot-Token': self.riot_api.api_key}) as resp:
                     if resp.status != 200:
                         await interaction.followup.send(f"❌ Could not get summoner data: {resp.status}")
                         return
@@ -1443,7 +1443,7 @@ class TrackerCommandsV3(commands.Cog):
                 
                 # Check for live game using PUUID (Spectator V5 supports PUUID)
                 spectator_url = f"https://{region_lower}1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
-                async with session.get(spectator_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                async with session.get(spectator_url, headers={'X-Riot-Token': self.riot_api.api_key}) as resp:
                     if resp.status == 404:
                         await interaction.followup.send(f"🔍 **{summoner_name}** (`{riot_id}`) is **NOT** in a live game right now.")
                         return
@@ -1550,7 +1550,7 @@ class TrackerCommandsV3(commands.Cog):
             logger.info(f"🧪 Testing API: {url}")
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                async with session.get(url, headers={'X-Riot-Token': self.riot_api.api_key}) as resp:
                     status = resp.status
                     text = await resp.text()
                     
@@ -1618,7 +1618,7 @@ class TrackerCommandsV3(commands.Cog):
             featured_url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/featured-games"
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(featured_url, headers={'X-Riot-Token': self.riot_api_key}) as resp:
+                async with session.get(featured_url, headers={'X-Riot-Token': self.riot_api.api_key}) as resp:
                     if resp.status != 200:
                         error_text = await resp.text()
                         await interaction.followup.send(f"❌ API error {resp.status}: {error_text[:200]}")
