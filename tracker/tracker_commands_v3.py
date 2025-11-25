@@ -813,12 +813,13 @@ class TrackerCommandsV3(commands.Cog):
             blue_text = ""
             for player in blue_team:
                 role_emoji = self._get_role_emoji(player['position'])
+                champ_emoji = self._get_champion_emoji(player['champion_id'])
                 champ_name = get_champion_name(player['champion_id'])
                 rank_emoji = self._get_rank_emoji(player['tier']) if player['tier'] else '🎮'
                 rank_str = f"{player['tier']} {player['rank']}" if player['tier'] else "Unranked"
                 wr = (player['wins'] / (player['wins'] + player['losses']) * 100) if (player['wins'] + player['losses']) > 0 else 0
                 
-                blue_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
+                blue_text += f"{role_emoji} {champ_emoji} **{champ_name}** - {player['summoner_name']}\n"
                 blue_text += f"   └ {rank_emoji} {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
             
             embed.add_field(
@@ -831,12 +832,13 @@ class TrackerCommandsV3(commands.Cog):
             red_text = ""
             for player in red_team:
                 role_emoji = self._get_role_emoji(player['position'])
+                champ_emoji = self._get_champion_emoji(player['champion_id'])
                 champ_name = get_champion_name(player['champion_id'])
                 rank_emoji = self._get_rank_emoji(player['tier']) if player['tier'] else '🎮'
                 rank_str = f"{player['tier']} {player['rank']}" if player['tier'] else "Unranked"
                 wr = (player['wins'] / (player['wins'] + player['losses']) * 100) if (player['wins'] + player['losses']) > 0 else 0
                 
-                red_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
+                red_text += f"{role_emoji} {champ_emoji} **{champ_name}** - {player['summoner_name']}\n"
                 red_text += f"   └ {rank_emoji} {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
             
             embed.add_field(
@@ -909,15 +911,15 @@ class TrackerCommandsV3(commands.Cog):
         return avg_mmr, avg_wr
     
     def _get_role_emoji(self, position: str) -> str:
-        """Get emoji for role"""
-        emojis = {
-            'TOP': '⬆️',
-            'JUNGLE': '🌳',
-            'MIDDLE': '⭐',
-            'BOTTOM': '⬇️',
-            'UTILITY': '🛡️'
+        """Get custom emoji for role"""
+        role_emojis = {
+            'TOP': '<:role_Toplane:1442838787825722116>',
+            'JUNGLE': '<:role_Jungle:1442838782415083137>',
+            'MIDDLE': '<:role_Midlane:1442837968564912250>',
+            'BOTTOM': '<:role_Bottom:1442838024479182929>',
+            'UTILITY': '<:role_Support:1442837923367223460>'
         }
-        return emojis.get(position, '❓')
+        return role_emojis.get(position, '❓')
     
     def _get_rank_emoji(self, tier: str) -> str:
         """Get custom emoji for rank tier"""
@@ -934,6 +936,176 @@ class TrackerCommandsV3(commands.Cog):
             'CHALLENGER': '<:rank_Challenger:1441318443130294322>'
         }
         return rank_emojis.get(tier, '🎮')
+    
+    def _get_champion_emoji(self, champion_id: int) -> str:
+        """Get custom emoji for champion by ID"""
+        # Mapping champion IDs to emoji names
+        champ_map = {
+            266: '<:champ_Aatrox:1441318413750094240>',
+            103: '<:champ_Ahri:1441318419150694440>',
+            84: '<:champ_Akali:1441318420392968213>',
+            166: '<:champ_Akshan:1441318427160040616>',
+            12: '<:champ_Alistar:1441318424054861896>',
+            32: '<:champ_Amumu:1441318426088884736>',
+            34: '<:champ_Anivia:1441318428114182079>',
+            1: '<:champ_Annie:1441318429272309810>',
+            523: '<:champ_Aphelios:1441318430702610830>',
+            22: '<:champ_Ashe:1441318432613713210>',
+            136: '<:champ_AurelionSol:1441318433911114408>',
+            268: '<:champ_Azir:1441318435781167684>',
+            432: '<:champ_Bard:1441318437162634675>',
+            200: '<:champ_Belveth:1441318438479005815>',
+            53: '<:champ_Blitzcrank:1441318440544603028>',
+            63: '<:champ_Brand:1441318441788634299>',
+            201: '<:champ_Braum:1441318444178870312>',
+            233: '<:champ_Briar:1441318445550403634>',
+            51: '<:champ_Caitlyn:1441318446758491299>',
+            164: '<:champ_Camille:1441318448876486667>',
+            69: '<:champ_Cassiopeia:1441318450130645757>',
+            31: '<:champ_Chogath:1441318451489830074>',
+            42: '<:champ_Corki:1441318452827183260>',
+            122: '<:champ_Darius:1441318454334807168>',
+            131: '<:champ_Diana:1441318455470067812>',
+            119: '<:champ_Draven:1441318457024229455>',
+            36: '<:champ_DrMundo:1441318458238177360>',
+            245: '<:champ_Ekko:1441318459092946470>',
+            60: '<:champ_Elise:1441318461325316167>',
+            28: '<:champ_Evelynn:1441318462806036500>',
+            81: '<:champ_Ezreal:1441318464217085949>',
+            9: '<:champ_Fiddlesticks:1441318465762889738>',
+            114: '<:champ_Fiora:1441318467125071537>',
+            105: '<:champ_Fizz:1441318468487318410>',
+            3: '<:champ_Galio:1441318469772509260>',
+            41: '<:champ_Gangplank:1441318471059783548>',
+            86: '<:champ_Garen:1441318472839461320>',
+            150: '<:champ_Gnar:1441318473017656062>',
+            79: '<:champ_Gragas:1441318475242983350>',
+            104: '<:champ_Graves:1441318476873596938>',
+            887: '<:champ_Gwen:1441318478379225168>',
+            120: '<:champ_Hecarim:1441318480103346258>',
+            74: '<:champ_Heimerdinger:1441318481424420905>',
+            910: '<:champ_Hwei:1441318482980376576>',
+            420: '<:champ_Illaoi:1441318484159107212>',
+            39: '<:champ_Irelia:1441318485388034151>',
+            427: '<:champ_Ivern:1441318486553923635>',
+            40: '<:champ_Janna:1441318488873373706>',
+            59: '<:champ_JarvanIV:1441318491046019103>',
+            24: '<:champ_Jax:1441318492757561434>',
+            126: '<:champ_Jayce:1441318494130318818>',
+            202: '<:champ_Jhin:1441318496238702613>',
+            222: '<:champ_Jinx:1441318498547760020>',
+            145: '<:champ_Kaisa:1441318500772812222>',
+            429: '<:champ_Kalista:1441318502118985749>',
+            43: '<:champ_Karma:1441318503640390558>',
+            30: '<:champ_Karthus:1441318505088115204>',
+            38: '<:champ_Kassadin:1441318506275536999>',
+            55: '<:champ_Katarina:1441318507605266585>',
+            10: '<:champ_Kayle:1441318509039718400>',
+            141: '<:champ_Kayn:1441318510335227295>',
+            85: '<:champ_Kennen:1441318512051096586>',
+            121: '<:champ_Khazix:1441318513980477480>',
+            203: '<:champ_Kindred:1441318516484603977>',
+            240: '<:champ_Kled:1441318524529147964>',
+            96: '<:champ_KogMaw:1441318525909078036>',
+            897: '<:champ_KSante:1441318527314296965>',
+            7: '<:champ_Leblanc:1441318528568524820>',
+            64: '<:champ_LeeSin:1441318532449320459>',
+            89: '<:champ_Leona:1441318547254022174>',
+            876: '<:champ_Lillia:1441318548352790012>',
+            127: '<:champ_Lissandra:1441318550072723469>',
+            236: '<:champ_Lucian:1441318551977196123>',
+            117: '<:champ_Lulu:1441318552434338102>',
+            99: '<:champ_Lux:1441318553973424231>',
+            54: '<:champ_Malphite:1441318556131422948>',
+            90: '<:champ_Malzahar:1441318576447503391>',
+            57: '<:champ_Maokai:1441318558738026548>',
+            11: '<:champ_MasterYi:1441318560029872149>',
+            902: '<:champ_Milio:1441318561792558530>',
+            21: '<:champ_MissFortune:1441318565520081937>',
+            62: '<:champ_MonkeyKing:1441318566090267104>',
+            82: '<:champ_Mordekaiser:1441318569690457704>',
+            25: '<:champ_Morgana:1441318568543305152>',
+            267: '<:champ_Nami:1441318570772576796>',
+            75: '<:champ_Nasus:1441318572164377143>',
+            111: '<:champ_Nautilus:1441318573254318640>',
+            518: '<:champ_Neeko:1441318574860796006>',
+            76: '<:champ_Nidalee:1441318576299573309>',
+            56: '<:champ_Nocturne:1441318580246286366>',
+            20: '<:champ_Nunu:1441318582112747550>',
+            2: '<:champ_Olaf:1441318583769759785>',
+            61: '<:champ_Orianna:1441318585413013140>',
+            516: '<:champ_Ornn:1441318586248462336>',
+            80: '<:champ_Pantheon:1441318589548277748>',
+            78: '<:champ_Poppy:1441318588271832431>',
+            555: '<:champ_Pyke:1441318590157426729>',
+            246: '<:champ_Qiyana:1441318592326144011>',
+            133: '<:champ_Quinn:1441318593806602322>',
+            497: '<:champ_Rakan:1441318595442245694>',
+            33: '<:champ_Rammus:1441318596855726210>',
+            421: '<:champ_RekSai:1441318598206949942>',
+            526: '<:champ_Rell:1441318599808651275>',
+            888: '<:champ_Renata:1441318601016737792>',
+            58: '<:champ_Renekton:1441318602618961942>',
+            107: '<:champ_Rengar:1441318604099424256>',
+            92: '<:champ_Riven:1441318605630210058>',
+            68: '<:champ_Rumble:1441318606933833067>',
+            13: '<:champ_Ryze:1441318608050589829>',
+            360: '<:champ_Samira:1441318609256162867>',
+            113: '<:champ_Sejuani:1441318610537676810>',
+            235: '<:champ_Senna:1441318612072927263>',
+            147: '<:champ_Seraphine:1441318613465436231>',
+            875: '<:champ_Sett:1441318614987964427>',
+            35: '<:champ_Shaco:1441318616221530034>',
+            98: '<:champ_Shen:1441318617802746930>',
+            102: '<:champ_Shyvana:1441318619710750741>',
+            27: '<:champ_Singed:1441318620823045595>',
+            14: '<:champ_Sion:1441318622554488852>',
+            15: '<:champ_Sivir:1441318624307581008>',
+            72: '<:champ_Skarner:1441318621364288615>',
+            37: '<:champ_Sona:1441318628975706212>',
+            16: '<:champ_Soraka:1441318630133600266>',
+            50: '<:champ_Swain:1441318631287033916>',
+            517: '<:champ_Sylas:1441318632830271630>',
+            134: '<:champ_Syndra:1441318633715316002>',
+            223: '<:champ_TahmKench:1441318635309105162>',
+            163: '<:champ_Taliyah:1441318636453348545>',
+            91: '<:champ_Talon:1441318638199115839>',
+            44: '<:champ_Taric:1441318639419654255>',
+            17: '<:champ_Teemo:1441318640585539625>',
+            412: '<:champ_Thresh:1441318641814470687>',
+            18: '<:champ_Tristana:1441318643282826306>',
+            48: '<:champ_Trundle:1441318644532514887>',
+            23: '<:champ_Tryndamere:1441318646851829780>',
+            4: '<:champ_TwistedFate:1441318648611161767>',
+            29: '<:champ_Twitch:1441318650249558576>',
+            77: '<:champ_Udyr:1441318652128268401>',
+            6: '<:champ_Urgot:1441318653491413013>',
+            110: '<:champ_Varus:1441318654749708318>',
+            67: '<:champ_Vayne:1441318654904756335>',
+            45: '<:champ_Veigar:1441318655744703538>',
+            161: '<:champ_Velkoz:1441318659166310420>',
+            711: '<:champ_Vex:1441318660642963466>',
+            254: '<:champ_Vi:1441318663419465883>',
+            234: '<:champ_Viego:1441318663194655296>',
+            112: '<:champ_Viktor:1441318665248313394>',
+            8: '<:champ_Vladimir:1441318641016155894>',
+            106: '<:champ_Volibear:1441318667164533690>',
+            19: '<:champ_Warwick:1441318668526852654>',
+            498: '<:champ_Xayah:1441318669383833067>',
+            101: '<:champ_Xerath:1441318672317091466>',
+            5: '<:champ_XinZhao:1441318674364464060>',
+            157: '<:champ_Yasuo:1441318675632078411>',
+            83: '<:champ_Yorick:1441318679234317255>',
+            350: '<:champ_Yuumi:1441318680531258926>',
+            154: '<:champ_Zac:1441318682332130396>',
+            238: '<:champ_Zed:1441318683906180846>',
+            221: '<:champ_Zeri:1441318685978546460>',
+            115: '<:champ_Ziggs:1441318691478354099>',
+            26: '<:champ_Zilean:1441318693240842871>',
+            142: '<:champ_Zoe:1441318695254896467>',
+            143: '<:champ_Zyra:1441318697037454050>'
+        }
+        return champ_map.get(champion_id, '🎮')
     
     # Keep existing betting commands
     @app_commands.command(name="balance", description="Check your betting balance")
@@ -1155,12 +1327,13 @@ class TrackerCommandsV3(commands.Cog):
         blue_text = ""
         for player in blue_team:
             role_emoji = self._get_role_emoji(player['position'])
+            champ_emoji = self._get_champion_emoji(player['champion_id'])
             champ_name = get_champion_name(player['champion_id'])
             rank_emoji = self._get_rank_emoji(player['tier'])
             rank_str = f"{player['tier']} {player['rank']}"
             wr = (player['wins'] / (player['wins'] + player['losses']) * 100)
             
-            blue_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
+            blue_text += f"{role_emoji} {champ_emoji} **{champ_name}** - {player['summoner_name']}\n"
             blue_text += f"   └ {rank_emoji} {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
         
         embed.add_field(
@@ -1173,12 +1346,13 @@ class TrackerCommandsV3(commands.Cog):
         red_text = ""
         for player in red_team:
             role_emoji = self._get_role_emoji(player['position'])
+            champ_emoji = self._get_champion_emoji(player['champion_id'])
             champ_name = get_champion_name(player['champion_id'])
             rank_emoji = self._get_rank_emoji(player['tier'])
             rank_str = f"{player['tier']} {player['rank']}"
             wr = (player['wins'] / (player['wins'] + player['losses']) * 100)
             
-            red_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
+            red_text += f"{role_emoji} {champ_emoji} **{champ_name}** - {player['summoner_name']}\n"
             red_text += f"   └ {rank_emoji} {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
         
         embed.add_field(
