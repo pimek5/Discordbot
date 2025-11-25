@@ -913,7 +913,7 @@ class TrackerCommandsV3(commands.Cog):
     def _get_role_emoji(self, position: str) -> str:
         """Get custom emoji for role"""
         role_emojis = {
-            'TOP': '<:role_Toplaner:1442838787825722116>',
+            'TOP': '<:role_Toplane:1442837878257221716>',
             'JUNGLE': '<:role_Jungler:1442838782415083137>',
             'MIDDLE': '<:role_Midlane:1442837968564912250>',
             'BOTTOM': '<:role_Bottom:1442838024479182929>',
