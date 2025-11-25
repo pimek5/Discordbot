@@ -378,15 +378,14 @@ class TrackerCommandsV3(commands.Cog):
                     logger.info(f"✅ Got PUUID for {game_name}#{tagline}")
                     
                     # Get encrypted summoner_id (needed for Spectator API)
-                    summoner_data = await self.riot_api.get_summoner_by_puuid(real_puuid, region)
-                    summoner_name = summoner_data.get('name') if summoner_data else None
-                    
+                    # Use game_name directly instead of fetching from broken /by-puuid/ endpoint
                     encrypted_summoner_id = None
-                    if summoner_name:
-                        summoner_full = await self.riot_api.get_summoner_by_name(summoner_name, region)
-                        encrypted_summoner_id = summoner_full.get('id') if summoner_full else None
-                        if encrypted_summoner_id:
-                            logger.info(f"✅ Got encrypted summoner_id for {game_name}#{tagline}")
+                    summoner_full = await self.riot_api.get_summoner_by_name(game_name, region)
+                    if summoner_full and 'id' in summoner_full:
+                        encrypted_summoner_id = summoner_full.get('id')
+                        logger.info(f"✅ Got encrypted summoner_id for {game_name}#{tagline}")
+                    else:
+                        logger.warning(f"⚠️ Could not get summoner_id for {game_name}#{tagline}")
                     
                     # Update database with PUUID and summoner_id
                     try:

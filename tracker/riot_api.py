@@ -702,21 +702,35 @@ class RiotAPI:
         if not self.api_key:
             return None
         
-        # If summoner_id not provided, fetch it (2 API calls)
+        # If summoner_id not provided, fetch it via Account API -> by-name
         if not summoner_id:
-            # Step 1: Get summoner name from PUUID
-            summoner_data = await self.get_summoner_by_puuid(puuid, region)
-            if not summoner_data or 'name' not in summoner_data:
-                logger.error(f"❌ Cannot get summoner name for PUUID {puuid[:10]}...")
+            # Step 1: Get game name from PUUID using Account API (regional routing)
+            regional_routing = RIOT_REGIONS.get(region.lower(), 'europe')
+            account_url = f"https://{regional_routing}.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
+            
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(account_url, headers=self.headers) as response:
+                        if response.status == 200:
+                            account_data = await response.json()
+                            game_name = account_data.get('gameName')
+                            if not game_name:
+                                logger.error(f"❌ No gameName in Account API response for PUUID {puuid[:10]}...")
+                                return None
+                            logger.debug(f"📝 Got game name from Account API: {game_name}")
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"❌ Account API error {response.status}: {error_text[:200]}")
+                            return None
+            except Exception as e:
+                logger.error(f"❌ Error calling Account API: {e}")
                 return None
             
-            summoner_name = summoner_data['name']
-            logger.debug(f"📝 Got summoner name: {summoner_name}")
-            
             # Step 2: Get encrypted summoner_id from name (only by-name endpoint returns 'id')
-            summoner_full = await self.get_summoner_by_name(summoner_name, region)
+            summoner_full = await self.get_summoner_by_name(game_name, region)
             if not summoner_full or 'id' not in summoner_full:
-                logger.error(f"❌ Cannot get encrypted summoner_id for {summoner_name}")
+                logger.error(f"❌ Cannot get encrypted summoner_id for {game_name}")
                 return None
             
             summoner_id = summoner_full['id']
