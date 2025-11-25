@@ -359,36 +359,49 @@ class TrackerCommandsV3(commands.Cog):
             logger.info(f"📊 Found {len(accounts)} accounts without summoner_id, updating...")
             
             updated = 0
-            for account_id, puuid, region, game_name, tagline in accounts:
+            for account_id, stored_puuid, region, game_name, tagline in accounts:
                 try:
-                    # Get summoner data
-                    summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, region)
+                    # First, try to get fresh account data from Riot ID to get real PUUID
+                    logger.debug(f"🔍 Getting account data for {game_name}#{tagline}...")
+                    account_data = await self.riot_api.get_account_by_riot_id(game_name, tagline, region)
+                    
+                    real_puuid = None
+                    if account_data:
+                        real_puuid = account_data.get('puuid')
+                        logger.info(f"✅ Got real PUUID for {game_name}#{tagline}")
+                    else:
+                        logger.warning(f"⚠️ Could not get account data for {game_name}#{tagline}, skipping...")
+                        continue
+                    
+                    # Now get summoner data with real PUUID
+                    summoner_data = await self.riot_api.get_summoner_by_puuid(real_puuid, region)
                     
                     if not summoner_data:
+                        logger.warning(f"⚠️ Could not get summoner data for {game_name}#{tagline}")
                         continue
                     
                     summoner_id = summoner_data.get('id')
                     if not summoner_id:
                         continue
                     
-                    # Update database
+                    # Update database with both correct PUUID and summoner_id
                     cur.execute("""
                         UPDATE league_accounts
-                        SET summoner_id = %s, last_updated = NOW()
+                        SET puuid = %s, summoner_id = %s, last_updated = NOW()
                         WHERE id = %s
-                    """, (summoner_id, account_id))
+                    """, (real_puuid, summoner_id, account_id))
                     
                     conn.commit()
                     updated += 1
-                    logger.info(f"✅ Updated {game_name}#{tagline}")
+                    logger.info(f"✅ Updated {game_name}#{tagline} with correct PUUID and summoner_id")
                     
-                    await asyncio.sleep(0.5)  # Rate limit
+                    await asyncio.sleep(0.7)  # Rate limit
                     
                 except Exception as e:
                     logger.error(f"❌ Error updating {game_name}#{tagline}: {e}")
                     continue
             
-            logger.info(f"✅ Updated {updated}/{len(accounts)} accounts with summoner_ids")
+            logger.info(f"✅ Updated {updated}/{len(accounts)} accounts with correct data")
             
         except Exception as e:
             logger.error(f"Error updating summoner_ids: {e}")
