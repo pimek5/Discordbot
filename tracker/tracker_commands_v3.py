@@ -1576,7 +1576,13 @@ class TrackerCommandsV3(commands.Cog):
                     elif status == 404:
                         embed.add_field(name="ℹ️ Not in game", value="Player not currently in an active game", inline=False)
                     else:
-                        embed.add_field(name="❌ Error", value=f"```{text[:400]}```", inline=False)
+                        # Try to parse error reason from JSON
+                        try:
+                            error_data = await resp.json() if text else {}
+                            reason = error_data.get('status', {}).get('message', text[:400])
+                            embed.add_field(name=f"❌ Error ({status})", value=f"```{reason}```", inline=False)
+                        except:
+                            embed.add_field(name=f"❌ Error ({status})", value=f"```{text[:400]}```", inline=False)
                     
                     await interaction.followup.send(embed=embed)
                     
