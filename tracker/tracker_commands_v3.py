@@ -347,7 +347,7 @@ class TrackerCommandsV3(commands.Cog):
                 SELECT id, puuid, region, riot_id_game_name, riot_id_tagline
                 FROM league_accounts
                 WHERE summoner_id IS NULL
-                LIMIT 20
+                LIMIT 100
             """)
             
             accounts = cur.fetchall()
@@ -1068,6 +1068,19 @@ class TrackerCommandsV3(commands.Cog):
             
         finally:
             self.db.return_connection(conn)
+    
+    @app_commands.command(name="fixaccounts", description="[ADMIN] Force update missing summoner_ids")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def fix_accounts(self, interaction: discord.Interaction):
+        """Manually trigger summoner_id update"""
+        await interaction.response.defer(ephemeral=True)
+        
+        await interaction.followup.send("🔧 Starting account fix... Check logs for progress.", ephemeral=True)
+        
+        # Trigger update
+        await self._update_missing_summoner_ids()
+        
+        await interaction.followup.send("✅ Account fix completed! Check logs for details.", ephemeral=True)
     
     @app_commands.command(name="setup_tracking", description="[ADMIN] Setup tracking control panel")
     @app_commands.checks.has_permissions(administrator=True)
