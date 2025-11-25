@@ -104,6 +104,16 @@ CREATE TABLE IF NOT EXISTS bet_leaderboard (
     recorded_at TIMESTAMP DEFAULT NOW()
 );
 
+-- User tracking threads (V3)
+CREATE TABLE IF NOT EXISTS user_threads (
+    id SERIAL PRIMARY KEY,
+    discord_id BIGINT UNIQUE NOT NULL,
+    thread_id BIGINT NOT NULL,
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_tracked_pros_name ON tracked_pros(LOWER(player_name));
 CREATE INDEX IF NOT EXISTS idx_tracked_pros_enabled ON tracked_pros(enabled);
@@ -117,6 +127,8 @@ CREATE INDEX IF NOT EXISTS idx_bets_user_id ON bets(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_balances_discord_id ON user_balances(discord_id);
 CREATE INDEX IF NOT EXISTS idx_bet_leaderboard_discord_id ON bet_leaderboard(discord_id);
 CREATE INDEX IF NOT EXISTS idx_bet_leaderboard_recorded_at ON bet_leaderboard(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_user_threads_discord_id ON user_threads(discord_id);
+CREATE INDEX IF NOT EXISTS idx_user_threads_active ON user_threads(active);
 
 -- Guild settings for configuration (shared with main bot)
 CREATE TABLE IF NOT EXISTS guild_settings (

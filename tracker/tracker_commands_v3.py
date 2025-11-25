@@ -1,0 +1,649 @@
+"""
+Tracker Bot V3 - Personal Thread Tracking System
+Focus: Users track their own accounts with personal threads
+"""
+
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+from typing import Optional, Dict, List, Tuple
+import logging
+import asyncio
+from datetime import datetime, timedelta
+import psycopg2
+
+from tracker_database import get_tracker_db
+from riot_api import RiotAPI
+from champion_data import get_champion_name
+
+logger = logging.getLogger('tracker_v3')
+
+
+class TrackingControlView(discord.ui.View):
+    """Persistent view for Create/Remove thread buttons"""
+    
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(
+        label="Create Your Thread",
+        style=discord.ButtonStyle.green,
+        custom_id="create_tracking_thread",
+        emoji="🎮"
+    )
+    async def create_thread_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Create personal tracking thread for user"""
+        await interaction.response.defer(ephemeral=True)
+        
+        # Get the cog
+        cog = interaction.client.get_cog('TrackerCommandsV3')
+        if not cog:
+            await interaction.followup.send("❌ Tracker system not loaded!", ephemeral=True)
+            return
+        
+        await cog.create_user_thread(interaction)
+    
+    @discord.ui.button(
+        label="Remove Your Thread",
+        style=discord.ButtonStyle.red,
+        custom_id="remove_tracking_thread",
+        emoji="🗑️"
+    )
+    async def remove_thread_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Remove user's tracking thread"""
+        await interaction.response.defer(ephemeral=True)
+        
+        cog = interaction.client.get_cog('TrackerCommandsV3')
+        if not cog:
+            await interaction.followup.send("❌ Tracker system not loaded!", ephemeral=True)
+            return
+        
+        await cog.remove_user_thread(interaction)
+
+
+class BettingView(discord.ui.View):
+    """Interactive betting interface for games"""
+    
+    def __init__(self, game_id: int, blue_odds: float, red_odds: float, expires_at: datetime):
+        super().__init__(timeout=None)
+        self.game_id = game_id
+        self.blue_odds = blue_odds
+        self.red_odds = red_odds
+        self.expires_at = expires_at
+    
+    @discord.ui.button(
+        label="Bet Blue",
+        style=discord.ButtonStyle.primary,
+        custom_id="bet_blue",
+        emoji="🔵"
+    )
+    async def bet_blue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Bet on blue team"""
+        if datetime.utcnow() > self.expires_at:
+            await interaction.response.send_message(
+                "⏰ Betting is closed! You can only bet in the first 3 minutes.",
+                ephemeral=True
+            )
+            return
+        
+        modal = BetAmountModal(self.game_id, "blue", self.blue_odds)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(
+        label="Bet Red",
+        style=discord.ButtonStyle.danger,
+        custom_id="bet_red",
+        emoji="🔴"
+    )
+    async def bet_red_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Bet on red team"""
+        if datetime.utcnow() > self.expires_at:
+            await interaction.response.send_message(
+                "⏰ Betting is closed! You can only bet in the first 3 minutes.",
+                ephemeral=True
+            )
+            return
+        
+        modal = BetAmountModal(self.game_id, "red", self.red_odds)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(
+        label="Info",
+        style=discord.ButtonStyle.secondary,
+        custom_id="game_info",
+        emoji="ℹ️"
+    )
+    async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Show game information"""
+        await interaction.response.send_message(
+            "ℹ️ Game information - links to op.gg profiles coming soon!",
+            ephemeral=True
+        )
+
+
+class BetAmountModal(discord.ui.Modal, title="Place Your Bet"):
+    """Modal for entering bet amount"""
+    
+    bet_amount = discord.ui.TextInput(
+        label="Bet Amount (min: 100 points)",
+        placeholder="Enter amount...",
+        required=True,
+        min_length=1,
+        max_length=10
+    )
+    
+    def __init__(self, game_id: int, team: str, odds: float):
+        super().__init__()
+        self.game_id = game_id
+        self.team = team
+        self.odds = odds
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Process bet placement"""
+        try:
+            amount = int(self.bet_amount.value)
+            
+            if amount < 100:
+                await interaction.response.send_message(
+                    "❌ Minimum bet is 100 points!",
+                    ephemeral=True
+                )
+                return
+            
+            # Get database
+            db = get_tracker_db()
+            conn = db.get_connection()
+            
+            try:
+                cur = conn.cursor()
+                
+                # Check user balance
+                cur.execute(
+                    "SELECT balance FROM user_balances WHERE discord_id = %s",
+                    (interaction.user.id,)
+                )
+                result = cur.fetchone()
+                
+                if not result:
+                    # Create user with starting balance
+                    cur.execute(
+                        "INSERT INTO user_balances (discord_id, balance) VALUES (%s, 1000)",
+                        (interaction.user.id,)
+                    )
+                    conn.commit()
+                    balance = 1000
+                else:
+                    balance = result[0]
+                
+                # Check if enough balance
+                if balance < amount:
+                    await interaction.response.send_message(
+                        f"❌ Insufficient balance! You have **{balance}** points.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Check for duplicate bet
+                cur.execute(
+                    "SELECT bet_id FROM bets WHERE game_id = %s AND discord_id = %s",
+                    (self.game_id, interaction.user.id)
+                )
+                if cur.fetchone():
+                    await interaction.response.send_message(
+                        "❌ You already placed a bet on this game!",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Place bet
+                potential_win = int(amount * self.odds)
+                cur.execute("""
+                    INSERT INTO bets (game_id, discord_id, team, amount, multiplier, potential_win)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (self.game_id, interaction.user.id, self.team, amount, self.odds, potential_win))
+                
+                # Update balance
+                cur.execute(
+                    "UPDATE user_balances SET balance = balance - %s, total_wagered = total_wagered + %s WHERE discord_id = %s",
+                    (amount, amount, interaction.user.id)
+                )
+                
+                conn.commit()
+                
+                new_balance = balance - amount
+                team_emoji = "🔵" if self.team == "blue" else "🔴"
+                
+                await interaction.response.send_message(
+                    f"✅ Bet placed!\n"
+                    f"{team_emoji} **{self.team.upper()}** team to win\n"
+                    f"💰 Wagered: **{amount}** points\n"
+                    f"🎯 Potential win: **{potential_win}** points (x{self.odds:.2f})\n"
+                    f"💳 New balance: **{new_balance}** points",
+                    ephemeral=True
+                )
+                
+            finally:
+                db.return_connection(conn)
+                
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Invalid amount! Please enter a number.",
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"Error placing bet: {e}")
+            await interaction.response.send_message(
+                "❌ Error placing bet. Please try again.",
+                ephemeral=True
+            )
+
+
+class TrackerCommandsV3(commands.Cog):
+    """V3 Tracker - Personal thread tracking system"""
+    
+    def __init__(self, bot: commands.Bot, riot_api: RiotAPI, guild_id: int, tracking_channel_id: int):
+        self.bot = bot
+        self.riot_api = riot_api
+        self.guild_id = guild_id
+        self.tracking_channel_id = tracking_channel_id
+        self.db = get_tracker_db()
+        
+        # Track user threads: discord_id -> thread_id
+        self.user_threads: Dict[int, int] = {}
+        
+        # Track active games per user: discord_id -> List[game_info]
+        self.active_games: Dict[int, List[Dict]] = {}
+        
+        # Load existing threads from DB
+        self.bot.loop.create_task(self._load_threads_from_db())
+        
+        # Start background tasks
+        self.monitor_user_games.start()
+    
+    async def cog_load(self):
+        """Called when cog is loaded"""
+        # Register persistent views
+        self.bot.add_view(TrackingControlView())
+        logger.info("✅ Registered persistent TrackingControlView")
+    
+    async def cog_unload(self):
+        """Cleanup on unload"""
+        self.monitor_user_games.cancel()
+    
+    async def _load_threads_from_db(self):
+        """Load existing threads from database"""
+        await self.bot.wait_until_ready()
+        
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT discord_id, thread_id FROM user_threads WHERE active = TRUE")
+            rows = cur.fetchall()
+            
+            for discord_id, thread_id in rows:
+                self.user_threads[discord_id] = thread_id
+            
+            logger.info(f"✅ Loaded {len(self.user_threads)} active tracking threads")
+            
+        except Exception as e:
+            logger.error(f"Error loading threads: {e}")
+        finally:
+            self.db.return_connection(conn)
+    
+    async def create_user_thread(self, interaction: discord.Interaction):
+        """Create personal tracking thread for user"""
+        user_id = interaction.user.id
+        
+        # Check if user already has a thread
+        if user_id in self.user_threads:
+            await interaction.followup.send(
+                "❌ You already have a tracking thread!",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            # Get tracking channel
+            channel = self.bot.get_channel(self.tracking_channel_id)
+            if not channel:
+                await interaction.followup.send(
+                    "❌ Tracking channel not found!",
+                    ephemeral=True
+                )
+                return
+            
+            # Create thread
+            thread = await channel.create_thread(
+                name=f"🎮 Tracking {interaction.user.name}",
+                type=discord.ChannelType.public_thread,
+                auto_archive_duration=10080  # 7 days
+            )
+            
+            # Save to database
+            conn = self.db.get_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO user_threads (discord_id, thread_id, active)
+                    VALUES (%s, %s, TRUE)
+                    ON CONFLICT (discord_id) DO UPDATE SET
+                        thread_id = EXCLUDED.thread_id,
+                        active = TRUE,
+                        updated_at = NOW()
+                """, (user_id, thread.id))
+                conn.commit()
+            finally:
+                self.db.return_connection(conn)
+            
+            # Add to memory
+            self.user_threads[user_id] = thread.id
+            
+            # Send welcome message
+            embed = discord.Embed(
+                title="🎮 Your Personal Tracking Thread",
+                description=(
+                    "This thread will automatically track your League of Legends accounts!\n\n"
+                    "**How it works:**\n"
+                    "• Bot checks your registered accounts from the main bot\n"
+                    "• When you're in a Ranked Solo/Duo game, it posts here\n"
+                    "• Others can bet on your games using points\n"
+                    "• You can track your performance and see betting odds\n\n"
+                    "**Commands:**\n"
+                    "`/balance` - Check your betting balance\n"
+                    "`/leaderboard` - View top bettors\n\n"
+                    "Good luck! 🍀"
+                ),
+                color=discord.Color.green(),
+                timestamp=datetime.utcnow()
+            )
+            embed.set_footer(text=f"Thread created for {interaction.user.name}")
+            
+            await thread.send(embed=embed)
+            
+            await interaction.followup.send(
+                f"✅ Created your tracking thread: {thread.mention}",
+                ephemeral=True
+            )
+            
+            logger.info(f"✅ Created tracking thread for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error creating thread: {e}")
+            await interaction.followup.send(
+                "❌ Error creating thread. Please try again.",
+                ephemeral=True
+            )
+    
+    async def remove_user_thread(self, interaction: discord.Interaction):
+        """Remove user's tracking thread"""
+        user_id = interaction.user.id
+        
+        if user_id not in self.user_threads:
+            await interaction.followup.send(
+                "❌ You don't have a tracking thread!",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            thread_id = self.user_threads[user_id]
+            
+            # Try to delete thread
+            try:
+                thread = self.bot.get_channel(thread_id)
+                if thread:
+                    await thread.delete()
+            except:
+                pass  # Thread might already be deleted
+            
+            # Update database
+            conn = self.db.get_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("""
+                    UPDATE user_threads SET active = FALSE, updated_at = NOW()
+                    WHERE discord_id = %s
+                """, (user_id,))
+                conn.commit()
+            finally:
+                self.db.return_connection(conn)
+            
+            # Remove from memory
+            del self.user_threads[user_id]
+            
+            await interaction.followup.send(
+                "✅ Your tracking thread has been removed!",
+                ephemeral=True
+            )
+            
+            logger.info(f"✅ Removed tracking thread for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error removing thread: {e}")
+            await interaction.followup.send(
+                "❌ Error removing thread. Please try again.",
+                ephemeral=True
+            )
+    
+    @tasks.loop(minutes=2)
+    async def monitor_user_games(self):
+        """Monitor all tracked users for active games"""
+        logger.info("🔍 Checking for active games...")
+        
+        # TODO: Implement game monitoring
+        # This will query main database for riot_accounts and check for active games
+        pass
+    
+    @monitor_user_games.before_loop
+    async def before_monitor(self):
+        """Wait for bot to be ready"""
+        await self.bot.wait_until_ready()
+        logger.info("✅ Game monitor ready")
+    
+    # Keep existing betting commands
+    @app_commands.command(name="balance", description="Check your betting balance")
+    async def balance(self, interaction: discord.Interaction):
+        """Show user's betting balance and stats"""
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT balance, total_wagered, total_won, total_lost,
+                       bets_placed, bets_won
+                FROM user_balances
+                WHERE discord_id = %s
+            """, (interaction.user.id,))
+            
+            result = cur.fetchone()
+            
+            if not result:
+                # Create new user
+                cur.execute("""
+                    INSERT INTO user_balances (discord_id, balance)
+                    VALUES (%s, 1000)
+                """, (interaction.user.id,))
+                conn.commit()
+                result = (1000, 0, 0, 0, 0, 0)
+            
+            balance, wagered, won, lost, bets_placed, bets_won = result
+            win_rate = (bets_won / bets_placed * 100) if bets_placed > 0 else 0
+            
+            embed = discord.Embed(
+                title="💰 Your Betting Balance",
+                color=discord.Color.gold()
+            )
+            embed.add_field(name="Current Balance", value=f"**{balance:,}** points", inline=False)
+            embed.add_field(name="Total Wagered", value=f"{wagered:,} points", inline=True)
+            embed.add_field(name="Total Won", value=f"{won:,} points", inline=True)
+            embed.add_field(name="Total Lost", value=f"{lost:,} points", inline=True)
+            embed.add_field(name="Bets Placed", value=f"{bets_placed}", inline=True)
+            embed.add_field(name="Bets Won", value=f"{bets_won}", inline=True)
+            embed.add_field(name="Win Rate", value=f"{win_rate:.1f}%", inline=True)
+            embed.set_footer(text=f"User: {interaction.user.name}")
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        finally:
+            self.db.return_connection(conn)
+    
+    @app_commands.command(name="leaderboard", description="View top bettors")
+    async def leaderboard(self, interaction: discord.Interaction):
+        """Show betting leaderboard"""
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT discord_id, balance, total_won, bets_won, bets_placed
+                FROM user_balances
+                WHERE bets_placed > 0
+                ORDER BY balance DESC
+                LIMIT 10
+            """)
+            
+            rows = cur.fetchall()
+            
+            if not rows:
+                await interaction.response.send_message(
+                    "📊 No betting data yet!",
+                    ephemeral=True
+                )
+                return
+            
+            embed = discord.Embed(
+                title="🏆 Betting Leaderboard - Top 10",
+                color=discord.Color.gold(),
+                timestamp=datetime.utcnow()
+            )
+            
+            description = ""
+            for i, (discord_id, balance, won, bets_won, bets_placed) in enumerate(rows, 1):
+                try:
+                    user = await self.bot.fetch_user(discord_id)
+                    name = user.name
+                except:
+                    name = f"User {discord_id}"
+                
+                win_rate = (bets_won / bets_placed * 100) if bets_placed > 0 else 0
+                medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"**{i}.**"
+                
+                description += f"{medal} **{name}**\n"
+                description += f"   💰 {balance:,} pts • 🎯 {win_rate:.1f}% WR • 🎲 {bets_placed} bets\n\n"
+            
+            embed.description = description
+            embed.set_footer(text="Keep betting to climb the ranks!")
+            
+            await interaction.response.send_message(embed=embed)
+            
+        finally:
+            self.db.return_connection(conn)
+    
+    @app_commands.command(name="managepts", description="[ADMIN] Manage user points")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def manage_points(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        action: str,
+        amount: int
+    ):
+        """Admin command to manage user points"""
+        if action.lower() not in ['add', 'remove', 'set']:
+            await interaction.response.send_message(
+                "❌ Invalid action! Use: add, remove, or set",
+                ephemeral=True
+            )
+            return
+        
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            
+            # Get current balance
+            cur.execute(
+                "SELECT balance FROM user_balances WHERE discord_id = %s",
+                (user.id,)
+            )
+            result = cur.fetchone()
+            
+            if not result:
+                # Create user
+                cur.execute(
+                    "INSERT INTO user_balances (discord_id, balance) VALUES (%s, 1000)",
+                    (user.id,)
+                )
+                conn.commit()
+                old_balance = 1000
+            else:
+                old_balance = result[0]
+            
+            # Perform action
+            if action.lower() == 'add':
+                new_balance = old_balance + amount
+            elif action.lower() == 'remove':
+                new_balance = max(0, old_balance - amount)
+            else:  # set
+                new_balance = amount
+            
+            cur.execute(
+                "UPDATE user_balances SET balance = %s WHERE discord_id = %s",
+                (new_balance, user.id)
+            )
+            conn.commit()
+            
+            await interaction.response.send_message(
+                f"✅ Updated {user.mention}'s balance\n"
+                f"**Old:** {old_balance:,} points\n"
+                f"**New:** {new_balance:,} points\n"
+                f"**Change:** {'+' if action == 'add' else '-' if action == 'remove' else ''}{amount:,} points",
+                ephemeral=True
+            )
+            
+        finally:
+            self.db.return_connection(conn)
+    
+    @app_commands.command(name="setup_tracking", description="[ADMIN] Setup tracking control panel")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setup_tracking(self, interaction: discord.Interaction):
+        """Send the tracking control panel to the channel"""
+        embed = discord.Embed(
+            title="🎮 Personal Game Tracking",
+            description=(
+                "**Welcome to the Personal Tracking System!**\n\n"
+                "Track your League of Legends games and let others bet on your performance.\n\n"
+                "**How to start:**\n"
+                "1️⃣ Click **Create Your Thread** below\n"
+                "2️⃣ Make sure you have accounts registered in the main bot\n"
+                "3️⃣ Play Ranked Solo/Duo games\n"
+                "4️⃣ Bot will post your games to your personal thread\n"
+                "5️⃣ Others can bet on your games!\n\n"
+                "**Features:**\n"
+                "• Personal tracking thread just for you\n"
+                "• Live game notifications with team comps\n"
+                "• Betting system with dynamic odds\n"
+                "• Leaderboards and statistics\n\n"
+                "**Commands:**\n"
+                "`/balance` - Check your betting points\n"
+                "`/leaderboard` - View top bettors\n\n"
+                "Click the buttons below to get started! 🚀"
+            ),
+            color=discord.Color.blue(),
+            timestamp=datetime.utcnow()
+        )
+        embed.set_footer(text="Tracker Bot V3 - Personal Thread System")
+        
+        view = TrackingControlView()
+        
+        await interaction.response.send_message(embed=embed, view=view)
+        
+        logger.info(f"✅ Tracking control panel sent by {interaction.user.name}")
+
+
+async def setup(bot: commands.Bot):
+    """Setup function for loading the cog"""
+    riot_api = bot.riot_api if hasattr(bot, 'riot_api') else None
+    guild_id = getattr(bot, 'guild_id', 0)
+    tracking_channel_id = 1440713433887805470  # Your tracking channel
+    
+    if riot_api:
+        await bot.add_cog(TrackerCommandsV3(bot, riot_api, guild_id, tracking_channel_id))
+        logger.info("✅ Tracker V3 Commands loaded")
