@@ -814,11 +814,12 @@ class TrackerCommandsV3(commands.Cog):
             for player in blue_team:
                 role_emoji = self._get_role_emoji(player['position'])
                 champ_name = get_champion_name(player['champion_id'])
+                rank_emoji = self._get_rank_emoji(player['tier']) if player['tier'] else '🎮'
                 rank_str = f"{player['tier']} {player['rank']}" if player['tier'] else "Unranked"
                 wr = (player['wins'] / (player['wins'] + player['losses']) * 100) if (player['wins'] + player['losses']) > 0 else 0
                 
                 blue_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
-                blue_text += f"   └ {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
+                blue_text += f"   └ {rank_emoji} {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
             
             embed.add_field(
                 name=f"🔵 BLUE TEAM • Win Chance: {blue_chance:.1f}%",
@@ -831,11 +832,12 @@ class TrackerCommandsV3(commands.Cog):
             for player in red_team:
                 role_emoji = self._get_role_emoji(player['position'])
                 champ_name = get_champion_name(player['champion_id'])
+                rank_emoji = self._get_rank_emoji(player['tier']) if player['tier'] else '🎮'
                 rank_str = f"{player['tier']} {player['rank']}" if player['tier'] else "Unranked"
                 wr = (player['wins'] / (player['wins'] + player['losses']) * 100) if (player['wins'] + player['losses']) > 0 else 0
                 
                 red_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
-                red_text += f"   └ {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
+                red_text += f"   └ {rank_emoji} {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
             
             embed.add_field(
                 name=f"🔴 RED TEAM • Win Chance: {red_chance:.1f}%",
@@ -916,6 +918,22 @@ class TrackerCommandsV3(commands.Cog):
             'UTILITY': '🛡️'
         }
         return emojis.get(position, '❓')
+    
+    def _get_rank_emoji(self, tier: str) -> str:
+        """Get custom emoji for rank tier"""
+        rank_emojis = {
+            'IRON': '<:rank_Iron:1441318450797744138>',
+            'BRONZE': '<:rank_Bronze:1441318441741975592>',
+            'SILVER': '<:rank_Silver:1441318462071898132>',
+            'GOLD': '<:rank_Gold:1441318447697887283>',
+            'PLATINUM': '<:rank_Platinum:1441318460415152168>',
+            'EMERALD': '<:rank_Emerald:1441318446175355052>',
+            'DIAMOND': '<:rank_Diamond:1441318445084835941>',
+            'MASTER': '<:rank_Master:1441318458943078410>',
+            'GRANDMASTER': '<:rank_Grandmaster:1441318449447178272>',
+            'CHALLENGER': '<:rank_Challenger:1441318443130294322>'
+        }
+        return rank_emojis.get(tier, '🎮')
     
     # Keep existing betting commands
     @app_commands.command(name="balance", description="Check your betting balance")
@@ -1138,11 +1156,12 @@ class TrackerCommandsV3(commands.Cog):
         for player in blue_team:
             role_emoji = self._get_role_emoji(player['position'])
             champ_name = get_champion_name(player['champion_id'])
+            rank_emoji = self._get_rank_emoji(player['tier'])
             rank_str = f"{player['tier']} {player['rank']}"
             wr = (player['wins'] / (player['wins'] + player['losses']) * 100)
             
             blue_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
-            blue_text += f"   └ {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
+            blue_text += f"   └ {rank_emoji} {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
         
         embed.add_field(
             name=f"🔵 BLUE TEAM • Win Chance: {blue_chance:.1f}%",
@@ -1155,11 +1174,12 @@ class TrackerCommandsV3(commands.Cog):
         for player in red_team:
             role_emoji = self._get_role_emoji(player['position'])
             champ_name = get_champion_name(player['champion_id'])
+            rank_emoji = self._get_rank_emoji(player['tier'])
             rank_str = f"{player['tier']} {player['rank']}"
             wr = (player['wins'] / (player['wins'] + player['losses']) * 100)
             
             red_text += f"{role_emoji} **{champ_name}** - {player['summoner_name']}\n"
-            red_text += f"   └ {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
+            red_text += f"   └ {rank_emoji} {rank_str} {player['lp']} LP • {wr:.1f}% WR\n"
         
         embed.add_field(
             name=f"🔴 RED TEAM • Win Chance: {red_chance:.1f}%",
