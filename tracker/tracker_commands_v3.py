@@ -382,29 +382,37 @@ class TrackerCommandsV3(commands.Cog):
                     
                     summoner_id = summoner_data.get('id')
                     if not summoner_id:
+                        logger.warning(f"⚠️ No summoner_id in response for {game_name}#{tagline}")
                         continue
                     
                     # Update database with both correct PUUID and summoner_id
-                    cur.execute("""
-                        UPDATE league_accounts
-                        SET puuid = %s, summoner_id = %s, last_updated = NOW()
-                        WHERE id = %s
-                    """, (real_puuid, summoner_id, account_id))
-                    
-                    conn.commit()
-                    updated += 1
-                    logger.info(f"✅ Updated {game_name}#{tagline} with correct PUUID and summoner_id")
+                    try:
+                        cur.execute("""
+                            UPDATE league_accounts
+                            SET puuid = %s, summoner_id = %s, last_updated = NOW()
+                            WHERE id = %s
+                        """, (real_puuid, summoner_id, account_id))
+                        
+                        conn.commit()
+                        updated += 1
+                        logger.info(f"✅ Updated {game_name}#{tagline} with correct PUUID and summoner_id (ID: {account_id})")
+                    except Exception as db_error:
+                        logger.error(f"❌ Database error updating {game_name}#{tagline}: {db_error}")
+                        conn.rollback()
+                        continue
                     
                     await asyncio.sleep(0.7)  # Rate limit
                     
                 except Exception as e:
                     logger.error(f"❌ Error updating {game_name}#{tagline}: {e}")
+                    conn.rollback()
                     continue
             
             logger.info(f"✅ Updated {updated}/{len(accounts)} accounts with correct data")
             
         except Exception as e:
             logger.error(f"Error updating summoner_ids: {e}")
+            conn.rollback()
         finally:
             self.db.return_connection(conn)
     
