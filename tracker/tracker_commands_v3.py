@@ -260,6 +260,9 @@ class TrackerCommandsV3(commands.Cog):
         
         # Start background tasks
         self.monitor_user_games.start()
+        
+        # Schedule summoner_id update on startup
+        self.bot.loop.create_task(self._update_missing_summoner_ids())
     
     async def cog_load(self):
         """Called when cog is loaded"""
@@ -328,6 +331,69 @@ class TrackerCommandsV3(commands.Cog):
     async def cog_unload(self):
         """Cleanup on unload"""
         self.monitor_user_games.cancel()
+    
+    async def _update_missing_summoner_ids(self):
+        """Update league_accounts with missing summoner_ids on startup"""
+        await self.bot.wait_until_ready()
+        
+        logger.info("🔧 Checking for accounts with missing summoner_ids...")
+        
+        conn = self.db.get_connection()
+        try:
+            cur = conn.cursor()
+            
+            # Get accounts without summoner_id
+            cur.execute("""
+                SELECT id, puuid, region, riot_id_game_name, riot_id_tagline
+                FROM league_accounts
+                WHERE summoner_id IS NULL
+                LIMIT 20
+            """)
+            
+            accounts = cur.fetchall()
+            
+            if not accounts:
+                logger.info("✅ All accounts have summoner_ids")
+                return
+            
+            logger.info(f"📊 Found {len(accounts)} accounts without summoner_id, updating...")
+            
+            updated = 0
+            for account_id, puuid, region, game_name, tagline in accounts:
+                try:
+                    # Get summoner data
+                    summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, region)
+                    
+                    if not summoner_data:
+                        continue
+                    
+                    summoner_id = summoner_data.get('id')
+                    if not summoner_id:
+                        continue
+                    
+                    # Update database
+                    cur.execute("""
+                        UPDATE league_accounts
+                        SET summoner_id = %s, last_updated = NOW()
+                        WHERE id = %s
+                    """, (summoner_id, account_id))
+                    
+                    conn.commit()
+                    updated += 1
+                    logger.info(f"✅ Updated {game_name}#{tagline}")
+                    
+                    await asyncio.sleep(0.5)  # Rate limit
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error updating {game_name}#{tagline}: {e}")
+                    continue
+            
+            logger.info(f"✅ Updated {updated}/{len(accounts)} accounts with summoner_ids")
+            
+        except Exception as e:
+            logger.error(f"Error updating summoner_ids: {e}")
+        finally:
+            self.db.return_connection(conn)
     
     async def _load_threads_from_db(self):
         """Load existing threads from database"""
