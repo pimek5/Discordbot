@@ -541,25 +541,33 @@ class TrackerCommandsV3(commands.Cog):
                             logger.debug(f"No accounts found for user {discord_id}")
                             continue
                         
+                        logger.info(f"📊 Checking {len(accounts)} account(s) for user {discord_id}")
+                        
                         # Check each account for active game
                         for puuid, region, game_name, tagline in accounts:
                             try:
+                                logger.debug(f"🔍 Checking {game_name}#{tagline} ({region}) - PUUID: {puuid[:8]}...")
+                                
                                 # Check if already tracking this game
                                 game_key = f"{discord_id}:{puuid}"
                                 if discord_id in self.active_games:
                                     if any(g.get('game_key') == game_key for g in self.active_games[discord_id]):
+                                        logger.debug(f"⏭️ Already tracking game for {game_name}#{tagline}")
                                         continue
                                 
                                 # Get active game from Riot API
                                 game_data = await self.riot_api.get_active_game(puuid, region)
                                 
                                 if not game_data:
+                                    logger.debug(f"❌ No active game for {game_name}#{tagline}")
                                     continue
                                 
                                 queue_id = game_data.get('gameQueueConfigId')
+                                logger.info(f"🎮 Found active game for {game_name}#{tagline} - Queue: {queue_id}")
                                 
                                 # Only track Ranked Solo/Duo (420)
                                 if queue_id != 420:
+                                    logger.debug(f"⏭️ Skipping queue {queue_id} (not Ranked Solo/Duo)")
                                     continue
                                 
                                 game_id = game_data.get('gameId')
