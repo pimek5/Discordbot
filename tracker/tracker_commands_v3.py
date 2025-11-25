@@ -529,7 +529,7 @@ class TrackerCommandsV3(commands.Cog):
                     try:
                         # Get user's League accounts from main database
                         cur.execute("""
-                            SELECT la.puuid, la.region, la.riot_id_game_name, la.riot_id_tagline
+                            SELECT la.puuid, la.summoner_id, la.region, la.riot_id_game_name, la.riot_id_tagline
                             FROM league_accounts la
                             JOIN users u ON la.user_id = u.id
                             WHERE u.snowflake = %s AND la.show_in_profile = TRUE
@@ -544,9 +544,14 @@ class TrackerCommandsV3(commands.Cog):
                         logger.info(f"📊 Checking {len(accounts)} account(s) for user {discord_id}")
                         
                         # Check each account for active game
-                        for puuid, region, game_name, tagline in accounts:
+                        for puuid, summoner_id, region, game_name, tagline in accounts:
                             try:
-                                logger.debug(f"🔍 Checking {game_name}#{tagline} ({region}) - PUUID: {puuid[:8]}...")
+                                logger.debug(f"🔍 Checking {game_name}#{tagline} ({region}) - Summoner ID: {summoner_id[:8] if summoner_id else 'None'}...")
+                                
+                                # Skip if no summoner_id
+                                if not summoner_id:
+                                    logger.warning(f"⚠️ No summoner_id for {game_name}#{tagline}, skipping...")
+                                    continue
                                 
                                 # Check if already tracking this game
                                 game_key = f"{discord_id}:{puuid}"
@@ -555,8 +560,8 @@ class TrackerCommandsV3(commands.Cog):
                                         logger.debug(f"⏭️ Already tracking game for {game_name}#{tagline}")
                                         continue
                                 
-                                # Get active game from Riot API
-                                game_data = await self.riot_api.get_active_game(puuid, region)
+                                # Get active game from Riot API using summoner_id directly
+                                game_data = await self.riot_api.get_active_game_by_summoner_id(summoner_id, region)
                                 
                                 if not game_data:
                                     logger.debug(f"❌ No active game for {game_name}#{tagline}")
