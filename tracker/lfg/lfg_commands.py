@@ -16,9 +16,13 @@ from datetime import datetime, timedelta
 from .lfg_database import (
     get_lfg_profile, create_lfg_profile, update_lfg_profile,
     create_lfg_listing, get_active_listings, update_listing_status,
-    cleanup_expired_listings
+    cleanup_expired_listings, get_all_lfg_profiles, get_lfg_profiles_count
 )
-from .config import LFG_CHANNEL_ID, LISTING_EXPIRATION_HOURS, COLORS
+from .config import (
+    LFG_LISTINGS_CHANNEL_ID, LFG_PROFILES_CHANNEL_ID, 
+    LISTING_EXPIRATION_HOURS, COLORS, PROFILES_PER_PAGE,
+    ROLE_EMOJIS, RANK_EMOJIS, CHAMPION_EMOJIS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +74,52 @@ PLAYSTYLES = {
 
 
 # ================================
+#       HELPER FUNCTIONS
+# ================================
+
+def get_role_emoji(role: str) -> str:
+    """Get custom emoji for role (TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY)"""
+    # Map our role names to API role names
+    role_map = {
+        'top': 'TOP',
+        'jungle': 'JUNGLE',
+        'mid': 'MIDDLE',
+        'adc': 'BOTTOM',
+        'support': 'UTILITY'
+    }
+    api_role = role_map.get(role.lower(), role.upper())
+    return ROLE_EMOJIS.get(api_role, ROLES.get(role, {}).get('emoji', '❓'))
+
+
+def get_rank_emoji(rank_str: str) -> str:
+    """Get custom emoji for rank (e.g., 'Gold II' -> Gold emoji)"""
+    if not rank_str or rank_str == 'Unranked':
+        return RANK_EMOJIS.get('UNRANKED', '🎮')
+    
+    # Extract tier from rank string (e.g., "Gold II" -> "GOLD")
+    tier = rank_str.split()[0].upper()
+    return RANK_EMOJIS.get(tier, '🎮')
+
+
+def format_rank_with_emoji(rank_str: str) -> str:
+    """Format rank string with custom emoji"""
+    if not rank_str or rank_str == 'Unranked':
+        return f"{RANK_EMOJIS.get('UNRANKED', '🎮')} Unranked"
+    
+    emoji = get_rank_emoji(rank_str)
+    return f"{emoji} {rank_str}"
+
+
+# ================================
 #       PROFILE SETUP VIEWS
 # ================================
 
 class RoleSelectView(View):
     """Interactive view for selecting roles."""
     
-    def __init__(self, riot_api, user_id: int, game_name: str, tagline: str, region: str):
+    def __init__(self, bot, riot_api, user_id: int, game_name: str, tagline: str, region: str):
         super().__init__(timeout=300)
+        self.bot = bot
         self.riot_api = riot_api
         self.user_id = user_id
         self.game_name = game_name
@@ -180,7 +222,7 @@ class RoleSelectView(View):
                     title="✅ Profil LFG utworzony!",
                     description=f"**{self.game_name}#{self.tagline}**\n"
                                 f"Region: **{self.region.upper()}**\n"
-                                f"Role: {', '.join([ROLES[r]['emoji'] + ' ' + ROLES[r]['name'] for r in self.selected_roles])}",
+                                f"Role: {', '.join([get_role_emoji(r) + ' ' + ROLES[r]['name'] for r in self.selected_roles])}",
                     color=discord.Color.green()
                 )
                 
@@ -194,6 +236,9 @@ class RoleSelectView(View):
                 )
                 
                 await interaction.followup.send(embed=embed, ephemeral=True)
+                
+                # Update profile list
+                await update_profile_list(self.bot)
                 
                 # Update original message
                 await interaction.message.edit(
@@ -476,13 +521,13 @@ class CreateListingView(View):
         view = ListingActionView(listing_id, self.user_id)
         
         # Post to channel
-        channel = interaction.guild.get_channel(LFG_CHANNEL_ID)
+        channel = interaction.guild.get_channel(LFG_LISTINGS_CHANNEL_ID)
         if channel:
             message = await channel.send(embed=embed, view=view)
             update_listing_status(listing_id, 'active', message.id)
         else:
             await interaction.followup.send(
-                f"⚠️ Nie znaleziono kanału LFG (ID: {LFG_CHANNEL_ID}). Skontaktuj się z administratorem.",
+                f"⚠️ Nie znaleziono kanału LFG (ID: {LFG_LISTINGS_CHANNEL_ID}). Skontaktuj się z administratorem.",
                 ephemeral=True
             )
             return
@@ -507,7 +552,7 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
         timestamp=datetime.now()
     )
     
-    roles_text = ' '.join([f"{ROLES[r]['emoji']} {ROLES[r]['name']}" for r in roles_needed])
+    roles_text = ' '.join([f"{get_role_emoji(r)} {ROLES[r]['name']}" for r in roles_needed])
     embed.add_field(
         name="🎭 Poszukiwane role",
         value=roles_text,
@@ -523,7 +568,7 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
     if profile.get('solo_rank'):
         embed.add_field(
             name="🏆 Ranga",
-            value=profile['solo_rank'],
+            value=format_rank_with_emoji(profile['solo_rank']),
             inline=True
         )
     
@@ -639,7 +684,7 @@ class LFGCommands(commands.Cog):
             return
         
         # Show role selection view
-        view = RoleSelectView(self.riot_api, interaction.user.id, game_name, tagline, region)
+        view = RoleSelectView(self.bot, self.riot_api, interaction.user.id, game_name, tagline, region)
         
         embed = discord.Embed(
             title="🎭 Wybierz swoje role",
@@ -679,21 +724,24 @@ class LFGCommands(commands.Cog):
             color=discord.Color.blue()
         )
         
-        # Roles
+        # Roles with custom emojis
         roles_text = ' '.join([
-            f"{ROLES[r]['emoji']} {ROLES[r]['name']}"
+            f"{get_role_emoji(r)} {ROLES[r]['name']}"
             for r in profile['primary_roles']
         ])
         embed.add_field(name="🎭 Role", value=roles_text or "Brak", inline=False)
         
-        # Region & Ranks
+        # Region & Ranks with custom emojis
         embed.add_field(name="🌍 Region", value=profile['region'].upper(), inline=True)
         
         if profile.get('solo_rank'):
-            embed.add_field(name="🏆 Solo/Duo", value=profile['solo_rank'], inline=True)
+            embed.add_field(name="🏆 Solo/Duo", value=format_rank_with_emoji(profile['solo_rank']), inline=True)
         
         if profile.get('flex_rank'):
-            embed.add_field(name="👥 Flex", value=profile['flex_rank'], inline=True)
+            embed.add_field(name="👥 Flex", value=format_rank_with_emoji(profile['flex_rank']), inline=True)
+        
+        if profile.get('arena_rank'):
+            embed.add_field(name="⚔️ Arena", value=format_rank_with_emoji(profile['arena_rank']), inline=True)
         
         # Preferences
         prefs = []
@@ -785,7 +833,7 @@ class LFGCommands(commands.Cog):
         
         for listing in listings[:5]:  # Show first 5
             queue_name = QUEUE_TYPES[listing['queue_type']]['name']
-            roles_text = ' '.join([ROLES[r]['emoji'] for r in listing['roles_needed']])
+            roles_text = ' '.join([get_role_emoji(r) for r in listing['roles_needed']])
             
             value = (
                 f"**{listing['riot_id_game_name']}#{listing['riot_id_tagline']}**\n"
@@ -793,7 +841,7 @@ class LFGCommands(commands.Cog):
             )
             
             if listing.get('solo_rank'):
-                value += f" • {listing['solo_rank']}"
+                value += f" • {format_rank_with_emoji(listing['solo_rank'])}"
             
             embed.add_field(
                 name=f"{QUEUE_TYPES[listing['queue_type']]['emoji']} {queue_name}",
@@ -802,6 +850,202 @@ class LFGCommands(commands.Cog):
             )
         
         await interaction.response.send_message(embed=embed)
+
+
+# ================================
+#    PROFILE LIST SYSTEM
+# ================================
+
+class ProfileListView(View):
+    """Pagination view for profile list."""
+    
+    def __init__(self, bot: commands.Bot, page: int = 0):
+        super().__init__(timeout=None)  # Persistent view
+        self.bot = bot
+        self.page = page
+        self.profiles_per_page = PROFILES_PER_PAGE
+        
+        # Update button states
+        self.update_buttons()
+    
+    def update_buttons(self):
+        """Update button states based on current page."""
+        total_profiles = get_lfg_profiles_count()
+        total_pages = (total_profiles + self.profiles_per_page - 1) // self.profiles_per_page
+        
+        # Disable/enable buttons
+        self.previous_button.disabled = (self.page == 0)
+        self.next_button.disabled = (self.page >= total_pages - 1)
+        
+        # Update page label
+        self.page_label.label = f"Strona {self.page + 1}/{max(1, total_pages)}"
+    
+    @discord.ui.button(label="◀️ Poprzednia", style=discord.ButtonStyle.secondary, custom_id="profile_list_prev")
+    async def previous_button(self, interaction: discord.Interaction, button: Button):
+        """Go to previous page."""
+        if self.page > 0:
+            self.page -= 1
+            self.update_buttons()
+            embed = await self.create_profile_list_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+    
+    @discord.ui.button(label="Strona 1/1", style=discord.ButtonStyle.primary, custom_id="profile_list_page", disabled=True)
+    async def page_label(self, interaction: discord.Interaction, button: Button):
+        """Page indicator (disabled button)."""
+        await interaction.response.defer()
+    
+    @discord.ui.button(label="Następna ▶️", style=discord.ButtonStyle.secondary, custom_id="profile_list_next")
+    async def next_button(self, interaction: discord.Interaction, button: Button):
+        """Go to next page."""
+        total_profiles = get_lfg_profiles_count()
+        total_pages = (total_profiles + self.profiles_per_page - 1) // self.profiles_per_page
+        
+        if self.page < total_pages - 1:
+            self.page += 1
+            self.update_buttons()
+            embed = await self.create_profile_list_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+    
+    @discord.ui.button(label="🔄 Odśwież", style=discord.ButtonStyle.success, custom_id="profile_list_refresh", row=1)
+    async def refresh_button(self, interaction: discord.Interaction, button: Button):
+        """Refresh the profile list."""
+        self.update_buttons()
+        embed = await self.create_profile_list_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    async def create_profile_list_embed(self) -> discord.Embed:
+        """Create embed with profile list for current page."""
+        offset = self.page * self.profiles_per_page
+        profiles = get_all_lfg_profiles(limit=self.profiles_per_page, offset=offset)
+        total_profiles = get_lfg_profiles_count()
+        
+        embed = discord.Embed(
+            title="🎮 Lista Profili LFG",
+            description=f"Wszyscy zarejestrowani gracze w systemie LFG\nUżyj `/lfg_setup` aby się zarejestrować!",
+            color=COLORS['profile'],
+            timestamp=datetime.now()
+        )
+        
+        if not profiles:
+            embed.add_field(
+                name="📭 Brak profili",
+                value="Nikt jeszcze się nie zarejestrował. Bądź pierwszy!",
+                inline=False
+            )
+        else:
+            for profile in profiles:
+                # Get user from Discord
+                try:
+                    user = await self.bot.fetch_user(profile['user_id'])
+                    user_mention = user.mention
+                except:
+                    user_mention = f"<@{profile['user_id']}>"
+                
+                # Format roles with custom emojis
+                roles_text = ' '.join([
+                    get_role_emoji(r) for r in profile['primary_roles']
+                ]) or "Brak"
+                
+                # Format ranks with custom emojis
+                ranks = []
+                if profile.get('solo_rank'):
+                    ranks.append(f"Solo: {format_rank_with_emoji(profile['solo_rank'])}")
+                if profile.get('flex_rank'):
+                    ranks.append(f"Flex: {format_rank_with_emoji(profile['flex_rank'])}")
+                if profile.get('arena_rank'):
+                    ranks.append(f"Arena: {format_rank_with_emoji(profile['arena_rank'])}")
+                rank_text = ' • '.join(ranks) if ranks else f"{RANK_EMOJIS.get('UNRANKED', '🎮')} Unranked"
+                
+                # Format playstyle
+                playstyle_emoji = ""
+                if profile.get('playstyle'):
+                    playstyle_emoji = PLAYSTYLES.get(profile['playstyle'], {}).get('emoji', '')
+                
+                # Voice indicator
+                voice_emoji = "🎤" if profile.get('voice_required') else "🔇"
+                
+                field_value = (
+                    f"{user_mention} • {profile['riot_id_game_name']}#{profile['riot_id_tagline']}\n"
+                    f"{roles_text} • {profile['region'].upper()} • {voice_emoji}\n"
+                    f"{rank_text}"
+                )
+                
+                if playstyle_emoji:
+                    field_value += f" • {playstyle_emoji}"
+                
+                embed.add_field(
+                    name=f"#{offset + profiles.index(profile) + 1}",
+                    value=field_value,
+                    inline=False
+                )
+        
+        # Footer with stats
+        total_pages = (total_profiles + self.profiles_per_page - 1) // self.profiles_per_page
+        embed.set_footer(text=f"Strona {self.page + 1}/{max(1, total_pages)} • Łącznie profili: {total_profiles}")
+        
+        return embed
+
+
+async def setup_profile_list(bot: commands.Bot):
+    """Setup persistent profile list message."""
+    try:
+        channel = bot.get_channel(LFG_PROFILES_CHANNEL_ID)
+        if not channel:
+            logger.error(f"❌ Channel {LFG_PROFILES_CHANNEL_ID} not found!")
+            return
+        
+        # Create initial embed and view
+        view = ProfileListView(bot, page=0)
+        embed = await view.create_profile_list_embed()
+        
+        # Try to find existing message (check last 10 messages)
+        existing_message = None
+        async for message in channel.history(limit=10):
+            if message.author == bot.user and message.embeds:
+                if message.embeds[0].title == "🎮 Lista Profili LFG":
+                    existing_message = message
+                    break
+        
+        if existing_message:
+            # Update existing message
+            await existing_message.edit(embed=embed, view=view)
+            logger.info(f"✅ Updated existing profile list message")
+        else:
+            # Create new message
+            await channel.send(embed=embed, view=view)
+            logger.info(f"✅ Created new profile list message")
+        
+        # Add view to bot for persistence
+        bot.add_view(view)
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to setup profile list: {e}")
+
+
+async def update_profile_list(bot: commands.Bot):
+    """Update the profile list message."""
+    try:
+        channel = bot.get_channel(LFG_PROFILES_CHANNEL_ID)
+        if not channel:
+            return
+        
+        # Find the profile list message
+        async for message in channel.history(limit=10):
+            if message.author == bot.user and message.embeds:
+                if message.embeds[0].title == "🎮 Lista Profili LFG":
+                    # Update it
+                    view = ProfileListView(bot, page=0)
+                    embed = await view.create_profile_list_embed()
+                    await message.edit(embed=embed, view=view)
+                    logger.info(f"✅ Profile list updated")
+                    break
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to update profile list: {e}")
 
 
 async def setup(bot: commands.Bot, riot_api):

@@ -61,6 +61,14 @@ async def on_ready():
         logger.info(f"✅ Synced {len(synced)} commands")
     except Exception as e:
         logger.error(f"❌ Failed to sync commands: {e}")
+    
+    # Setup profile list
+    try:
+        from lfg.lfg_commands import setup_profile_list
+        await setup_profile_list(bot)
+        logger.info("✅ Profile list initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize profile list: {e}")
 
 
 @bot.event

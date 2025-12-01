@@ -332,3 +332,59 @@ def cleanup_expired_listings() -> int:
     finally:
         cur.close()
         conn.close()
+
+
+def get_all_lfg_profiles(limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
+    """Get all LFG profiles with optional pagination."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        query = """
+            SELECT * FROM lfg_profiles
+            ORDER BY created_at DESC
+        """
+        params = []
+        
+        if limit:
+            query += " LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
+        
+        cur.execute(query, params)
+        profiles = cur.fetchall()
+        
+        # Parse JSON fields
+        result = []
+        for profile in profiles:
+            profile = dict(profile)
+            profile['primary_roles'] = json.loads(profile['primary_roles']) if profile['primary_roles'] else []
+            profile['secondary_roles'] = json.loads(profile['secondary_roles']) if profile['secondary_roles'] else []
+            profile['top_champions'] = json.loads(profile['top_champions']) if profile['top_champions'] else []
+            result.append(profile)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to get all profiles: {e}")
+        return []
+    finally:
+        cur.close()
+        conn.close()
+
+
+def get_lfg_profiles_count() -> int:
+    """Get total count of LFG profiles."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute("SELECT COUNT(*) FROM lfg_profiles")
+        count = cur.fetchone()[0]
+        return count
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to get profiles count: {e}")
+        return 0
+    finally:
+        cur.close()
+        conn.close()
