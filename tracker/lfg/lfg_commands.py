@@ -140,7 +140,7 @@ class RoleSelectView(View):
         
         # Add confirm button
         confirm_btn = Button(
-            label="Potwierdź",
+            label="Confirm",
             style=discord.ButtonStyle.success,
             custom_id="confirm",
             row=2
@@ -161,7 +161,7 @@ class RoleSelectView(View):
             # Select (max 3 roles)
             if len(self.selected_roles) >= 3:
                 await interaction.response.send_message(
-                    "❌ Możesz wybrać maksymalnie 3 role!",
+                    "❌ You can select maximum 3 roles!",
                     ephemeral=True
                 )
                 return
@@ -175,7 +175,7 @@ class RoleSelectView(View):
         """Handle confirm button click."""
         if not self.selected_roles:
             await interaction.response.send_message(
-                "❌ Musisz wybrać przynajmniej jedną rolę!",
+                "❌ You must select at least one role!",
                 ephemeral=True
             )
             return
@@ -191,7 +191,7 @@ class RoleSelectView(View):
             
             if not account_data:
                 await interaction.followup.send(
-                    "❌ Nie znaleziono konta Riot! Sprawdź swoją nazwę i tag.",
+                    "❌ Riot account not found! Check your name and tag.",
                     ephemeral=True
                 )
                 return
@@ -202,7 +202,7 @@ class RoleSelectView(View):
             summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, self.region)
             if not summoner_data:
                 await interaction.followup.send(
-                    "❌ Nie można pobrać danych z regionu.",
+                    "❌ Cannot fetch data from region.",
                     ephemeral=True
                 )
                 return
@@ -219,7 +219,7 @@ class RoleSelectView(View):
             
             if success:
                 embed = discord.Embed(
-                    title="✅ Profil LFG utworzony!",
+                    title="✅ LFG Profile Created!",
                     description=f"**{self.game_name}#{self.tagline}**\n"
                                 f"Region: **{self.region.upper()}**\n"
                                 f"Role: {', '.join([get_role_emoji(r) + ' ' + ROLES[r]['name'] for r in self.selected_roles])}",
@@ -227,11 +227,11 @@ class RoleSelectView(View):
                 )
                 
                 embed.add_field(
-                    name="📝 Dalsze kroki",
-                    value="Użyj `/lfg_edit` aby uzupełnić swój profil:\n"
-                          "• Dodaj opis\n"
-                          "• Ustaw preferencje voice/język\n"
-                          "• Wybierz styl gry",
+                    name="📝 Next Steps",
+                    value="Use `/lfg_edit` to complete your profile:\n"
+                          "• Add description\n"
+                          "• Set voice/language preferences\n"
+                          "• Choose playstyle",
                     inline=False
                 )
                 
@@ -242,19 +242,19 @@ class RoleSelectView(View):
                 
                 # Update original message
                 await interaction.message.edit(
-                    content="✅ Profil utworzony!",
+                    content="✅ Profile created!",
                     view=None
                 )
             else:
                 await interaction.followup.send(
-                    "❌ Wystąpił błąd podczas tworzenia profilu.",
+                    "❌ An error occurred while creating profile.",
                     ephemeral=True
                 )
         
         except Exception as e:
             logger.error(f"Error in profile creation: {e}")
             await interaction.followup.send(
-                "❌ Wystąpił błąd podczas łączenia z Riot API.",
+                "❌ An error occurred while connecting to Riot API.",
                 ephemeral=True
             )
 
@@ -267,19 +267,19 @@ class ProfileEditView(View):
         self.user_id = user_id
         self.current_profile = current_profile
     
-    @discord.ui.button(label="Zmień role", emoji="🎭", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Change Roles", emoji="🎭", style=discord.ButtonStyle.primary, row=0)
     async def change_roles(self, interaction: discord.Interaction, button: Button):
         """Change role preferences."""
         # TODO: Implement role change modal
-        await interaction.response.send_message("🚧 W trakcie budowy", ephemeral=True)
+        await interaction.response.send_message("🚧 Under construction", ephemeral=True)
     
-    @discord.ui.button(label="Dodaj opis", emoji="📝", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Add Description", emoji="📝", style=discord.ButtonStyle.primary, row=0)
     async def edit_description(self, interaction: discord.Interaction, button: Button):
         """Edit profile description."""
         modal = ProfileDescriptionModal(self.user_id, self.current_profile.get('description', ''))
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Preferencje głosowe", emoji="🎤", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Voice Preferences", emoji="🎤", style=discord.ButtonStyle.secondary, row=1)
     async def toggle_voice(self, interaction: discord.Interaction, button: Button):
         """Toggle voice requirement."""
         current_voice = self.current_profile.get('voice_required', False)
@@ -289,27 +289,27 @@ class ProfileEditView(View):
         self.current_profile['voice_required'] = new_voice
         
         await interaction.response.send_message(
-            f"✅ Voice {'wymagany' if new_voice else 'opcjonalny'}",
+            f"✅ Voice {'required' if new_voice else 'optional'}",
             ephemeral=True
         )
     
-    @discord.ui.button(label="Styl gry", emoji="🎮", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Playstyle", emoji="🎮", style=discord.ButtonStyle.secondary, row=1)
     async def change_playstyle(self, interaction: discord.Interaction, button: Button):
         """Change playstyle preference."""
         view = PlaystyleSelectView(self.user_id)
         await interaction.response.send_message(
-            "Wybierz swój styl gry:",
+            "Choose your playstyle:",
             view=view,
             ephemeral=True
         )
 
 
-class ProfileDescriptionModal(discord.ui.Modal, title="Opis profilu"):
+class ProfileDescriptionModal(discord.ui.Modal, title="Profile Description"):
     """Modal for editing profile description."""
     
     description = discord.ui.TextInput(
-        label="Opis",
-        placeholder="Napisz coś o sobie, swoim stylu gry, preferowanych championach...",
+        label="Description",
+        placeholder="Write something about yourself, your playstyle, preferred champions...",
         style=discord.TextStyle.paragraph,
         max_length=500,
         required=False
@@ -324,7 +324,7 @@ class ProfileDescriptionModal(discord.ui.Modal, title="Opis profilu"):
     async def on_submit(self, interaction: discord.Interaction):
         update_lfg_profile(self.user_id, description=self.description.value)
         await interaction.response.send_message(
-            "✅ Opis zaktualizowany!",
+            "✅ Description updated!",
             ephemeral=True
         )
 
@@ -352,7 +352,7 @@ class PlaystyleSelectView(View):
         
         style_name = PLAYSTYLES[style_id]['name']
         await interaction.response.send_message(
-            f"✅ Styl gry ustawiony na: **{style_name}**",
+            f"✅ Playstyle set to: **{style_name}**",
             ephemeral=True
         )
         
@@ -377,7 +377,7 @@ class CreateListingView(View):
         
         # Add queue type select
         queue_select = Select(
-            placeholder="Wybierz typ gry",
+            placeholder="Choose game type",
             custom_id="queue_select",
             options=[
                 discord.SelectOption(
@@ -421,7 +421,7 @@ class CreateListingView(View):
         
         # Add voice toggle
         voice_btn = Button(
-            label="Voice opcjonalny",
+            label="Voice optional",
             emoji="🎤",
             style=discord.ButtonStyle.secondary,
             custom_id="voice_toggle",
@@ -432,7 +432,7 @@ class CreateListingView(View):
         
         # Add create button
         create_btn = Button(
-            label="Utwórz ogłoszenie",
+            label="Create Listing",
             style=discord.ButtonStyle.success,
             custom_id="create",
             row=2
@@ -454,7 +454,7 @@ class CreateListingView(View):
         else:
             if len(self.roles_needed) >= 4:
                 await interaction.response.send_message(
-                    "❌ Maksymalnie 4 role!",
+                    "❌ Maximum 4 roles!",
                     ephemeral=True
                 )
                 return
@@ -472,10 +472,10 @@ class CreateListingView(View):
         self.voice_required = not self.voice_required
         
         if self.voice_required:
-            button.label = "Voice wymagany"
+            button.label = "Voice required"
             button.style = discord.ButtonStyle.primary
         else:
-            button.label = "Voice opcjonalny"
+            button.label = "Voice optional"
             button.style = discord.ButtonStyle.secondary
         
         await interaction.response.edit_message(view=self)
@@ -484,14 +484,14 @@ class CreateListingView(View):
         """Create the listing."""
         if not self.queue_type:
             await interaction.response.send_message(
-                "❌ Wybierz typ gry!",
+                "❌ Choose game type!",
                 ephemeral=True
             )
             return
         
         if not self.roles_needed:
             await interaction.response.send_message(
-                "❌ Wybierz przynajmniej jedną rolę!",
+                "❌ Choose at least one role!",
                 ephemeral=True
             )
             return
@@ -511,7 +511,7 @@ class CreateListingView(View):
         
         if not listing_id:
             await interaction.followup.send(
-                "❌ Nie udało się utworzyć ogłoszenia.",
+                "❌ Failed to create listing.",
                 ephemeral=True
             )
             return
@@ -527,17 +527,17 @@ class CreateListingView(View):
             update_listing_status(listing_id, 'active', message.id)
         else:
             await interaction.followup.send(
-                f"⚠️ Nie znaleziono kanału LFG (ID: {LFG_LISTINGS_CHANNEL_ID}). Skontaktuj się z administratorem.",
+                f"⚠️ LFG channel not found (ID: {LFG_LISTINGS_CHANNEL_ID}). Contact an administrator.",
                 ephemeral=True
             )
             return
         
         await interaction.followup.send(
-            "✅ Ogłoszenie utworzone!",
+            "✅ Listing created!",
             ephemeral=True
         )
         
-        await interaction.message.edit(content="✅ Ogłoszenie utworzone!", view=None)
+        await interaction.message.edit(content="✅ Listing created!", view=None)
 
 
 def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voice_required: bool, listing_id: int) -> discord.Embed:
@@ -547,14 +547,14 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
     
     embed = discord.Embed(
         title=f"{queue_emoji} {queue_name}",
-        description=f"**{profile['riot_id_game_name']}#{profile['riot_id_tagline']}** szuka graczy!",
+        description=f"**{profile['riot_id_game_name']}#{profile['riot_id_tagline']}** looking for players!",
         color=COLORS['listing'],
         timestamp=datetime.now()
     )
     
     roles_text = ' '.join([f"{get_role_emoji(r)} {ROLES[r]['name']}" for r in roles_needed])
     embed.add_field(
-        name="🎭 Poszukiwane role",
+        name="🎭 Looking for roles",
         value=roles_text,
         inline=False
     )
@@ -567,20 +567,20 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
     
     if profile.get('solo_rank'):
         embed.add_field(
-            name="🏆 Ranga",
+            name="🏆 Rank",
             value=format_rank_with_emoji(profile['solo_rank']),
             inline=True
         )
     
     embed.add_field(
         name="🎤 Voice",
-        value="Wymagany" if voice_required else "Opcjonalny",
+        value="Required" if voice_required else "Optional",
         inline=True
     )
     
     if profile.get('description'):
         embed.add_field(
-            name="📝 O graczu",
+            name="📝 About player",
             value=profile['description'][:200],
             inline=False
         )
@@ -598,21 +598,21 @@ class ListingActionView(View):
         self.listing_id = listing_id
         self.creator_id = creator_id
     
-    @discord.ui.button(label="Dołącz", emoji="✅", style=discord.ButtonStyle.success, custom_id="join")
+    @discord.ui.button(label="Join", emoji="✅", style=discord.ButtonStyle.success, custom_id="join")
     async def join_button(self, interaction: discord.Interaction, button: Button):
         """Join the group."""
         # TODO: Implement join logic with application system
         await interaction.response.send_message(
-            "✅ Aplikacja wysłana! Twórca grupy otrzymał powiadomienie.",
+            "✅ Application sent! The group creator has been notified.",
             ephemeral=True
         )
     
-    @discord.ui.button(label="Zamknij", emoji="🔒", style=discord.ButtonStyle.danger, custom_id="close")
+    @discord.ui.button(label="Close", emoji="🔒", style=discord.ButtonStyle.danger, custom_id="close")
     async def close_button(self, interaction: discord.Interaction, button: Button):
         """Close the listing (creator only)."""
         if interaction.user.id != self.creator_id:
             await interaction.response.send_message(
-                "❌ Tylko twórca może zamknąć ogłoszenie!",
+                "❌ Only the creator can close this listing!",
                 ephemeral=True
             )
             return
@@ -621,11 +621,11 @@ class ListingActionView(View):
         
         embed = interaction.message.embeds[0]
         embed.color = discord.Color.greyple()
-        embed.set_footer(text=f"ID: {self.listing_id} • Zamknięte")
+        embed.set_footer(text=f"ID: {self.listing_id} • Closed")
         
         await interaction.message.edit(embed=embed, view=None)
         await interaction.response.send_message(
-            "✅ Ogłoszenie zamknięte!",
+            "✅ Listing closed!",
             ephemeral=True
         )
 
@@ -656,7 +656,7 @@ class LFGCommands(commands.Cog):
     async def before_cleanup(self):
         await self.bot.wait_until_ready()
     
-    @app_commands.command(name="lfg_setup", description="Utwórz swój profil LFG")
+    @app_commands.command(name="lfg_setup", description="Create your LFG profile")
     async def lfg_setup(
         self,
         interaction: discord.Interaction,
@@ -669,7 +669,7 @@ class LFGCommands(commands.Cog):
         existing = get_lfg_profile(interaction.user.id)
         if existing:
             await interaction.response.send_message(
-                "❌ Masz już profil! Użyj `/lfg_edit` aby go edytować.",
+                "❌ You already have a profile! Use `/lfg_edit` to edit it.",
                 ephemeral=True
             )
             return
@@ -678,7 +678,7 @@ class LFGCommands(commands.Cog):
         region = region.lower()
         if region not in REGIONS:
             await interaction.response.send_message(
-                f"❌ Nieprawidłowy region! Dostępne: {', '.join(REGIONS.keys())}",
+                f"❌ Invalid region! Available: {', '.join(REGIONS.keys())}",
                 ephemeral=True
             )
             return
@@ -687,15 +687,15 @@ class LFGCommands(commands.Cog):
         view = RoleSelectView(self.bot, self.riot_api, interaction.user.id, game_name, tagline, region)
         
         embed = discord.Embed(
-            title="🎭 Wybierz swoje role",
+            title="🎭 Choose your roles",
             description=f"**{game_name}#{tagline}** ({region.upper()})\n\n"
-                        "Wybierz do 3 ról, które preferujesz grać:",
+                        "Select up to 3 roles you prefer to play:",
             color=discord.Color.blue()
         )
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="lfg_profile", description="Wyświetl profil LFG")
+    @app_commands.command(name="lfg_profile", description="Display LFG profile")
     async def lfg_profile(
         self,
         interaction: discord.Interaction,
@@ -708,12 +708,12 @@ class LFGCommands(commands.Cog):
         if not profile:
             if target_user == interaction.user:
                 await interaction.response.send_message(
-                    "❌ Nie masz profilu LFG! Użyj `/lfg_setup` aby go utworzyć.",
+                    "❌ You don't have an LFG profile! Use `/lfg_setup` to create one.",
                     ephemeral=True
                 )
             else:
                 await interaction.response.send_message(
-                    f"❌ {target_user.mention} nie ma profilu LFG.",
+                    f"❌ {target_user.mention} doesn't have an LFG profile.",
                     ephemeral=True
                 )
             return
@@ -729,7 +729,7 @@ class LFGCommands(commands.Cog):
             f"{get_role_emoji(r)} {ROLES[r]['name']}"
             for r in profile['primary_roles']
         ])
-        embed.add_field(name="🎭 Role", value=roles_text or "Brak", inline=False)
+        embed.add_field(name="🎭 Roles", value=roles_text or "None", inline=False)
         
         # Region & Ranks with custom emojis
         embed.add_field(name="🌍 Region", value=profile['region'].upper(), inline=True)
@@ -746,31 +746,31 @@ class LFGCommands(commands.Cog):
         # Preferences
         prefs = []
         if profile.get('voice_required'):
-            prefs.append("🎤 Voice wymagany")
+            prefs.append("🎤 Voice required")
         if profile.get('playstyle'):
             style_name = PLAYSTYLES.get(profile['playstyle'], {}).get('name', profile['playstyle'])
             prefs.append(f"🎮 {style_name}")
         
         if prefs:
-            embed.add_field(name="⚙️ Preferencje", value='\n'.join(prefs), inline=False)
+            embed.add_field(name="⚙️ Preferences", value='\n'.join(prefs), inline=False)
         
         # Description
         if profile.get('description'):
-            embed.add_field(name="📝 Opis", value=profile['description'], inline=False)
+            embed.add_field(name="📝 Description", value=profile['description'], inline=False)
         
         embed.set_thumbnail(url=target_user.display_avatar.url)
         embed.set_footer(text=f"Utworzony: {profile['created_at'].strftime('%Y-%m-%d')}")
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="lfg_edit", description="Edytuj swój profil LFG")
+    @app_commands.command(name="lfg_edit", description="Edit your LFG profile")
     async def lfg_edit(self, interaction: discord.Interaction):
         """Edit LFG profile."""
         profile = get_lfg_profile(interaction.user.id)
         
         if not profile:
             await interaction.response.send_message(
-                "❌ Nie masz profilu LFG! Użyj `/lfg_setup` aby go utworzyć.",
+                "❌ You don't have an LFG profile! Use `/lfg_setup` to create one.",
                 ephemeral=True
             )
             return
@@ -778,21 +778,21 @@ class LFGCommands(commands.Cog):
         view = ProfileEditView(interaction.user.id, profile)
         
         embed = discord.Embed(
-            title="✏️ Edytuj profil LFG",
-            description="Wybierz, co chcesz zmienić:",
+            title="✏️ Edit LFG Profile",
+            description="Choose what you want to change:",
             color=discord.Color.blue()
         )
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="lfg_post", description="Utwórz ogłoszenie LFG")
+    @app_commands.command(name="lfg_post", description="Create LFG listing")
     async def lfg_post(self, interaction: discord.Interaction):
         """Create LFG listing."""
         profile = get_lfg_profile(interaction.user.id)
         
         if not profile:
             await interaction.response.send_message(
-                "❌ Najpierw utwórz profil używając `/lfg_setup`!",
+                "❌ First create a profile using `/lfg_setup`!",
                 ephemeral=True
             )
             return
@@ -800,14 +800,14 @@ class LFGCommands(commands.Cog):
         view = CreateListingView(interaction.user.id, profile)
         
         embed = discord.Embed(
-            title="📝 Utwórz ogłoszenie LFG",
-            description="Skonfiguruj swoje ogłoszenie:",
+            title="📝 Create LFG Listing",
+            description="Configure your listing:",
             color=discord.Color.blue()
         )
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="lfg_browse", description="Przeglądaj ogłoszenia LFG")
+    @app_commands.command(name="lfg_browse", description="Browse LFG listings")
     async def lfg_browse(
         self,
         interaction: discord.Interaction,
@@ -819,15 +819,15 @@ class LFGCommands(commands.Cog):
         
         if not listings:
             await interaction.response.send_message(
-                "❌ Brak aktywnych ogłoszeń z tymi filtrami.",
+                "❌ No active listings with these filters.",
                 ephemeral=True
             )
             return
         
         # Create embed with listings
         embed = discord.Embed(
-            title="📋 Aktywne ogłoszenia LFG",
-            description=f"Znaleziono {len(listings)} ogłoszeń",
+            title="📋 Active LFG Listings",
+            description=f"Found {len(listings)} listings",
             color=discord.Color.blue()
         )
         
@@ -878,9 +878,9 @@ class ProfileListView(View):
         self.next_button.disabled = (self.page >= total_pages - 1)
         
         # Update page label
-        self.page_label.label = f"Strona {self.page + 1}/{max(1, total_pages)}"
+        self.page_label.label = f"Page {self.page + 1}/{max(1, total_pages)}"
     
-    @discord.ui.button(label="◀️ Poprzednia", style=discord.ButtonStyle.secondary, custom_id="profile_list_prev")
+    @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary, custom_id="profile_list_prev")
     async def previous_button(self, interaction: discord.Interaction, button: Button):
         """Go to previous page."""
         if self.page > 0:
@@ -891,12 +891,12 @@ class ProfileListView(View):
         else:
             await interaction.response.defer()
     
-    @discord.ui.button(label="Strona 1/1", style=discord.ButtonStyle.primary, custom_id="profile_list_page", disabled=True)
+    @discord.ui.button(label="Page 1/1", style=discord.ButtonStyle.primary, custom_id="profile_list_page", disabled=True)
     async def page_label(self, interaction: discord.Interaction, button: Button):
         """Page indicator (disabled button)."""
         await interaction.response.defer()
     
-    @discord.ui.button(label="Następna ▶️", style=discord.ButtonStyle.secondary, custom_id="profile_list_next")
+    @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary, custom_id="profile_list_next")
     async def next_button(self, interaction: discord.Interaction, button: Button):
         """Go to next page."""
         total_profiles = get_lfg_profiles_count()
@@ -910,7 +910,7 @@ class ProfileListView(View):
         else:
             await interaction.response.defer()
     
-    @discord.ui.button(label="🔄 Odśwież", style=discord.ButtonStyle.success, custom_id="profile_list_refresh", row=1)
+    @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.success, custom_id="profile_list_refresh", row=1)
     async def refresh_button(self, interaction: discord.Interaction, button: Button):
         """Refresh the profile list."""
         self.update_buttons()
@@ -924,16 +924,16 @@ class ProfileListView(View):
         total_profiles = get_lfg_profiles_count()
         
         embed = discord.Embed(
-            title="🎮 Lista Profili LFG",
-            description=f"Wszyscy zarejestrowani gracze w systemie LFG\nUżyj `/lfg_setup` aby się zarejestrować!",
+            title="🎮 LFG Profile List",
+            description=f"All registered players in the LFG system\nUse `/lfg_setup` to register!",
             color=COLORS['profile'],
             timestamp=datetime.now()
         )
         
         if not profiles:
             embed.add_field(
-                name="📭 Brak profili",
-                value="Nikt jeszcze się nie zarejestrował. Bądź pierwszy!",
+                name="📭 No profiles",
+                value="No one has registered yet. Be the first!",
                 inline=False
             )
         else:
@@ -948,7 +948,7 @@ class ProfileListView(View):
                 # Format roles with custom emojis
                 roles_text = ' '.join([
                     get_role_emoji(r) for r in profile['primary_roles']
-                ]) or "Brak"
+                ]) or "None"
                 
                 # Format ranks with custom emojis
                 ranks = []
@@ -985,7 +985,7 @@ class ProfileListView(View):
         
         # Footer with stats
         total_pages = (total_profiles + self.profiles_per_page - 1) // self.profiles_per_page
-        embed.set_footer(text=f"Strona {self.page + 1}/{max(1, total_pages)} • Łącznie profili: {total_profiles}")
+        embed.set_footer(text=f"Page {self.page + 1}/{max(1, total_pages)} • Total profiles: {total_profiles}")
         
         return embed
 
@@ -1006,7 +1006,7 @@ async def setup_profile_list(bot: commands.Bot):
         existing_message = None
         async for message in channel.history(limit=10):
             if message.author == bot.user and message.embeds:
-                if message.embeds[0].title == "🎮 Lista Profili LFG":
+                if message.embeds[0].title == "🎮 LFG Profile List":
                     existing_message = message
                     break
         
@@ -1036,7 +1036,7 @@ async def update_profile_list(bot: commands.Bot):
         # Find the profile list message
         async for message in channel.history(limit=10):
             if message.author == bot.user and message.embeds:
-                if message.embeds[0].title == "🎮 Lista Profili LFG":
+                if message.embeds[0].title == "🎮 LFG Profile List":
                     # Update it
                     view = ProfileListView(bot, page=0)
                     embed = await view.create_profile_list_embed()
