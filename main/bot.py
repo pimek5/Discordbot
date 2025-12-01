@@ -723,30 +723,6 @@ class MyBot(commands.Bot):
                 
                 print("✅ Kassalytics commands registered")
                 
-                # Load LFG system
-                print("🔄 Loading LFG system...")
-                try:
-                    import sys
-                    import os
-                    # Add parent directory to path for LFG imports
-                    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                    if parent_dir not in sys.path:
-                        sys.path.insert(0, parent_dir)
-                    
-                    from lfg.lfg_database import initialize_lfg_database
-                    from lfg.lfg_commands import setup as setup_lfg
-                    
-                    # Initialize LFG database
-                    initialize_lfg_database()
-                    print("  ✅ LFG database initialized")
-                    
-                    # Load LFG commands
-                    await setup_lfg(self, riot_api)
-                    print("  ✅ LFG commands loaded")
-                except Exception as e:
-                    print(f"⚠️ Failed to load LFG system: {e}")
-                    logging.error(f"LFG initialization error: {e}", exc_info=True)
-                
                 orianna_initialized = True
                 print("✅ Kassalytics modules initialized successfully")
             except Exception as e:

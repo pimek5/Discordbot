@@ -1,28 +1,49 @@
-# 🎮 HEXRTBRXEN Discord Bot - Nowy System LFG!
+# 🎮 HEXRTBRXEN Discord Bot Project
 
-## 🔥 Najnowsze zmiany (2025-12-01)
+## 📦 Struktura projektu - 2 osobne boty
 
-### ✨ NOWY: System LFG (Looking For Group)
+### Bot 1: HEXRTBRXEN (Main Bot)
+**Lokalizacja:** `main/`
 
-System szukania graczy do League of Legends z pełną integracją Riot API!
+**Funkcje:**
+- 🏆 Kassalytics (Profile, Stats, Leaderboards)
+- 🎮 LoLdle (5 daily games)
+- 🗳️ Voting System (Thread Manager)
+- 🎨 183 Custom Champion Emojis
+- 📢 Twitter Monitoring
+- 🛡️ Moderacja
+- 📊 Server Stats
 
-**Główne funkcje:**
-- 🎭 Profile graczy z weryfikacją przez Riot API
-- 📝 Interaktywne ogłoszenia (GUI z przyciskami)
-- 🏆 Automatyczne pobieranie rang (Solo/Duo, Flex, Arena)
-- 🌍 Wsparcie dla wszystkich regionów
-- 🎤 Preferencje voice/język
-- 🎮 Różne typy gier (Ranked, Normal, ARAM, Arena)
+### Bot 2: Tracker Bot (LFG System)
+**Lokalizacja:** `tracker/`
 
-**Dokumentacja:** [`lfg/README.md`](lfg/README.md)
+**Funkcje:**
+- 🎭 System LFG (Looking For Group)
+- 👤 Profile graczy z Riot API
+- 📝 Ogłoszenia interaktywne (GUI)
+- 🏆 Automatyczne rangi
+- 🌍 Wszystkie regiony
 
-### 📦 Tracker System - Zarchiwizowany
+---
 
-System monitoringu live games został tymczasowo wyłączony i przeniesiony do `tracker_archived/`.
+## 🚀 Najnowsze zmiany (2025-12-02)
 
-**Powód:** Riot API breaking changes (wszystkie `/by-puuid/` endpointy przestały działać).
+### ✨ ROZDZIELENIE BOTÓW
 
-**Dokumentacja archiwum:** [`tracker_archived/ARCHIVED_README.md`](tracker_archived/ARCHIVED_README.md)
+System LFG został przeniesiony do **osobnego bota** (Tracker Bot).
+
+**Powód:** Rozdzielenie funkcjonalności - główny bot obsługuje Kassalytics i LoLdle, tracker bot obsługuje tylko LFG.
+
+**Migracja:**
+- `lfg/` → `tracker/lfg/`
+- Nowy plik: `tracker/tracker_bot_lfg.py`
+- `main/bot.py` - usunięto integrację LFG
+
+### 📦 Tracker System (Stary) - Zarchiwizowany
+
+Oryginalny system monitoringu live games został zarchiwizowany w `tracker_archived/` z powodu Riot API breaking changes.
+
+**Dokumentacja:** [`tracker_archived/ARCHIVED_README.md`](tracker_archived/ARCHIVED_README.md)
 
 ---
 
@@ -30,74 +51,79 @@ System monitoringu live games został tymczasowo wyłączony i przeniesiony do `
 
 ```
 Discordbot/
-├── main/                      # Główny bot (HEXRTBRXEN)
+├── main/                      # 🤖 BOT 1: HEXRTBRXEN (główny bot)
 │   ├── bot.py                 # Główny plik bota
-│   ├── database.py            # Operacje na bazie danych (Kassalytics)
+│   ├── database.py            # Kassalytics database
 │   ├── riot_api.py            # Riot API wrapper
-│   ├── profile_commands.py    # Komendy profili
-│   ├── stats_commands.py      # Komendy statystyk
-│   ├── leaderboard_commands.py # Komendy leaderboardów
-│   ├── vote_commands.py       # System głosowania
-│   ├── champion_emojis.py     # Custom emoji championów
+│   ├── profile_commands.py    # Profile commands
+│   ├── stats_commands.py      # Stats commands
+│   ├── leaderboard_commands.py # Leaderboards
+│   ├── vote_commands.py       # Voting system
+│   ├── champion_emojis.py     # 183 custom emojis
 │   └── ...
 │
-├── lfg/                       # ⭐ NOWY: System LFG
-│   ├── lfg_commands.py        # Komendy LFG
-│   ├── lfg_database.py        # Operacje na bazie danych
-│   ├── lfg_schema.sql         # Schemat bazy danych
-│   └── README.md              # Pełna dokumentacja
+├── tracker/                   # 🤖 BOT 2: Tracker Bot (LFG)
+│   ├── tracker_bot_lfg.py     # ⭐ Main bot file (LFG only)
+│   ├── riot_api.py            # Riot API wrapper
+│   ├── lfg/                   # LFG system
+│   │   ├── lfg_commands.py    # LFG commands
+│   │   ├── lfg_database.py    # Database operations
+│   │   ├── lfg_schema.sql     # PostgreSQL schema
+│   │   ├── config.py          # Configuration
+│   │   ├── README.md          # Full documentation
+│   │   └── SETUP.md           # 5-minute setup
+│   ├── Procfile               # Railway deployment
+│   └── requirements.txt
 │
-├── tracker_archived/          # 📦 Zarchiwizowany tracker
-│   ├── tracker_bot.py
+├── tracker_archived/          # 📦 Zarchiwizowany stary tracker
+│   ├── tracker_bot.py         # Stary bot (live game monitoring)
 │   ├── tracker_commands_v3.py
 │   └── ARCHIVED_README.md
 │
-├── creator/                   # Bot do tworzenia custom skin chromas
-├── emojis/                    # Pliki emoji (183 custom emojis)
-└── ...
+├── creator/                   # Bot do custom skin chromas
+└── emojis/                    # Pliki emoji (183 custom emojis)
 ```
 
 ---
 
-## 🚀 Szybki start - LFG
+## 🚀 Szybki start
 
-### 1. Utwórz profil
-```
-/lfg_setup game_name:YourName tagline:EUW region:euw
-```
-- Wybierz swoje role (interactive GUI)
-- Bot automatycznie pobierze Twoje rangi z Riot API
+### Bot 1: HEXRTBRXEN (Main Bot)
 
-### 2. Wyświetl profil
-```
-/lfg_profile
+```bash
+cd main
+cp .env.example .env
+# Edytuj .env i dodaj tokeny
+pip install -r requirements.txt
+python bot.py
 ```
 
-### 3. Edytuj profil
-```
-/lfg_edit
-```
-- Dodaj opis
-- Zmień preferencje voice
-- Ustaw styl gry (Casual/Competitive/Mixed)
+**Komendy:**
+- `/profile <riot_id>` - Profil gracza
+- `/loldle <champion>` - Zgadnij championa
+- `/vote` - System głosowania
 
-### 4. Utwórz ogłoszenie
-```
-/lfg_post
-```
-- Wybierz typ gry (Ranked Solo/Flex/Normal/ARAM/Arena)
-- Wybierz poszukiwane role
-- Toggle voice (wymagany/opcjonalny)
+### Bot 2: Tracker Bot (LFG)
 
-### 5. Przeglądaj ogłoszenia
+```bash
+cd tracker
+cp .env.example .env
+# Edytuj .env i dodaj tokeny
+# Edytuj lfg/config.py i ustaw LFG_CHANNEL_ID
+pip install -r requirements.txt
+python tracker_bot_lfg.py
 ```
-/lfg_browse
-```
-Opcjonalne filtry: `queue_type`, `region`
+
+**Komendy:**
+- `/lfg_setup` - Utwórz profil
+- `/lfg_post` - Utwórz ogłoszenie
+- `/lfg_browse` - Przeglądaj ogłoszenia
+
+**Dokumentacja:** [`tracker/README_LFG.md`](tracker/README_LFG.md)
 
 ---
 
-## 🎮 Komendy bota (główne funkcje)
+## 🎮 Funkcje - Bot 1 (HEXRTBRXEN)
 
 ### Kassalytics (Profile & Stats)
 - `/profile <riot_id>` - Wyświetl profil gracza z Riot API
@@ -129,11 +155,35 @@ Opcjonalne filtry: `queue_type`, `region`
 
 ---
 
+## 🎮 Funkcje - Bot 2 (Tracker Bot LFG)
+
+### Profile System
+- `/lfg_setup <game_name> <tagline> <region>` - Utwórz profil z weryfikacją Riot API
+- `/lfg_profile [user]` - Zobacz profil LFG
+- `/lfg_edit` - Edytuj profil (opis, voice, styl gry)
+
+### Ogłoszenia LFG
+- `/lfg_post` - Utwórz ogłoszenie (interactive GUI)
+  - Wybór typu gry (Ranked Solo/Flex/Normal/ARAM/Arena)
+  - Wybór poszukiwanych ról
+  - Toggle voice (wymagany/opcjonalny)
+- `/lfg_browse [queue_type] [region]` - Przeglądaj ogłoszenia z filtrami
+
+### Features
+- 🏆 Automatyczne pobieranie rang z Riot API
+- 🎭 Wybór do 3 preferowanych ról
+- ⏰ Auto-wygasanie ogłoszeń po 6h
+- 🌍 Wsparcie wszystkich regionów
+
+**Pełna dokumentacja:** [`tracker/lfg/README.md`](tracker/lfg/README.md)
+
+---
+
 ## ⚙️ Konfiguracja
 
-### Wymagane zmienne środowiskowe
+### Bot 1 (HEXRTBRXEN)
 
-Utwórz plik `.env` w folderze `main/`:
+Plik `main/.env`:
 
 ```env
 # Discord
@@ -149,40 +199,50 @@ RIOT_API_KEY=RGAPI-xxxxx
 TWITTER_BEARER_TOKEN=xxxxx
 ```
 
-### Instalacja zależności
+### Bot 2 (Tracker LFG)
 
-```bash
-cd main
-pip install -r requirements.txt
+Plik `tracker/.env`:
+
+```env
+# Discord
+DISCORD_TOKEN=your_tracker_bot_token
+
+# Database (może być ta sama baza co main bot)
+DATABASE_URL=postgresql://user:password@host:5432/database
+
+# Riot API (może być ten sam klucz)
+RIOT_API_KEY=RGAPI-xxxxx
+
+# Guild ID
+GUILD_ID=1153027935553454191
 ```
 
-### Uruchomienie bota
+**Dodatkowo edytuj** `tracker/lfg/config.py`:
 
-```bash
-cd main
-python bot.py
+```python
+# ID kanału dla ogłoszeń LFG
+LFG_CHANNEL_ID = 1234567890  # ZMIEŃ NA SWOJE
 ```
 
 ---
 
 ## 💾 Baza danych
 
-### Kassalytics tables
+### Bot 1 (HEXRTBRXEN) - Tables
+
 - `users` - Zarejestrowane konta Riot
-- `champion_stats` - Statystyki championów graczy
+- `champion_stats` - Statystyki championów
 - `match_history` - Historia meczów
 - `leaderboard` - Ranking graczy
 
-### LFG tables ⭐ NOWE
+### Bot 2 (Tracker LFG) - Tables
+
 - `lfg_profiles` - Profile graczy LFG
 - `lfg_listings` - Ogłoszenia LFG
 - `lfg_applications` - Aplikacje do grup
-- `lfg_group_history` - Historia utworzonych grup
+- `lfg_group_history` - Historia grup
 
-### Tracker tables (archived)
-- `league_accounts` - Konta do śledzenia
-- `tracked_players` - Śledzeni gracze
-- `monitored_games` - Historia gier
+**Oba boty mogą używać tej samej bazy danych** - tabele nie kolidują ze sobą.
 
 ---
 
@@ -229,28 +289,40 @@ python -c "from riot_api import RiotAPI; api = RiotAPI('API_KEY'); print(api)"
 
 ## 📝 Changelog
 
-### 2025-12-01 - Major Update
-- ✨ **ADDED:** System LFG (Looking For Group)
-  - Profile system z weryfikacją Riot API
+### 2025-12-02 - Major Restructure
+- 🔀 **SPLIT:** Rozdzielono boty na 2 osobne aplikacje
+  - Bot 1: HEXRTBRXEN (main/) - Kassalytics, LoLdle, Voting
+  - Bot 2: Tracker Bot (tracker/) - LFG System tylko
+- ✨ **ADDED:** Nowy `tracker_bot_lfg.py` - dedicated LFG bot
+- 🔧 **REMOVED:** Integracja LFG z main/bot.py
+- 📦 **MOVED:** `lfg/` → `tracker/lfg/`
+- 📖 **DOCS:** Zaktualizowana dokumentacja dla obu botów
+
+### 2025-12-01 - LFG System
+- ✨ **ADDED:** Pełny system LFG
+  - Profile z Riot API verification
   - Interactive listing creation (GUI)
-  - Browse & filter listings
-  - Application system
-- 📦 **ARCHIVED:** Tracker system (due to Riot API changes)
-- 🔧 **FIXED:** PostgreSQL schema dla LFG (JSONB, SERIAL)
+  - Browse & filter system
+  - Auto-cleanup (30 min task)
+- 📦 **ARCHIVED:** Stary tracker (live game monitoring)
+- 🐛 **FIXED:** PostgreSQL schema (JSONB, SERIAL)
 
 ### 2024-XX-XX - Previous updates
 - 🎮 LoLdle daily games (5 modes)
-- 🏆 Kassalytics integration (profiles, stats, leaderboards)
-- 🗳️ Voting system for thread manager
+- 🏆 Kassalytics integration
+- 🗳️ Voting system
 - 📢 Twitter monitoring
-- 🎨 183 custom champion emojis
+- 🎨 183 custom emojis
 
 ---
 
 ## 🐛 Known Issues
 
-### LFG System
-- [ ] LFG channel ID jest hardcoded (line ~500 w `lfg_commands.py`)
+### Bot 1 (HEXRTBRXEN)
+- Wszystkie funkcje działają poprawnie
+
+### Bot 2 (Tracker LFG)
+- [ ] LFG channel ID jest hardcoded w config.py (wymaga ręcznej konfiguracji)
 - [ ] Persistent views mogą być utracone po restarcie bota
 - [ ] Brak rate limiting dla Riot API w LFG
 

@@ -1,1 +1,1 @@
-worker: python tracker/tracker_bot.py
+worker: python tracker_bot_lfg.py
