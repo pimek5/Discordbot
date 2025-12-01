@@ -55,10 +55,12 @@ async def on_ready():
     logger.info(f"✅ Bot logged in as {bot.user.name} (ID: {bot.user.id})")
     logger.info(f"✅ Connected to {len(bot.guilds)} servers")
     
-    # Sync slash commands
+    # Sync slash commands (guild-specific for instant updates)
     try:
-        synced = await bot.tree.sync()
-        logger.info(f"✅ Synced {len(synced)} commands")
+        guild = discord.Object(id=GUILD_ID)
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+        logger.info(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
     except Exception as e:
         logger.error(f"❌ Failed to sync commands: {e}")
     
@@ -148,12 +150,15 @@ async def sync_commands(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     
     try:
-        synced = await bot.tree.sync()
+        # Sync to current guild for instant updates
+        guild = discord.Object(id=interaction.guild_id)
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
         await interaction.followup.send(
-            f"✅ Synced {len(synced)} commands!",
+            f"✅ Synced {len(synced)} commands to this server!",
             ephemeral=True
         )
-        logger.info(f"Commands synced by {interaction.user.name}")
+        logger.info(f"Commands synced to guild {interaction.guild_id} by {interaction.user.name}")
     except Exception as e:
         await interaction.followup.send(
             f"❌ Failed to sync commands: {e}",
