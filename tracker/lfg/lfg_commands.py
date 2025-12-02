@@ -98,6 +98,18 @@ def get_rank_emoji(rank_str: str) -> str:
     
     # Extract tier from rank string (e.g., "Gold II" -> "GOLD")
     tier = rank_str.split()[0].upper()
+
+
+async def region_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> List[app_commands.Choice[str]]:
+    """Autocomplete for region selection."""
+    return [
+        app_commands.Choice(name=name, value=key)
+        for key, name in REGIONS.items()
+        if current.lower() in key.lower() or current.lower() in name.lower()
+    ][:25]
     return RANK_EMOJIS.get(tier, '🎮')
 
 
@@ -656,7 +668,13 @@ class LFGCommands(commands.Cog):
     async def before_cleanup(self):
         await self.bot.wait_until_ready()
     
-    @app_commands.command(name="lfg_setup", description="Create your LFG profile")
+    @app_commands.command(name="lfg_setup", description="Create your League of Legends LFG profile")
+    @app_commands.describe(
+        game_name="Your Riot ID game name (e.g., PlayerName)",
+        tagline="Your Riot ID tagline (e.g., EUW)",
+        region="Your League of Legends region"
+    )
+    @app_commands.autocomplete(region=region_autocomplete)
     async def lfg_setup(
         self,
         interaction: discord.Interaction,
@@ -678,7 +696,7 @@ class LFGCommands(commands.Cog):
         region = region.lower()
         if region not in REGIONS:
             await interaction.response.send_message(
-                f"❌ Invalid region! Available: {', '.join(REGIONS.keys())}",
+                f"❌ Invalid region! Choose from: {', '.join(REGIONS.values())}",
                 ephemeral=True
             )
             return
@@ -687,7 +705,7 @@ class LFGCommands(commands.Cog):
         view = RoleSelectView(self.bot, self.riot_api, interaction.user.id, game_name, tagline, region)
         
         embed = discord.Embed(
-            title="🎭 Choose your roles",
+            title="🎭 Choose your League of Legends roles",
             description=f"**{game_name}#{tagline}** ({region.upper()})\n\n"
                         "Select up to 3 roles you prefer to play:",
             color=discord.Color.blue()
@@ -807,7 +825,12 @@ class LFGCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="lfg_browse", description="Browse LFG listings")
+    @app_commands.command(name="lfg_browse", description="Browse active League of Legends LFG listings")
+    @app_commands.describe(
+        queue_type="Filter by queue type (ranked_solo, ranked_flex, normal, aram, arena)",
+        region="Filter by region"
+    )
+    @app_commands.autocomplete(region=region_autocomplete)
     async def lfg_browse(
         self,
         interaction: discord.Interaction,
