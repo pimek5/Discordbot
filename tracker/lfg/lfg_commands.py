@@ -312,11 +312,14 @@ class RoleSelectView(View):
                 # Update profile list
                 await update_profile_list(self.bot)
                 
-                # Update original message
-                await interaction.message.edit(
-                    content="✅ Profile created!",
-                    view=None
-                )
+                # Try to update original message (may fail if ephemeral)
+                try:
+                    await interaction.message.edit(
+                        content="✅ Profile created!",
+                        view=None
+                    )
+                except (discord.NotFound, discord.HTTPException):
+                    pass  # Message may have been deleted or is ephemeral
             else:
                 await interaction.followup.send(
                     "❌ An error occurred while creating profile.",

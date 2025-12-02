@@ -67,11 +67,12 @@ def get_lfg_profile(user_id: int) -> Optional[Dict[str, Any]]:
         profile = cur.fetchone()
         
         if profile:
-            # Parse JSON fields
+            # PostgreSQL JSONB fields are already Python lists/dicts, no need to parse
             profile = dict(profile)
-            profile['primary_roles'] = json.loads(profile['primary_roles']) if profile['primary_roles'] else []
-            profile['secondary_roles'] = json.loads(profile['secondary_roles']) if profile['secondary_roles'] else []
-            profile['top_champions'] = json.loads(profile['top_champions']) if profile['top_champions'] else []
+            # Ensure lists exist (handle NULL values)
+            profile['primary_roles'] = profile['primary_roles'] if profile['primary_roles'] is not None else []
+            profile['secondary_roles'] = profile['secondary_roles'] if profile['secondary_roles'] is not None else []
+            profile['top_champions'] = profile['top_champions'] if profile['top_champions'] is not None else []
         
         return profile
         
@@ -353,13 +354,14 @@ def get_all_lfg_profiles(limit: Optional[int] = None, offset: int = 0) -> List[D
         cur.execute(query, params)
         profiles = cur.fetchall()
         
-        # Parse JSON fields
+        # PostgreSQL JSONB fields are already Python lists/dicts
         result = []
         for profile in profiles:
             profile = dict(profile)
-            profile['primary_roles'] = json.loads(profile['primary_roles']) if profile['primary_roles'] else []
-            profile['secondary_roles'] = json.loads(profile['secondary_roles']) if profile['secondary_roles'] else []
-            profile['top_champions'] = json.loads(profile['top_champions']) if profile['top_champions'] else []
+            # Ensure lists exist (handle NULL values)
+            profile['primary_roles'] = profile['primary_roles'] if profile['primary_roles'] is not None else []
+            profile['secondary_roles'] = profile['secondary_roles'] if profile['secondary_roles'] is not None else []
+            profile['top_champions'] = profile['top_champions'] if profile['top_champions'] is not None else []
             result.append(profile)
         
         return result
