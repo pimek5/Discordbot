@@ -837,13 +837,13 @@ class LFGCommands(commands.Cog):
     async def before_cleanup(self):
         await self.bot.wait_until_ready()
     
-    @app_commands.command(name="lfg_setup", description="Create your profile - takes 1 minute!")
+    @app_commands.command(name="lfgsetup", description="Create your profile - takes 1 minute!")
     @app_commands.describe(
         riot_id="Your Riot ID with # tag (example: PlayerName#EUW)",
         region="Your server region"
     )
     @app_commands.autocomplete(region=region_autocomplete)
-    async def lfg_setup(
+    async def lfgsetup(
         self,
         interaction: discord.Interaction,
         riot_id: str,
@@ -855,7 +855,7 @@ class LFGCommands(commands.Cog):
         if existing:
             await interaction.response.send_message(
                 "❌ You already have a profile!\n\n"
-                "💡 Use `/lfg_edit` to change your settings or `/lfg_profile` to view it.",
+                "💡 Use `/lfgedit` to change your settings or `/lfgprofile` to view it.",
                 ephemeral=True
             )
             return
@@ -914,11 +914,11 @@ class LFGCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="lfg_profile", description="View yours or someone's profile")
+    @app_commands.command(name="lfgprofile", description="View yours or someone's profile")
     @app_commands.describe(
         user="Select a user (leave empty for your profile)"
     )
-    async def lfg_profile(
+    async def lfgprofile(
         self,
         interaction: discord.Interaction,
         user: Optional[discord.Member] = None
@@ -931,7 +931,7 @@ class LFGCommands(commands.Cog):
             if target_user == interaction.user:
                 await interaction.response.send_message(
                     "❌ You don't have a profile yet!\n\n"
-                    "💡 Use `/lfg_setup` to create one in 1 minute!",
+                    "💡 Use `/lfgsetup` to create one in 1 minute!",
                     ephemeral=True
                 )
             else:
@@ -986,14 +986,14 @@ class LFGCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="lfg_edit", description="Edit your LFG profile")
-    async def lfg_edit(self, interaction: discord.Interaction):
+    @app_commands.command(name="lfgedit", description="Edit your LFG profile")
+    async def lfgedit(self, interaction: discord.Interaction):
         """Edit LFG profile."""
         profile = get_lfg_profile(interaction.user.id)
         
         if not profile:
             await interaction.response.send_message(
-                "❌ You don't have an LFG profile! Use `/lfg_setup` to create one.",
+                "❌ You don't have an LFG profile! Use `/lfgsetup` to create one.",
                 ephemeral=True
             )
             return
@@ -1008,16 +1008,16 @@ class LFGCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="lfg_post", description="Find teammates - create your listing!")
-    async def lfg_post(self, interaction: discord.Interaction):
+    @app_commands.command(name="lfg", description="Find teammates - create your listing!")
+    async def lfg(self, interaction: discord.Interaction):
         """Create LFG listing."""
         profile = get_lfg_profile(interaction.user.id)
         
         if not profile:
             await interaction.response.send_message(
                 "❌ You need a profile first!\n\n"
-                "💡 Quick setup: `/lfg_setup riot_id region`\n"
-                "Example: `/lfg_setup 16 9 13 5 11#pimek eune`",
+                "💡 Quick setup: `/lfgsetup riot_id region`\n"
+                "Example: `/lfgsetup 16 9 13 5 11#pimek eune`",
                 ephemeral=True
             )
             return
@@ -1038,7 +1038,7 @@ class LFGCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="lfg_browse", description="Browse active League of Legends LFG listings")
+    @app_commands.command(name="lfgbrowse", description="Browse active League of Legends LFG listings")
     @app_commands.describe(
         queue_type="Filter by queue type",
         region="Filter by region"
@@ -1047,7 +1047,7 @@ class LFGCommands(commands.Cog):
         region=region_autocomplete,
         queue_type=queue_type_autocomplete
     )
-    async def lfg_browse(
+    async def lfgbrowse(
         self,
         interaction: discord.Interaction,
         queue_type: Optional[str] = None,
@@ -1067,7 +1067,7 @@ class LFGCommands(commands.Cog):
             message = "❌ No active listings found"
             if filters_text:
                 message += f" with filters: {', '.join(filters_text)}"
-            message += "\n\nTry removing some filters or create your own listing with `/lfg_post`!"
+            message += "\n\nTry removing some filters or create your own listing with `/lfg`!"
             
             await interaction.response.send_message(
                 message,
@@ -1102,8 +1102,8 @@ class LFGCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="lfg_help", description="How to use the LFG system")
-    async def lfg_help(self, interaction: discord.Interaction):
+    @app_commands.command(name="lfghelp", description="How to use the LFG system")
+    async def lfghelp(self, interaction: discord.Interaction):
         """Show comprehensive help for LFG system."""
         embed = discord.Embed(
             title="🎮 How to Find Teammates",
@@ -1113,25 +1113,25 @@ class LFGCommands(commands.Cog):
         
         embed.add_field(
             name="🚀 Quick Start (3 steps)",
-            value="**1.** `/lfg_setup` - Create your profile (1 min)\n"
-                  "**2.** `/lfg_post` - Create listing to find players\n"
-                  "**3.** `/lfg_browse` - See who's looking for teammates",
+            value="**1.** `/lfgsetup` - Create your profile (1 min)\n"
+                  "**2.** `/lfg` - Create listing to find players\n"
+                  "**3.** `/lfgbrowse` - See who's looking for teammates",
             inline=False
         )
         
         embed.add_field(
             name="👤 Your Profile",
-            value="• `/lfg_profile` - View your profile\n"
-                  "• `/lfg_profile @user` - Check someone's profile\n"
-                  "• `/lfg_edit` - Change your settings",
+            value="• `/lfgprofile` - View your profile\n"
+                  "• `/lfgprofile @user` - Check someone's profile\n"
+                  "• `/lfgedit` - Change your settings",
             inline=False
         )
         
         embed.add_field(
             name="🎯 Finding Teammates",
-            value="• `/lfg_browse` - See all listings\n"
-                  "• `/lfg_browse queue_type:ranked_solo` - Filter by mode\n"
-                  "• `/lfg_browse region:eune` - Filter by region",
+            value="• `/lfgbrowse` - See all listings\n"
+                  "• `/lfgbrowse queue_type:ranked_solo` - Filter by mode\n"
+                  "• `/lfgbrowse region:eune` - Filter by region",
             inline=False
         )
         
