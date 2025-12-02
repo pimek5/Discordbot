@@ -617,47 +617,100 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
     queue_name = QUEUE_TYPES[queue_type]['name']
     queue_emoji = QUEUE_TYPES[queue_type]['emoji']
     
+    # Create eye-catching embed
     embed = discord.Embed(
-        title=f"{queue_emoji} {queue_name}",
-        description=f"**{profile['riot_id_game_name']}#{profile['riot_id_tagline']}** looking for players!",
+        title=f"{queue_emoji} {queue_name.upper()}",
         color=COLORS['listing'],
         timestamp=datetime.now()
     )
     
-    roles_text = ' '.join([f"{get_role_emoji(r)} {ROLES[r]['name']}" for r in roles_needed])
+    # Player info at the top with custom styling
+    riot_id = f"**{profile['riot_id_game_name']}#{profile['riot_id_tagline']}**"
+    player_line = f"## {riot_id}\n"
+    
+    # Add rank with emoji
+    if profile.get('solo_rank'):
+        rank_display = format_rank_with_emoji(profile['solo_rank'])
+        player_line += f"{rank_display}"
+    else:
+        player_line += f"{RANK_EMOJIS.get('UNRANKED', '🎮')} Unranked"
+    
+    # Add region
+    player_line += f" • 🌍 {profile['region'].upper()}"
+    
+    # Add voice status with prominent display
+    if voice_required:
+        player_line += f" • 🎤 **Voice Required**"
+    else:
+        player_line += f" • 🔇 Voice Optional"
+    
+    embed.description = player_line
+    
+    # Looking for roles - big and clear
+    roles_display = []
+    for role in roles_needed:
+        emoji = get_role_emoji(role)
+        name = ROLES[role]['name']
+        roles_display.append(f"{emoji} **{name}**")
+    
     embed.add_field(
-        name="🎭 Looking for roles",
-        value=roles_text,
+        name="🎯 LOOKING FOR",
+        value=' • '.join(roles_display),
         inline=False
     )
     
-    embed.add_field(
-        name="🌍 Region",
-        value=profile['region'].upper(),
-        inline=True
-    )
+    # Additional player info
+    player_details = []
     
-    if profile.get('solo_rank'):
+    # Flex rank if available
+    if profile.get('flex_rank') and profile['flex_rank'] != 'Unranked':
+        player_details.append(f"**Flex:** {format_rank_with_emoji(profile['flex_rank'])}")
+    
+    # Arena rank if available
+    if profile.get('arena_rank') and profile['arena_rank'] != 'Unranked':
+        player_details.append(f"**Arena:** {format_rank_with_emoji(profile['arena_rank'])}")
+    
+    # Playstyle
+    if profile.get('playstyle'):
+        style = PLAYSTYLES.get(profile['playstyle'], {})
+        if style:
+            player_details.append(f"**Style:** {style['emoji']} {style['name']}")
+    
+    if player_details:
         embed.add_field(
-            name="🏆 Rank",
-            value=format_rank_with_emoji(profile['solo_rank']),
-            inline=True
-        )
-    
-    embed.add_field(
-        name="🎤 Voice",
-        value="Required" if voice_required else "Optional",
-        inline=True
-    )
-    
-    if profile.get('description'):
-        embed.add_field(
-            name="📝 About player",
-            value=profile['description'][:200],
+            name="📊 Player Info",
+            value=' • '.join(player_details),
             inline=False
         )
     
-    embed.set_footer(text=f"ID: {listing_id}")
+    # Player roles (what they play)
+    if profile.get('primary_roles'):
+        player_roles = []
+        for role in profile['primary_roles']:
+            emoji = get_role_emoji(role)
+            player_roles.append(f"{emoji}")
+        embed.add_field(
+            name="🎭 Player Roles",
+            value=' '.join(player_roles),
+            inline=True
+        )
+    
+    # Description if available
+    if profile.get('description'):
+        desc_text = profile['description'][:150]
+        if len(profile['description']) > 150:
+            desc_text += "..."
+        embed.add_field(
+            name="💬 Message",
+            value=f"*{desc_text}*",
+            inline=False
+        )
+    
+    # Footer with timestamp and ID
+    embed.set_footer(
+        text=f"Click ✅ Join to play together • Expires in 24h • ID: {listing_id}",
+        icon_url="https://cdn.discordapp.com/emojis/1441318506275536999.png"  # Could use a LoL icon
+    )
     
     return embed
 
