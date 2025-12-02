@@ -1521,6 +1521,13 @@ class LFGCommands(commands.Cog):
         )
         
         embed.add_field(
+            name="🔗 Link Your Riot Account",
+            value="**1.** `/link` - Link your Riot account to the bot\n"
+                  "**2.** `/verifyacc` - Verify your account",
+            inline=False
+        )
+        
+        embed.add_field(
             name="🚀 Quick Start (3 steps)",
             value="**1.** `/lfgsetup` - Create your profile (1 min)\n"
                   "**2.** `/lfg` - Create listing to find players\n"
