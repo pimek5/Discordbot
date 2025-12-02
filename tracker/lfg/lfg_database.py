@@ -39,6 +39,19 @@ def initialize_lfg_database():
         # Execute schema
         cur.execute(schema)
         conn.commit()
+        
+        # Add profile_link column if it doesn't exist (migration)
+        try:
+            cur.execute("""
+                ALTER TABLE lfg_profiles 
+                ADD COLUMN IF NOT EXISTS profile_link TEXT;
+            """)
+            conn.commit()
+            logger.info("✅ Database migration: profile_link column added/verified")
+        except Exception as e:
+            logger.warning(f"⚠️ Migration warning: {e}")
+            conn.rollback()
+        
         logger.info("✅ LFG database initialized")
         
     except Exception as e:
