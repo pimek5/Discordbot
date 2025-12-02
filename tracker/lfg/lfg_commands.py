@@ -1078,8 +1078,7 @@ class ListingActionView(View):
     async def join_button(self, interaction: discord.Interaction, button: Button):
         """Join the group - opens DM with creator."""
         await interaction.response.send_message(
-            f"✅ Contact the group creator: <@{self.creator_id}>\n\n"
-            f"[Click here to send a DM](https://discord.com/users/{self.creator_id})",
+            f"✅ Contact the group creator: <@{self.creator_id}>",
             ephemeral=True
         )
     
