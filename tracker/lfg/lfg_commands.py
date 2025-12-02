@@ -589,7 +589,7 @@ class CreateListingView(View):
             return
         
         # Create public embed
-        embed = create_listing_embed(self.profile, self.queue_type, self.roles_needed, self.voice_required, listing_id)
+        embed = create_listing_embed(self.profile, self.queue_type, self.roles_needed, self.voice_required, listing_id, self.user_id)
         view = ListingActionView(listing_id, self.user_id)
         
         # Post to channel
@@ -612,7 +612,7 @@ class CreateListingView(View):
         await interaction.message.edit(content="✅ Listing created!", view=None)
 
 
-def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voice_required: bool, listing_id: int) -> discord.Embed:
+def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voice_required: bool, listing_id: int, user_id: int) -> discord.Embed:
     """Create embed for LFG listing."""
     queue_name = QUEUE_TYPES[queue_type]['name']
     queue_emoji = QUEUE_TYPES[queue_type]['emoji']
@@ -645,6 +645,13 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
         player_line += f" • 🔇 Voice Optional"
     
     embed.description = player_line
+    
+    # Discord contact info - prominent at the top
+    embed.add_field(
+        name="💬 Contact",
+        value=f"<@{user_id}> • [Send DM](https://discord.com/users/{user_id})",
+        inline=False
+    )
     
     # Looking for roles - big and clear
     roles_display = []
