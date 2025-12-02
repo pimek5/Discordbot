@@ -1303,26 +1303,25 @@ async def setup_help_message(bot: commands.Bot):
         
         embed.add_field(
             name="🎯 Getting Started",
-            value="1️⃣ `/lfg_setup riot_id region` - Create your LFG profile\n"
-                  "2️⃣ `/lfg_post` - Create a listing to find teammates\n"
-                  "3️⃣ `/lfg_browse` - Browse active listings",
+            value="1️⃣ `/lfgsetup riot_id region` - Create your LFG profile\n"
+                  "2️⃣ `/lfg` - Create a listing to find teammates\n"
+                  "3️⃣ `/lfgbrowse` - Browse active listings",
             inline=False
         )
         
         embed.add_field(
             name="👤 Profile Commands",
-            value="• `/lfg_profile` - View your profile\n"
-                  "• `/lfg_profile @user` - View someone's profile\n"
-                  "• `/lfg_edit` - Edit your profile settings\n"
-                  "• `/lfg_list` - Browse all profiles with pagination",
+            value="• `/lfgprofile` - View your profile\n"
+                  "• `/lfgprofile @user` - View someone's profile\n"
+                  "• `/lfgedit` - Edit your profile settings",
             inline=False
         )
         
         embed.add_field(
             name="🔍 Browse & Filter",
-            value="• `/lfg_browse` - All active listings\n"
-                  "• `/lfg_browse queue_type:ranked_solo` - Filter by queue\n"
-                  "• `/lfg_browse region:eune` - Filter by region\n"
+            value="• `/lfgbrowse` - All active listings\n"
+                  "• `/lfgbrowse queue_type:ranked_solo` - Filter by queue\n"
+                  "• `/lfgbrowse region:eune` - Filter by region\n"
                   "• Use autocomplete for easy selection!",
             inline=False
         )
@@ -1349,7 +1348,7 @@ async def setup_help_message(bot: commands.Bot):
             value="• Setup takes only 1 minute!\n"
                   "• Your profile links to your LoL account\n"
                   "• Listings expire after 24 hours\n"
-                  "• Use `/lfg_help` for detailed guide",
+                  "• Use `/lfghelp` for detailed guide",
             inline=False
         )
         
