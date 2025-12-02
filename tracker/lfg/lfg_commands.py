@@ -242,22 +242,72 @@ class RoleSelectView(View):
             )
             
             if success:
+                # Fetch rank data
+                ranked_data = await self.riot_api.get_ranked_data(summoner_data['id'], self.region)
+                solo_rank = "Unranked"
+                flex_rank = "Unranked"
+                
+                if ranked_data:
+                    for queue in ranked_data:
+                        if queue['queueType'] == 'RANKED_SOLO_5x5':
+                            solo_rank = f"{queue['tier']} {queue['rank']}"
+                        elif queue['queueType'] == 'RANKED_FLEX_SR':
+                            flex_rank = f"{queue['tier']} {queue['rank']}"
+                
+                # Update profile with rank data
+                update_lfg_profile(self.user_id, solo_rank=solo_rank, flex_rank=flex_rank)
+                
+                # Create settings embed similar to screenshot
                 embed = discord.Embed(
-                    title="✅ LFG Profile Created!",
-                    description=f"**{self.game_name}#{self.tagline}**\n"
-                                f"Region: **{self.region.upper()}**\n"
-                                f"Role: {', '.join([get_role_emoji(r) + ' ' + ROLES[r]['name'] for r in self.selected_roles])}",
-                    color=discord.Color.green()
+                    title="About you",
+                    color=discord.Color.dark_gray()
+                )
+                
+                # Language section (placeholder)
+                embed.add_field(
+                    name="Language(s) you speak:",
+                    value="`Polish` `English`\n*You can change this with `/lfg_edit`*",
+                    inline=False
+                )
+                
+                # Discord ID section
+                embed.add_field(
+                    name="Your discord id *(Optional)*",
+                    value=f"`{interaction.user.name}`\n*This is your Discord username*",
+                    inline=False
                 )
                 
                 embed.add_field(
-                    name="📝 Next Steps",
-                    value="Use `/lfg_edit` to complete your profile:\n"
-                          "• Add description\n"
-                          "• Set voice/language preferences\n"
-                          "• Choose playstyle",
+                    name="━━━━━━━━━━━━━━━━━━━━━━",
+                    value="**About your playstyle**",
                     inline=False
                 )
+                
+                # Game Modes section
+                roles_display = ' '.join([f'`{ROLES[r]["name"]}`' for r in self.selected_roles])
+                embed.add_field(
+                    name="Your roles:",
+                    value=f"{roles_display}\n*Selected roles you prefer to play*",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="━━━━━━━━━━━━━━━━━━━━━━",
+                    value="**Other**",
+                    inline=False
+                )
+                
+                # LoL account section
+                embed.add_field(
+                    name="Your LoL account",
+                    value=f"\ud83c\udfae **{self.game_name}#{self.tagline}**\n"
+                          f"\ud83c\udf0d **{self.region.upper()}**\n"
+                          f"\ud83c\udfc6 Solo: **{solo_rank}**\n"
+                          f"\ud83d\udc65 Flex: **{flex_rank}**",
+                    inline=False
+                )
+                
+                embed.set_footer(text=f"Profile created • Use /lfg_edit to customize further")
                 
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 
@@ -682,16 +732,14 @@ class LFGCommands(commands.Cog):
     
     @app_commands.command(name="lfg_setup", description="Create your League of Legends LFG profile")
     @app_commands.describe(
-        game_name="Your Riot ID game name (e.g., PlayerName)",
-        tagline="Your Riot ID tagline (e.g., EUW)",
+        riot_id="Your full Riot ID with tag (e.g., 16 9 13 5 11#pimek)",
         region="Your League of Legends region"
     )
     @app_commands.autocomplete(region=region_autocomplete)
     async def lfg_setup(
         self,
         interaction: discord.Interaction,
-        game_name: str,
-        tagline: str,
+        riot_id: str,
         region: str
     ):
         """Create LFG profile with interactive setup."""
@@ -700,6 +748,30 @@ class LFGCommands(commands.Cog):
         if existing:
             await interaction.response.send_message(
                 "❌ You already have a profile! Use `/lfg_edit` to edit it.",
+                ephemeral=True
+            )
+            return
+        
+        # Validate Riot ID format
+        if '#' not in riot_id:
+            await interaction.response.send_message(
+                "❌ Invalid Riot ID format! Must include tag (e.g., `16 9 13 5 11#pimek`)\n"
+                "💡 Your Riot ID consists of your game name and tag separated by #",
+                ephemeral=True
+            )
+            return
+        
+        # Split Riot ID
+        try:
+            game_name, tagline = riot_id.split('#', 1)
+            game_name = game_name.strip()
+            tagline = tagline.strip()
+            
+            if not game_name or not tagline:
+                raise ValueError("Empty name or tag")
+        except:
+            await interaction.response.send_message(
+                "❌ Invalid Riot ID format! Must be like: `16 9 13 5 11#pimek`",
                 ephemeral=True
             )
             return
@@ -713,7 +785,7 @@ class LFGCommands(commands.Cog):
             )
             return
         
-        # Show role selection view
+        # Show role selection view with riot_id for display
         view = RoleSelectView(self.bot, self.riot_api, interaction.user.id, game_name, tagline, region)
         
         embed = discord.Embed(
@@ -722,6 +794,11 @@ class LFGCommands(commands.Cog):
                         "Select up to 3 roles you prefer to play:\n"
                         "💡 *Tip: Choose roles you're most comfortable with*",
             color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="Your LoL account",
+            value=f"🎮 **{game_name}#{tagline}**\n🌍 Region: **{region.upper()}**",
+            inline=False
         )
         embed.set_footer(text="After selecting roles, you'll set your playstyle and preferences")
         
