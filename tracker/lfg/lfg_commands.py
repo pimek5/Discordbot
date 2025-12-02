@@ -442,8 +442,8 @@ class EditProfileLinkModal(discord.ui.Modal, title="Edit Profile Link"):
     """Modal for editing profile link."""
     
     profile_link = discord.ui.TextInput(
-        label="Profile Link (op.gg, dpm.lol, u.gg, deeplol.gg)",
-        placeholder="https://www.op.gg/summoners/...",
+        label="Profile Link",
+        placeholder="https://www.op.gg/summoners/... (op.gg, dpm.lol, u.gg, deeplol.gg)",
         style=discord.TextStyle.short,
         max_length=500,
         required=False
