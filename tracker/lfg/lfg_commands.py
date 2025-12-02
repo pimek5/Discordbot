@@ -732,12 +732,23 @@ class CreateListingView(View):
         voice_btn.callback = self.voice_callback
         self.add_item(voice_btn)
         
+        # Add edit profile button
+        edit_profile_btn = Button(
+            label="Edit Profile",
+            emoji="✏️",
+            style=discord.ButtonStyle.secondary,
+            custom_id="edit_profile",
+            row=3
+        )
+        edit_profile_btn.callback = self.edit_profile_callback
+        self.add_item(edit_profile_btn)
+        
         # Add create button
         create_btn = Button(
             label="Create Listing",
             style=discord.ButtonStyle.success,
             custom_id="create",
-            row=2
+            row=3
         )
         create_btn.callback = self.create_callback
         self.add_item(create_btn)
@@ -781,6 +792,36 @@ class CreateListingView(View):
             button.style = discord.ButtonStyle.secondary
         
         await interaction.response.edit_message(view=self)
+    
+    async def edit_profile_callback(self, interaction: discord.Interaction):
+        """Open profile edit menu."""
+        from .lfg_database import get_lfg_profile
+        
+        # Refresh profile data
+        profile = get_lfg_profile(self.user_id)
+        if not profile:
+            await interaction.response.send_message(
+                "❌ Profile not found!",
+                ephemeral=True
+            )
+            return
+        
+        # Update self.profile with fresh data
+        self.profile = profile
+        
+        # Show edit view
+        view = ProfileEditView(self.user_id, profile)
+        embed = discord.Embed(
+            title="✏️ Edit Profile",
+            description="Make changes to your profile before creating the listing:",
+            color=discord.Color.blue()
+        )
+        
+        await interaction.response.send_message(
+            embed=embed,
+            view=view,
+            ephemeral=True
+        )
     
     async def create_callback(self, interaction: discord.Interaction):
         """Create the listing."""
