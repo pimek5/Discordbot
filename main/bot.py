@@ -176,6 +176,17 @@ SKIN_IDEAS_CHANNEL_ID = 1329671504941682750  # Channel where threads are created
 YOUR_IDEAS_CHANNEL_ID = 1433892799862018109  # Channel where embeds are posted
 MOD_REVIEW_CHANNEL_ID = 1433893934265925682  # Channel for mod review
 
+# RuneForge Configuration - Multiple channels support
+RUNEFORGE_USERNAME = "p1mek"
+RUNEFORGE_ICON_URL = "https://avatars.githubusercontent.com/u/132106741?s=200&v=4"
+RUNEFORGE_CHECK_INTERVAL = 3600  # Check every hour (3600 seconds) - RuneForge mod tagging
+
+# Multiple channels with their own onRuneforge tags
+RUNEFORGE_CHANNELS = {
+    1279916286612078665: 1435096925144748062,  # Channel 1 -> Tag 1
+    1272565735595573248: 1436897685444497558,  # Channel 2 -> Tag 2
+}
+
 # Auto-Slowmode Configuration
 AUTO_SLOWMODE_ENABLED = {}  # {channel_id: True/False}
 AUTO_SLOWMODE_THRESHOLD = 5  # Messages per 10 seconds to trigger slowmode
@@ -2011,15 +2022,16 @@ async def addthread(interaction: discord.Interaction, thread_link: str):
         traceback.print_exc()
 
 # ================================
-#       Tweet Poster
+#       RuneForge Mod Tracker
 # ================================
 
-# Store the last tweet ID to avoid duplicates
-last_tweet_id = None
-TWEET_ID_FILE = "last_tweet_id.txt"
+def string_similarity(a, b):
+    """Calculate similarity between two strings (0-1)"""
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
-def load_last_tweet_id():
-    """Load the last tweet ID from file"""
+async def get_runeforge_mods():
+    """Fetch all mods from RuneForge user profile (all pages)"""
+    try:
         all_mods = []
         page = 1
         max_pages = 10  # Safety limit to prevent infinite loop
