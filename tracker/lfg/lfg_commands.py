@@ -1057,7 +1057,7 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
     # Profile link if available
     if profile.get('profile_link'):
         embed.add_field(
-            name="📊 Stats",
+            name="📊 Player's OP.GG",
             value=f"[View Profile]({profile['profile_link']})",
             inline=True
         )
@@ -1311,8 +1311,8 @@ class LFGCommands(commands.Cog):
         )
         if profile_link:
             embed.add_field(
-                name="📊 Profile Link",
-                value=f"[View Stats]({profile_link})",
+                name="📊 Player's OP.GG",
+                value=f"[View Profile]({profile_link})",
                 inline=False
             )
         embed.set_footer(text="After selecting roles, you'll set your playstyle and preferences")
@@ -1388,7 +1388,7 @@ class LFGCommands(commands.Cog):
         
         # Profile link
         if profile.get('profile_link'):
-            embed.add_field(name="📊 Stats Profile", value=f"[View Profile]({profile['profile_link']})", inline=False)
+            embed.add_field(name="📊 Player's OP.GG", value=f"[View Profile]({profile['profile_link']})", inline=False)
         
         embed.set_thumbnail(url=target_user.display_avatar.url)
         embed.set_footer(text=f"Utworzony: {profile['created_at'].strftime('%Y-%m-%d')}")
