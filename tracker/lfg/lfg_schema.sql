@@ -109,9 +109,9 @@ CREATE TABLE IF NOT EXISTS lfg_group_history (
 );
 
 -- Indeksy dla wydajności
-CREATE INDEX idx_lfg_listings_status ON lfg_listings(status);
-CREATE INDEX idx_lfg_listings_queue_type ON lfg_listings(queue_type);
-CREATE INDEX idx_lfg_listings_region ON lfg_listings(region);
-CREATE INDEX idx_lfg_listings_expires_at ON lfg_listings(expires_at);
-CREATE INDEX idx_lfg_applications_listing ON lfg_applications(listing_id);
-CREATE INDEX idx_lfg_applications_status ON lfg_applications(status);
+CREATE INDEX IF NOT EXISTS idx_lfg_listings_status ON lfg_listings(status);
+CREATE INDEX IF NOT EXISTS idx_lfg_listings_queue_type ON lfg_listings(queue_type);
+CREATE INDEX IF NOT EXISTS idx_lfg_listings_region ON lfg_listings(region);
+CREATE INDEX IF NOT EXISTS idx_lfg_listings_expires_at ON lfg_listings(expires_at);
+CREATE INDEX IF NOT EXISTS idx_lfg_applications_listing ON lfg_applications(listing_id);
+CREATE INDEX IF NOT EXISTS idx_lfg_applications_status ON lfg_applications(status);
