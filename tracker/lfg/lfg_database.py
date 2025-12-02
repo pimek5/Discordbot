@@ -169,6 +169,34 @@ def update_lfg_profile(user_id: int, **kwargs) -> bool:
         conn.close()
 
 
+def update_saved_description(user_id: int, description: str) -> bool:
+    """Update the saved description for a user (used for future posts)."""
+    conn = get_db_connection()
+    if not conn:
+        return False
+    
+    cur = conn.cursor()
+    
+    try:
+        cur.execute("""
+            UPDATE lfg_profiles
+            SET description = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+        """, (description, user_id))
+        
+        conn.commit()
+        logger.info(f"✅ Updated saved description for user {user_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to update saved description: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+
 # ================================
 #       LISTING OPERATIONS
 # ================================

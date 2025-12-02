@@ -16,7 +16,8 @@ from datetime import datetime, timedelta
 from .lfg_database import (
     get_lfg_profile, create_lfg_profile, update_lfg_profile,
     create_lfg_listing, get_active_listings, update_listing_status,
-    cleanup_expired_listings, get_all_lfg_profiles, get_lfg_profiles_count
+    cleanup_expired_listings, get_all_lfg_profiles, get_lfg_profiles_count,
+    update_saved_description
 )
 from .config import (
     LFG_LISTINGS_CHANNEL_ID, LFG_PROFILES_CHANNEL_ID, 
@@ -626,23 +627,7 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
     
     # Player info at the top with custom styling
     riot_id = f"**{profile['riot_id_game_name']}#{profile['riot_id_tagline']}**"
-    player_line = f"## {riot_id}\n"
-    
-    # Add rank with emoji
-    if profile.get('solo_rank'):
-        rank_display = format_rank_with_emoji(profile['solo_rank'])
-        player_line += f"{rank_display}"
-    else:
-        player_line += f"{RANK_EMOJIS.get('UNRANKED', '🎮')} Unranked"
-    
-    # Add region
-    player_line += f" • 🌍 {profile['region'].upper()}"
-    
-    # Add voice status with prominent display
-    if voice_required:
-        player_line += f" • 🎤 **Voice Required**"
-    else:
-        player_line += f" • 🔇 Voice Optional"
+    player_line = f"## {riot_id}"
     
     embed.description = player_line
     
@@ -669,6 +654,13 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
     # Additional player info
     player_details = []
     
+    # Solo rank
+    if profile.get('solo_rank'):
+        rank_display = format_rank_with_emoji(profile['solo_rank'])
+        player_details.append(f"**Solo:** {rank_display}")
+    else:
+        player_details.append(f"**Solo:** {RANK_EMOJIS.get('UNRANKED', '🎮')} Unranked")
+    
     # Flex rank if available
     if profile.get('flex_rank') and profile['flex_rank'] != 'Unranked':
         player_details.append(f"**Flex:** {format_rank_with_emoji(profile['flex_rank'])}")
@@ -677,18 +669,26 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
     if profile.get('arena_rank') and profile['arena_rank'] != 'Unranked':
         player_details.append(f"**Arena:** {format_rank_with_emoji(profile['arena_rank'])}")
     
+    # Region
+    player_details.append(f"**Region:** 🌍 {profile['region'].upper()}")
+    
+    # Voice status
+    if voice_required:
+        player_details.append(f"**Voice:** 🎤 Required")
+    else:
+        player_details.append(f"**Voice:** 🔇 Optional")
+    
     # Playstyle
     if profile.get('playstyle'):
         style = PLAYSTYLES.get(profile['playstyle'], {})
         if style:
             player_details.append(f"**Style:** {style['emoji']} {style['name']}")
     
-    if player_details:
-        embed.add_field(
-            name="📊 Player Info",
-            value=' • '.join(player_details),
-            inline=False
-        )
+    embed.add_field(
+        name="📊 Player Info",
+        value=' • '.join(player_details),
+        inline=False
+    )
     
     # Player roles (what they play)
     if profile.get('primary_roles'):
@@ -722,6 +722,41 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
     return embed
 
 
+class EditDescriptionModal(discord.ui.Modal, title="Edit Description"):
+    """Modal for editing the description that will be saved for future posts."""
+    
+    description_input = discord.ui.TextInput(
+        label="Description",
+        placeholder="Tell us about yourself, preferred playstyle, etc...",
+        style=discord.TextStyle.paragraph,
+        max_length=500,
+        required=False
+    )
+    
+    def __init__(self, listing_id: int, user_id: int):
+        super().__init__()
+        self.listing_id = listing_id
+        self.user_id = user_id
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Save the description to the database."""
+        new_description = self.description_input.value
+        
+        # Update saved description in database
+        success = update_saved_description(self.user_id, new_description)
+        
+        if success:
+            await interaction.response.send_message(
+                f"✅ Description saved! It will be used for your next LFG posts.\n\n**New description:**\n{new_description[:200]}{'...' if len(new_description) > 200 else ''}",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Failed to save description. Please try again.",
+                ephemeral=True
+            )
+
+
 class ListingActionView(View):
     """Buttons for interacting with listings."""
     
@@ -738,6 +773,20 @@ class ListingActionView(View):
             "✅ Application sent! The group creator has been notified.",
             ephemeral=True
         )
+    
+    @discord.ui.button(label="Edit Description", emoji="✏️", style=discord.ButtonStyle.secondary, custom_id="edit_desc")
+    async def edit_desc_button(self, interaction: discord.Interaction, button: Button):
+        """Edit the description (creator only)."""
+        if interaction.user.id != self.creator_id:
+            await interaction.response.send_message(
+                "❌ Only the creator can edit this listing!",
+                ephemeral=True
+            )
+            return
+        
+        # Show modal for editing description
+        modal = EditDescriptionModal(self.listing_id, interaction.user.id)
+        await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="Close", emoji="🔒", style=discord.ButtonStyle.danger, custom_id="close")
     async def close_button(self, interaction: discord.Interaction, button: Button):
