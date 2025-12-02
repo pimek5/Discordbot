@@ -110,6 +110,18 @@ async def region_autocomplete(
         for key, name in REGIONS.items()
         if current.lower() in key.lower() or current.lower() in name.lower()
     ][:25]
+
+
+async def queue_type_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> List[app_commands.Choice[str]]:
+    """Autocomplete for queue type selection."""
+    return [
+        app_commands.Choice(name=f"{data['emoji']} {data['name']}", value=key)
+        for key, data in QUEUE_TYPES.items()
+        if current.lower() in key.lower() or current.lower() in data['name'].lower()
+    ][:25]
     return RANK_EMOJIS.get(tier, '🎮')
 
 
@@ -707,13 +719,18 @@ class LFGCommands(commands.Cog):
         embed = discord.Embed(
             title="🎭 Choose your League of Legends roles",
             description=f"**{game_name}#{tagline}** ({region.upper()})\n\n"
-                        "Select up to 3 roles you prefer to play:",
+                        "Select up to 3 roles you prefer to play:\n"
+                        "💡 *Tip: Choose roles you're most comfortable with*",
             color=discord.Color.blue()
         )
+        embed.set_footer(text="After selecting roles, you'll set your playstyle and preferences")
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="lfg_profile", description="Display LFG profile")
+    @app_commands.command(name="lfg_profile", description="Display your or someone's LFG profile")
+    @app_commands.describe(
+        user="User whose profile you want to view (leave empty for your own)"
+    )
     async def lfg_profile(
         self,
         interaction: discord.Interaction,
@@ -803,14 +820,15 @@ class LFGCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="lfg_post", description="Create LFG listing")
+    @app_commands.command(name="lfg_post", description="Create a new LFG listing to find teammates")
     async def lfg_post(self, interaction: discord.Interaction):
         """Create LFG listing."""
         profile = get_lfg_profile(interaction.user.id)
         
         if not profile:
             await interaction.response.send_message(
-                "❌ First create a profile using `/lfg_setup`!",
+                "❌ First create a profile using `/lfg_setup`!\n\n"
+                "💡 Use `/lfg_setup` to set up your profile and start finding teammates.",
                 ephemeral=True
             )
             return
@@ -819,18 +837,23 @@ class LFGCommands(commands.Cog):
         
         embed = discord.Embed(
             title="📝 Create LFG Listing",
-            description="Configure your listing:",
+            description="Configure your listing to find teammates:\n"
+                        "💡 *Choose queue type and roles you need*",
             color=discord.Color.blue()
         )
+        embed.set_footer(text="Your listing will be visible for 24 hours")
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
     @app_commands.command(name="lfg_browse", description="Browse active League of Legends LFG listings")
     @app_commands.describe(
-        queue_type="Filter by queue type (ranked_solo, ranked_flex, normal, aram, arena)",
+        queue_type="Filter by queue type",
         region="Filter by region"
     )
-    @app_commands.autocomplete(region=region_autocomplete)
+    @app_commands.autocomplete(
+        region=region_autocomplete,
+        queue_type=queue_type_autocomplete
+    )
     async def lfg_browse(
         self,
         interaction: discord.Interaction,
@@ -841,8 +864,20 @@ class LFGCommands(commands.Cog):
         listings = get_active_listings(region=region, queue_type=queue_type, limit=10)
         
         if not listings:
+            filters_text = []
+            if region:
+                filters_text.append(f"Region: **{region.upper()}**")
+            if queue_type:
+                queue_name = QUEUE_TYPES.get(queue_type, {}).get('name', queue_type)
+                filters_text.append(f"Queue: **{queue_name}**")
+            
+            message = "❌ No active listings found"
+            if filters_text:
+                message += f" with filters: {', '.join(filters_text)}"
+            message += "\n\nTry removing some filters or create your own listing with `/lfg_post`!"
+            
             await interaction.response.send_message(
-                "❌ No active listings with these filters.",
+                message,
                 ephemeral=True
             )
             return
@@ -873,6 +908,92 @@ class LFGCommands(commands.Cog):
             )
         
         await interaction.response.send_message(embed=embed)
+    
+    @app_commands.command(name="lfg_list", description="View all LFG profiles with pagination")
+    @app_commands.describe(
+        region="Filter profiles by region"
+    )
+    @app_commands.autocomplete(region=region_autocomplete)
+    async def lfg_list(
+        self,
+        interaction: discord.Interaction,
+        region: Optional[str] = None
+    ):
+        """View paginated list of all LFG profiles."""
+        # Get profiles count for validation
+        total_profiles = get_lfg_profiles_count()
+        
+        if total_profiles == 0:
+            await interaction.response.send_message(
+                "❌ No LFG profiles found!\n\n"
+                "💡 Be the first! Use `/lfg_setup` to create your profile.",
+                ephemeral=True
+            )
+            return
+        
+        # Create paginated view
+        view = ProfileListView(self.bot, page=0)
+        embed = await view.create_embed()
+        
+        await interaction.response.send_message(embed=embed, view=view)
+    
+    @app_commands.command(name="lfg_help", description="Show help and guide for LFG system")
+    async def lfg_help(self, interaction: discord.Interaction):
+        """Show comprehensive help for LFG system."""
+        embed = discord.Embed(
+            title="📚 LFG System Guide",
+            description="Looking For Group system helps you find League of Legends teammates!",
+            color=discord.Color.blue()
+        )
+        
+        embed.add_field(
+            name="🎯 Getting Started",
+            value="1️⃣ `/lfg_setup` - Create your profile\n"
+                  "2️⃣ `/lfg_post` - Create a listing to find teammates\n"
+                  "3️⃣ `/lfg_browse` - Browse active listings",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="👤 Profile Commands",
+            value="• `/lfg_profile` - View your or someone's profile\n"
+                  "• `/lfg_edit` - Edit your profile\n"
+                  "• `/lfg_list` - View all profiles with pagination",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🎮 Queue Types",
+            value="• 👤 Ranked Solo/Duo\n"
+                  "• 👥 Ranked Flex\n"
+                  "• 🎮 Normal Draft\n"
+                  "• ❄️ ARAM\n"
+                  "• ⚔️ Arena",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🎭 Roles",
+            value="• ⬆️ Top\n"
+                  "• 🌳 Jungle\n"
+                  "• ✨ Mid\n"
+                  "• 🏹 ADC\n"
+                  "• 🛡️ Support",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="💡 Tips",
+            value="• Set up to 3 preferred roles\n"
+                  "• Enable voice if you want voice chat\n"
+                  "• Listings expire after 24 hours\n"
+                  "• Use filters in `/lfg_browse` to find specific teammates",
+            inline=False
+        )
+        
+        embed.set_footer(text="Need more help? Ask a moderator!")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # ================================
