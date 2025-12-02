@@ -55,6 +55,15 @@ async def on_ready():
     logger.info(f"✅ Bot logged in as {bot.user.name} (ID: {bot.user.id})")
     logger.info(f"✅ Connected to {len(bot.guilds)} servers")
     
+    # Clear old commands first
+    try:
+        guild = discord.Object(id=GUILD_ID)
+        bot.tree.clear_commands(guild=guild)
+        await bot.tree.sync(guild=guild)
+        logger.info(f"✅ Cleared old commands from guild {GUILD_ID}")
+    except Exception as e:
+        logger.error(f"❌ Failed to clear old commands: {e}")
+    
     # Sync slash commands (guild-specific for instant updates)
     try:
         guild = discord.Object(id=GUILD_ID)
