@@ -17,7 +17,7 @@ from .lfg_database import (
     get_lfg_profile, create_lfg_profile, update_lfg_profile,
     create_lfg_listing, get_active_listings, update_listing_status,
     cleanup_expired_listings, get_all_lfg_profiles, get_lfg_profiles_count,
-    update_saved_description
+    update_saved_description, get_user_active_listings
 )
 from .config import (
     LFG_LISTINGS_CHANNEL_ID, LFG_PROFILES_CHANNEL_ID, 
@@ -334,6 +334,48 @@ class RoleSelectView(View):
             )
 
 
+async def refresh_user_listings(bot, user_id: int, updated_profile: dict):
+    """Refresh all active listing embeds for a user with updated profile data."""
+    try:
+        listings = get_user_active_listings(user_id)
+        
+        if not listings:
+            return 0
+        
+        channel = bot.get_channel(LFG_LISTINGS_CHANNEL_ID)
+        if not channel:
+            return 0
+        
+        refreshed = 0
+        for listing in listings:
+            try:
+                message = await channel.fetch_message(listing['message_id'])
+                
+                # Recreate embed with updated profile data
+                from .lfg_commands import create_listing_embed
+                new_embed = create_listing_embed(
+                    updated_profile,
+                    listing['queue_type'],
+                    listing['roles_needed'],
+                    listing['voice_required'],
+                    listing['listing_id'],
+                    user_id
+                )
+                
+                # Keep the same view (buttons)
+                await message.edit(embed=new_embed)
+                refreshed += 1
+            except Exception as e:
+                logger.error(f"Failed to refresh listing {listing['listing_id']}: {e}")
+                continue
+        
+        return refreshed
+        
+    except Exception as e:
+        logger.error(f"Error refreshing user listings: {e}")
+        return 0
+
+
 class EditRiotIDModal(discord.ui.Modal, title="Change Riot ID"):
     """Modal for editing Riot ID."""
     
@@ -345,10 +387,11 @@ class EditRiotIDModal(discord.ui.Modal, title="Change Riot ID"):
         required=True
     )
     
-    def __init__(self, user_id: int, current_profile: dict):
+    def __init__(self, user_id: int, current_profile: dict, bot):
         super().__init__()
         self.user_id = user_id
         self.current_profile = current_profile
+        self.bot = bot
         # Set current value
         current_riot_id = f"{current_profile['riot_id_game_name']}#{current_profile['riot_id_tagline']}"
         self.riot_id.default = current_riot_id
@@ -386,10 +429,15 @@ class EditRiotIDModal(discord.ui.Modal, title="Change Riot ID"):
         )
         
         if success:
-            await interaction.response.send_message(
-                f"✅ Riot ID updated to: **{game_name}#{tagline}**",
-                ephemeral=True
-            )
+            # Refresh active listings
+            updated_profile = get_lfg_profile(self.user_id)
+            refreshed = await refresh_user_listings(self.bot, self.user_id, updated_profile)
+            
+            msg = f"✅ Riot ID updated to: **{game_name}#{tagline}**"
+            if refreshed > 0:
+                msg += f"\n🔄 Refreshed {refreshed} active listing(s)"
+            
+            await interaction.response.send_message(msg, ephemeral=True)
         else:
             await interaction.response.send_message(
                 "❌ Failed to update Riot ID. Please try again.",
@@ -408,9 +456,10 @@ class EditRegionModal(discord.ui.Modal, title="Change Region"):
         required=True
     )
     
-    def __init__(self, user_id: int):
+    def __init__(self, user_id: int, bot):
         super().__init__()
         self.user_id = user_id
+        self.bot = bot
     
     async def on_submit(self, interaction: discord.Interaction):
         region_input = self.region.value.lower().strip()
@@ -427,10 +476,15 @@ class EditRegionModal(discord.ui.Modal, title="Change Region"):
         success = update_lfg_profile(self.user_id, region=region_input)
         
         if success:
-            await interaction.response.send_message(
-                f"✅ Region updated to: **{REGIONS[region_input]}**",
-                ephemeral=True
-            )
+            # Refresh active listings
+            updated_profile = get_lfg_profile(self.user_id)
+            refreshed = await refresh_user_listings(self.bot, self.user_id, updated_profile)
+            
+            msg = f"✅ Region updated to: **{REGIONS[region_input]}**"
+            if refreshed > 0:
+                msg += f"\n🔄 Refreshed {refreshed} active listing(s)"
+            
+            await interaction.response.send_message(msg, ephemeral=True)
         else:
             await interaction.response.send_message(
                 "❌ Failed to update region. Please try again.",
@@ -449,9 +503,10 @@ class EditProfileLinkModal(discord.ui.Modal, title="Edit Profile Link"):
         required=False
     )
     
-    def __init__(self, user_id: int, current_link: str):
+    def __init__(self, user_id: int, current_link: str, bot):
         super().__init__()
         self.user_id = user_id
+        self.bot = bot
         if current_link:
             self.profile_link.default = current_link
     
@@ -472,17 +527,24 @@ class EditProfileLinkModal(discord.ui.Modal, title="Edit Profile Link"):
         success = update_lfg_profile(self.user_id, profile_link=link if link else None)
         
         if success:
+            # Refresh active listings
+            updated_profile = get_lfg_profile(self.user_id)
+            refreshed = await refresh_user_listings(self.bot, self.user_id, updated_profile)
+            
             if link:
-                await interaction.response.send_message(
-                    f"✅ Profile link updated!\n[View Profile]({link})",
-                    ephemeral=True
-                )
+                msg = f"✅ Profile link updated!\n[View Profile]({link})"
             else:
-                await interaction.response.send_message(
-                    "✅ Profile link removed!",
-                    ephemeral=True
-                )
+                msg = "✅ Profile link removed!"
+            
+            if refreshed > 0:
+                msg += f"\n🔄 Refreshed {refreshed} active listing(s)"
+            
+            await interaction.response.send_message(msg, ephemeral=True)
         else:
+            await interaction.response.send_message(
+                "❌ Failed to update profile link. Please try again.",
+                ephemeral=True
+            )
             await interaction.response.send_message(
                 "❌ Failed to update profile link. Please try again.",
                 ephemeral=True
@@ -540,21 +602,22 @@ class ConfirmDeleteModal(discord.ui.Modal, title="Delete Profile - Confirm"):
 class ProfileEditView(View):
     """View for editing profile settings."""
     
-    def __init__(self, user_id: int, current_profile: dict):
+    def __init__(self, user_id: int, current_profile: dict, bot):
         super().__init__(timeout=300)
         self.user_id = user_id
         self.current_profile = current_profile
+        self.bot = bot
     
     @discord.ui.button(label="Change Riot ID", emoji="🎮", style=discord.ButtonStyle.primary, row=0)
     async def change_riot_id(self, interaction: discord.Interaction, button: Button):
         """Change Riot ID."""
-        modal = EditRiotIDModal(self.user_id, self.current_profile)
+        modal = EditRiotIDModal(self.user_id, self.current_profile, self.bot)
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="Change Region", emoji="🌍", style=discord.ButtonStyle.primary, row=0)
     async def change_region(self, interaction: discord.Interaction, button: Button):
         """Change region."""
-        modal = EditRegionModal(self.user_id)
+        modal = EditRegionModal(self.user_id, self.bot)
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="Change Roles", emoji="🎭", style=discord.ButtonStyle.primary, row=1)
@@ -566,13 +629,13 @@ class ProfileEditView(View):
     @discord.ui.button(label="Profile Link", emoji="📊", style=discord.ButtonStyle.primary, row=1)
     async def edit_profile_link(self, interaction: discord.Interaction, button: Button):
         """Edit profile link (op.gg, etc)."""
-        modal = EditProfileLinkModal(self.user_id, self.current_profile.get('profile_link', ''))
+        modal = EditProfileLinkModal(self.user_id, self.current_profile.get('profile_link', ''), self.bot)
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="Add Description", emoji="📝", style=discord.ButtonStyle.secondary, row=2)
     async def edit_description(self, interaction: discord.Interaction, button: Button):
         """Edit profile description."""
-        modal = ProfileDescriptionModal(self.user_id, self.current_profile.get('description', ''))
+        modal = ProfileDescriptionModal(self.user_id, self.current_profile.get('description', ''), self.bot)
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="Voice Preferences", emoji="🎤", style=discord.ButtonStyle.secondary, row=2)
@@ -617,18 +680,25 @@ class ProfileDescriptionModal(discord.ui.Modal, title="Profile Description"):
         required=False
     )
     
-    def __init__(self, user_id: int, current_description: str):
+    def __init__(self, user_id: int, current_description: str, bot):
         super().__init__()
         self.user_id = user_id
+        self.bot = bot
         if current_description:
             self.description.default = current_description
     
     async def on_submit(self, interaction: discord.Interaction):
         update_lfg_profile(self.user_id, description=self.description.value)
-        await interaction.response.send_message(
-            "✅ Description updated!",
-            ephemeral=True
-        )
+        
+        # Refresh active listings
+        updated_profile = get_lfg_profile(self.user_id)
+        refreshed = await refresh_user_listings(self.bot, self.user_id, updated_profile)
+        
+        msg = "✅ Description updated!"
+        if refreshed > 0:
+            msg += f"\n🔄 Refreshed {refreshed} active listing(s)"
+        
+        await interaction.response.send_message(msg, ephemeral=True)
 
 
 class PlaystyleSelectView(View):
@@ -668,10 +738,11 @@ class PlaystyleSelectView(View):
 class CreateListingView(View):
     """Interactive view for creating LFG listings."""
     
-    def __init__(self, user_id: int, profile: dict):
+    def __init__(self, user_id: int, profile: dict, bot):
         super().__init__(timeout=300)
         self.user_id = user_id
         self.profile = profile
+        self.bot = bot
         self.queue_type = None
         self.roles_needed = []
         self.spots = 1
@@ -810,7 +881,7 @@ class CreateListingView(View):
         self.profile = profile
         
         # Show edit view
-        view = ProfileEditView(self.user_id, profile)
+        view = ProfileEditView(self.user_id, profile, self.bot)
         embed = discord.Embed(
             title="✏️ Edit Profile",
             description="Make changes to your profile before creating the listing:",
@@ -1336,7 +1407,7 @@ class LFGCommands(commands.Cog):
             )
             return
         
-        view = ProfileEditView(interaction.user.id, profile)
+        view = ProfileEditView(interaction.user.id, profile, self.bot)
         
         embed = discord.Embed(
             title="✏️ Edit LFG Profile",
@@ -1360,7 +1431,7 @@ class LFGCommands(commands.Cog):
             )
             return
         
-        view = CreateListingView(interaction.user.id, profile)
+        view = CreateListingView(interaction.user.id, profile, self.bot)
         
         embed = discord.Embed(
             title="📝 Find Teammates",

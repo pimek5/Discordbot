@@ -317,6 +317,40 @@ def get_active_listings(
         conn.close()
 
 
+def get_user_active_listings(user_id: int) -> List[Dict[str, Any]]:
+    """Get all active listings for a specific user."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        cur.execute("""
+            SELECT listing_id, message_id, queue_type, roles_needed, voice_required
+            FROM lfg_listings
+            WHERE creator_user_id = %s 
+            AND status = 'active' 
+            AND expires_at > CURRENT_TIMESTAMP
+            AND message_id IS NOT NULL
+        """, (user_id,))
+        
+        listings = cur.fetchall()
+        
+        # Parse JSON fields
+        result = []
+        for listing in listings:
+            listing = dict(listing)
+            listing['roles_needed'] = json.loads(listing['roles_needed']) if listing['roles_needed'] else []
+            result.append(listing)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to get user active listings: {e}")
+        return []
+    finally:
+        cur.close()
+        conn.close()
+
+
 def update_listing_status(listing_id: int, status: str, message_id: Optional[int] = None) -> bool:
     """Update listing status."""
     conn = get_db_connection()
