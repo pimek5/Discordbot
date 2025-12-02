@@ -798,10 +798,10 @@ class ListingActionView(View):
     
     @discord.ui.button(label="Join", emoji="✅", style=discord.ButtonStyle.success, custom_id="join")
     async def join_button(self, interaction: discord.Interaction, button: Button):
-        """Join the group."""
-        # TODO: Implement join logic with application system
+        """Join the group - opens DM with creator."""
         await interaction.response.send_message(
-            "✅ Application sent! The group creator has been notified.",
+            f"✅ Contact the group creator: <@{self.creator_id}>\n\n"
+            f"[Click here to send a DM](https://discord.com/users/{self.creator_id})",
             ephemeral=True
         )
     
@@ -833,13 +833,21 @@ class ListingActionView(View):
         
         embed = interaction.message.embeds[0]
         embed.color = discord.Color.greyple()
-        embed.set_footer(text=f"ID: {self.listing_id} • Closed")
+        embed.set_footer(text=f"ID: {self.listing_id} • Closed - Deleting in 10 seconds...")
         
         await interaction.message.edit(embed=embed, view=None)
         await interaction.response.send_message(
-            "✅ Listing closed!",
+            "✅ Listing closed! It will be deleted in 10 seconds.",
             ephemeral=True
         )
+        
+        # Delete message after 10 seconds
+        import asyncio
+        await asyncio.sleep(10)
+        try:
+            await interaction.message.delete()
+        except:
+            pass  # Message might already be deleted
 
 
 # ================================
