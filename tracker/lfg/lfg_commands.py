@@ -46,11 +46,11 @@ REGIONS = {
 }
 
 ROLES = {
-    'top': {'emoji': '⬆️', 'name': 'Top'},
-    'jungle': {'emoji': '🌳', 'name': 'Jungle'},
-    'mid': {'emoji': '✨', 'name': 'Mid'},
-    'adc': {'emoji': '🏹', 'name': 'ADC'},
-    'support': {'emoji': '🛡️', 'name': 'Support'}
+    'top': {'emoji': ROLE_EMOJIS.get('TOP', '⬆️'), 'name': 'Top', 'api_name': 'TOP'},
+    'jungle': {'emoji': ROLE_EMOJIS.get('JUNGLE', '🌳'), 'name': 'Jungle', 'api_name': 'JUNGLE'},
+    'mid': {'emoji': ROLE_EMOJIS.get('MIDDLE', '✨'), 'name': 'Mid', 'api_name': 'MIDDLE'},
+    'adc': {'emoji': ROLE_EMOJIS.get('BOTTOM', '🏹'), 'name': 'ADC', 'api_name': 'BOTTOM'},
+    'support': {'emoji': ROLE_EMOJIS.get('UTILITY', '🛡️'), 'name': 'Support', 'api_name': 'UTILITY'}
 }
 
 QUEUE_TYPES = {
@@ -78,17 +78,11 @@ PLAYSTYLES = {
 # ================================
 
 def get_role_emoji(role: str) -> str:
-    """Get custom emoji for role (TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY)"""
-    # Map our role names to API role names
-    role_map = {
-        'top': 'TOP',
-        'jungle': 'JUNGLE',
-        'mid': 'MIDDLE',
-        'adc': 'BOTTOM',
-        'support': 'UTILITY'
-    }
-    api_role = role_map.get(role.lower(), role.upper())
-    return ROLE_EMOJIS.get(api_role, ROLES.get(role, {}).get('emoji', '❓'))
+    """Get custom emoji for role."""
+    role_data = ROLES.get(role.lower())
+    if role_data:
+        return role_data['emoji']
+    return '❓'
 
 
 def get_rank_emoji(rank_str: str) -> str:
@@ -98,6 +92,7 @@ def get_rank_emoji(rank_str: str) -> str:
     
     # Extract tier from rank string (e.g., "Gold II" -> "GOLD")
     tier = rank_str.split()[0].upper()
+    return RANK_EMOJIS.get(tier, '🏆')
 
 
 async def region_autocomplete(
@@ -153,9 +148,12 @@ class RoleSelectView(View):
         
         # Add role buttons
         for role_id, role_data in ROLES.items():
+            # Parse custom emoji from string format <:name:id>
+            emoji_str = role_data['emoji']
+            # Discord buttons accept emoji strings directly
             button = Button(
                 label=role_data['name'],
-                emoji=role_data['emoji'],
+                emoji=emoji_str,
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"role_{role_id}"
             )
