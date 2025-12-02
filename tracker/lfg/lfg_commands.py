@@ -733,23 +733,54 @@ class EditDescriptionModal(discord.ui.Modal, title="Edit Description"):
         required=False
     )
     
-    def __init__(self, listing_id: int, user_id: int):
+    def __init__(self, listing_id: int, user_id: int, message: discord.Message):
         super().__init__()
         self.listing_id = listing_id
         self.user_id = user_id
+        self.message = message
     
     async def on_submit(self, interaction: discord.Interaction):
-        """Save the description to the database."""
+        """Save the description to the database and update the embed."""
         new_description = self.description_input.value
         
         # Update saved description in database
         success = update_saved_description(self.user_id, new_description)
         
         if success:
-            await interaction.response.send_message(
-                f"✅ Description saved! It will be used for your next LFG posts.\n\n**New description:**\n{new_description[:200]}{'...' if len(new_description) > 200 else ''}",
-                ephemeral=True
-            )
+            # Update the embed
+            try:
+                embed = self.message.embeds[0]
+                
+                # Find and update the Message field
+                for i, field in enumerate(embed.fields):
+                    if field.name == "💬 Message":
+                        # Remove old message field
+                        embed.remove_field(i)
+                        break
+                
+                # Add updated message field if description exists
+                if new_description:
+                    desc_text = new_description[:150]
+                    if len(new_description) > 150:
+                        desc_text += "..."
+                    embed.add_field(
+                        name="💬 Message",
+                        value=f"*{desc_text}*",
+                        inline=False
+                    )
+                
+                # Update the message
+                await self.message.edit(embed=embed)
+                
+                await interaction.response.send_message(
+                    f"✅ Description updated in both profile and listing!\n\n**New description:**\n{new_description[:200]}{'...' if len(new_description) > 200 else ''}",
+                    ephemeral=True
+                )
+            except Exception as e:
+                await interaction.response.send_message(
+                    f"✅ Description saved to profile, but failed to update embed: {e}",
+                    ephemeral=True
+                )
         else:
             await interaction.response.send_message(
                 "❌ Failed to save description. Please try again.",
@@ -785,7 +816,7 @@ class ListingActionView(View):
             return
         
         # Show modal for editing description
-        modal = EditDescriptionModal(self.listing_id, interaction.user.id)
+        modal = EditDescriptionModal(self.listing_id, interaction.user.id, interaction.message)
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="Close", emoji="🔒", style=discord.ButtonStyle.danger, custom_id="close")
