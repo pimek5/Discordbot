@@ -334,6 +334,209 @@ class RoleSelectView(View):
             )
 
 
+class EditRiotIDModal(discord.ui.Modal, title="Change Riot ID"):
+    """Modal for editing Riot ID."""
+    
+    riot_id = discord.ui.TextInput(
+        label="New Riot ID",
+        placeholder="PlayerName#TAG (example: 16 9 13 5 11#pimek)",
+        style=discord.TextStyle.short,
+        max_length=50,
+        required=True
+    )
+    
+    def __init__(self, user_id: int, current_profile: dict):
+        super().__init__()
+        self.user_id = user_id
+        self.current_profile = current_profile
+        # Set current value
+        current_riot_id = f"{current_profile['riot_id_game_name']}#{current_profile['riot_id_tagline']}"
+        self.riot_id.default = current_riot_id
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        riot_id_input = self.riot_id.value
+        
+        # Validate format
+        if '#' not in riot_id_input:
+            await interaction.response.send_message(
+                "❌ Invalid format! Use: `PlayerName#TAG`",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            game_name, tagline = riot_id_input.split('#', 1)
+            game_name = game_name.strip()
+            tagline = tagline.strip()
+            
+            if not game_name or not tagline:
+                raise ValueError("Empty name or tag")
+        except:
+            await interaction.response.send_message(
+                "❌ Invalid Riot ID format!",
+                ephemeral=True
+            )
+            return
+        
+        # Update profile
+        success = update_lfg_profile(
+            self.user_id,
+            riot_id_game_name=game_name,
+            riot_id_tagline=tagline
+        )
+        
+        if success:
+            await interaction.response.send_message(
+                f"✅ Riot ID updated to: **{game_name}#{tagline}**",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Failed to update Riot ID. Please try again.",
+                ephemeral=True
+            )
+
+
+class EditRegionModal(discord.ui.Modal, title="Change Region"):
+    """Modal for editing region."""
+    
+    region = discord.ui.TextInput(
+        label="New Region",
+        placeholder="eune, euw, na, kr, etc.",
+        style=discord.TextStyle.short,
+        max_length=10,
+        required=True
+    )
+    
+    def __init__(self, user_id: int):
+        super().__init__()
+        self.user_id = user_id
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        region_input = self.region.value.lower().strip()
+        
+        # Validate region
+        if region_input not in REGIONS:
+            await interaction.response.send_message(
+                f"❌ Invalid region! Valid options: {', '.join(REGIONS.keys())}",
+                ephemeral=True
+            )
+            return
+        
+        # Update profile
+        success = update_lfg_profile(self.user_id, region=region_input)
+        
+        if success:
+            await interaction.response.send_message(
+                f"✅ Region updated to: **{REGIONS[region_input]}**",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Failed to update region. Please try again.",
+                ephemeral=True
+            )
+
+
+class EditProfileLinkModal(discord.ui.Modal, title="Edit Profile Link"):
+    """Modal for editing profile link."""
+    
+    profile_link = discord.ui.TextInput(
+        label="Profile Link (op.gg, dpm.lol, u.gg, deeplol.gg)",
+        placeholder="https://www.op.gg/summoners/...",
+        style=discord.TextStyle.short,
+        max_length=500,
+        required=False
+    )
+    
+    def __init__(self, user_id: int, current_link: str):
+        super().__init__()
+        self.user_id = user_id
+        if current_link:
+            self.profile_link.default = current_link
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        link = self.profile_link.value.strip()
+        
+        # Validate if not empty
+        if link:
+            valid_domains = ['op.gg', 'dpm.lol', 'u.gg', 'deeplol.gg']
+            if not any(domain in link.lower() for domain in valid_domains):
+                await interaction.response.send_message(
+                    "❌ Invalid link! Please use op.gg, dpm.lol, u.gg, or deeplol.gg",
+                    ephemeral=True
+                )
+                return
+        
+        # Update profile (empty string to remove link)
+        success = update_lfg_profile(self.user_id, profile_link=link if link else None)
+        
+        if success:
+            if link:
+                await interaction.response.send_message(
+                    f"✅ Profile link updated!\n[View Profile]({link})",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "✅ Profile link removed!",
+                    ephemeral=True
+                )
+        else:
+            await interaction.response.send_message(
+                "❌ Failed to update profile link. Please try again.",
+                ephemeral=True
+            )
+
+
+class ConfirmDeleteModal(discord.ui.Modal, title="Delete Profile - Confirm"):
+    """Modal for confirming profile deletion."""
+    
+    confirmation = discord.ui.TextInput(
+        label="Type DELETE to confirm",
+        placeholder="DELETE",
+        style=discord.TextStyle.short,
+        max_length=10,
+        required=True
+    )
+    
+    def __init__(self, user_id: int):
+        super().__init__()
+        self.user_id = user_id
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.confirmation.value.upper() != "DELETE":
+            await interaction.response.send_message(
+                "❌ Confirmation failed. Profile not deleted.",
+                ephemeral=True
+            )
+            return
+        
+        # Delete profile from database
+        from .lfg_database import get_db_connection
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        try:
+            cur.execute("DELETE FROM lfg_profiles WHERE user_id = %s", (self.user_id,))
+            conn.commit()
+            
+            await interaction.response.send_message(
+                "✅ Profile deleted successfully!\n\n"
+                "You can create a new profile anytime with `/lfgsetup`",
+                ephemeral=True
+            )
+        except Exception as e:
+            conn.rollback()
+            await interaction.response.send_message(
+                "❌ Failed to delete profile. Please try again.",
+                ephemeral=True
+            )
+        finally:
+            cur.close()
+            conn.close()
+
+
 class ProfileEditView(View):
     """View for editing profile settings."""
     
@@ -342,19 +545,37 @@ class ProfileEditView(View):
         self.user_id = user_id
         self.current_profile = current_profile
     
-    @discord.ui.button(label="Change Roles", emoji="🎭", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Change Riot ID", emoji="🎮", style=discord.ButtonStyle.primary, row=0)
+    async def change_riot_id(self, interaction: discord.Interaction, button: Button):
+        """Change Riot ID."""
+        modal = EditRiotIDModal(self.user_id, self.current_profile)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="Change Region", emoji="🌍", style=discord.ButtonStyle.primary, row=0)
+    async def change_region(self, interaction: discord.Interaction, button: Button):
+        """Change region."""
+        modal = EditRegionModal(self.user_id)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="Change Roles", emoji="🎭", style=discord.ButtonStyle.primary, row=1)
     async def change_roles(self, interaction: discord.Interaction, button: Button):
         """Change role preferences."""
         # TODO: Implement role change modal
         await interaction.response.send_message("🚧 Under construction", ephemeral=True)
     
-    @discord.ui.button(label="Add Description", emoji="📝", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Profile Link", emoji="📊", style=discord.ButtonStyle.primary, row=1)
+    async def edit_profile_link(self, interaction: discord.Interaction, button: Button):
+        """Edit profile link (op.gg, etc)."""
+        modal = EditProfileLinkModal(self.user_id, self.current_profile.get('profile_link', ''))
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="Add Description", emoji="📝", style=discord.ButtonStyle.secondary, row=2)
     async def edit_description(self, interaction: discord.Interaction, button: Button):
         """Edit profile description."""
         modal = ProfileDescriptionModal(self.user_id, self.current_profile.get('description', ''))
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Voice Preferences", emoji="🎤", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Voice Preferences", emoji="🎤", style=discord.ButtonStyle.secondary, row=2)
     async def toggle_voice(self, interaction: discord.Interaction, button: Button):
         """Toggle voice requirement."""
         current_voice = self.current_profile.get('voice_required', False)
@@ -368,7 +589,7 @@ class ProfileEditView(View):
             ephemeral=True
         )
     
-    @discord.ui.button(label="Playstyle", emoji="🎮", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Playstyle", emoji="🎮", style=discord.ButtonStyle.secondary, row=3)
     async def change_playstyle(self, interaction: discord.Interaction, button: Button):
         """Change playstyle preference."""
         view = PlaystyleSelectView(self.user_id)
@@ -377,6 +598,12 @@ class ProfileEditView(View):
             view=view,
             ephemeral=True
         )
+    
+    @discord.ui.button(label="Delete Profile", emoji="🗑️", style=discord.ButtonStyle.danger, row=4)
+    async def delete_profile(self, interaction: discord.Interaction, button: Button):
+        """Delete LFG profile."""
+        modal = ConfirmDeleteModal(self.user_id)
+        await interaction.response.send_modal(modal)
 
 
 class ProfileDescriptionModal(discord.ui.Modal, title="Profile Description"):
