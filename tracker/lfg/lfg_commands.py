@@ -240,8 +240,8 @@ class RoleSelectView(View):
             )
             
             if success:
-                # Fetch rank data
-                ranked_data = await self.riot_api.get_ranked_data(summoner_data['id'], self.region)
+                # Fetch rank data using PUUID
+                ranked_data = await self.riot_api.get_ranked_stats_by_puuid(puuid, self.region)
                 solo_rank = "Unranked"
                 flex_rank = "Unranked"
                 
