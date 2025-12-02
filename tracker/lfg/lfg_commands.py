@@ -309,9 +309,6 @@ class RoleSelectView(View):
                 
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 
-                # Update profile list
-                await update_profile_list(self.bot)
-                
                 # Try to update original message (may fail if ephemeral)
                 try:
                     await interaction.message.edit(
@@ -1212,62 +1209,93 @@ class ProfileListView(View):
         return embed
 
 
-async def setup_profile_list(bot: commands.Bot):
-    """Setup persistent profile list message."""
+async def setup_help_message(bot: commands.Bot):
+    """Setup persistent help/commands message."""
     try:
         channel = bot.get_channel(LFG_PROFILES_CHANNEL_ID)
         if not channel:
             logger.error(f"❌ Channel {LFG_PROFILES_CHANNEL_ID} not found!")
             return
         
-        # Create initial embed and view
-        view = ProfileListView(bot, page=0)
-        embed = await view.create_profile_list_embed()
+        # Create help embed
+        embed = discord.Embed(
+            title="🎮 League of Legends LFG System",
+            description="Looking For Group - Find teammates for ranked, normals, ARAM and more!",
+            color=discord.Color.blue()
+        )
         
-        # Try to find existing message (check last 10 messages)
+        embed.add_field(
+            name="🎯 Getting Started",
+            value="1️⃣ `/lfg_setup riot_id region` - Create your LFG profile\n"
+                  "2️⃣ `/lfg_post` - Create a listing to find teammates\n"
+                  "3️⃣ `/lfg_browse` - Browse active listings",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="👤 Profile Commands",
+            value="• `/lfg_profile` - View your profile\n"
+                  "• `/lfg_profile @user` - View someone's profile\n"
+                  "• `/lfg_edit` - Edit your profile settings\n"
+                  "• `/lfg_list` - Browse all profiles with pagination",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔍 Browse & Filter",
+            value="• `/lfg_browse` - All active listings\n"
+                  "• `/lfg_browse queue_type:ranked_solo` - Filter by queue\n"
+                  "• `/lfg_browse region:eune` - Filter by region\n"
+                  "• Use autocomplete for easy selection!",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🎮 Queue Types",
+            value="👤 Ranked Solo/Duo • 👥 Ranked Flex\n"
+                  "🎮 Normal Draft • ❄️ ARAM • ⚔️ Arena",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🎭 Roles",
+            value=f"{ROLE_EMOJIS.get('TOP', '⬆️')} Top\n"
+                  f"{ROLE_EMOJIS.get('JUNGLE', '🌳')} Jungle\n"
+                  f"{ROLE_EMOJIS.get('MIDDLE', '✨')} Mid\n"
+                  f"{ROLE_EMOJIS.get('BOTTOM', '🏹')} ADC\n"
+                  f"{ROLE_EMOJIS.get('UTILITY', '🛡️')} Support",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="💡 Tips",
+            value="• Setup takes only 1 minute!\n"
+                  "• Your profile links to your LoL account\n"
+                  "• Listings expire after 24 hours\n"
+                  "• Use `/lfg_help` for detailed guide",
+            inline=False
+        )
+        
+        embed.set_footer(text="LFG listings will appear below this message")
+        
+        # Try to find existing message
         existing_message = None
         async for message in channel.history(limit=10):
             if message.author == bot.user and message.embeds:
-                if message.embeds[0].title == "🎮 LFG Profile List":
+                if "LFG System" in message.embeds[0].title:
                     existing_message = message
                     break
         
         if existing_message:
-            # Update existing message
-            await existing_message.edit(embed=embed, view=view)
-            logger.info(f"✅ Updated existing profile list message")
+            await existing_message.edit(embed=embed)
+            logger.info(f"✅ Updated existing help message")
         else:
-            # Create new message
-            await channel.send(embed=embed, view=view)
-            logger.info(f"✅ Created new profile list message")
-        
-        # Add view to bot for persistence
-        bot.add_view(view)
+            await channel.send(embed=embed)
+            logger.info(f"✅ Created new help message")
         
     except Exception as e:
-        logger.error(f"❌ Failed to setup profile list: {e}")
+        logger.error(f"❌ Failed to setup help message: {e}")
 
-
-async def update_profile_list(bot: commands.Bot):
-    """Update the profile list message."""
-    try:
-        channel = bot.get_channel(LFG_PROFILES_CHANNEL_ID)
-        if not channel:
-            return
-        
-        # Find the profile list message
-        async for message in channel.history(limit=10):
-            if message.author == bot.user and message.embeds:
-                if message.embeds[0].title == "🎮 LFG Profile List":
-                    # Update it
-                    view = ProfileListView(bot, page=0)
-                    embed = await view.create_profile_list_embed()
-                    await message.edit(embed=embed, view=view)
-                    logger.info(f"✅ Profile list updated")
-                    break
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to update profile list: {e}")
 
 
 async def setup(bot: commands.Bot, riot_api):
