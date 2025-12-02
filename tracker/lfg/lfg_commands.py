@@ -1008,7 +1008,7 @@ class LFGCommands(commands.Cog):
         
         # Create paginated view
         view = ProfileListView(self.bot, page=0)
-        embed = await view.create_embed()
+        embed = await view.create_profile_list_embed()
         
         await interaction.response.send_message(embed=embed, view=view)
     
