@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS lfg_profiles (
     description TEXT,
     voice_required BOOLEAN DEFAULT FALSE,
     language VARCHAR(10) DEFAULT 'pl',
+    profile_link TEXT, -- op.gg, dpm.lol, u.gg, or deeplol.gg link
     
     -- Activity preferences
     playstyle VARCHAR(20), -- 'casual', 'competitive', 'mixed'

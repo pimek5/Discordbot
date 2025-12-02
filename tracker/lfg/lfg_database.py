@@ -90,7 +90,8 @@ def create_lfg_profile(
     riot_id_tagline: str,
     region: str,
     primary_roles: List[str],
-    puuid: Optional[str] = None
+    puuid: Optional[str] = None,
+    profile_link: Optional[str] = None
 ) -> bool:
     """Create a new LFG profile."""
     conn = get_db_connection()
@@ -99,8 +100,8 @@ def create_lfg_profile(
     try:
         cur.execute("""
             INSERT INTO lfg_profiles 
-            (user_id, riot_id_game_name, riot_id_tagline, puuid, region, primary_roles)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            (user_id, riot_id_game_name, riot_id_tagline, puuid, region, primary_roles, profile_link)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id) 
             DO UPDATE SET
                 riot_id_game_name = EXCLUDED.riot_id_game_name,
@@ -108,8 +109,9 @@ def create_lfg_profile(
                 puuid = EXCLUDED.puuid,
                 region = EXCLUDED.region,
                 primary_roles = EXCLUDED.primary_roles,
+                profile_link = EXCLUDED.profile_link,
                 updated_at = CURRENT_TIMESTAMP
-        """, (user_id, riot_id_game_name, riot_id_tagline, puuid, region, json.dumps(primary_roles)))
+        """, (user_id, riot_id_game_name, riot_id_tagline, puuid, region, json.dumps(primary_roles), profile_link))
         
         conn.commit()
         logger.info(f"✅ Created/updated LFG profile for user {user_id}")

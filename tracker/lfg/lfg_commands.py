@@ -137,7 +137,7 @@ def format_rank_with_emoji(rank_str: str) -> str:
 class RoleSelectView(View):
     """Interactive view for selecting roles."""
     
-    def __init__(self, bot, riot_api, user_id: int, game_name: str, tagline: str, region: str):
+    def __init__(self, bot, riot_api, user_id: int, game_name: str, tagline: str, region: str, profile_link: Optional[str] = None):
         super().__init__(timeout=300)
         self.bot = bot
         self.riot_api = riot_api
@@ -145,6 +145,7 @@ class RoleSelectView(View):
         self.game_name = game_name
         self.tagline = tagline
         self.region = region
+        self.profile_link = profile_link
         self.selected_roles = []
         
         # Add role buttons
@@ -237,7 +238,8 @@ class RoleSelectView(View):
                 riot_id_tagline=self.tagline,
                 region=self.region,
                 primary_roles=self.selected_roles,
-                puuid=puuid
+                puuid=puuid,
+                profile_link=self.profile_link
             )
             
             if success:
@@ -713,6 +715,14 @@ def create_listing_embed(profile: dict, queue_type: str, roles_needed: list, voi
             inline=False
         )
     
+    # Profile link if available
+    if profile.get('profile_link'):
+        embed.add_field(
+            name="📊 Stats",
+            value=f"[View Profile]({profile['profile_link']})",
+            inline=True
+        )
+    
     # Footer with timestamp and ID
     embed.set_footer(
         text=f"Click ✅ Join to play together • Expires in 24h • ID: {listing_id}",
@@ -879,14 +889,16 @@ class LFGCommands(commands.Cog):
     @app_commands.command(name="lfgsetup", description="Create your profile - takes 1 minute!")
     @app_commands.describe(
         riot_id="Your Riot ID with # tag (example: PlayerName#EUW)",
-        region="Your server region"
+        region="Your server region",
+        profile_link="Optional: Your op.gg, dpm.lol, u.gg, or deeplol.gg profile link"
     )
     @app_commands.autocomplete(region=region_autocomplete)
     async def lfgsetup(
         self,
         interaction: discord.Interaction,
         riot_id: str,
-        region: str
+        region: str,
+        profile_link: Optional[str] = None
     ):
         """Create LFG profile with interactive setup."""
         # Check if profile exists
@@ -934,8 +946,18 @@ class LFGCommands(commands.Cog):
             )
             return
         
+        # Validate profile link if provided
+        if profile_link:
+            valid_domains = ['op.gg', 'dpm.lol', 'u.gg', 'deeplol.gg']
+            if not any(domain in profile_link.lower() for domain in valid_domains):
+                await interaction.response.send_message(
+                    "❌ Invalid profile link! Please use op.gg, dpm.lol, u.gg, or deeplol.gg",
+                    ephemeral=True
+                )
+                return
+        
         # Show role selection view with riot_id for display
-        view = RoleSelectView(self.bot, self.riot_api, interaction.user.id, game_name, tagline, region)
+        view = RoleSelectView(self.bot, self.riot_api, interaction.user.id, game_name, tagline, region, profile_link)
         
         embed = discord.Embed(
             title="🎭 Choose your League of Legends roles",
@@ -949,6 +971,12 @@ class LFGCommands(commands.Cog):
             value=f"🎮 **{game_name}#{tagline}**\n🌍 Region: **{region.upper()}**",
             inline=False
         )
+        if profile_link:
+            embed.add_field(
+                name="📊 Profile Link",
+                value=f"[View Stats]({profile_link})",
+                inline=False
+            )
         embed.set_footer(text="After selecting roles, you'll set your playstyle and preferences")
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -1019,6 +1047,10 @@ class LFGCommands(commands.Cog):
         # Description
         if profile.get('description'):
             embed.add_field(name="📝 Description", value=profile['description'], inline=False)
+        
+        # Profile link
+        if profile.get('profile_link'):
+            embed.add_field(name="📊 Stats Profile", value=f"[View Profile]({profile['profile_link']})", inline=False)
         
         embed.set_thumbnail(url=target_user.display_avatar.url)
         embed.set_footer(text=f"Utworzony: {profile['created_at'].strftime('%Y-%m-%d')}")
