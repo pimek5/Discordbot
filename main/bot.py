@@ -2704,21 +2704,17 @@ async def get_specific_tweet(tweet_id):
 
 async def get_twitter_user_tweets(username, max_results=5):
     """
-    Fetch the latest tweets from a Twitter user using ntscraper OR Twitter API
-    Tries ntscraper first (free), falls back to Twitter API if available
+    Fetch the latest tweets from a Twitter user using Nitter RSS OR Twitter API
+    Tries Nitter RSS first (free), falls back to Twitter API if available
     """
     print(f"🔍 Starting tweet fetch for @{username} (max {max_results} tweets)")
     print(f"⏰ Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # METHOD 1: Try ntscraper first (free but unreliable)
+    # METHOD 1: Try Nitter RSS first (free and reliable)
     try:
-        from ntscraper import Nitter
+        print(f"📡 Method 1: Trying Nitter RSS...")
         
-        print(f"📡 Method 1: Trying ntscraper...")
-        
-        # SKIP instance check to avoid blocking (takes 10+ seconds)
-        # Instead provide a list of known working instances
-        # Updated list - many more instances to try
+        # List of known working Nitter instances
         working_instances = [
             "nitter.privacydev.net",
             "nitter.poast.org", 
@@ -2743,127 +2739,73 @@ async def get_twitter_user_tweets(username, max_results=5):
         raw_tweets = None
         last_error = None
         
-        for attempt, instance in enumerate(working_instances[:3]):  # Try first 3 instances
+        for attempt, instance in enumerate(working_instances[:5]):  # Try first 5 instances
             try:
-                print(f"🔄 Attempt {attempt + 1}/3 trying instance: {instance}")
+                print(f"🔄 Attempt {attempt + 1}/5 trying instance: {instance}")
                 
-                # Create scraper with specific instance - pass instance directly in constructor
-                scraper = Nitter(log_level=1, skip_instance_check=True)
+                # Try direct RSS approach - more reliable than ntscraper
+                # RSS format: https://nitter.instance/username/rss
+                rss_url = f"https://{instance}/{username}/rss"
+                print(f"   📡 Trying RSS: {rss_url}")
                 
-                # Set instance BEFORE calling get_tweets
-                if hasattr(scraper, 'instance'):
-                    scraper.instance = instance
-                    print(f"   ✓ Instance set to: {scraper.instance}")
-                
-                # Try to get tweets with this instance
-                raw_tweets = scraper.get_tweets(username, mode='user', number=max_results, instance=instance)
-                if raw_tweets and 'tweets' in raw_tweets and len(raw_tweets['tweets']) > 0:
-                    print(f"✅ Successfully fetched tweets from {instance}")
-                    break
-                else:
-                    print(f"⚠️ Instance {instance} returned no data")
-                    last_error = "No data returned"
+                async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
+                    async with session.get(rss_url) as response:
+                        if response.status == 200:
+                            from xml.etree import ElementTree as ET
+                            rss_text = await response.text()
+                            
+                            # Parse RSS XML
+                            root = ET.fromstring(rss_text)
+                            items = root.findall('.//item')
+                            
+                            if items:
+                                tweets = []
+                                for item in items[:max_results]:
+                                    try:
+                                        title = item.find('title').text or ""
+                                        link = item.find('link').text or ""
+                                        description = item.find('description').text or ""
+                                        
+                                        # Extract tweet ID from link
+                                        if '/status/' in link:
+                                            tweet_id = link.split('/status/')[-1].split('#')[0].split('?')[0]
+                                            
+                                            # Filter retweets and replies
+                                            if title.startswith('RT ') or title.startswith('R to '):
+                                                continue
+                                            
+                                            tweets.append({
+                                                'id': tweet_id,
+                                                'text': title,
+                                                'url': f'https://twitter.com/{username}/status/{tweet_id}',
+                                                'description': description,
+                                                'created_at': '',
+                                                'metrics': {}
+                                            })
+                                    except Exception as e:
+                                        print(f"   ⚠️ Error parsing RSS item: {e}")
+                                        continue
+                                
+                                if tweets:
+                                    print(f"✅ Successfully fetched {len(tweets)} tweets from {instance} via RSS")
+                                    return tweets
+                        else:
+                            print(f"   ⚠️ RSS returned status {response.status}")
+                            
             except Exception as e:
                 last_error = str(e)
                 print(f"⚠️ Instance {instance} failed: {e}")
-                if attempt < 2:  # Don't sleep on last attempt
+                if attempt < 4:  # Don't sleep on last attempt
                     await asyncio.sleep(1)  # Wait before retry
         
-        if raw_tweets and 'tweets' in raw_tweets and len(raw_tweets['tweets']) > 0:
-            # ntscraper SUCCESS - parse the tweets
-            tweets = []
-            for tweet_data in raw_tweets['tweets']:
-                try:
-                    # Extract tweet ID from link
-                    tweet_link = tweet_data.get('link', '')
-                    if not tweet_link:
-                        continue
-                    
-                    tweet_id = tweet_link.split('/')[-1].split('#')[0]
-                    tweet_text = tweet_data.get('text', '')
-                    
-                    # FILTER OUT RETWEETS
-                    if tweet_data.get('is-retweet', False) or tweet_text.startswith('RT '):
-                        print(f"⏭️ Skipping retweet: {tweet_text[:80]}...")
-                        continue
-                    
-                    # FILTER OUT REPLIES
-                    if tweet_data.get('is-reply', False):
-                        print(f"⏭️ Skipping reply: {tweet_text[:80]}...")
-                        continue
-                    
-                    # Convert to Twitter URL
-                    twitter_url = f'https://twitter.com/{username}/status/{tweet_id}'
-                    
-                    # Extract media/images
-                    media_list = []
-                    if 'pictures' in tweet_data and tweet_data['pictures']:
-                        for pic_url in tweet_data['pictures']:
-                            # Convert Nitter pic URLs to direct Twitter CDN
-                            if 'pbs.twimg.com' in pic_url:
-                                media_list.append({
-                                    'type': 'photo',
-                                    'url': pic_url
-                                })
-                            elif '/pic/' in pic_url or 'media%2F' in pic_url:
-                                # Extract filename and build Twitter CDN URL
-                                try:
-                                    import urllib.parse
-                                    if 'media%2F' in pic_url:
-                                        filename = pic_url.split('media%2F')[-1].split('&')[0].split('?')[0]
-                                        filename = urllib.parse.unquote(filename)
-                                        twitter_img = f"https://pbs.twimg.com/media/{filename}"
-                                        media_list.append({
-                                            'type': 'photo',
-                                            'url': twitter_img
-                                        })
-                                except:
-                                    pass
-                    
-                    if media_list:
-                        print(f"🖼️ Found {len(media_list)} images in tweet {tweet_id}")
-                    else:
-                        print(f"ℹ️ No images found in tweet {tweet_id}")
-                    
-                    # Build tweet object
-                    tweet_obj = {
-                        'id': tweet_id,
-                        'text': tweet_text,
-                        'url': twitter_url,
-                        'created_at': tweet_data.get('date', ''),
-                        'description': tweet_text,
-                        'metrics': {
-                            'like_count': tweet_data.get('stats', {}).get('likes', 0),
-                            'retweet_count': tweet_data.get('stats', {}).get('retweets', 0),
-                            'reply_count': tweet_data.get('stats', {}).get('comments', 0),
-                        }
-                    }
-                    
-                    if media_list:
-                        tweet_obj['media'] = media_list
-                    
-                    tweets.append(tweet_obj)
-                    
-                except Exception as e:
-                    print(f"⚠️ Error parsing tweet: {e}")
-                    continue
-            
-            if tweets:
-                print(f"✅ ntscraper: Found {len(tweets)} tweets")
-                print(f"🆕 Latest tweet ID: {tweets[0]['id']}")
-                print(f"📝 Latest tweet text: {tweets[0]['text'][:100]}...")
-                return tweets
-            else:
-                print(f"❌ ntscraper: No valid tweets found after filtering")
-        
-        # ntscraper FAILED - try Twitter API
-        print(f"❌ ntscraper failed after trying {min(3, len(working_instances))} instances. Last error: {last_error}")
+        # RSS method FAILED - try Twitter API
+        print(f"❌ Nitter RSS failed after trying {min(5, len(working_instances))} instances. Last error: {last_error}")
         print(f"💡 Trying Twitter API as fallback...")
             
     except ImportError:
-        print(f"❌ ntscraper not installed!")
+        print(f"❌ Required libraries not installed!")
     except Exception as e:
-        print(f"❌ ntscraper error: {e}")
+        print(f"❌ Nitter RSS error: {e}")
         import traceback
         traceback.print_exc()
     
