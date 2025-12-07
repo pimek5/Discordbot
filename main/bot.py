@@ -166,7 +166,7 @@ LOG_CHANNEL_ID = 1408036991454417039
 # Twitter Configuration
 TWITTER_USERNAME = "p1mek"
 TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
-TWITTER_CHECK_INTERVAL = 1800  # Check every 30 minutes (1800 seconds) - reduced to avoid Twitter API rate limits
+TWITTER_CHECK_INTERVAL = 7200  # Check every 2 hours (7200 seconds) - increased to avoid Twitter API rate limits
 
 # Twitter API Configuration (add these to your .env file)
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
@@ -2714,23 +2714,16 @@ async def get_twitter_user_tweets(username, max_results=5):
     try:
         print(f"📡 Method 1: Trying Nitter RSS...")
         
-        # List of known working Nitter instances
+        # List of Nitter instances to try (updated Dec 2024)
+        # Note: Most Nitter instances are unstable, Twitter API is more reliable
         working_instances = [
+            "nitter.poast.org",
             "nitter.privacydev.net",
-            "nitter.poast.org", 
-            "xcancel.com",
-            "nitter.net",
-            "nitter.cz",
-            "nitter.woodland.cafe",
-            "nitter.raw.lgbt",
-            "nitter.projectsegfau.lt",
-            "nitter.1d4.us",
-            "nitter.ir",
-            "nitter.mint.lgbt",
-            "nitter.bird.froth.zone",
-            "unofficialbird.com",
             "nitter.ftw.lol",
-            "twitter.beparanoid.de"
+            "xcancel.com",
+            "nitter.lucabased.xyz",
+            "nitter.cz",
+            "nitter.woodland.cafe"
         ]
         
         print(f"🌐 Trying with {len(working_instances)} Nitter instances...")
