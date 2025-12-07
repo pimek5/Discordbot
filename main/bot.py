@@ -2747,11 +2747,16 @@ async def get_twitter_user_tweets(username, max_results=5):
             try:
                 print(f"🔄 Attempt {attempt + 1}/3 trying instance: {instance}")
                 
-                # Create scraper with specific instance
+                # Create scraper with specific instance - pass instance directly in constructor
                 scraper = Nitter(log_level=1, skip_instance_check=True)
-                scraper.instance = instance
                 
-                raw_tweets = scraper.get_tweets(username, mode='user', number=max_results)
+                # Set instance BEFORE calling get_tweets
+                if hasattr(scraper, 'instance'):
+                    scraper.instance = instance
+                    print(f"   ✓ Instance set to: {scraper.instance}")
+                
+                # Try to get tweets with this instance
+                raw_tweets = scraper.get_tweets(username, mode='user', number=max_results, instance=instance)
                 if raw_tweets and 'tweets' in raw_tweets and len(raw_tweets['tweets']) > 0:
                     print(f"✅ Successfully fetched tweets from {instance}")
                     break
