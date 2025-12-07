@@ -166,7 +166,7 @@ LOG_CHANNEL_ID = 1408036991454417039
 # Twitter Configuration
 TWITTER_USERNAME = "p1mek"
 TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
-TWITTER_CHECK_INTERVAL = 7200  # Check every 2 hours (7200 seconds) - increased to avoid Twitter API rate limits
+TWITTER_CHECK_INTERVAL = 120  # Check every 2 minutes (120 seconds) - frequent checks for new tweets
 
 # Twitter API Configuration (add these to your .env file)
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
@@ -3369,6 +3369,84 @@ async def checktweet(interaction: discord.Interaction, tweet_id: str):
     except Exception as e:
         print(f"Error in check specific tweet: {e}")
         await interaction.edit_original_response(content="❌ Error checking specific tweet.")
+
+# Command to view last 10 tweets (private, ephemeral)
+@twitter_group.command(name="list", description="View the last 10 tweets from @p1mek (only visible to you)")
+async def listtweets(interaction: discord.Interaction):
+    """Show the last 10 tweets from the monitored account"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        print(f"📋 Fetching last 10 tweets for {interaction.user.name}...")
+        
+        # Fetch last 10 tweets
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME, max_results=10)
+        
+        if tweets:
+            embed = discord.Embed(
+                title=f"📋 Last {len(tweets)} Tweets from @{TWITTER_USERNAME}",
+                description=f"Latest tweets to verify bot is working correctly",
+                color=0x1DA1F2,
+                timestamp=datetime.datetime.now()
+            )
+            
+            # Add each tweet as a field
+            for i, tweet in enumerate(tweets, 1):
+                tweet_text = tweet.get('text', 'No text available')
+                tweet_id = tweet.get('id', 'Unknown')
+                tweet_url = tweet.get('url', f'https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}')
+                
+                # Truncate long tweets
+                if len(tweet_text) > 100:
+                    tweet_text = tweet_text[:100] + "..."
+                
+                # Check if this is the last tracked tweet
+                status_icon = "🟢" if tweet_id == last_tweet_id else "⚪"
+                
+                field_name = f"{status_icon} Tweet #{i} (ID: {tweet_id})"
+                field_value = f"{tweet_text}\n[View Tweet]({tweet_url})"
+                
+                embed.add_field(name=field_name, value=field_value, inline=False)
+            
+            # Add footer with monitoring status
+            embed.add_field(
+                name="📊 Monitoring Status",
+                value=f"🟢 = Last tracked tweet\n⚪ = Older tweets\n\n**Last Tracked ID:** `{last_tweet_id or 'None (will initialize on next check)'}`",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Checked by {interaction.user.name} • Updates every 2 minutes")
+            embed.set_thumbnail(url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png")
+            
+            await interaction.edit_original_response(content="✅ Last 10 tweets fetched:", embed=embed)
+            print(f"✅ Sent last 10 tweets to {interaction.user.name}")
+        else:
+            embed = discord.Embed(
+                title="❌ No Tweets Found",
+                description="Could not fetch tweets from any available source",
+                color=0xFF0000
+            )
+            embed.add_field(
+                name="💡 Possible Causes",
+                value="• All Nitter instances are down\n• Twitter API rate limit reached\n• Network connectivity issues",
+                inline=False
+            )
+            embed.add_field(
+                name="🔧 Try Again",
+                value="Wait a few minutes and try `/twitter list` again",
+                inline=False
+            )
+            await interaction.edit_original_response(embed=embed)
+            
+    except Exception as e:
+        print(f"Error fetching tweet list: {e}")
+        import traceback
+        traceback.print_exc()
+        await interaction.edit_original_response(content=f"❌ Error fetching tweets: {str(e)[:200]}")
 
 # Command to add specific tweet by ID
 @twitter_group.command(name="add", description="Manually add a tweet by ID to the channel")
