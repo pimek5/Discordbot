@@ -2989,40 +2989,58 @@ async def get_twitter_user_tweets(username, max_results=5):
     print(f"🔍 Starting tweet fetch for @{username} (max {max_results} tweets)")
     print(f"⏰ Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # METHOD 1: Try Nitter RSS first (free and reliable)
+    # METHOD 1: Try RSS alternatives first (free, no rate limits)
     try:
-        print(f"📡 Method 1: Trying Nitter RSS...")
+        print(f"📡 Method 1: Trying RSS feeds...")
         
-        # List of Nitter instances to try (updated Dec 2024)
-        # Note: Most Nitter instances are unstable, Twitter API is more reliable
-        working_instances = [
-            "nitter.unixfox.eu",
-            "nitter.net",
-            "nitter.it",
-            "xcancel.com",
-            "nitter.woodland.cafe",
-            "nitter.fediverse.observer",
-            "nitter.poast.org"
+        # Multiple RSS sources that work better than Nitter
+        rss_sources = [
+            # Nitter instances
+            {
+                "name": "Nitter (unixfox)",
+                "url": f"https://nitter.unixfox.eu/{username}/rss",
+                "type": "nitter"
+            },
+            {
+                "name": "Nitter (fediverse.observer)",
+                "url": f"https://nitter.fediverse.observer/{username}/rss",
+                "type": "nitter"
+            },
+            {
+                "name": "xCancel",
+                "url": f"https://xcancel.com/{username}/rss",
+                "type": "nitter"
+            },
+            # RSSHub (community-run RSS feeds)
+            {
+                "name": "RSSHub Twitter",
+                "url": f"https://rsshub.app/twitter/user/{username}",
+                "type": "rsshub"
+            },
+            # Wayback Machine RSS (archives Twitter)
+            {
+                "name": "Wayback Twitter Feed",
+                "url": f"https://web.archive.org/web/2*/twitter.com/{username}",
+                "type": "wayback"
+            },
         ]
         
-        print(f"🌐 Trying with {len(working_instances)} Nitter instances...")
+        print(f"🌐 Trying {len(rss_sources)} RSS sources...")
         
-        # Get user's tweets - try each instance one by one
+        # Get user's tweets - try each source one by one
         raw_tweets = None
         last_error = None
-        working_instances_found = []
+        working_sources_found = []
         
-        for attempt, instance in enumerate(working_instances[:5]):  # Try first 5 instances
+        for attempt, source in enumerate(rss_sources):  # Try each source
             try:
-                print(f"🔄 Attempt {attempt + 1}/5 trying instance: {instance}")
+                print(f"🔄 Attempt {attempt + 1}/{len(rss_sources)} trying: {source['name']}")
                 
-                # Try direct RSS approach - more reliable than ntscraper
-                # RSS format: https://nitter.instance/username/rss
-                rss_url = f"https://{instance}/{username}/rss"
+                rss_url = source['url']
                 print(f"   📡 Trying RSS: {rss_url}")
                 
                 async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
-                    async with session.get(rss_url) as response:
+                    async with session.get(rss_url, ssl=False) as response:
                         if response.status == 200:
                             from xml.etree import ElementTree as ET
                             rss_text = await response.text()
@@ -3064,28 +3082,28 @@ async def get_twitter_user_tweets(username, max_results=5):
                                     for tweet in tweets:
                                         tweet_cache[tweet['id']] = tweet
                                     
-                                    print(f"✅ Successfully fetched {len(tweets)} tweets from {instance} via RSS")
-                                    print(f"🟢 Working Nitter instance: {instance}")
+                                    print(f"✅ Successfully fetched {len(tweets)} tweets from {source['name']} via RSS")
+                                    print(f"🟢 Working RSS source: {source['name']}")
                                     print(f"💾 Cache updated: {len(tweet_cache)} tweets cached")
-                                    working_instances_found.append(instance)
+                                    working_sources_found.append(source['name'])
                                     return tweets
                         else:
                             print(f"   ⚠️ RSS returned status {response.status}")
                             
             except Exception as e:
                 last_error = str(e)
-                print(f"⚠️ Instance {instance} failed: {e}")
-                if attempt < 4:  # Don't sleep on last attempt
-                    await asyncio.sleep(1)  # Wait before retry
+                print(f"⚠️ Source {source['name']} failed: {e}")
+                if attempt < len(rss_sources) - 1:  # Don't sleep on last attempt
+                    await asyncio.sleep(0.5)  # Wait before retry
         
         # RSS method FAILED - try Twitter API
-        if working_instances_found:
-            print(f"💡 These instances ARE working: {', '.join(working_instances_found)}")
+        if working_sources_found:
+            print(f"💡 These RSS sources ARE working: {', '.join(working_sources_found)}")
         else:
-            print(f"💡 ⚠️ ALL Nitter instances appear to be down or blocked")
-            print(f"💡 Instances tried: {', '.join(working_instances[:5])}")
-        print(f"❌ Nitter RSS failed after trying {min(5, len(working_instances))} instances. Last error: {last_error}")
-        print(f"💡 Trying Twitter API as fallback...")
+            print(f"💡 ⚠️ ALL RSS sources appear to be down or blocked")
+            print(f"💡 Sources tried: {', '.join([s['name'] for s in rss_sources])}")
+        print(f"❌ RSS failed after trying {len(rss_sources)} sources. Last error: {last_error}")
+        print(f"💡 Trying fallback methods...")
             
     except ImportError:
         print(f"❌ Required libraries not installed!")
