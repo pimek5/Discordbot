@@ -148,9 +148,9 @@ intents.voice_states = True
 intents.messages = True
 intents.message_content = True
 
-# Increase timeouts for slow connections
+# Timeouts for slow connections (shorter for tweet fetching to prevent hanging)
 import aiohttp
-DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=30, sock_read=30)
+DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=10, connect=5, sock_read=5)
 
 # ================================
 #        CONFIG
