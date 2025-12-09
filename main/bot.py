@@ -3192,26 +3192,34 @@ async def get_twitter_user_tweets(username, max_results=5):
                                     # Try to parse tweets from HTML using BeautifulSoup
                                     soup = BeautifulSoup(html, 'html.parser')
                                     
-                                    # Look for tweet links/data in the HTML
+                                    # Look for ALL links with /status/ in them (more aggressive)
                                     tweets = []
+                                    seen_ids = set()
                                     
-                                    # Try finding tweet containers (varies by frontend)
-                                    tweet_containers = soup.find_all(['a', 'div'], attrs={'href': lambda x: x and '/status/' in x if isinstance(x, str) else False})
+                                    # Find all <a> tags
+                                    all_links = soup.find_all('a', href=True)
+                                    print(f"   🔍 Found {len(all_links)} total links in HTML")
                                     
-                                    for container in tweet_containers[:max_results]:
-                                        try:
-                                            link = container.get('href', '')
-                                            if '/status/' in link:
-                                                tweet_id = link.split('/status/')[-1].split('?')[0].split('#')[0]
+                                    for link in all_links:
+                                        href = link.get('href', '')
+                                        if '/status/' in href:
+                                            try:
+                                                # Extract tweet ID
+                                                tweet_id = href.split('/status/')[-1].split('?')[0].split('#')[0].split('/')[0]
                                                 
-                                                # Get text content if available
-                                                text = container.get_text(strip=True) or "Tweet from @" + username
+                                                # Skip duplicates
+                                                if tweet_id in seen_ids or not tweet_id.isdigit():
+                                                    continue
+                                                seen_ids.add(tweet_id)
+                                                
+                                                # Get text content
+                                                text = link.get_text(strip=True) or f"Tweet from @{username}"
                                                 
                                                 tweet_obj = {
                                                     'id': tweet_id,
-                                                    'text': text[:280],
+                                                    'text': text[:280] if text else f"New tweet from @{username}",
                                                     'url': f'https://twitter.com/{username}/status/{tweet_id}',
-                                                    'description': text[:280],
+                                                    'description': text[:280] if text else '',
                                                     'created_at': '',
                                                     'metrics': {}
                                                 }
@@ -3222,16 +3230,16 @@ async def get_twitter_user_tweets(username, max_results=5):
                                                 
                                                 if len(tweets) >= max_results:
                                                     break
-                                        except Exception as e:
-                                            print(f"   ⚠️ Error parsing tweet from HTML: {e}")
-                                            continue
+                                            except Exception as e:
+                                                print(f"   ⚠️ Error parsing link {href}: {e}")
+                                                continue
                                     
                                     if tweets:
                                         print(f"✅ Scraped {len(tweets)} tweets from {profile_url}")
                                         print(f"💾 Cached {len(tweets)} tweets")
                                         return tweets
                                     else:
-                                        print(f"   💡 HTML retrieved but no tweets found in structure")
+                                        print(f"   💡 No /status/ links found in HTML")
                                         # Use cache if available
                                         if tweet_cache:
                                             cached_tweets = list(tweet_cache.values())[:max_results]
