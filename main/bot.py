@@ -2566,7 +2566,7 @@ async def checkruneforge(interaction: discord.Interaction):
         traceback.print_exc()
 
 # ================================
-#       Tweet Poster
+#       Tweet Poster (Advanced)
 # ================================
 
 TWITTER_USERNAME = "p1mek"
@@ -2575,6 +2575,7 @@ TWITTER_CHECK_INTERVAL = 120  # 2 minutes
 
 last_tweet_id = None
 TWEET_ID_FILE = "last_tweet_id.txt"
+tweet_cache = {}  # Cache recent tweets for commands
 
 def load_last_tweet_id():
     """Load the last tweet ID from file"""
@@ -2597,8 +2598,8 @@ def save_last_tweet_id(tweet_id):
     except Exception as e:
         print(f"⚠️ Error saving last tweet ID: {e}")
 
-async def get_twitter_user_tweets():
-    """Get latest tweets from user using Nitter RSS"""
+async def get_twitter_user_tweets(limit=10):
+    """Get latest tweets from user using Nitter RSS with caching"""
     nitter_instances = [
         "nitter.poast.org",
         "nitter.privacydev.net",
@@ -2625,21 +2626,26 @@ async def get_twitter_user_tweets():
                         items = root.findall('.//item')
                         if items:
                             tweets = []
-                            for item in items[:10]:
+                            for item in items[:limit]:
                                 title = item.find('title')
                                 link = item.find('link')
                                 pub_date = item.find('pubDate')
+                                description = item.find('description')
                                 
                                 if title is not None and link is not None:
                                     tweet_url = link.text
                                     tweet_id = tweet_url.split('/')[-1].split('#')[0]
                                     
-                                    tweets.append({
+                                    tweet_data = {
                                         'id': tweet_id,
                                         'text': title.text,
                                         'url': tweet_url.replace(instance, 'twitter.com'),
-                                        'created_at': pub_date.text if pub_date is not None else None
-                                    })
+                                        'created_at': pub_date.text if pub_date is not None else None,
+                                        'description': description.text if description is not None else None
+                                    }
+                                    
+                                    tweets.append(tweet_data)
+                                    tweet_cache[tweet_id] = tweet_data
                             
                             print(f"✅ Found {len(tweets)} tweets from {instance}")
                             return tweets
@@ -2652,10 +2658,14 @@ async def get_twitter_user_tweets():
     print("❌ All Nitter instances failed")
     return []
 
-def create_tweet_embed(tweet):
-    """Create Discord embed for tweet"""
+def create_tweet_embed(tweet, show_details=False):
+    """Create Discord embed for tweet with optional details"""
+    text = tweet['text']
+    if len(text) > 2000:
+        text = text[:1997] + "..."
+    
     embed = discord.Embed(
-        description=tweet['text'],
+        description=text,
         color=0x1DA1F2,
         url=tweet['url']
     )
@@ -2664,10 +2674,15 @@ def create_tweet_embed(tweet):
         icon_url="https://abs.twimg.com/icons/apple-touch-icon-192x192.png",
         url=f"https://twitter.com/{TWITTER_USERNAME}"
     )
+    
+    if show_details and tweet.get('description'):
+        embed.add_field(name="📝 Details", value=tweet['description'][:200], inline=False)
+    
     if tweet.get('created_at'):
         embed.set_footer(text=f"Twitter • {tweet['created_at']}")
     else:
         embed.set_footer(text="Twitter")
+    
     return embed
 
 @tasks.loop(seconds=TWITTER_CHECK_INTERVAL)
@@ -2676,7 +2691,7 @@ async def check_for_new_tweets():
     global last_tweet_id
     
     try:
-        tweets = await get_twitter_user_tweets()
+        tweets = await get_twitter_user_tweets(limit=5)
         if not tweets:
             print("⚠️ No tweets fetched")
             return
@@ -2694,9 +2709,12 @@ async def check_for_new_tweets():
             
             channel = bot.get_channel(TWITTER_CHANNEL_ID)
             if channel:
-                embed = create_tweet_embed(latest_tweet)
-                await channel.send(embed=embed)
-                print(f"✅ Posted tweet to Discord")
+                embed = create_tweet_embed(latest_tweet, show_details=True)
+                try:
+                    msg = await channel.send(embed=embed)
+                    print(f"✅ Posted tweet to Discord - Message ID: {msg.id}")
+                except Exception as e:
+                    print(f"❌ Failed to post tweet: {e}")
             
             last_tweet_id = latest_tweet['id']
             save_last_tweet_id(last_tweet_id)
@@ -2729,6 +2747,7 @@ async def twitter_status(interaction: discord.Interaction):
     embed.add_field(name="Check Interval", value=f"{TWITTER_CHECK_INTERVAL}s", inline=True)
     embed.add_field(name="Status", value="🟢 Running" if check_for_new_tweets.is_running() else "🔴 Stopped", inline=True)
     embed.add_field(name="Last Tweet ID", value=last_tweet_id or "None", inline=False)
+    embed.add_field(name="Cached Tweets", value=f"{len(tweet_cache)} tweets in cache", inline=True)
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -2742,9 +2761,13 @@ async def twitter_check(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     
     try:
-        tweets = await get_twitter_user_tweets()
+        tweets = await get_twitter_user_tweets(limit=10)
         if tweets:
-            await interaction.edit_original_response(content=f"✅ Found {len(tweets)} tweets. Latest: {tweets[0]['id']}")
+            embed = discord.Embed(title="✅ Manual Tweet Check", color=0x1DA1F2)
+            embed.add_field(name="Latest Tweet ID", value=tweets[0]['id'], inline=False)
+            embed.add_field(name="Tweet Text", value=tweets[0]['text'][:200], inline=False)
+            embed.add_field(name="Total Found", value=f"{len(tweets)} tweets", inline=True)
+            await interaction.edit_original_response(embed=embed)
         else:
             await interaction.edit_original_response(content="❌ No tweets found")
     except Exception as e:
@@ -2752,7 +2775,7 @@ async def twitter_check(interaction: discord.Interaction):
 
 @twitter_group.command(name="list", description="Show last 10 tweets")
 async def twitter_list(interaction: discord.Interaction):
-    """List recent tweets"""
+    """List recent tweets with details"""
     if not has_mod_role(interaction):
         await interaction.response.send_message("❌ No permission", ephemeral=True)
         return
@@ -2760,17 +2783,88 @@ async def twitter_list(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     
     try:
-        tweets = await get_twitter_user_tweets()
+        tweets = await get_twitter_user_tweets(limit=10)
         if tweets:
             embed = discord.Embed(title=f"📋 Last {len(tweets)} tweets from @{TWITTER_USERNAME}", color=0x1DA1F2)
             for i, tweet in enumerate(tweets, 1):
                 text = tweet['text'][:100] + "..." if len(tweet['text']) > 100 else tweet['text']
-                embed.add_field(name=f"{i}. ID: {tweet['id']}", value=text, inline=False)
+                timestamp = tweet.get('created_at', 'Unknown')
+                embed.add_field(
+                    name=f"{i}. [{tweet['id'][:8]}...] • {timestamp[:10]}", 
+                    value=text, 
+                    inline=False
+                )
             await interaction.edit_original_response(embed=embed)
         else:
             await interaction.edit_original_response(content="❌ No tweets found")
     except Exception as e:
         await interaction.edit_original_response(content=f"❌ Error: {e}")
+
+@twitter_group.command(name="post", description="Manually post latest tweet to Discord")
+async def twitter_post(interaction: discord.Interaction):
+    """Manually post the latest tweet"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ No permission", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        tweets = await get_twitter_user_tweets(limit=1)
+        if tweets:
+            channel = bot.get_channel(TWITTER_CHANNEL_ID)
+            if channel:
+                embed = create_tweet_embed(tweets[0], show_details=True)
+                msg = await channel.send(embed=embed)
+                await interaction.edit_original_response(
+                    content=f"✅ Posted tweet to <#{TWITTER_CHANNEL_ID}>\nMessage ID: {msg.id}\nTweet ID: {tweets[0]['id']}"
+                )
+            else:
+                await interaction.edit_original_response(content=f"❌ Channel <#{TWITTER_CHANNEL_ID}> not found")
+        else:
+            await interaction.edit_original_response(content="❌ No tweets found")
+    except Exception as e:
+        await interaction.edit_original_response(content=f"❌ Error: {e}")
+
+@twitter_group.command(name="toggle", description="Toggle tweet monitoring on/off")
+async def twitter_toggle(interaction: discord.Interaction):
+    """Start/stop tweet monitoring"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ No permission", ephemeral=True)
+        return
+    
+    try:
+        if check_for_new_tweets.is_running():
+            check_for_new_tweets.stop()
+            await interaction.response.send_message("⏸️ Tweet monitoring **stopped**", ephemeral=True)
+            print(f"⏸️ Tweet monitoring stopped")
+        else:
+            check_for_new_tweets.start()
+            await interaction.response.send_message("▶️ Tweet monitoring **started**", ephemeral=True)
+            print(f"▶️ Tweet monitoring started")
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+
+@twitter_group.command(name="reset", description="Reset tweet tracking ID")
+async def twitter_reset(interaction: discord.Interaction):
+    """Reset the last tweet ID to force re-initialization"""
+    if not has_mod_role(interaction):
+        await interaction.response.send_message("❌ No permission", ephemeral=True)
+        return
+    
+    global last_tweet_id
+    old_id = last_tweet_id
+    last_tweet_id = None
+    try:
+        os.remove(TWEET_ID_FILE)
+        print(f"🔄 Tweet tracking reset (was: {old_id})")
+        await interaction.response.send_message(f"✅ Tweet tracking **reset**\nOld ID: {old_id}\nNext check will re-initialize", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+
+# ================================
+#        LoLdle
+# ================================
 
 # ================================
 #        LoLdle
