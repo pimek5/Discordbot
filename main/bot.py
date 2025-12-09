@@ -2995,13 +2995,23 @@ async def get_twitter_user_tweets(username, max_results=5):
         
         # Multiple RSS sources that work better than Nitter
         rss_sources = [
-            # RSSHub first - most reliable, never rate limits
+            # RSSHub variants (most reliable, public, no auth)
             {
                 "name": "RSSHub Twitter Feed",
                 "url": f"https://rsshub.app/twitter/user/{username}",
                 "type": "rsshub"
             },
-            # Nitter instances
+            {
+                "name": "RSSHub X Profile",
+                "url": f"https://rsshub.app/x/profile/{username}",
+                "type": "rsshub"
+            },
+            {
+                "name": "RSSHub X User",
+                "url": f"https://rsshub.app/x/user/{username}",
+                "type": "rsshub"
+            },
+            # Nitter instances (many fallbacks)
             {
                 "name": "Nitter (unixfox)",
                 "url": f"https://nitter.unixfox.eu/{username}/rss",
@@ -3013,15 +3023,24 @@ async def get_twitter_user_tweets(username, max_results=5):
                 "type": "nitter"
             },
             {
+                "name": "Nitter (poast)",
+                "url": f"https://nitter.poast.org/{username}/rss",
+                "type": "nitter"
+            },
+            {
+                "name": "Nitter (mint)",
+                "url": f"https://nitter.mint.lgbt/{username}/rss",
+                "type": "nitter"
+            },
+            {
+                "name": "Nitter (cz)",
+                "url": f"https://nitter.cz/{username}/rss",
+                "type": "nitter"
+            },
+            {
                 "name": "xCancel",
                 "url": f"https://xcancel.com/{username}/rss",
                 "type": "nitter"
-            },
-            # RSSHub (community-run RSS feeds)
-            {
-                "name": "RSSHub Twitter",
-                "url": f"https://rsshub.app/twitter/user/{username}",
-                "type": "rsshub"
             },
             # Wayback Machine RSS (archives Twitter)
             {
