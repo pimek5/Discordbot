@@ -231,7 +231,7 @@ REGION_ROLES = {
 }
 
 # LoLdle Configuration
-LOLDLE_CHANNEL_ID = 1435357204374093824  # Channel restriction for /guess command
+LOLDLE_CHANNEL_ID = 1435357204374093824  # Channel restriction for /loldle command
 loldle_data = {
     'daily_champion': None,
     'daily_date': None,
@@ -570,7 +570,7 @@ class LoldleButtonsView(discord.ui.View):
     
     @discord.ui.button(label="Guess", style=discord.ButtonStyle.primary, emoji="🎮", custom_id="loldle_guess_button")
     async def guess_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Sends /guess command prompt to user"""
+        """Sends /loldle command prompt to user"""
         await interaction.response.send_message(
             "💬 Type `/loldle <champion_name>` in the chat to make your guess!\n"
             "Example: `/loldle Yasuo`",
@@ -3906,7 +3906,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
             )
         
         embed.add_field(name="Total Guesses", value=str(len(player_data['guesses'])), inline=True)
-        embed.set_footer(text="Keep guessing! Use /guess <champion> to try again.")
+        embed.set_footer(text="Keep guessing! Use /loldle <champion> to try again.")
         
         # Create buttons view
         view = LoldleButtonsView()
@@ -5588,7 +5588,7 @@ async def on_message(message):
             await message.delete()
             # Send ephemeral-like message that auto-deletes
             warning = await message.channel.send(
-                f"❌ {message.author.mention} Only `/guess` command is allowed in this channel!",
+                f"❌ {message.author.mention} Only `/loldle` command is allowed in this channel!",
                 delete_after=3
             )
         except:
