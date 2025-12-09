@@ -2995,6 +2995,12 @@ async def get_twitter_user_tweets(username, max_results=5):
         
         # Multiple RSS sources that work better than Nitter
         rss_sources = [
+            # RSSHub first - most reliable, never rate limits
+            {
+                "name": "RSSHub Twitter Feed",
+                "url": f"https://rsshub.app/twitter/user/{username}",
+                "type": "rsshub"
+            },
             # Nitter instances
             {
                 "name": "Nitter (unixfox)",
