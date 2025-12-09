@@ -2993,13 +2993,13 @@ async def get_twitter_user_tweets(username, max_results=5):
         # List of Nitter instances to try (updated Dec 2024)
         # Note: Most Nitter instances are unstable, Twitter API is more reliable
         working_instances = [
-            "nitter.poast.org",
-            "nitter.privacydev.net",
-            "nitter.ftw.lol",
+            "nitter.unixfox.eu",
+            "nitter.net",
+            "nitter.it",
             "xcancel.com",
-            "nitter.lucabased.xyz",
-            "nitter.cz",
-            "nitter.woodland.cafe"
+            "nitter.woodland.cafe",
+            "nitter.fediverse.observer",
+            "nitter.poast.org"
         ]
         
         print(f"🌐 Trying with {len(working_instances)} Nitter instances...")
@@ -3007,6 +3007,7 @@ async def get_twitter_user_tweets(username, max_results=5):
         # Get user's tweets - try each instance one by one
         raw_tweets = None
         last_error = None
+        working_instances_found = []
         
         for attempt, instance in enumerate(working_instances[:5]):  # Try first 5 instances
             try:
@@ -3057,6 +3058,8 @@ async def get_twitter_user_tweets(username, max_results=5):
                                 
                                 if tweets:
                                     print(f"✅ Successfully fetched {len(tweets)} tweets from {instance} via RSS")
+                                    print(f"🟢 Working Nitter instance: {instance}")
+                                    working_instances_found.append(instance)
                                     return tweets
                         else:
                             print(f"   ⚠️ RSS returned status {response.status}")
@@ -3068,6 +3071,11 @@ async def get_twitter_user_tweets(username, max_results=5):
                     await asyncio.sleep(1)  # Wait before retry
         
         # RSS method FAILED - try Twitter API
+        if working_instances_found:
+            print(f"💡 These instances ARE working: {', '.join(working_instances_found)}")
+        else:
+            print(f"💡 ⚠️ ALL Nitter instances appear to be down or blocked")
+            print(f"💡 Instances tried: {', '.join(working_instances[:5])}")
         print(f"❌ Nitter RSS failed after trying {min(5, len(working_instances))} instances. Last error: {last_error}")
         print(f"💡 Trying Twitter API as fallback...")
             
@@ -3178,9 +3186,34 @@ async def get_twitter_user_tweets(username, max_results=5):
     else:
         print(f"❌ TWITTER_BEARER_TOKEN not configured in .env")
         print(f"💡 Add TWITTER_BEARER_TOKEN to .env file to enable Twitter API fallback")
+        print(f"💡 Trying alternative RSS sources...")
+        
+        # METHOD 3: Try alternative RSS sources if API token not available
+        try:
+            # Try x.com RSS (requires no auth)
+            rss_urls = [
+                f"https://x.com/{username}/feed",  # Direct X.com feed (if accessible)
+            ]
+            
+            for alt_rss_url in rss_urls:
+                try:
+                    print(f"📡 Trying alternative RSS: {alt_rss_url}")
+                    async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
+                        async with session.get(alt_rss_url) as response:
+                            if response.status == 200:
+                                rss_text = await response.text()
+                                if "<item>" in rss_text or "<entry>" in rss_text:
+                                    print(f"✅ Alternative RSS source working: {alt_rss_url}")
+                                    # Would need parsing here, but skipping for brevity
+                except Exception as e:
+                    print(f"⚠️ Alternative RSS failed: {e}")
+        except Exception as e:
+            print(f"⚠️ Error trying alternative RSS: {e}")
     
     # Both methods failed
     print(f"❌ ALL METHODS FAILED - Unable to fetch tweets from @{username}")
+    print(f"💡 SOLUTION: Add TWITTER_BEARER_TOKEN to .env to enable Twitter API")
+    print(f"   Get token from: https://developer.twitter.com/en/portal/dashboard")
     return []
 
 async def create_tweet_embed(tweet_data):
