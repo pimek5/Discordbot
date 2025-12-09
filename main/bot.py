@@ -166,7 +166,8 @@ LOG_CHANNEL_ID = 1408036991454417039
 # Twitter Configuration
 TWITTER_USERNAME = "p1mek"
 TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
-TWITTER_CHECK_INTERVAL = 300  # Check every 5 minutes (300 seconds) - reduces API rate limit pressure
+TWITTER_CHECK_INTERVAL = 3600  # Check every 1 hour (3600 seconds) - reduce API rate limit pressure
+TWITTER_MONITORING_ENABLED = os.getenv("TWITTER_MONITORING_ENABLED", "true").lower() == "true"  # Toggle via env var
 
 # Twitter API Configuration (add these to your .env file)
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
@@ -1655,6 +1656,46 @@ async def toggle_runeforge(interaction: discord.Interaction):
             ephemeral=True
         )
         logging.error(f"Error in toggle_runeforge: {e}")
+
+@bot.tree.command(name="toggle_twitter", description="Toggle Twitter monitoring on/off (Admin only)")
+async def toggle_twitter(interaction: discord.Interaction):
+    """Toggle Twitter monitoring"""
+    global TWITTER_MONITORING_ENABLED
+    
+    # Check permissions
+    if not has_admin_permissions(interaction):
+        await interaction.response.send_message(
+            "❌ You need Administrator permission to use this command!",
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        TWITTER_MONITORING_ENABLED = not TWITTER_MONITORING_ENABLED
+        status = "✅ **ENABLED**" if TWITTER_MONITORING_ENABLED else "❌ **DISABLED**"
+        
+        embed = discord.Embed(
+            title="🐦 Twitter Monitoring Toggled",
+            description=f"Status: {status}",
+            color=0x1DA1F2 if TWITTER_MONITORING_ENABLED else 0xFF0000
+        )
+        embed.add_field(
+            name="📡 Info",
+            value=f"Tweet monitoring is now {('**ACTIVE**' if TWITTER_MONITORING_ENABLED else '**PAUSED**')}\nCheck interval: {TWITTER_CHECK_INTERVAL}s (1 hour)\nUse this command again to toggle.",
+            inline=False
+        )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        print(f"🔧 Twitter monitoring toggled to: {TWITTER_MONITORING_ENABLED}")
+        
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Error toggling Twitter: {str(e)}",
+            ephemeral=True
+        )
+        logging.error(f"Error in toggle_twitter: {e}")
 
 # ================================
 #        FIXED MESSAGES
@@ -3464,6 +3505,11 @@ async def create_tweet_embed(tweet_data):
 async def check_for_new_tweets():
     """Background task to check for new tweets"""
     global last_tweet_id
+    
+    # Skip if monitoring disabled
+    if not TWITTER_MONITORING_ENABLED:
+        print(f"⏸️ Twitter monitoring is disabled (set TWITTER_MONITORING_ENABLED=true to enable)")
+        return
     
     try:
         print(f"🔄 [{datetime.datetime.now().strftime('%H:%M:%S')}] Checking for new tweets from @{TWITTER_USERNAME}...")
