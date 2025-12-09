@@ -176,17 +176,6 @@ SKIN_IDEAS_CHANNEL_ID = 1329671504941682750  # Channel where threads are created
 YOUR_IDEAS_CHANNEL_ID = 1433892799862018109  # Channel where embeds are posted
 MOD_REVIEW_CHANNEL_ID = 1433893934265925682  # Channel for mod review
 
-# RuneForge Configuration - Multiple channels support
-RUNEFORGE_USERNAME = "p1mek"
-RUNEFORGE_ICON_URL = "https://avatars.githubusercontent.com/u/132106741?s=200&v=4"
-RUNEFORGE_CHECK_INTERVAL = 3600  # Check every hour (3600 seconds) - RuneForge mod tagging
-
-# Multiple channels with their own onRuneforge tags
-RUNEFORGE_CHANNELS = {
-    1279916286612078665: 1435096925144748062,  # Channel 1 -> Tag 1
-    1272565735595573248: 1436897685444497558,  # Channel 2 -> Tag 2
-}
-
 # Auto-Slowmode Configuration
 AUTO_SLOWMODE_ENABLED = {}  # {channel_id: True/False}
 AUTO_SLOWMODE_THRESHOLD = 5  # Messages per 10 seconds to trigger slowmode
@@ -3121,10 +3110,10 @@ async def get_twitter_user_tweets(username, max_results=5):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Safari/537.36',
         }
         
-        # Try FxTwitter profile endpoint (minimal header size)
+        # Try VxTwitter profile endpoint first (more reliable)
         profile_urls = [
-            f"https://fxtwitter.com/{username}",
             f"https://vxtwitter.com/{username}",
+            f"https://fxtwitter.com/{username}",
         ]
         
         for profile_url in profile_urls:
@@ -3134,15 +3123,70 @@ async def get_twitter_user_tweets(username, max_results=5):
                     async with session.get(profile_url, headers=headers, ssl=False) as response:
                         if response.status == 200:
                             html = await response.text()
-                            # If we got HTML, maybe extract something minimal
+                            # If we got HTML, try to extract tweets
                             if len(html) > 100:
                                 print(f"   ✅ Got HTML response from {profile_url}")
-                                # For now, just use cache
-                                if tweet_cache:
-                                    cached_tweets = list(tweet_cache.values())[:max_results]
-                                    if cached_tweets:
-                                        print(f"✅ Returning {len(cached_tweets)} cached tweets")
-                                        return cached_tweets
+                                
+                                try:
+                                    # Try to parse tweets from HTML using BeautifulSoup
+                                    soup = BeautifulSoup(html, 'html.parser')
+                                    
+                                    # Look for tweet links/data in the HTML
+                                    tweets = []
+                                    
+                                    # Try finding tweet containers (varies by frontend)
+                                    tweet_containers = soup.find_all(['a', 'div'], attrs={'href': lambda x: x and '/status/' in x if isinstance(x, str) else False})
+                                    
+                                    for container in tweet_containers[:max_results]:
+                                        try:
+                                            link = container.get('href', '')
+                                            if '/status/' in link:
+                                                tweet_id = link.split('/status/')[-1].split('?')[0].split('#')[0]
+                                                
+                                                # Get text content if available
+                                                text = container.get_text(strip=True) or "Tweet from @" + username
+                                                
+                                                tweet_obj = {
+                                                    'id': tweet_id,
+                                                    'text': text[:280],
+                                                    'url': f'https://twitter.com/{username}/status/{tweet_id}',
+                                                    'description': text[:280],
+                                                    'created_at': '',
+                                                    'metrics': {}
+                                                }
+                                                
+                                                # Cache it
+                                                tweet_cache[tweet_id] = tweet_obj
+                                                tweets.append(tweet_obj)
+                                                
+                                                if len(tweets) >= max_results:
+                                                    break
+                                        except Exception as e:
+                                            print(f"   ⚠️ Error parsing tweet from HTML: {e}")
+                                            continue
+                                    
+                                    if tweets:
+                                        print(f"✅ Scraped {len(tweets)} tweets from {profile_url}")
+                                        print(f"💾 Cached {len(tweets)} tweets")
+                                        return tweets
+                                    else:
+                                        print(f"   💡 HTML retrieved but no tweets found in structure")
+                                        # Use cache if available
+                                        if tweet_cache:
+                                            cached_tweets = list(tweet_cache.values())[:max_results]
+                                            if cached_tweets:
+                                                print(f"✅ Using {len(cached_tweets)} cached tweets as fallback")
+                                                return cached_tweets
+                                
+                                except Exception as parse_error:
+                                    print(f"   ⚠️ Error parsing HTML: {parse_error}")
+                                    # If parsing fails, try cache
+                                    if tweet_cache:
+                                        cached_tweets = list(tweet_cache.values())[:max_results]
+                                        if cached_tweets:
+                                            print(f"✅ Returning {len(cached_tweets)} cached tweets")
+                                            return cached_tweets
+                                
                                 break
                         else:
                             print(f"   ⚠️ {profile_url} returned status {response.status}")
