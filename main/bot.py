@@ -3043,34 +3043,17 @@ async def get_twitter_user_tweets(username, max_results=5):
     try:
         print(f"📡 Method 1: Trying RSS feeds...")
         
-        # Multiple RSS sources that work better than Nitter
+        # Multiple RSS sources - WORKING Nitter instances
         rss_sources = [
-            # RSSHub variants (most reliable, public, no auth)
+            # Nitter privacydev (most stable)
             {
-                "name": "RSSHub Twitter Feed",
-                "url": f"https://rsshub.app/twitter/user/{username}",
-                "type": "rsshub"
+                "name": "Nitter (privacydev.net)",
+                "url": f"https://nitter.privacydev.net/{username}/rss",
+                "type": "nitter"
             },
+            # Backup Nitter instances
             {
-                "name": "RSSHub X Profile",
-                "url": f"https://rsshub.app/x/profile/{username}",
-                "type": "rsshub"
-            },
-            # FxTwitter (reliable Twitter frontend)
-            {
-                "name": "FxTwitter Profile",
-                "url": f"https://fxtwitter.com/{username}.rss",
-                "type": "frontend"
-            },
-            # VxTwitter (alternative Twitter frontend)
-            {
-                "name": "VxTwitter Profile",
-                "url": f"https://vxtwitter.com/{username}.rss",
-                "type": "frontend"
-            },
-            # Single reliable Nitter instance
-            {
-                "name": "Nitter (poast - stable)",
+                "name": "Nitter (poast.org)",
                 "url": f"https://nitter.poast.org/{username}/rss",
                 "type": "nitter"
             },
