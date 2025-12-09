@@ -166,7 +166,7 @@ LOG_CHANNEL_ID = 1408036991454417039
 # Twitter Configuration
 TWITTER_USERNAME = "p1mek"
 TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
-TWITTER_CHECK_INTERVAL = 120  # Check every 2 minutes (120 seconds) - frequent checks for new tweets
+TWITTER_CHECK_INTERVAL = 300  # Check every 5 minutes (300 seconds) - reduces API rate limit pressure
 
 # Twitter API Configuration (add these to your .env file)
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
@@ -3006,47 +3006,23 @@ async def get_twitter_user_tweets(username, max_results=5):
                 "url": f"https://rsshub.app/x/profile/{username}",
                 "type": "rsshub"
             },
+            # FxTwitter (reliable Twitter frontend)
             {
-                "name": "RSSHub X User",
-                "url": f"https://rsshub.app/x/user/{username}",
-                "type": "rsshub"
+                "name": "FxTwitter Profile",
+                "url": f"https://fxtwitter.com/{username}.rss",
+                "type": "frontend"
             },
-            # Nitter instances (many fallbacks)
+            # VxTwitter (alternative Twitter frontend)
             {
-                "name": "Nitter (unixfox)",
-                "url": f"https://nitter.unixfox.eu/{username}/rss",
-                "type": "nitter"
+                "name": "VxTwitter Profile",
+                "url": f"https://vxtwitter.com/{username}.rss",
+                "type": "frontend"
             },
+            # Single reliable Nitter instance
             {
-                "name": "Nitter (fediverse.observer)",
-                "url": f"https://nitter.fediverse.observer/{username}/rss",
-                "type": "nitter"
-            },
-            {
-                "name": "Nitter (poast)",
+                "name": "Nitter (poast - stable)",
                 "url": f"https://nitter.poast.org/{username}/rss",
                 "type": "nitter"
-            },
-            {
-                "name": "Nitter (mint)",
-                "url": f"https://nitter.mint.lgbt/{username}/rss",
-                "type": "nitter"
-            },
-            {
-                "name": "Nitter (cz)",
-                "url": f"https://nitter.cz/{username}/rss",
-                "type": "nitter"
-            },
-            {
-                "name": "xCancel",
-                "url": f"https://xcancel.com/{username}/rss",
-                "type": "nitter"
-            },
-            # Wayback Machine RSS (archives Twitter)
-            {
-                "name": "Wayback Twitter Feed",
-                "url": f"https://web.archive.org/web/2*/twitter.com/{username}",
-                "type": "wayback"
             },
         ]
         
@@ -3137,50 +3113,44 @@ async def get_twitter_user_tweets(username, max_results=5):
         import traceback
         traceback.print_exc()
     
-    # METHOD 2: Try direct web scraping from X.com (no auth needed)
-    print(f"📡 Method 2: Trying direct web scraping from x.com...")
+    # METHOD 2: Try direct web scraping from alternative Twitter frontends (shorter headers)
+    print(f"📡 Method 2: Trying alternative Twitter frontends...")
     try:
-        # Try to fetch from x.com directly with rotating user agents
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        ]
-        
-        import random
+        # Use minimal headers to avoid "header too long" errors
         headers = {
-            'User-Agent': random.choice(user_agents),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://x.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Safari/537.36',
         }
         
-        # Try fetching from x.com search
-        search_url = f"https://x.com/search?q=from:{username}&f=live"
-        print(f"   📡 Trying: {search_url}")
+        # Try FxTwitter profile endpoint (minimal header size)
+        profile_urls = [
+            f"https://fxtwitter.com/{username}",
+            f"https://vxtwitter.com/{username}",
+        ]
         
-        async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
-            async with session.get(search_url, headers=headers, ssl=False) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    
-                    # Simple extraction of tweet data from HTML (naive but works for basic case)
-                    # Look for tweet timestamps and text in the HTML
-                    if 'data-test-id="tweet"' in html or 'class="tweet' in html:
-                        print(f"   ✅ Got HTML response from x.com")
-                        
-                        # This is a basic fallback - actual scraping would need BeautifulSoup
-                        # For now, use cache if available
-                        if tweet_cache:
-                            print(f"💾 Using cached tweets as web scraping fallback")
-                            cached_tweets = list(tweet_cache.values())[:max_results]
-                            if cached_tweets:
-                                print(f"✅ Returning {len(cached_tweets)} cached tweets")
-                                return cached_tweets
-                else:
-                    print(f"   ⚠️ x.com returned status {response.status}")
+        for profile_url in profile_urls:
+            try:
+                print(f"   📡 Trying: {profile_url}")
+                async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
+                    async with session.get(profile_url, headers=headers, ssl=False) as response:
+                        if response.status == 200:
+                            html = await response.text()
+                            # If we got HTML, maybe extract something minimal
+                            if len(html) > 100:
+                                print(f"   ✅ Got HTML response from {profile_url}")
+                                # For now, just use cache
+                                if tweet_cache:
+                                    cached_tweets = list(tweet_cache.values())[:max_results]
+                                    if cached_tweets:
+                                        print(f"✅ Returning {len(cached_tweets)} cached tweets")
+                                        return cached_tweets
+                                break
+                        else:
+                            print(f"   ⚠️ {profile_url} returned status {response.status}")
+            except Exception as e:
+                print(f"   ⚠️ {profile_url} failed: {e}")
+                continue
     except Exception as e:
-        print(f"⚠️ Direct web scraping failed: {e}")
+        print(f"⚠️ Alternative frontends failed: {e}")
     
     # METHOD 3: Twitter API v2 (requires TWITTER_BEARER_TOKEN)
     if TWITTER_BEARER_TOKEN:
