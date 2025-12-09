@@ -3057,8 +3057,13 @@ async def get_twitter_user_tweets(username, max_results=5):
                                         continue
                                 
                                 if tweets:
+                                    # Update cache with fresh tweets
+                                    for tweet in tweets:
+                                        tweet_cache[tweet['id']] = tweet
+                                    
                                     print(f"✅ Successfully fetched {len(tweets)} tweets from {instance} via RSS")
                                     print(f"🟢 Working Nitter instance: {instance}")
+                                    print(f"💾 Cache updated: {len(tweet_cache)} tweets cached")
                                     working_instances_found.append(instance)
                                     return tweets
                         else:
@@ -3164,9 +3169,14 @@ async def get_twitter_user_tweets(username, max_results=5):
                     continue
             # Only return the number of tweets requested by caller (may be less than api_max)
             if tweets:
+                # Update cache with fresh tweets
+                for tweet in tweets:
+                    tweet_cache[tweet['id']] = tweet
+                
                 print(f"✅ Twitter API: Found {len(tweets)} tweets (returning {min(len(tweets), max_results)})")
                 print(f"🆕 Latest tweet ID: {tweets[0]['id']}")
                 print(f"📝 Latest tweet text: {tweets[0]['text'][:100]}...")
+                print(f"💾 Cache updated: {len(tweet_cache)} tweets cached")
                 return tweets[:max_results]
             else:
                 print(f"❌ Twitter API: No valid tweets found")
@@ -3178,6 +3188,15 @@ async def get_twitter_user_tweets(username, max_results=5):
             print(f"❌ Twitter API rate limit exceeded (429 Too Many Requests)")
             print(f"💡 Waiting for rate limit to reset. Check interval is now {TWITTER_CHECK_INTERVAL} seconds.")
             print(f"💡 Consider increasing TWITTER_CHECK_INTERVAL to avoid rate limits.")
+            
+            # FALLBACK: Use cached tweets if available
+            if tweet_cache:
+                print(f"💾 Using cached tweets ({len(tweet_cache)} tweets in cache)")
+                cached_tweets = list(tweet_cache.values())[:max_results]
+                if cached_tweets:
+                    print(f"✅ Returning {len(cached_tweets)} cached tweets")
+                    return cached_tweets
+            
             return []
         except Exception as e:
             print(f"❌ Twitter API error: {e}")
