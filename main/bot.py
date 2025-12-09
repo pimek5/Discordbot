@@ -1613,6 +1613,49 @@ async def rankupdate(interaction: discord.Interaction):
         )
         logging.error(f"Error in rankupdate for {interaction.user.id}: {e}")
 
+# RuneForge scanning toggle state (global)
+runeforge_scanning_enabled = True
+
+@bot.tree.command(name="toggle_runeforge", description="Toggle RuneForge scanning on/off (Admin only)")
+async def toggle_runeforge(interaction: discord.Interaction):
+    """Toggle RuneForge scanning"""
+    global runeforge_scanning_enabled
+    
+    # Check permissions
+    if not has_admin_permissions(interaction):
+        await interaction.response.send_message(
+            "❌ You need Administrator permission to use this command!",
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        runeforge_scanning_enabled = not runeforge_scanning_enabled
+        status = "✅ **ENABLED**" if runeforge_scanning_enabled else "❌ **DISABLED**"
+        
+        embed = discord.Embed(
+            title="🔧 RuneForge Scanning Toggled",
+            description=f"Status: {status}",
+            color=0x00FF00 if runeforge_scanning_enabled else 0xFF0000
+        )
+        embed.add_field(
+            name="📡 Info",
+            value=f"RuneForge mod monitoring is now {('**ACTIVE**' if runeforge_scanning_enabled else '**PAUSED**')}\nUse this command again to toggle.",
+            inline=False
+        )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        print(f"🔧 RuneForge scanning toggled to: {runeforge_scanning_enabled}")
+        
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Error toggling RuneForge: {str(e)}",
+            ephemeral=True
+        )
+        logging.error(f"Error in toggle_runeforge: {e}")
+
 # ================================
 #        FIXED MESSAGES
 # ================================
@@ -2259,6 +2302,13 @@ async def remove_runeforge_tag(thread: discord.Thread):
 @tasks.loop(seconds=RUNEFORGE_CHECK_INTERVAL)
 async def check_threads_for_runeforge():
     """Background task to check all threads for RuneForge mods across multiple channels"""
+    global runeforge_scanning_enabled
+    
+    # Skip if scanning is disabled
+    if not runeforge_scanning_enabled:
+        print(f"⏸️ RuneForge scanning is disabled - skipping check")
+        return
+    
     try:
         print(f"\n{'='*60}")
         print(f"🔄 Starting RuneForge mod check...")
