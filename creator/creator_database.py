@@ -242,6 +242,24 @@ class CreatorDatabase:
         except Exception as e:
             logger.error("❌ Error logging notification: %s", e)
             self.conn.rollback()
+    
+    def get_random_mod(self):
+        """Get a random mod from all tracked creators"""
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT m.*, c.username, c.platform, c.discord_user_id
+                    FROM mods m
+                    JOIN creators c ON m.creator_id = c.id
+                    ORDER BY RANDOM()
+                    LIMIT 1
+                    """
+                )
+                return cur.fetchone()
+        except Exception as e:
+            logger.error("❌ Error getting random mod: %s", e)
+            return None
 
 
 _db_instance = None
