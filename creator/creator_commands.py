@@ -55,15 +55,19 @@ class CreatorCommands(commands.Cog):
                 username = url.split('/users/')[-1].strip('/')
             elif 'divineskins.gg' in url.lower():
                 platform = 'divineskins'
-                username = url.rstrip('/').split('/')[-1]
-                # [Not working for now] - DivineSkins requires JavaScript execution
-                await interaction.followup.send(
-                    "⚠️ **DivineSkins tracking not working for now**\n"
-                    "DivineSkins uses client-side rendering (CSR) which requires JavaScript execution.\n"
-                    "Please use RuneForge for now, or wait for headless browser implementation.",
-                    ephemeral=True
-                )
-                return
+                # Accept either https://divineskins.gg/<username> or full profile URLs
+                # Common profile URL forms: /<username>, /explore-mods/<slug>, but for tracking we use username root
+                parts = url.rstrip('/').split('/')
+                # Prefer the first path segment after domain as username
+                try:
+                    domain_index = next(i for i,p in enumerate(parts) if 'divineskins.gg' in p)
+                    remainder = parts[domain_index+1:]
+                    username = remainder[0] if remainder else ''
+                except StopIteration:
+                    username = parts[-1]
+                if not username or any(s in username.lower() for s in ['mods','explore-mods','users','skin','skins']):
+                    # Fallback: simple last segment
+                    username = url.rstrip('/').split('/')[-1]
             else:
                 await interaction.followup.send(
                     "❌ Invalid URL! Must be from RuneForge.dev or DivineSkins.gg",
@@ -77,7 +81,6 @@ class CreatorCommands(commands.Cog):
             if platform == 'runeforge':
                 profile_data = await self.runeforge_scraper.get_profile_data(username)
             else:
-                # [Not working for now] - DivineSkins requires JavaScript execution (CSR)
                 profile_data = await self.divineskins_scraper.get_profile_data(username)
             
             if not profile_data:

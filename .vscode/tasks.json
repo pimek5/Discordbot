@@ -32,6 +32,17 @@
 			"args": [],
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "deploy-creator-bot",
+			"type": "shell",
+			"command": "git add -A; git commit -m \"feat(creator): enable DivineSkins in /creator add and scrapers\"; git push",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
 		}
 	]
 }

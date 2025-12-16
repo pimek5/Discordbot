@@ -354,6 +354,128 @@ class DivineSkinsScraper:
     BASE_URL = "https://divineskins.gg"
     API_URL = "https://divineskins.gg/api"
     
+    def _extract_next_data(self, html: str) -> dict | None:
+        """Extract Next.js __NEXT_DATA__ JSON from HTML."""
+        try:
+            import json
+            m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+            if not m:
+                return None
+            return json.loads(m.group(1))
+        except Exception:
+            return None
+
+    def _parse_next_profile(self, next_json: dict) -> dict:
+        """Parse profile stats from Next.js payload."""
+        data = {}
+        try:
+            props = next_json.get('props', {}).get('pageProps', {})
+            user = props.get('user') or props.get('profile') or props.get('data') or {}
+            if isinstance(user, dict):
+                def pick(obj, keys, default=None):
+                    for k in keys:
+                        if k in obj and obj[k] not in (None, ''):
+                            return obj[k]
+                    return default
+                data['username'] = pick(user, ['username', 'name', 'slug'], '')
+                data['rank'] = pick(user, ['role', 'rank', 'badge'], None)
+                data['total_mods'] = int(pick(user, ['worksCount', 'modsCount', 'skinsCount'], 0) or 0)
+                data['total_downloads'] = int(pick(user, ['downloads', 'downloadCount', 'totalDownloads'], 0) or 0)
+                data['total_views'] = int(pick(user, ['views', 'viewCount', 'totalViews'], 0) or 0)
+                data['followers'] = int(pick(user, ['followers', 'followersCount'], 0) or 0)
+                data['following'] = int(pick(user, ['following', 'followingCount'], 0) or 0)
+                data['joined_date'] = pick(user, ['joinedAt', 'createdAt'], '')
+        except Exception:
+            pass
+        return data
+
+    def _parse_next_works(self, next_json: dict) -> list:
+        """Parse works list from Next.js payload into generic items list."""
+        items = []
+        try:
+            props = next_json.get('props', {}).get('pageProps', {})
+            works = props.get('works') or props.get('items') or props.get('skins') or []
+            if isinstance(works, dict) and 'items' in works:
+                works = works.get('items', [])
+            if isinstance(works, list):
+                for w in works:
+                    if not isinstance(w, dict):
+                        continue
+                    wid = str(w.get('id') or w.get('slug') or '')
+                    title = w.get('title') or w.get('name') or ''
+                    url = w.get('url') or ''
+                    if not url and wid:
+                        url = f"{self.BASE_URL}/mods/{wid}"
+                    updated = w.get('updatedAt') or w.get('updated_at') or ''
+                    items.append({'id': wid, 'name': title or 'Untitled', 'url': url, 'updated_at': updated})
+        except Exception:
+            pass
+        return items
+
+    async def get_profile_data(self, username: str) -> dict | None:
+        """Fetch Divine Skins profile data similar to RuneForge."""
+        try:
+            url = f"{self.BASE_URL}/{username}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        logger.error("❌ Failed to fetch DivineSkins profile: %s (Status: %s)", url, response.status)
+                        return None
+                    html = await response.text()
+                    data = {
+                        'username': username,
+                        'platform': 'divineskins',
+                        'profile_url': url
+                    }
+                    next_json = self._extract_next_data(html)
+                    if next_json:
+                        parsed = self._parse_next_profile(next_json)
+                        data.update({k: v for k, v in parsed.items() if v is not None})
+                        logger.info("✅ DivineSkins profile via __NEXT_DATA__: %s", username)
+                        return data
+                    # Fallback minimal HTML parse
+                    soup = BeautifulSoup(html, 'html.parser')
+                    # Try to get a rank-like badge text
+                    badge = soup.find(lambda tag: tag.name in ['span','div'] and 'badge' in (tag.get('class') or []))
+                    if badge:
+                        data['rank'] = badge.get_text(strip=True)
+                    logger.info("✅ DivineSkins profile fetched (minimal): %s", username)
+                    return data
+        except Exception as e:
+            logger.error("❌ Error scraping DivineSkins profile %s: %s", username, e)
+            return None
+
+    async def get_user_skins(self, username: str) -> list:
+        """Return list of works/skins for a user on DivineSkins."""
+        try:
+            url = f"{self.BASE_URL}/{username}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        logger.error("❌ Failed to fetch profile page: %s", url)
+                        return []
+                    html = await response.text()
+                    next_json = self._extract_next_data(html)
+                    if next_json:
+                        items = self._parse_next_works(next_json)
+                        logger.info("✅ Parsed %s works from __NEXT_DATA__ for %s", len(items), username)
+                        return items
+                    # HTML fallback: collect links that look like mod pages
+                    soup = BeautifulSoup(html, 'html.parser')
+                    skins = []
+                    for a in soup.find_all('a', href=True):
+                        href = a['href']
+                        if '/mods/' in href or '/explore-mods/' in href:
+                            skin_url = href if href.startswith('http') else f"{self.BASE_URL}{href}"
+                            skin_id = skin_url.rstrip('/').split('/')[-1]
+                            skin_name = a.get_text(strip=True) or 'Untitled'
+                            skins.append({'id': skin_id, 'name': skin_name, 'url': skin_url, 'updated_at': ''})
+                    logger.info("⚠️ Fallback parsed %s items for %s on DivineSkins", len(skins), username)
+                    return skins
+        except Exception as e:
+            logger.error("❌ Error getting user skins for %s: %s", username, e)
+            return []
+    
     async def get_mod_details(self, mod_url: str) -> dict:
         """Fetch detailed information about a specific skin including description, tags, stats, and images."""
         try:
