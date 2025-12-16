@@ -963,27 +963,55 @@ class DivineSkinsScraper:
                             t = re.sub(r'-+', '-', t).strip('-')
                             return t
 
-                        # Find thumbnails that indicate a mod card
-                        card_imgs = soup.find_all('img', src=re.compile(r'images\.divine-cdn\.com/thumbnails/'), alt=True)
+                        # Find thumbnails that indicate a mod card - now with better parsing
+                        card_imgs = soup.find_all('img', alt=True)
+                        logger.info(f"[DivineSkins] Found {len(card_imgs)} total img tags with alt")
+                        
                         titles = set()
                         for img in card_imgs:
-                            name = img.get('alt', '').strip()
-                            if not name or name in titles:
+                            src = img.get('src', '')
+                            # Only process divine-cdn thumbnails
+                            if 'images.divine-cdn.com/thumbnails/' not in src:
                                 continue
+                            
+                            name = img.get('alt', '').strip()
+                            if not name or name in titles or len(name) < 3:
+                                continue
+                            
+                            # Skip champion icons (they have different pattern in src)
+                            if 'communitydragon.org' in src or 'characters/' in src:
+                                continue
+                            
                             titles.add(name)
                             slug = _slugify(name)
-                            # Prefer common pluralized form first (e.g., cursor -> cursors)
-                            candidates = []
-                            if not slug.endswith('s'):
-                                candidates.append(f"{self.BASE_URL}/{username}/{slug}s")
-                            candidates.append(f"{self.BASE_URL}/{username}/{slug}")
+                            
+                            # Try to extract UUID from thumbnail URL
+                            uuid_match = re.search(r'thumbnails/([a-f0-9\-]+)\.webp', src)
+                            if uuid_match:
+                                uuid = uuid_match.group(1)
+                                # Try UUID-based URL first
+                                candidates = [
+                                    f"{self.BASE_URL}/{username}/{uuid}",
+                                    f"{self.BASE_URL}/mods/{uuid}",
+                                    f"{self.BASE_URL}/{username}/{slug}",
+                                ]
+                            else:
+                                # Fallback to slug-based URLs
+                                candidates = [
+                                    f"{self.BASE_URL}/{username}/{slug}",
+                                ]
+                                if not slug.endswith('s'):
+                                    candidates.insert(0, f"{self.BASE_URL}/{username}/{slug}s")
+                            
                             chosen_url = candidates[0]
                             skins.append({
-                                'id': chosen_url.rstrip('/').split('/')[-1],
+                                'id': uuid if uuid_match else slug,
                                 'name': name,
                                 'url': chosen_url,
                                 'updated_at': ''
                             })
+                        
+                        logger.info(f"[DivineSkins] Grid-card fallback found {len(titles)} unique items")
                     
                     # Deduplicate by URL
                     seen = set()
