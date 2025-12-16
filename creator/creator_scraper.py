@@ -926,6 +926,16 @@ class DivineSkinsScraper:
                     # Fallback: parse BeautifulSoup for anchors and grid cards
                     soup = BeautifulSoup(html, 'html.parser')
                     
+                    # Also collect links that look like mod pages globally
+                    # e.g., /mods/<id-or-slug> or /explore-mods/<slug>
+                    for a in soup.find_all('a', href=True):
+                        href = a['href']
+                        if '/mods/' in href or '/explore-mods/' in href:
+                            skin_url = href if href.startswith('http') else f"{self.BASE_URL}{href}"
+                            skin_id = skin_url.rstrip('/').split('/')[-1]
+                            skin_name = a.get_text(strip=True) or 'Untitled'
+                            skins.append({'id': skin_id, 'name': skin_name, 'url': skin_url, 'updated_at': ''})
+
                     # Look for links to mod pages: /username/mod-name format
                     for link in soup.find_all('a', href=True):
                         href = link['href']
