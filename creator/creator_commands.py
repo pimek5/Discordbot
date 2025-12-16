@@ -431,11 +431,13 @@ class CreatorCommands(commands.Cog):
                 icon_url=author_avatar
             )
 
-            # Stats fields (show views/likes only)
-            if final_views or final_likes:
+            # Stats fields (show views/downloads/likes if available)
+            if final_views or final_downloads or final_likes:
                 stats_line = []
                 if final_views:
                     stats_line.append(f"👁️ **{final_views:,}** views")
+                if final_downloads:
+                    stats_line.append(f"📥 **{final_downloads:,}** downloads")
                 if final_likes:
                     stats_line.append(f"❤️ **{final_likes:,}** likes")
                 if stats_line:
