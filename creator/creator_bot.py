@@ -111,6 +111,7 @@ class CreatorBot(commands.Bot):
     @monitor_creators.before_loop
     async def before_monitor(self):
         await self.wait_until_ready()
+        await asyncio.sleep(5)  # Wait for database to be ready
         logger.info("✅ Monitor task started")
     
     @tasks.loop(hours=1)
@@ -218,6 +219,7 @@ class CreatorBot(commands.Bot):
     @send_random_mod_from_subscribed.before_loop
     async def before_subscribed_mod(self):
         await self.wait_until_ready()
+        await asyncio.sleep(5)  # Wait for database to be ready
         logger.info("✅ Random mod from subscribed task started (every 1 hour)")
     
     @tasks.loop(hours=2)
