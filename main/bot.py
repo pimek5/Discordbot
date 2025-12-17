@@ -783,16 +783,14 @@ class MyBot(commands.Bot):
         # automatically registered (invite, diagnose, addthread, checkruneforge, setup_create_panel)
         
         # Only add command GROUPS (not individual commands)
-        # Groups need to be explicitly added to the tree
-        # Twitter and Loldle moved to guild-specific (below)
-        self.tree.add_command(mod_group)
-        self.tree.add_command(server_group)
+        # All command groups are now guild-specific
+        print("✅ No global command groups")
         
-        print("✅ Command groups registered globally")
-        
-        # Add guild-specific commands (Twitter, Loldle)
+        # Add guild-specific command groups
         self.tree.add_command(twitter_group, guild=primary_guild)
-        print("✅ Twitter commands registered for guild only")
+        self.tree.add_command(mod_group, guild=primary_guild)
+        self.tree.add_command(server_group, guild=primary_guild)
+        print("✅ Twitter, Mod, and Server commands registered for guild only")
         
         # Copy global commands to primary guild for instant access
         print(f"🔧 Copying global commands to primary guild {GUILD_ID}...")
@@ -1213,7 +1211,7 @@ async def setup_create_panel(interaction: discord.Interaction):
 # ================================
 #        INVITE COMMAND
 # ================================
-@bot.tree.command(name="invite", description="Invite a user to a temporary voice or text channel")
+@bot.tree.command(name="invite", description="Invite a user to a temporary voice or text channel", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(user="User to invite")
 async def invite(interaction: discord.Interaction, user: discord.Member):
     guild = interaction.guild
@@ -1242,7 +1240,7 @@ async def invite(interaction: discord.Interaction, user: discord.Member):
 #        DIAGNOSTICS
 # ================================
 # Updated: Custom emoji support for RuneForge tags
-@bot.tree.command(name="diagnose", description="Check RuneForge system configuration and status")
+@bot.tree.command(name="diagnose", description="Check RuneForge system configuration and status", guild=discord.Object(id=GUILD_ID))
 async def diagnose(interaction: discord.Interaction):
     """Diagnostic command to check RuneForge integration"""
     await interaction.response.defer()
@@ -1329,7 +1327,7 @@ async def diagnose(interaction: discord.Interaction):
 # ================================
 #        ADMIN COMMANDS
 # ================================
-@bot.tree.command(name="sync", description="Sync bot commands to Discord (Admin only)")
+@bot.tree.command(name="sync", description="Sync bot commands to Discord (Admin only)", guild=discord.Object(id=GUILD_ID))
 async def sync_commands(interaction: discord.Interaction):
     """Manually sync slash commands"""
     # Check permissions
@@ -1367,7 +1365,7 @@ async def sync_commands(interaction: discord.Interaction):
         )
         print(f"❌ Error syncing commands: {e}")
 
-@bot.tree.command(name="update_mastery", description="Update mastery data for all users (Admin only)")
+@bot.tree.command(name="update_mastery", description="Update mastery data for all users (Admin only)", guild=discord.Object(id=GUILD_ID))
 async def update_mastery(interaction: discord.Interaction):
     """Manually update mastery data for all users"""
     # Check permissions
@@ -1484,7 +1482,7 @@ async def update_mastery(interaction: discord.Interaction):
         )
         print(f"❌ Error updating mastery: {e}")
 
-@bot.tree.command(name="update_ranks", description="Update rank roles for all members (Admin only)")
+@bot.tree.command(name="update_ranks", description="Update rank roles for all members (Admin only)", guild=discord.Object(id=GUILD_ID))
 async def update_ranks(interaction: discord.Interaction):
     """Manually update rank roles for all members"""
     # Check permissions
@@ -1561,7 +1559,7 @@ async def update_ranks(interaction: discord.Interaction):
         logging.error(f"Error in update_ranks: {e}")
         await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
-@bot.tree.command(name="rankupdate", description="Update your rank roles based on your League accounts")
+@bot.tree.command(name="rankupdate", description="Update your rank roles based on your League accounts", guild=discord.Object(id=GUILD_ID))
 async def rankupdate(interaction: discord.Interaction):
     """Update rank roles for the user who runs the command"""
     await interaction.response.defer(ephemeral=True)
@@ -1620,7 +1618,7 @@ async def rankupdate(interaction: discord.Interaction):
 # RuneForge scanning toggle state (global)
 runeforge_scanning_enabled = True
 
-@bot.tree.command(name="toggle_runeforge", description="Toggle RuneForge scanning on/off (Admin only)")
+@bot.tree.command(name="toggle_runeforge", description="Toggle RuneForge scanning on/off (Admin only)", guild=discord.Object(id=GUILD_ID))
 async def toggle_runeforge(interaction: discord.Interaction):
     """Toggle RuneForge scanning"""
     global runeforge_scanning_enabled
@@ -1660,7 +1658,7 @@ async def toggle_runeforge(interaction: discord.Interaction):
         )
         logging.error(f"Error in toggle_runeforge: {e}")
 
-@bot.tree.command(name="toggle_twitter", description="Toggle Twitter monitoring on/off (Admin only)")
+@bot.tree.command(name="toggle_twitter", description="Toggle Twitter monitoring on/off (Admin only)", guild=discord.Object(id=GUILD_ID))
 async def toggle_twitter(interaction: discord.Interaction):
     """Toggle Twitter monitoring"""
     global TWITTER_MONITORING_ENABLED
@@ -2049,7 +2047,7 @@ async def process_skin_idea_thread(thread: discord.Thread):
     
     return idea_message, mod_message
 
-@bot.tree.command(name="addthread", description="Manually process a skin idea thread by providing its link")
+@bot.tree.command(name="addthread", description="Manually process a skin idea thread by providing its link", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(thread_link="Discord thread URL (e.g. https://discord.com/channels/...)")
 async def addthread(interaction: discord.Interaction, thread_link: str):
     """Manually process a skin idea thread by link"""
@@ -2475,7 +2473,7 @@ async def before_runeforge_check():
     print("RuneForge thread monitoring started!")
 
 # Manual command to check threads now
-@bot.tree.command(name="checkruneforge", description="Manually check all threads for RuneForge mods")
+@bot.tree.command(name="checkruneforge", description="Manually check all threads for RuneForge mods", guild=discord.Object(id=GUILD_ID))
 async def checkruneforge(interaction: discord.Interaction):
     """Manually trigger RuneForge mod checking with enhanced UI and full sync across multiple channels"""
     # Check if user has required role
@@ -4242,7 +4240,7 @@ def get_daily_quote_champion():
     
     return loldle_quote_data['daily_champion']
 
-@bot.tree.command(name="quote", description="Guess the champion by their quote!")
+@bot.tree.command(name="quote", description="Guess the champion by their quote!", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(champion="Guess the champion name")
 async def quote(interaction: discord.Interaction, champion: str):
     """LoLdle Quote Mode - Guess by quote"""
@@ -4415,7 +4413,7 @@ def get_daily_emoji_champion():
     
     return loldle_emoji_data['daily_champion']
 
-@bot.tree.command(name="emoji", description="Guess the champion by emojis!")
+@bot.tree.command(name="emoji", description="Guess the champion by emojis!", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(champion="Guess the champion name")
 async def emoji(interaction: discord.Interaction, champion: str):
     """LoLdle Emoji Mode - Guess by emoji"""
@@ -4605,7 +4603,7 @@ def get_daily_ability_champion():
     
     return loldle_ability_data['daily_champion']
 
-@bot.tree.command(name="ability", description="Guess the champion by their ability!")
+@bot.tree.command(name="ability", description="Guess the champion by their ability!", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(champion="Guess the champion name")
 async def ability(interaction: discord.Interaction, champion: str):
     """LoLdle Ability Mode - Guess by ability description"""
@@ -5083,7 +5081,7 @@ async def banlist(interaction: discord.Interaction):
         await interaction.followup.send(f"❌ Error fetching ban list: {e}", ephemeral=True)
 
 
-@bot.tree.command(name="appeal", description="Appeal your ban (works in DM)")
+@bot.tree.command(name="appeal", description="Appeal your ban (works in DM)", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(appeal_text="Your appeal message explaining why you should be unbanned")
 async def appeal_ban(interaction: discord.Interaction, appeal_text: str):
     """Submit a ban appeal - works in DM or server"""
