@@ -18,7 +18,6 @@ logger = logging.getLogger('vote_commands')
 # Configuration
 VOTING_THREAD_ID = 1331546029023166464
 ADMIN_ROLE_ID = 1153030265782927501
-GUILD_ID = 1153027935553454191  # For guild-specific commands
 BOOSTER_ROLE_ID = 1168616737692991499
 
 class VoteCommands(commands.Cog):
@@ -151,7 +150,7 @@ class VoteCommands(commands.Cog):
         embed.set_footer(text=f"Session ID: {session_id} • Use /vote stop to end voting")
         return embed
     
-    @app_commands.command(name="vote", description="Vote for 5 champions", guild=discord.Object(id=GUILD_ID))
+    @app_commands.command(name="vote", description="Vote for 5 champions")
     @app_commands.describe(
         champion1="Your #1 pick",
         champion2="Your #2 pick",
@@ -239,7 +238,7 @@ class VoteCommands(commands.Cog):
         
         logger.info(f"Vote recorded: {interaction.user.name} voted for {normalized_names} ({points} points each)")
     
-    @app_commands.command(name="votestart", description="[ADMIN] Start a new voting session", guild=discord.Object(id=GUILD_ID))
+    @app_commands.command(name="votestart", description="[ADMIN] Start a new voting session")
     async def vote_start(self, interaction: discord.Interaction):
         """Start a new voting session (admin only)"""
         # Check if command is used in voting thread
@@ -305,7 +304,7 @@ class VoteCommands(commands.Cog):
         
         logger.info(f"Voting session {session_id} started by {interaction.user.name} with {len(previous_winners)} exclusions")
     
-    @app_commands.command(name="votestop", description="[ADMIN] Stop the current voting session", guild=discord.Object(id=GUILD_ID))
+    @app_commands.command(name="votestop", description="[ADMIN] Stop the current voting session")
     async def vote_stop(self, interaction: discord.Interaction):
         """Stop the current voting session (admin only)"""
         # Check if command is used in voting thread
@@ -408,7 +407,7 @@ class VoteCommands(commands.Cog):
         
         logger.info(f"Voting session {session['id']} ended by {interaction.user.name}")
     
-    @app_commands.command(name="voteexclude", description="[ADMIN] Exclude champions from voting", guild=discord.Object(id=GUILD_ID))
+    @app_commands.command(name="voteexclude", description="[ADMIN] Exclude champions from voting")
     @app_commands.describe(
         champions="Champion names to exclude (comma-separated, e.g., 'Ahri, Yasuo, asol')"
     )
@@ -489,7 +488,7 @@ class VoteCommands(commands.Cog):
         
         logger.info(f"Champions excluded by {interaction.user.name}: {normalized_champions}")
     
-    @app_commands.command(name="voteinclude", description="[ADMIN] Remove champion from exclusion list", guild=discord.Object(id=GUILD_ID))
+    @app_commands.command(name="voteinclude", description="[ADMIN] Remove champion from exclusion list")
     @app_commands.describe(
         champion="Champion name to include back"
     )

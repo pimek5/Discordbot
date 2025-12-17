@@ -15,9 +15,6 @@ from permissions import has_admin_permissions
 
 logger = logging.getLogger('settings_commands')
 
-# Configuration
-GUILD_ID = 1153027935553454191  # For guild-specific commands
-
 
 class CommandsCategoryView(discord.ui.View):
     """Interactive view for browsing commands by category"""
@@ -300,14 +297,14 @@ class SettingsCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
     
-    @app_commands.command(name="commands", description="Interactive command list with categories", guild=discord.Object(id=GUILD_ID))
+    @app_commands.command(name="commands", description="Interactive command list with categories")
     async def commands_list(self, interaction: discord.Interaction):
         """Show interactive categorized command list"""
         view = CommandsCategoryView()
         embed = view.create_embed("all")
         await interaction.response.send_message(embed=embed, view=view)
     
-    @app_commands.command(name="help", description="Show all available commands", guild=discord.Object(id=GUILD_ID))
+    @app_commands.command(name="help", description="Show all available commands")
     async def help_command(self, interaction: discord.Interaction):
         """Show categorized list of bot commands"""
         embed = discord.Embed(

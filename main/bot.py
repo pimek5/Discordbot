@@ -704,17 +704,19 @@ class MyBot(commands.Bot):
                 await config_commands.setup(self)
                 print("  ✅ ConfigCommands loaded")
                 
-                # Load settings commands
+                # Load settings commands (guild-specific)
                 print("🔄 Loading SettingsCommands...")
                 from settings_commands import SettingsCommands
-                await self.add_cog(SettingsCommands(self))
-                print("  ✅ SettingsCommands loaded")
+                settings_cog = SettingsCommands(self)
+                await self.add_cog(settings_cog, guild=primary_guild)
+                print("  ✅ SettingsCommands loaded (guild-specific)")
                 
-                # Load voting commands
+                # Load voting commands (guild-specific)
                 print("🔄 Loading VoteCommands...")
                 from vote_commands import VoteCommands
-                await self.add_cog(VoteCommands(self))
-                print("  ✅ VoteCommands loaded")
+                vote_cog = VoteCommands(self)
+                await self.add_cog(vote_cog, guild=primary_guild)
+                print("  ✅ VoteCommands loaded (guild-specific)")
                 
                 # Load help commands
                 print("🔄 Loading help commands...")
