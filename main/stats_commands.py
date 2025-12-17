@@ -19,6 +19,7 @@ import logging
 from database import get_db
 from riot_api import RiotAPI, CHAMPION_ID_TO_NAME
 from emoji_dict import get_champion_emoji
+from objective_icons import get_objective_icon, get_item_icon
 
 logger = logging.getLogger('stats_commands')
 
@@ -287,6 +288,10 @@ class StatsCommands(commands.Cog):
                 description=f"**{summoner_name}** • Last {total_games} games",
                 color=0x00FF00 if winrate >= 50 else 0xFF0000
             )
+            
+            # Add kills icon as thumbnail
+            kills_icon = get_objective_icon('kills')
+            embed.set_thumbnail(url=kills_icon)
             
             embed.add_field(
                 name="🎮 Win Rate",

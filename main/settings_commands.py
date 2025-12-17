@@ -308,60 +308,87 @@ class SettingsCommands(commands.Cog):
     async def help_command(self, interaction: discord.Interaction):
         """Show categorized list of bot commands"""
         embed = discord.Embed(
-            title="📚 Bot Commands",
-            description="All available commands categorized by functionality",
+            title="📚 Kassalytics Bot - All Commands",
+            description="Complete list of available commands categorized by functionality",
             color=0x1F8EFA
         )
         
         # Profile & Accounts
         profile_cmds = (
-            "`/link` - Link your Riot account\n"
-            "`/verify` - Verify account (change icon)\n"
-            "`/profile` - Interactive profile (Profile/Stats/Matches/LP)\n"
-            "`/setprimary` - Set primary account\n"
-            "`/unlink` - Unlink Riot account"
+            "`/link` - Link your Riot account to Discord\n"
+            "`/verifyacc` - Complete account verification\n"
+            "`/profile [@user]` - View player profile with stats, matches, and LP\n"
+            "`/setmain` - Set your main/primary Riot account\n"
+            "`/accounts` - Manage visibility of linked accounts\n"
+            "`/unlink` - Remove a linked Riot account\n"
+            "`/rankupdate` - Manually update your rank roles"
         )
         embed.add_field(name="👤 Profile & Accounts", value=profile_cmds, inline=False)
         
-        # Statistics
+        # Statistics & Mastery
         stats_cmds = (
-            "`/stats <champion>` - Champion mastery graph\n"
-            "`/points <champion>` - Quick mastery check\n"
-            "`/lp` - Today's LP balance (ranked)"
+            "`/stats [champion]` - View recent match stats and performance\n"
+            "`/points [champion]` - Show your TOP 10 champion masteries\n"
+            "`/compare` - Compare champion mastery between two players\n"
+            "`/lp` - View LP gains/losses with detailed analytics"
         )
-        embed.add_field(name="📊 Statistics", value=stats_cmds, inline=False)
+        embed.add_field(name="📊 Statistics & Mastery", value=stats_cmds, inline=False)
         
         # Match History
         matches_cmds = (
-            "`/matches` - Last 10 games (all accounts)"
+            "`/matches` - View recent match history from all linked accounts"
         )
         embed.add_field(name="🎮 Match History", value=matches_cmds, inline=False)
         
         # Leaderboards
         leaderboard_cmds = (
-            "`/leaderboard [champion]` - Top 10 by mastery\n"
-            "`/topchampions` - Most popular champions"
+            "`/top <champion>` - View champion leaderboard (global or server)"
         )
         embed.add_field(name="🏆 Leaderboards", value=leaderboard_cmds, inline=False)
         
-        # Loldle (separate - works everywhere)
+        # LoLdle Games
         loldle_cmds = (
-            "`/loldle` - Start Loldle game\n"
-            "`/loldlestats` - Your Loldle statistics\n"
-            "`/loldleleaderboard` - Top Loldle players"
+            "`/loldle` - Play daily champion guessing game\n"
+            "`/quote` - Guess the champion by their quote\n"
+            "`/emoji` - Guess the champion by emojis\n"
+            "`/ability` - Guess the champion by their ability\n"
+            "`/loldlestats` - Check your LoLdle statistics\n"
+            "`/loldletop` - View global LoLdle leaderboard"
         )
-        embed.add_field(name="🎲 Loldle (Works in all channels)", value=loldle_cmds, inline=False)
+        embed.add_field(name="🎲 LoLdle Games", value=loldle_cmds, inline=False)
+        
+        # Utility & Navigation
+        utility_cmds = (
+            "`/commands` - Interactive command list with categories\n"
+            "`/help` - Show this help message\n"
+            "`/invite` - Invite a user to temporary voice/text channel"
+        )
+        embed.add_field(name="🔧 Utility", value=utility_cmds, inline=False)
         
         # Settings (Admin only)
         settings_cmds = (
-            "`/settings addchannel` - Allow bot in channel\n"
-            "`/settings removechannel` - Disallow bot in channel\n"
+            "`/settings addchannel` - Allow bot commands in a channel\n"
+            "`/settings removechannel` - Disallow bot in a channel\n"
             "`/settings listchannels` - Show allowed channels\n"
-            "`/settings reset` - Remove all restrictions"
+            "`/settings reset` - Remove all channel restrictions"
         )
         embed.add_field(name="⚙️ Settings (Admin)", value=settings_cmds, inline=False)
         
-        embed.set_footer(text="Use /help to see this message again • Interactive profile buttons: 👤 📊 🎮 💰")
+        # Admin Commands
+        admin_cmds = (
+            "`/sync` - Sync bot commands to Discord\n"
+            "`/update_mastery` - Update mastery data for all users\n"
+            "`/update_ranks` - Update rank roles for all members\n"
+            "`/diagnose` - Check system configuration and status\n"
+            "`/toggle_runeforge` - Toggle RuneForge monitoring\n"
+            "`/toggle_twitter` - Toggle Twitter monitoring\n"
+            "`/checkruneforge` - Manually check threads for mods\n"
+            "`/addthread` - Manually process a thread by link\n"
+            "`/loldlestart` - Start a new LoLdle game session"
+        )
+        embed.add_field(name="🛡️ Admin Commands", value=admin_cmds, inline=False)
+        
+        embed.set_footer(text="💡 Use /commands for an interactive menu • Profile has buttons: 👤 📊 🎮 💰")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     

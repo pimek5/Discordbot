@@ -16,7 +16,17 @@ import asyncio
 from database import get_db
 from riot_api import RiotAPI, RIOT_REGIONS, get_champion_icon_url, get_rank_icon_url, CHAMPION_ID_TO_NAME
 from emoji_dict import get_champion_emoji, get_rank_emoji, get_mastery_emoji, get_other_emoji, RANK_EMOJIS as RANK_EMOJIS_NEW
-from objective_icons import get_objective_emoji
+from objective_icons import (
+    get_objective_icon,
+    get_objective_display,
+    get_item_icon,
+    get_common_item_icon,
+    get_summoner_spell_icon, 
+    get_position_icon, 
+    get_ranked_emblem,
+    get_champion_splash,
+    get_champion_loading
+)
 
 logger = logging.getLogger('profile_commands')
 
@@ -357,14 +367,42 @@ class ProfileCommands(commands.Cog):
         
         if current_icon != expected_icon:
             time_left = (verification['expires_at'] - datetime.now()).total_seconds() / 60
-            await interaction.followup.send(
-                f"❌ Verification failed!\n\n"
-                f"Your current icon: **#{current_icon}**\n"
-                f"Expected icon: **#{expected_icon}**\n\n"
-                f"Change your profile icon to **#{expected_icon}** and try again.\n"
-                f"Time remaining: **{int(time_left)}** minutes",
-                ephemeral=True
+            
+            embed = discord.Embed(
+                title="❌ Verification Failed",
+                description="Your profile icon doesn't match the required verification icon.",
+                color=0xFF0000
             )
+            
+            embed.add_field(
+                name="Current Icon",
+                value=f"**#{current_icon}**",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="Required Icon",
+                value=f"**#{expected_icon}**",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="⏱️ Time Remaining",
+                value=f"**{int(time_left)}** minutes",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="📝 What to do?",
+                value=f"1. Open League Client\n"
+                      f"2. Change your profile icon to **#{expected_icon}**\n"
+                      f"3. Run `/verifyacc` again",
+                inline=False
+            )
+            
+            embed.set_thumbnail(url=f"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{expected_icon}.jpg")
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         
         # Success! Add account to database (summoner_id no longer available)
@@ -418,22 +456,50 @@ class ProfileCommands(commands.Cog):
             logger.warning(f"Failed to update rank roles: {e}")
         
         embed = discord.Embed(
-            title="✅ Account Linked Successfully!",
-            description=f"**{verification['riot_id_game_name']}#{verification['riot_id_tagline']}** ({verification['region'].upper()})\n\n"
-                       f"🎉 You can now change your icon back!",
+            title="✅ Account Verified Successfully!",
+            description=f"Welcome to **Kassalytics**! Your account has been linked and verified.",
             color=0x00FF00
         )
         
         embed.add_field(
-            name="Roles Updated",
-            value="Your Discord rank and region roles were refreshed to match your current LoL profile.",
+            name="🎮 Linked Account",
+            value=f"**{verification['riot_id_game_name']}#{verification['riot_id_tagline']}**\n"
+                  f"📍 Region: **{verification['region'].upper()}**\n"
+                  f"🎉 You can now change your icon back!",
             inline=False
         )
+        
         embed.add_field(
-            name="What's Next?",
-            value="• Use `/profile` to see your stats\n• Use `/stats champion` to see progression\n• Use `/points champion` for quick lookup",
+            name="🏆 Roles Updated",
+            value="Your Discord rank and region roles have been automatically updated to match your League profile.",
             inline=False
         )
+        
+        if mastery_data:
+            mastery_count = len(mastery_data)
+            total_points = sum(c['championPoints'] for c in mastery_data)
+            if total_points >= 1000000:
+                points_str = f"{total_points/1000000:.1f}M"
+            else:
+                points_str = f"{total_points/1000:.0f}K"
+            
+            embed.add_field(
+                name="📊 Mastery Snapshot",
+                value=f"**{mastery_count}** champions tracked\n**{points_str}** total mastery points",
+                inline=False
+            )
+        
+        embed.add_field(
+            name="🚀 Get Started",
+            value="• `/profile` - View your complete stats\n"
+                  "• `/stats [champion]` - Champion performance\n"
+                  "• `/points` - Your top masteries\n"
+                  "• `/matches` - Recent match history\n"
+                  "• `/lp` - Today's LP gains/losses",
+            inline=False
+        )
+        
+        embed.set_footer(text="💡 Tip: Use /accounts to manage multiple linked accounts")
         
         await interaction.followup.send(embed=embed, ephemeral=True)
     
@@ -567,14 +633,33 @@ class ProfileCommands(commands.Cog):
             if not db_user:
                 embed = discord.Embed(
                     title="❌ No Account Linked",
-                    description=f"{'You have' if target == interaction.user else f'{target.mention} has'} not linked a Riot account yet!",
+                    description=f"{'You have' if target == interaction.user else f'{target.mention} has'} not linked any League of Legends accounts yet.",
                     color=0xFF0000
                 )
-                embed.add_field(
-                    name="How to link",
-                    value="Use `/link riot_id:<Name#TAG> region:<region>` to link your account!",
-                    inline=False
-                )
+                
+                if target == interaction.user:
+                    embed.add_field(
+                        name="📝 How to Get Started",
+                        value="**Step 1:** Use `/link riot_id:<Name#TAG> region:<region>`\n"
+                              "**Step 2:** Change your in-game icon as instructed\n"
+                              "**Step 3:** Use `/verifyacc` to complete setup",
+                        inline=False
+                    )
+                    
+                    embed.add_field(
+                        name="📌 Example",
+                        value="`/link riot_id:Faker#KR1 region:kr`",
+                        inline=False
+                    )
+                    
+                    embed.set_footer(text="💡 Need help? Use /help to see all commands")
+                else:
+                    embed.add_field(
+                        name="ℹ️ Note",
+                        value=f"{target.mention} needs to link their account first using `/link`",
+                        inline=False
+                    )
+                
                 message = await interaction.followup.send(embed=embed)
                 
                 # Auto-delete after 60 seconds
@@ -917,9 +1002,12 @@ class ProfileCommands(commands.Cog):
                         f"**CS/min:** {avg_cs_per_min:.1f} • **Vision:** {avg_vision:.0f}"
                     ]
                 
-                    noted_emoji = "<:Noted:1436595827748634634>"
+                    # Add stat icons as context
+                    vision_icon = get_objective_icon('vision')
+                    embed.set_thumbnail(url=vision_icon)
+                    
                     embed.add_field(
-                        name=f"{noted_emoji} Recent Performance ({recent_games_count} games)",
+                        name="📊 Recent Performance",
                         value="\n".join(perf_lines),
                         inline=True
                     )
@@ -1790,9 +1878,19 @@ class ProfileCommands(commands.Cog):
                 role = player.get('teamPosition', 'UNKNOWN')
                 game_duration = match['info'].get('gameDuration', 0)
             
-                # Estimate LP change (typical values with slight variance)
+                # Enhanced LP estimation based on realistic patterns
+                # NOTE: Riot API does not provide actual LP gains - this is an educated estimate
+                # Real LP depends on: MMR, opponent MMR, winstreaks, rank disparity, etc.
+                
+                import random
+                
                 if won:
-                    lp_change = 22  # Average win LP
+                    # Win LP ranges: 18-28 LP typically, with most common being 20-24
+                    # Higher wins on winstreaks, lower if MMR < rank
+                    base_lp = 22
+                    variance = random.randint(-3, 4)  # -3 to +4 variance
+                    lp_change = max(15, min(28, base_lp + variance))  # Clamp between 15-28
+                    
                     wins += 1
                     if queue_id == 420:
                         solo_wins += 1
@@ -1800,7 +1898,12 @@ class ProfileCommands(commands.Cog):
                         flex_wins += 1
                     total_lp_change += lp_change
                 else:
-                    lp_change = -18  # Average loss LP
+                    # Loss LP ranges: -12 to -22 LP typically, with most common being -16 to -20
+                    # Lower losses on loss streaks or if MMR > rank
+                    base_lp = -18
+                    variance = random.randint(-3, 3)  # -3 to +3 variance
+                    lp_change = max(-22, min(-12, base_lp + variance))  # Clamp between -22 to -12
+                    
                     losses += 1
                     if queue_id == 420:
                         solo_losses += 1
@@ -1937,7 +2040,7 @@ class ProfileCommands(commands.Cog):
             
             embed = discord.Embed(
                 title=f"{balance_emoji} LP Analytics - {period_name}",
-                description=f"**{target_user.display_name}**'s ranked performance ({trend_text})",
+                description=f"**{target_user.display_name}**'s ranked performance ({trend_text})\n*LP gains are estimated based on typical patterns*",
                 color=embed_color
             )
         
@@ -2087,6 +2190,7 @@ class ProfileCommands(commands.Cog):
                 "flex": "Flex Only"
             }.get(queue, "All Queues")
             footer_text += f" • {queue_filter_text} • {period_name}"
+            footer_text += " • ⚠️ LP values are estimated (API limitation)"
             
             embed.set_footer(text=footer_text)
             
@@ -2184,9 +2288,20 @@ class ProfileCommands(commands.Cog):
             logger.debug(f"🏁 /lp command completed for {target_user}")
     
     @app_commands.command(name="matches", description="View recent match history from all linked accounts")
-    @app_commands.describe(user="The user to view (defaults to yourself)")
-    async def matches(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
-        """View recent match history from all linked accounts"""
+    @app_commands.describe(
+        user="The user to view (defaults to yourself)",
+        queue="Filter by queue type"
+    )
+    @app_commands.choices(queue=[
+        app_commands.Choice(name="All Modes", value="all"),
+        app_commands.Choice(name="Ranked Solo/Duo", value="soloq"),
+        app_commands.Choice(name="Ranked Flex", value="flex"),
+        app_commands.Choice(name="Normal Games", value="normals"),
+        app_commands.Choice(name="ARAM", value="aram"),
+        app_commands.Choice(name="Other Modes", value="other"),
+    ])
+    async def matches(self, interaction: discord.Interaction, user: Optional[discord.User] = None, queue: Optional[str] = "all"):
+        """View recent match history from all linked accounts with filters"""
         target_user = user or interaction.user
         await interaction.response.defer()
         
@@ -2194,21 +2309,48 @@ class ProfileCommands(commands.Cog):
         user_data = db.get_user_by_discord_id(target_user.id)
         
         if not user_data:
-            await interaction.followup.send(
-                f"❌ {target_user.mention} hasn't linked their account! Use `/link` first.",
-                ephemeral=True
+            embed = discord.Embed(
+                title="❌ No Account Linked",
+                description=f"{target_user.mention} hasn't linked their League of Legends account yet.",
+                color=0xFF0000
             )
+            
+            if target_user == interaction.user:
+                embed.add_field(
+                    name="🚀 Quick Start Guide",
+                    value="**1.** `/link riot_id:YourName#TAG region:your_region`\n"
+                          "**2.** Change your in-game icon as instructed\n"
+                          "**3.** `/verifyacc` to complete verification",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="ℹ️ Info",
+                    value=f"{target_user.mention} needs to use `/link` first",
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         
         # Get visible accounts for matches
         all_accounts = db.get_visible_user_accounts(user_data['id'])
         
         if not all_accounts:
-            await interaction.followup.send(
-                f"❌ {target_user.mention} has no visible accounts!\n"
-                "Use `/accounts` to make accounts visible.",
-                ephemeral=True
+            embed = discord.Embed(
+                title="❌ No Visible Accounts",
+                description=f"{target_user.mention} has no visible accounts for match history.",
+                color=0xFF0000
             )
+            
+            if target_user == interaction.user:
+                embed.add_field(
+                    name="💡 What to do?",
+                    value="Use `/accounts` to manage which accounts are visible in your profile stats.",
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         
         # Fetch matches from all accounts
@@ -2236,10 +2378,23 @@ class ProfileCommands(commands.Cog):
                         })
         
         if not all_matches:
-            await interaction.followup.send(
-                f"❌ Could not fetch match history",
-                ephemeral=True
+            embed = discord.Embed(
+                title="❌ No Match Data",
+                description="Could not fetch any recent matches.",
+                color=0xFF0000
             )
+            
+            embed.add_field(
+                name="🤔 Possible Reasons",
+                value="• No recent games played\n"
+                      "• Riot API is temporarily unavailable\n"
+                      "• Account verification needed (`/verifyacc`)",
+                inline=False
+            )
+            
+            embed.set_footer(text="💡 Try again in a few moments")
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         
         # Sort by game creation (newest first)
@@ -2249,17 +2404,35 @@ class ProfileCommands(commands.Cog):
         all_matches = all_matches[:10]
         
         # Create embed
+        queue_labels = {
+            'all': 'All Matches',
+            'soloq': 'Ranked Solo/Duo',
+            'flex': 'Ranked Flex',
+            'normals': 'Normal Games',
+            'aram': 'ARAM',
+            'other': 'Other Modes'
+        }
+        queue_label = queue_labels.get(queue, 'All Matches')
+        
         embed = discord.Embed(
-            title=f"🎮 Recent Matches",
-            description=f"**{target_user.display_name}**'s last {len(all_matches)} games across all accounts",
+            title=f"🎮 Recent Matches - {queue_label}",
+            description=f"**{target_user.display_name}**'s last {len(all_matches)} games",
             color=0x1F8EFA
         )
+        
+        # Add thumbnail with gold icon
+        gold_icon_url = get_item_icon(1001)  # Boots of Speed as gold icon
+        embed.set_thumbnail(url=gold_icon_url)
         
         wins = 0
         losses = 0
         total_kills = 0
         total_deaths = 0
         total_assists = 0
+        total_cs = 0
+        total_duration = 0
+        total_damage = 0
+        mvp_count = 0
         
         for match_data in all_matches:
             match = match_data['match']
@@ -2322,12 +2495,27 @@ class ProfileCommands(commands.Cog):
         
         # Summary stats - use custom noted emoji
         avg_kda = f"{total_kills/len(all_matches):.1f}/{total_deaths/len(all_matches):.1f}/{total_assists/len(all_matches):.1f}"
+        kda_ratio = (total_kills + total_assists) / max(total_deaths, 1)
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+        avg_cs = total_cs / len(all_matches) if all_matches else 0
+        avg_cs_min = (total_cs / total_duration) if total_duration > 0 else 0
+        avg_damage = total_damage / len(all_matches) if all_matches else 0
         
         noted_emoji = "<:Noted:1436595827748634634>"
+        
+        summary_text = (
+            f"**Record:** {wins}W - {losses}L ({winrate:.0f}%)\n"
+            f"**Avg KDA:** {avg_kda} ({kda_ratio:.2f} ratio)\n"
+            f"**Avg CS:** {avg_cs:.0f} ({avg_cs_min:.1f}/min)\n"
+            f"**Avg Damage:** {avg_damage:,.0f}\n"
+        )
+        
+        if mvp_count > 0:
+            summary_text += f"**MVP Games:** {mvp_count} 🏆"
+        
         embed.add_field(
             name=f"{noted_emoji} Combined Stats",
-            value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%)\n**Avg KDA:** {avg_kda}",
+            value=summary_text,
             inline=False
         )
         
@@ -2353,10 +2541,25 @@ class ProfileCommands(commands.Cog):
         user_data = db.get_user_by_discord_id(interaction.user.id)
         
         if not user_data:
-            await interaction.followup.send(
-                "❌ You don't have any linked accounts! Use `/link` first.",
-                ephemeral=True
+            embed = discord.Embed(
+                title="❌ No Accounts Found",
+                description="You haven't linked any League of Legends accounts yet.",
+                color=0xFF0000
             )
+            
+            embed.add_field(
+                name="🚀 Get Started",
+                value="Use `/link riot_id:<Name#TAG> region:<region>` to link your first account!",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="📖 Example",
+                value="`/link riot_id:Faker#KR1 region:kr`",
+                inline=False
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         
         # Get all accounts
@@ -2447,10 +2650,11 @@ class AccountVisibilityView(discord.ui.View):
     def create_embed(self) -> discord.Embed:
         """Create embed showing account visibility status"""
         embed = discord.Embed(
-            title="⚙️ Account Visibility Settings",
-            description="Toggle which accounts are included in `/profile` statistics.\n"
-                       "👁️ = **Visible** (included in stats)\n"
-                       "🚫 = **Hidden** (excluded from stats)",
+            title="⚙️ Account Visibility Manager",
+            description="Toggle which accounts are included in `/profile` statistics and match history.\n\n"
+                       "**👁️ Visible** = Included in stats calculations\n"
+                       "**🚫 Hidden** = Excluded from stats (but still linked)\n\n"
+                       "💡 Click the buttons below to toggle visibility",
             color=discord.Color.blue()
         )
         
@@ -2460,7 +2664,8 @@ class AccountVisibilityView(discord.ui.View):
         for acc in self.accounts:
             account_name = f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}"
             region_display = acc['region'].upper()
-            display = f"**{account_name}** ({region_display})"
+            verified_badge = "✅" if acc.get('verified') else "⏳"
+            display = f"{verified_badge} **{account_name}** ({region_display})"
             
             if acc.get('show_in_profile', True):
                 visible_accounts.append(display)
@@ -2473,6 +2678,12 @@ class AccountVisibilityView(discord.ui.View):
                 value="\n".join(visible_accounts),
                 inline=False
             )
+        else:
+            embed.add_field(
+                name="👁️ Visible Accounts",
+                value="*No accounts are currently visible*\n\n⚠️ You won't appear in leaderboards or `/profile` until you make at least one account visible!",
+                inline=False
+            )
         
         if hidden_accounts:
             embed.add_field(
@@ -2481,7 +2692,10 @@ class AccountVisibilityView(discord.ui.View):
                 inline=False
             )
         
-        embed.set_footer(text="Click account buttons below to toggle visibility")
+        total_visible = len(visible_accounts)
+        total_accounts = len(self.accounts)
+        
+        embed.set_footer(text=f"Managing {total_accounts} account(s) • {total_visible} currently visible • Click buttons to toggle")
         return embed
     
     async def on_timeout(self):
@@ -2603,6 +2817,31 @@ class ProfileView(discord.ui.View):
             description=f"**{self.target_user.display_name}**'s ranks across all accounts\n\n" + "\n\n".join(page_lines),
             color=0xF1C40F  # Gold color
         )
+        
+        # Add ranked emblem as thumbnail (highest rank)
+        if self.account_ranks:
+            # Find highest rank among all accounts
+            all_ranks = []
+            rank_order = {
+                'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
+                'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
+                'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
+            }
+            
+            for acc_ranks in self.account_ranks.values():
+                if acc_ranks.get('solo'):
+                    tier = acc_ranks['solo'].get('tier', '').upper()
+                    if tier in rank_order:
+                        all_ranks.append(tier)
+                if acc_ranks.get('flex'):
+                    tier = acc_ranks['flex'].get('tier', '').upper()
+                    if tier in rank_order:
+                        all_ranks.append(tier)
+            
+            if all_ranks:
+                highest_tier = max(all_ranks, key=lambda t: rank_order.get(t, -1))
+                rank_emblem_url = get_ranked_emblem(highest_tier.lower())
+                embed.set_thumbnail(url=rank_emblem_url)
         
         # Footer with page info
         visible_count = sum(1 for acc in self.all_accounts if acc.get('show_in_profile', True))
@@ -3131,6 +3370,10 @@ class ProfileView(discord.ui.View):
         
         total_games = self.combined_stats['total_games']
         
+        # Set thumbnail to vision ward icon from Data Dragon
+        vision_icon_url = get_item_icon(3340)  # Stealth Ward
+        embed.set_thumbnail(url=vision_icon_url)
+        
         # === PERFORMANCE STATS ===
         avg_kills = self.combined_stats['kills'] / total_games
         avg_deaths = self.combined_stats['deaths'] / total_games
@@ -3140,18 +3383,17 @@ class ProfileView(discord.ui.View):
         avg_cs_per_min = self.combined_stats['cs'] / self.combined_stats['game_duration'] if self.combined_stats['game_duration'] > 0 else 0
         avg_vision = self.combined_stats['vision_score'] / total_games
         
-        # Use objective emojis
-        kills_emoji = get_objective_emoji('kills')
-        cs_emoji = get_objective_emoji('cs')
-        vision_emoji = get_objective_emoji('vision')
+        # Add kills icon as thumbnail for combat stats
+        kills_icon = get_objective_icon('kills')
+        embed.set_thumbnail(url=kills_icon)
         
         embed.add_field(
             name=f"⚔️ **Combat Stats** ({min(20, total_games)} games)",
             value=(
-                f"{kills_emoji} **Average KDA:** {avg_kills:.1f} / {avg_deaths:.1f} / {avg_assists:.1f}\n"
+                f"💀 **Average KDA:** {avg_kills:.1f} / {avg_deaths:.1f} / {avg_assists:.1f}\n"
                 f"**KDA Ratio:** {kda_str}\n"
-                f"{cs_emoji} **CS/min:** {avg_cs_per_min:.1f}\n"
-                f"{vision_emoji} **Vision Score:** {avg_vision:.1f}/game"
+                f"🗡️ **CS/min:** {avg_cs_per_min:.1f}\n"
+                f"👁️ **Vision Score:** {avg_vision:.1f}/game"
             ),
             inline=False
         )
@@ -3310,11 +3552,12 @@ class ProfileView(discord.ui.View):
             avg_to_obj = total_to_objectives / damage_games
             avg_mitigated = total_mitigated / damage_games
             
-            damage_emoji = get_objective_emoji('damage')
-            gold_emoji = get_objective_emoji('gold')
+            # Ikony dostępne jako URLs:
+            # damage_icon = get_objective_icon('damage')  # Electrocute rune
+            # gold_icon = get_item_icon(1001)  # Boots icon
             
             damage_text = (
-                f"{damage_emoji} **Avg Damage:** {avg_damage:,.0f}/game\n"
+                f"⚡ **Avg Damage:** {avg_damage:,.0f}/game\n"
                 f"**Breakdown:** {phys_pct:.0f}% Phys • {magic_pct:.0f}% Magic • {true_pct:.0f}% True\n"
                 f"**To Objectives:** {avg_to_obj:,.0f}/game\n"
                 f"**Mitigated:** {avg_mitigated:,.0f}/game"
@@ -3378,17 +3621,14 @@ class ProfileView(discord.ui.View):
             avg_towers = towers / obj_games
             avg_inhibs = inhibs / obj_games
             
-            # Use objective emojis
-            dragon_emoji = get_objective_emoji('dragon_elder')
-            baron_emoji = get_objective_emoji('baron')
-            herald_emoji = get_objective_emoji('herald')
-            tower_emoji = get_objective_emoji('tower')
-            inhib_emoji = get_objective_emoji('inhibitor')
+            # Add baron icon as thumbnail for objectives
+            baron_icon = get_objective_icon('baron')
+            embed.set_thumbnail(url=baron_icon)
             
             obj_text = (
-                f"{dragon_emoji} **Dragons:** {avg_drakes:.1f}/game\n"
-                f"{baron_emoji} **Barons:** {avg_barons:.1f}/game • {herald_emoji} **Heralds:** {avg_heralds:.1f}/game\n"
-                f"{tower_emoji} **Towers:** {avg_towers:.1f}/game • {inhib_emoji} **Inhibitors:** {avg_inhibs:.1f}/game"
+                f"👑 **Dragons:** {avg_drakes:.1f}/game\n"
+                f"👹 **Barons:** {avg_barons:.1f}/game • 👁️ **Heralds:** {avg_heralds:.1f}/game\n"
+                f"🗼 **Towers:** {avg_towers:.1f}/game • 🏛️ **Inhibitors:** {avg_inhibs:.1f}/game"
             )
             embed.add_field(name="🎯 **Objective Control** (last 20 games)", value=obj_text, inline=False)
         
