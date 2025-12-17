@@ -784,12 +784,15 @@ class MyBot(commands.Bot):
         
         # Only add command GROUPS (not individual commands)
         # Groups need to be explicitly added to the tree
-        self.tree.add_command(twitter_group)
-        # loldle_group removed - now using individual commands: /loldle, /quote, /emoji, /ability
+        # Twitter and Loldle moved to guild-specific (below)
         self.tree.add_command(mod_group)
         self.tree.add_command(server_group)
         
         print("✅ Command groups registered globally")
+        
+        # Add guild-specific commands (Twitter, Loldle)
+        self.tree.add_command(twitter_group, guild=primary_guild)
+        print("✅ Twitter commands registered for guild only")
         
         # Copy global commands to primary guild for instant access
         print(f"🔧 Copying global commands to primary guild {GUILD_ID}...")
@@ -3690,7 +3693,7 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
     
     return "🟥"  # Wrong
 
-@bot.tree.command(name="loldle", description="Play daily LoL champion guessing game!")
+@bot.tree.command(name="loldle", description="Play daily LoL champion guessing game!", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(champion="Guess the champion name")
 async def loldle(interaction: discord.Interaction, champion: str):
     """LoLdle - Guess the daily champion with persistent embed!"""
@@ -3931,7 +3934,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
             except:
                 pass
 
-@bot.tree.command(name="loldlestats", description="Check your LoLdle stats for today")
+@bot.tree.command(name="loldlestats", description="Check your LoLdle stats for today", guild=discord.Object(id=GUILD_ID))
 async def loldlestats(interaction: discord.Interaction):
     """Check your LoLdle progress"""
     
@@ -3965,7 +3968,7 @@ async def loldlestats(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="loldletop", description="View global LoLdle leaderboard")
+@bot.tree.command(name="loldletop", description="View global LoLdle leaderboard", guild=discord.Object(id=GUILD_ID))
 async def loldletop(interaction: discord.Interaction):
     """Display global LoLdle leaderboard"""
     
@@ -4032,7 +4035,7 @@ async def loldletop(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="loldlestart", description="Start a new LoLdle game")
+@bot.tree.command(name="loldlestart", description="Start a new LoLdle game", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(mode="Choose game mode: classic, quote, emoji, ability")
 @app_commands.choices(mode=[
     app_commands.Choice(name="Classic (Attributes)", value="classic"),
