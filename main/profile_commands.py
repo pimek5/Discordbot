@@ -1520,19 +1520,47 @@ class ProfileCommands(commands.Cog):
         embed.set_footer(text="Use /accounts to adjust visibility • /setmain to choose primary")
         await interaction.followup.send(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="lp", description="View today's LP gains/losses")
-    @app_commands.describe(user="The user to view (defaults to yourself)")
-    async def lp(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
-        """View today's LP balance (gains and losses)"""
+    @app_commands.command(name="lp", description="View LP gains/losses with detailed analytics")
+    @app_commands.describe(
+        user="The user to view (defaults to yourself)",
+        timeframe="Time period to analyze (default: today)",
+        queue="Filter by queue type (default: all)"
+    )
+    @app_commands.choices(timeframe=[
+        app_commands.Choice(name="Today", value="today"),
+        app_commands.Choice(name="Yesterday", value="yesterday"),
+        app_commands.Choice(name="Last 3 Days", value="3days"),
+        app_commands.Choice(name="This Week", value="week"),
+        app_commands.Choice(name="Last 7 Days", value="7days"),
+        app_commands.Choice(name="This Month", value="month"),
+    ])
+    @app_commands.choices(queue=[
+        app_commands.Choice(name="All Queues", value="all"),
+        app_commands.Choice(name="Solo/Duo Only", value="solo"),
+        app_commands.Choice(name="Flex Only", value="flex"),
+    ])
+    async def lp(
+        self, 
+        interaction: discord.Interaction, 
+        user: Optional[discord.User] = None,
+        timeframe: Optional[str] = "today",
+        queue: Optional[str] = "all"
+    ):
+        """View LP balance with comprehensive analytics and insights"""
         target_user = user or interaction.user
         await interaction.response.defer()
         
-        # Keep interaction alive
+        # Keep interaction alive with progressive messages
         async def keep_alive():
-            messages = ["⏳ Fetching LP data...", "📊 Calculating LP gains..."]
+            messages = [
+                "⏳ Fetching LP data...", 
+                "📊 Calculating statistics...",
+                "🎯 Analyzing performance...",
+                "📈 Building insights..."
+            ]
             for i, msg in enumerate(messages):
                 if i > 0:
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(2.5)
                 try:
                     await interaction.edit_original_response(content=msg)
                 except:
@@ -1564,14 +1592,42 @@ class ProfileCommands(commands.Cog):
                 )
                 return
         
-            # Get today's date range
+            # Calculate time range based on timeframe
             from datetime import datetime, timedelta
             now = datetime.now()
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_timestamp = int(today_start.timestamp() * 1000)
+            
+            if timeframe == "today":
+                start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                period_name = "Today"
+            elif timeframe == "yesterday":
+                yesterday = now - timedelta(days=1)
+                start_time = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+                end_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                period_name = "Yesterday"
+            elif timeframe == "3days":
+                start_time = now - timedelta(days=3)
+                period_name = "Last 3 Days"
+            elif timeframe == "week":
+                # Start of current week (Monday)
+                start_time = now - timedelta(days=now.weekday())
+                start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+                period_name = "This Week"
+            elif timeframe == "7days":
+                start_time = now - timedelta(days=7)
+                period_name = "Last 7 Days"
+            elif timeframe == "month":
+                start_time = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                period_name = "This Month"
+            else:
+                start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                period_name = "Today"
+            
+            start_timestamp = int(start_time.timestamp() * 1000)
+            end_timestamp = int(now.timestamp() * 1000) if timeframe != "yesterday" else int(end_time.timestamp() * 1000)
         
-            # Fetch ranked matches from today
+            # Fetch ranked matches from period
             all_ranked_matches = []
+            match_count_limit = 50 if timeframe in ["week", "7days", "month"] else 30
         
             for account in all_accounts:
                 if not account.get('verified'):
@@ -1579,11 +1635,11 @@ class ProfileCommands(commands.Cog):
             
                 logger.info(f"🔍 Fetching LP data for {account['riot_id_game_name']}#{account['riot_id_tagline']}")
             
-                # Get recent matches (last 20)
+                # Get recent matches
                 match_ids = await self.riot_api.get_match_history(
                     account['puuid'],
                     account['region'],
-                    count=20
+                    count=match_count_limit
                 )
             
                 if match_ids:
@@ -1593,15 +1649,21 @@ class ProfileCommands(commands.Cog):
                         if not match_details:
                             continue
                     
-                        # Check if match is from today
+                        # Check if match is within time range
                         game_creation = match_details['info'].get('gameCreation', 0)
-                        if game_creation < today_timestamp:
-                            continue  # Skip matches before today
+                        if game_creation < start_timestamp or (timeframe == "yesterday" and game_creation >= end_timestamp):
+                            continue
                     
                         # Check if it's a ranked match (queue ID 420 = Ranked Solo, 440 = Ranked Flex)
                         queue_id = match_details['info'].get('queueId', 0)
                         if queue_id not in [420, 440]:
-                            continue  # Skip non-ranked matches
+                            continue
+                        
+                        # Filter by queue if specified
+                        if queue == "solo" and queue_id != 420:
+                            continue
+                        if queue == "flex" and queue_id != 440:
+                            continue
                     
                         # Find player data
                         player_data = None
@@ -1615,14 +1677,21 @@ class ProfileCommands(commands.Cog):
                                 'match': match_details,
                                 'player': player_data,
                                 'account': account,
-                                'timestamp': game_creation
+                                'timestamp': game_creation,
+                                'queue_id': queue_id
                             })
         
             if not all_ranked_matches:
                 noted_emoji = "<:Noted:1436595827748634634>"
+                queue_text = {
+                    "all": "ranked",
+                    "solo": "Solo/Duo",
+                    "flex": "Flex"
+                }.get(queue, "ranked")
+                
                 embed = discord.Embed(
-                    title=f"{noted_emoji} LP Balance - Today",
-                    description=f"**{target_user.display_name}** hasn't played any ranked games today.",
+                    title=f"{noted_emoji} LP Analytics - {period_name}",
+                    description=f"**{target_user.display_name}** hasn't played any {queue_text} games in this period.",
                     color=0x808080
                 )
                 embed.set_footer(text=f"Play some ranked to see your LP gains!")
@@ -1639,37 +1708,150 @@ class ProfileCommands(commands.Cog):
             # Sort by timestamp (oldest first)
             all_ranked_matches.sort(key=lambda x: x['timestamp'])
         
-            # Calculate LP changes (approximate)
-            # Wins typically give +20-25 LP, losses -15-20 LP
-            # We'll estimate based on win/loss
+            # COMPREHENSIVE ANALYTICS
+            # ========================
+            
+            # Basic stats
             total_lp_change = 0
             wins = 0
             losses = 0
+            solo_wins = 0
+            solo_losses = 0
+            flex_wins = 0
+            flex_losses = 0
+            
+            # Advanced stats
+            champion_stats = {}  # {champion: {'wins': 0, 'losses': 0, 'games': 0}}
+            role_stats = {}  # {role: {'wins': 0, 'losses': 0}}
+            hourly_stats = {}  # {hour: {'wins': 0, 'losses': 0, 'lp': 0}}
+            performance_metrics = {
+                'total_kills': 0,
+                'total_deaths': 0,
+                'total_assists': 0,
+                'total_damage': 0,
+                'total_gold': 0,
+                'total_cs': 0,
+                'total_vision': 0,
+                'total_duration': 0,
+                'mvp_count': 0,  # Most damage/kills in team
+                'int_count': 0,  # Most deaths in team
+            }
+            
+            # LP progression tracking
+            lp_progression = []  # [(timestamp, cumulative_lp)]
+            current_lp = 0
+            
+            # Streak tracking
+            current_streak = 0
+            longest_win_streak = 0
+            longest_loss_streak = 0
+            last_result = None
+            
             match_details_list = []
         
             for match_data in all_ranked_matches:
                 player = match_data['player']
                 match = match_data['match']
                 account = match_data['account']
+                queue_id = match_data['queue_id']
             
                 won = player['win']
                 champion = player.get('championName', 'Unknown')
                 kills = player['kills']
                 deaths = player['deaths']
                 assists = player['assists']
+                damage = player.get('totalDamageDealtToChampions', 0)
+                gold = player.get('goldEarned', 0)
+                cs = player.get('totalMinionsKilled', 0) + player.get('neutralMinionsKilled', 0)
+                vision_score = player.get('visionScore', 0)
+                role = player.get('teamPosition', 'UNKNOWN')
+                game_duration = match['info'].get('gameDuration', 0)
             
-                # Estimate LP change (typical values)
+                # Estimate LP change (typical values with slight variance)
                 if won:
                     lp_change = 22  # Average win LP
                     wins += 1
+                    if queue_id == 420:
+                        solo_wins += 1
+                    else:
+                        flex_wins += 1
                     total_lp_change += lp_change
                 else:
                     lp_change = -18  # Average loss LP
                     losses += 1
+                    if queue_id == 420:
+                        solo_losses += 1
+                    else:
+                        flex_losses += 1
                     total_lp_change += lp_change
+                
+                # LP progression
+                current_lp += lp_change
+                lp_progression.append((match_data['timestamp'], current_lp))
+            
+                # Champion stats
+                if champion not in champion_stats:
+                    champion_stats[champion] = {'wins': 0, 'losses': 0, 'games': 0}
+                champion_stats[champion]['games'] += 1
+                if won:
+                    champion_stats[champion]['wins'] += 1
+                else:
+                    champion_stats[champion]['losses'] += 1
+                
+                # Role stats
+                if role not in role_stats:
+                    role_stats[role] = {'wins': 0, 'losses': 0}
+                if won:
+                    role_stats[role]['wins'] += 1
+                else:
+                    role_stats[role]['losses'] += 1
+                
+                # Hourly stats
+                match_hour = datetime.fromtimestamp(match_data['timestamp'] / 1000).hour
+                if match_hour not in hourly_stats:
+                    hourly_stats[match_hour] = {'wins': 0, 'losses': 0, 'lp': 0}
+                if won:
+                    hourly_stats[match_hour]['wins'] += 1
+                else:
+                    hourly_stats[match_hour]['losses'] += 1
+                hourly_stats[match_hour]['lp'] += lp_change
+                
+                # Performance metrics
+                performance_metrics['total_kills'] += kills
+                performance_metrics['total_deaths'] += deaths
+                performance_metrics['total_assists'] += assists
+                performance_metrics['total_damage'] += damage
+                performance_metrics['total_gold'] += gold
+                performance_metrics['total_cs'] += cs
+                performance_metrics['total_vision'] += vision_score
+                performance_metrics['total_duration'] += game_duration
+                
+                # MVP/Int detection (check if best/worst in team)
+                team_participants = [p for p in match['info']['participants'] if p['teamId'] == player['teamId']]
+                max_damage_in_team = max([p.get('totalDamageDealtToChampions', 0) for p in team_participants])
+                max_deaths_in_team = max([p.get('deaths', 0) for p in team_participants])
+                if damage >= max_damage_in_team and max_damage_in_team > 0:
+                    performance_metrics['mvp_count'] += 1
+                if deaths >= max_deaths_in_team and deaths > 3:  # Only count if 4+ deaths
+                    performance_metrics['int_count'] += 1
+                
+                # Streak tracking
+                if last_result is None:
+                    current_streak = 1 if won else -1
+                elif (won and last_result) or (not won and not last_result):
+                    # Continuing streak
+                    if won:
+                        current_streak += 1
+                        longest_win_streak = max(longest_win_streak, current_streak)
+                    else:
+                        current_streak -= 1
+                        longest_loss_streak = max(longest_loss_streak, abs(current_streak))
+                else:
+                    # Streak broken
+                    current_streak = 1 if won else -1
+                last_result = won
             
                 # Get queue type
-                queue_id = match['info']['queueId']
                 queue_name = "Solo/Duo" if queue_id == 420 else "Flex"
             
                 # Champion emoji
@@ -1686,59 +1868,255 @@ class ProfileCommands(commands.Cog):
                     'kda': f"{kills}/{deaths}/{assists}",
                     'lp_change': lp_str,
                     'queue': queue_name,
-                    'won': won
+                    'won': won,
+                    'damage': damage,
+                    'vision': vision_score,
+                    'cs': cs
                 })
         
-            # Create embed
+            # Calculate averages
+            games_played = wins + losses
+            avg_kills = performance_metrics['total_kills'] / games_played if games_played > 0 else 0
+            avg_deaths = performance_metrics['total_deaths'] / games_played if games_played > 0 else 0
+            avg_assists = performance_metrics['total_assists'] / games_played if games_played > 0 else 0
+            kda_ratio = (avg_kills + avg_assists) / avg_deaths if avg_deaths > 0 else avg_kills + avg_assists
+            avg_damage = performance_metrics['total_damage'] / games_played if games_played > 0 else 0
+            avg_vision = performance_metrics['total_vision'] / games_played if games_played > 0 else 0
+            avg_cs = performance_metrics['total_cs'] / games_played if games_played > 0 else 0
+            
+            # Find peak and valley LP
+            peak_lp = max([lp for _, lp in lp_progression]) if lp_progression else 0
+            valley_lp = min([lp for _, lp in lp_progression]) if lp_progression else 0
+            
+            # Create comprehensive embed
             if total_lp_change > 0:
                 embed_color = 0x00FF00  # Green for positive
                 balance_emoji = "📈"
+                trend_text = "Climbing"
             elif total_lp_change < 0:
                 embed_color = 0xFF0000  # Red for negative
                 balance_emoji = "📉"
+                trend_text = "Falling"
             else:
                 embed_color = 0x808080  # Gray for neutral
                 balance_emoji = "➖"
+                trend_text = "Stable"
         
+            winrate = (wins / games_played * 100) if games_played > 0 else 0
+            
             embed = discord.Embed(
-                title=f"{balance_emoji} LP Balance - Today",
-                description=f"**{target_user.display_name}**'s ranked performance",
+                title=f"{balance_emoji} LP Analytics - {period_name}",
+                description=f"**{target_user.display_name}**'s ranked performance ({trend_text})",
                 color=embed_color
             )
         
-            # Add match details
-            for i, match_info in enumerate(match_details_list, 1):
-                field_value = (
+            # ==== OVERVIEW SECTION ====
+            lp_display = f"+{total_lp_change}" if total_lp_change > 0 else str(total_lp_change)
+            overview_lines = [
+                f"**LP Change:** {lp_display} LP",
+                f"**Record:** {wins}W - {losses}L ({winrate:.1f}%)",
+                f"**Games:** {games_played}"
+            ]
+            
+            if peak_lp > 0 or valley_lp < 0:
+                overview_lines.append(f"**Peak:** +{peak_lp} LP | **Valley:** {valley_lp} LP")
+            
+            # Current streak
+            if current_streak > 1:
+                overview_lines.append(f"**Streak:** 🔥 {current_streak} Wins")
+            elif current_streak < -1:
+                overview_lines.append(f"**Streak:** ❄️ {abs(current_streak)} Losses")
+            
+            embed.add_field(
+                name="📊 Overview",
+                value="\n".join(overview_lines),
+                inline=False
+            )
+            
+            # ==== QUEUE BREAKDOWN (if not filtered) ====
+            if queue == "all" and (solo_wins + solo_losses > 0 or flex_wins + flex_losses > 0):
+                queue_lines = []
+                if solo_wins + solo_losses > 0:
+                    solo_wr = (solo_wins / (solo_wins + solo_losses) * 100) if (solo_wins + solo_losses) > 0 else 0
+                    solo_lp = (solo_wins * 22) + (solo_losses * -18)
+                    solo_lp_str = f"+{solo_lp}" if solo_lp > 0 else str(solo_lp)
+                    queue_lines.append(f"**Solo/Duo:** {solo_wins}W-{solo_losses}L ({solo_wr:.0f}%) • {solo_lp_str} LP")
+                if flex_wins + flex_losses > 0:
+                    flex_wr = (flex_wins / (flex_wins + flex_losses) * 100) if (flex_wins + flex_losses) > 0 else 0
+                    flex_lp = (flex_wins * 22) + (flex_losses * -18)
+                    flex_lp_str = f"+{flex_lp}" if flex_lp > 0 else str(flex_lp)
+                    queue_lines.append(f"**Flex:** {flex_wins}W-{flex_losses}L ({flex_wr:.0f}%) • {flex_lp_str} LP")
+                
+                if queue_lines:
+                    embed.add_field(
+                        name="🎮 Queue Breakdown",
+                        value="\n".join(queue_lines),
+                        inline=False
+                    )
+            
+            # ==== PERFORMANCE METRICS ====
+            perf_lines = [
+                f"**KDA:** {avg_kills:.1f} / {avg_deaths:.1f} / {avg_assists:.1f} ({kda_ratio:.2f} ratio)",
+                f"**Avg Damage:** {avg_damage:,.0f}",
+                f"**Avg Vision:** {avg_vision:.1f}",
+                f"**Avg CS:** {avg_cs:.0f}"
+            ]
+            
+            if performance_metrics['mvp_count'] > 0 or performance_metrics['int_count'] > 0:
+                perf_lines.append(f"**MVP Games:** {performance_metrics['mvp_count']} | **Int Games:** {performance_metrics['int_count']}")
+            
+            embed.add_field(
+                name="⚡ Performance",
+                value="\n".join(perf_lines),
+                inline=False
+            )
+            
+            # ==== CHAMPION POOL (Top 5) ====
+            if champion_stats:
+                sorted_champs = sorted(champion_stats.items(), key=lambda x: x[1]['games'], reverse=True)[:5]
+                champ_lines = []
+                for champ, stats in sorted_champs:
+                    champ_wr = (stats['wins'] / stats['games'] * 100) if stats['games'] > 0 else 0
+                    champ_emoji = get_champion_emoji(champ)
+                    champ_lines.append(
+                        f"{champ_emoji} **{champ}** - {stats['wins']}W-{stats['losses']}L ({champ_wr:.0f}%)"
+                    )
+                
+                if champ_lines:
+                    embed.add_field(
+                        name="🏆 Champion Pool",
+                        value="\n".join(champ_lines),
+                        inline=False
+                    )
+            
+            # ==== BEST HOURS (Top 3) ====
+            if len(hourly_stats) >= 2:
+                sorted_hours = sorted(hourly_stats.items(), key=lambda x: x[1]['lp'], reverse=True)[:3]
+                hour_lines = []
+                for hour, stats in sorted_hours:
+                    hour_wr = (stats['wins'] / (stats['wins'] + stats['losses']) * 100) if (stats['wins'] + stats['losses']) > 0 else 0
+                    hour_lp_str = f"+{stats['lp']}" if stats['lp'] > 0 else str(stats['lp'])
+                    hour_lines.append(
+                        f"**{hour:02d}:00-{hour+1:02d}:00** - {stats['wins']}W-{stats['losses']}L ({hour_wr:.0f}%) • {hour_lp_str} LP"
+                    )
+                
+                if hour_lines:
+                    embed.add_field(
+                        name="🕐 Best Hours",
+                        value="\n".join(hour_lines),
+                        inline=False
+                    )
+            
+            # ==== STREAK INFO ====
+            if longest_win_streak >= 3 or longest_loss_streak >= 3:
+                streak_lines = []
+                if longest_win_streak >= 3:
+                    streak_lines.append(f"**Longest Win Streak:** 🔥 {longest_win_streak} games")
+                if longest_loss_streak >= 3:
+                    streak_lines.append(f"**Longest Loss Streak:** ❄️ {longest_loss_streak} games")
+                
+                if streak_lines:
+                    embed.add_field(
+                        name="🎯 Streaks",
+                        value="\n".join(streak_lines),
+                        inline=False
+                    )
+            
+            # ==== MATCH HISTORY (Last 10 or all if less) ====
+            display_matches = match_details_list[-10:] if len(match_details_list) > 10 else match_details_list
+            match_lines = []
+            for i, match_info in enumerate(reversed(display_matches), 1):
+                match_lines.append(
                     f"{match_info['emoji']} {match_info['champ_emoji']} **{match_info['champion']}** • "
-                    f"{match_info['kda']} • **{match_info['lp_change']} LP** ({match_info['queue']})"
+                    f"{match_info['kda']} • {match_info['lp_change']} LP"
                 )
             
+            if match_lines:
+                history_title = f"📋 Recent Matches ({len(display_matches)})"
+                if len(match_details_list) > 10:
+                    history_title += f" (Showing last 10 of {len(match_details_list)})"
+                
                 embed.add_field(
-                    name=f"Game {i}",
-                    value=field_value,
+                    name=history_title,
+                    value="\n".join(match_lines),
                     inline=False
                 )
         
-            # Summary
-            lp_display = f"+{total_lp_change}" if total_lp_change > 0 else str(total_lp_change)
-            summary_text = (
-                f"**Total:** {lp_display} LP\n"
-                f"**Record:** {wins}W - {losses}L\n"
-                f"**Games Played:** {wins + losses}"
-            )
-        
-            embed.add_field(
-                name=f"<:Noted:1436595827748634634> Summary",
-                value=summary_text,
-                inline=False
-            )
-        
-            # Footer
+            # Footer with detailed info
             if len(all_accounts) > 1:
                 accounts_list = ", ".join([f"{acc['riot_id_game_name']}" for acc in all_accounts if acc.get('verified')])
-                embed.set_footer(text=f"Combined from: {accounts_list}")
+                footer_text = f"Combined from: {accounts_list}"
             else:
-                embed.set_footer(text=f"{target_user.display_name} • Today's LP gains")
+                footer_text = f"{target_user.display_name}"
+            
+            # Add queue filter info
+            queue_filter_text = {
+                "all": "All Queues",
+                "solo": "Solo/Duo Only",
+                "flex": "Flex Only"
+            }.get(queue, "All Queues")
+            footer_text += f" • {queue_filter_text} • {period_name}"
+            
+            embed.set_footer(text=footer_text)
+            
+            # ==== LP GRAPH (QuickChart) ====
+            if len(lp_progression) >= 2:
+                try:
+                    import urllib.parse
+                    
+                    # Extract data points
+                    lp_values = [lp for _, lp in lp_progression]
+                    game_numbers = list(range(1, len(lp_values) + 1))
+                    
+                    # Build QuickChart URL
+                    chart_config = {
+                        "type": "line",
+                        "data": {
+                            "labels": game_numbers,
+                            "datasets": [{
+                                "label": "LP",
+                                "data": lp_values,
+                                "fill": True,
+                                "borderColor": "rgb(75, 192, 192)" if total_lp_change >= 0 else "rgb(255, 99, 132)",
+                                "backgroundColor": "rgba(75, 192, 192, 0.2)" if total_lp_change >= 0 else "rgba(255, 99, 132, 0.2)",
+                                "tension": 0.4
+                            }]
+                        },
+                        "options": {
+                            "title": {
+                                "display": True,
+                                "text": f"LP Progression - {period_name}"
+                            },
+                            "scales": {
+                                "yAxes": [{
+                                    "scaleLabel": {
+                                        "display": True,
+                                        "labelString": "Cumulative LP"
+                                    },
+                                    "ticks": {
+                                        "beginAtZero": False
+                                    }
+                                }],
+                                "xAxes": [{
+                                    "scaleLabel": {
+                                        "display": True,
+                                        "labelString": "Game Number"
+                                    }
+                                }]
+                            },
+                            "legend": {
+                                "display": False
+                            }
+                        }
+                    }
+                    
+                    import json
+                    chart_json = json.dumps(chart_config)
+                    chart_url = f"https://quickchart.io/chart?width=600&height=300&c={urllib.parse.quote(chart_json)}"
+                    embed.set_image(url=chart_url)
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to generate LP graph: {e}")
         
             # Delete the "Calculating..." message before sending embed
             try:
@@ -1748,11 +2126,11 @@ class ProfileCommands(commands.Cog):
             
             message = await interaction.followup.send(embed=embed)
         
-            # Auto-delete after 2 minutes
-            await asyncio.sleep(120)
+            # Auto-delete after 3 minutes (longer due to more info)
+            await asyncio.sleep(180)
             try:
                 await message.delete()
-                logger.info(f"🗑️ Auto-deleted LP embed for {target_user.display_name} after 2 minutes")
+                logger.info(f"🗑️ Auto-deleted LP analytics embed for {target_user.display_name} after 3 minutes")
             except Exception as e:
                 logger.warning(f"⚠️ Could not delete LP embed: {e}")
         
