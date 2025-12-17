@@ -1548,6 +1548,7 @@ class ProfileCommands(commands.Cog):
     ):
         """View LP balance with comprehensive analytics and insights"""
         target_user = user or interaction.user
+        logger.info(f"🔍 /lp invoked by {interaction.user} for {target_user} | timeframe={timeframe}, queue={queue}")
         await interaction.response.defer()
         
         # Keep interaction alive with progressive messages
@@ -1571,9 +1572,11 @@ class ProfileCommands(commands.Cog):
         try:
             db = get_db()
             user_data = db.get_user_by_discord_id(target_user.id)
+            logger.debug(f"📂 User data fetched: {user_data['id'] if user_data else 'None'}")
             
             if not user_data:
                 keep_alive_task.cancel()
+                logger.warning(f"⚠️ User {target_user} not found in database")
                 await interaction.followup.send(
                     f"❌ {target_user.mention} hasn't linked their account! Use `/link` first.",
                     ephemeral=True
@@ -1582,9 +1585,11 @@ class ProfileCommands(commands.Cog):
             
             # Get visible accounts for LP calculation
             all_accounts = db.get_visible_user_accounts(user_data['id'])
+            logger.debug(f"📋 Found {len(all_accounts)} visible accounts")
             
             if not all_accounts or not any(acc.get('verified') for acc in all_accounts):
                 keep_alive_task.cancel()
+                logger.warning(f"⚠️ No verified visible accounts for {target_user}")
                 await interaction.followup.send(
                     f"❌ {target_user.mention} has no visible verified accounts!\n"
                     "Use `/accounts` to make accounts visible.",
@@ -1595,6 +1600,7 @@ class ProfileCommands(commands.Cog):
             # Calculate time range based on timeframe
             from datetime import datetime, timedelta
             now = datetime.now()
+            logger.debug(f"⏰ Current time: {now}")
             
             if timeframe == "today":
                 start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1624,10 +1630,15 @@ class ProfileCommands(commands.Cog):
             
             start_timestamp = int(start_time.timestamp() * 1000)
             end_timestamp = int(now.timestamp() * 1000) if timeframe != "yesterday" else int(end_time.timestamp() * 1000)
+            
+            logger.info(f"📅 Time range: {start_time} to {now} ({period_name})")
+            logger.debug(f"  Timestamps: start={start_timestamp}, end={end_timestamp}")
         
             # Fetch ranked matches from period
             all_ranked_matches = []
             match_count_limit = 50 if timeframe in ["week", "7days", "month"] else 30
+            
+            logger.debug(f"🔄 Starting match collection (limit={match_count_limit} per account)")
         
             for account in all_accounts:
                 if not account.get('verified'):
@@ -1641,28 +1652,35 @@ class ProfileCommands(commands.Cog):
                     account['region'],
                     count=match_count_limit
                 )
+                
+                logger.debug(f"  → Retrieved {len(match_ids) if match_ids else 0} match IDs")
             
                 if match_ids:
                     for match_id in match_ids:
                         match_details = await self.riot_api.get_match_details(match_id, account['region'])
                     
                         if not match_details:
+                            logger.debug(f"    ⚠️ No details for match {match_id}")
                             continue
                     
                         # Check if match is within time range
                         game_creation = match_details['info'].get('gameCreation', 0)
                         if game_creation < start_timestamp or (timeframe == "yesterday" and game_creation >= end_timestamp):
+                            logger.debug(f"    ⏭️ Skipping match {match_id} (outside time range)")
                             continue
                     
                         # Check if it's a ranked match (queue ID 420 = Ranked Solo, 440 = Ranked Flex)
                         queue_id = match_details['info'].get('queueId', 0)
                         if queue_id not in [420, 440]:
+                            logger.debug(f"    ⏭️ Skipping match {match_id} (not ranked, queue={queue_id})")
                             continue
                         
                         # Filter by queue if specified
                         if queue == "solo" and queue_id != 420:
+                            logger.debug(f"    ⏭️ Skipping match {match_id} (queue filter: solo only)")
                             continue
                         if queue == "flex" and queue_id != 440:
+                            logger.debug(f"    ⏭️ Skipping match {match_id} (queue filter: flex only)")
                             continue
                     
                         # Find player data
@@ -1680,7 +1698,10 @@ class ProfileCommands(commands.Cog):
                                 'timestamp': game_creation,
                                 'queue_id': queue_id
                             })
+                            logger.debug(f"    ✅ Added match {match_id} ({player_data['championName']})")
         
+            logger.info(f"✅ Collected {len(all_ranked_matches)} ranked matches total")
+            
             if not all_ranked_matches:
                 noted_emoji = "<:Noted:1436595827748634634>"
                 queue_text = {
@@ -1707,6 +1728,8 @@ class ProfileCommands(commands.Cog):
         
             # Sort by timestamp (oldest first)
             all_ranked_matches.sort(key=lambda x: x['timestamp'])
+            
+            logger.debug(f"📊 Starting comprehensive analytics on {len(all_ranked_matches)} matches")
         
             # COMPREHENSIVE ANALYTICS
             # ========================
@@ -1888,7 +1911,15 @@ class ProfileCommands(commands.Cog):
             peak_lp = max([lp for _, lp in lp_progression]) if lp_progression else 0
             valley_lp = min([lp for _, lp in lp_progression]) if lp_progression else 0
             
+            logger.info(f"📊 Analytics complete: {games_played} games, {wins}W-{losses}L, {total_lp_change:+d} LP")
+            logger.debug(f"  Champion pool: {len(champion_stats)} unique champions")
+            logger.debug(f"  Role distribution: {len(role_stats)} roles played")
+            logger.debug(f"  Hour distribution: {len(hourly_stats)} different hours")
+            logger.debug(f"  Streaks: Win={longest_win_streak}, Loss={longest_loss_streak}")
+            logger.debug(f"  Performance: KDA={kda_ratio:.2f}, Damage={avg_damage:.0f}, Vision={avg_vision:.1f}, CS={avg_cs:.0f}")
+            
             # Create comprehensive embed
+            logger.debug(f"🎨 Building embed with {len(champion_stats)} champions, {len(hourly_stats)} hours")
             if total_lp_change > 0:
                 embed_color = 0x00FF00  # Green for positive
                 balance_emoji = "📈"
@@ -2061,6 +2092,7 @@ class ProfileCommands(commands.Cog):
             
             # ==== LP GRAPH (QuickChart) ====
             if len(lp_progression) >= 2:
+                logger.debug(f"📈 Generating LP graph with {len(lp_progression)} data points")
                 try:
                     import urllib.parse
                     
@@ -2114,9 +2146,10 @@ class ProfileCommands(commands.Cog):
                     chart_json = json.dumps(chart_config)
                     chart_url = f"https://quickchart.io/chart?width=600&height=300&c={urllib.parse.quote(chart_json)}"
                     embed.set_image(url=chart_url)
+                    logger.debug(f"✅ LP graph URL generated ({len(chart_url)} chars)")
                     
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to generate LP graph: {e}")
+                    logger.error(f"❌ Failed to generate LP graph: {e}", exc_info=True)
         
             # Delete the "Calculating..." message before sending embed
             try:
@@ -2124,6 +2157,7 @@ class ProfileCommands(commands.Cog):
             except:
                 pass  # Ignore if already deleted
             
+            logger.info(f"✅ Sending LP analytics embed for {target_user.display_name}")
             message = await interaction.followup.send(embed=embed)
         
             # Auto-delete after 3 minutes (longer due to more info)
@@ -2134,9 +2168,20 @@ class ProfileCommands(commands.Cog):
             except Exception as e:
                 logger.warning(f"⚠️ Could not delete LP embed: {e}")
         
+        except Exception as e:
+            logger.error(f"❌ Error in /lp command: {e}", exc_info=True)
+            keep_alive_task.cancel()
+            try:
+                await interaction.followup.send(
+                    f"❌ An error occurred while calculating LP analytics. Please try again.",
+                    ephemeral=True
+                )
+            except:
+                pass
         finally:
             # Cancel keep-alive task
             keep_alive_task.cancel()
+            logger.debug(f"🏁 /lp command completed for {target_user}")
     
     @app_commands.command(name="matches", description="View recent match history from all linked accounts")
     @app_commands.describe(user="The user to view (defaults to yourself)")
