@@ -3920,7 +3920,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
                 channel = interaction.channel
                 message = await channel.fetch_message(loldle_data['embed_message_id'])
                 await message.edit(embed=embed, view=view)
-                await interaction.response.send_message(f"❌ {champion} is not the champion!", ephemeral=True)
+                await interaction.response.send_message(f"❌ Wrong guess! **{champion}** is not correct. Check the hints!", ephemeral=True)
             except:
                 await interaction.response.send_message(embed=embed, view=view)
                 if hasattr(interaction, 'message'):
@@ -4381,7 +4381,7 @@ async def quote(interaction: discord.Interaction, champion: str):
                 channel = interaction.channel
                 message = await channel.fetch_message(loldle_quote_data['embed_message_id'])
                 await message.edit(embed=embed)
-                await interaction.response.send_message(f"❌ {champion} is not the champion!", ephemeral=True)
+                await interaction.response.send_message(f"❌ Wrong guess! **{champion}** is not correct. Listen to the quote again!", ephemeral=True)
             except:
                 await interaction.response.send_message(embed=embed)
                 try:
@@ -4569,7 +4569,7 @@ async def emoji(interaction: discord.Interaction, champion: str):
                 channel = interaction.channel
                 message = await channel.fetch_message(loldle_emoji_data['embed_message_id'])
                 await message.edit(embed=embed)
-                await interaction.response.send_message(f"❌ {champion} is not the champion!", ephemeral=True)
+                await interaction.response.send_message(f"❌ Wrong guess! **{champion}** is not correct. Check the emojis!", ephemeral=True)
             except:
                 await interaction.response.send_message(embed=embed)
                 try:
@@ -4775,7 +4775,7 @@ async def ability(interaction: discord.Interaction, champion: str):
                 channel = interaction.channel
                 message = await channel.fetch_message(loldle_ability_data['embed_message_id'])
                 await message.edit(embed=embed)
-                await interaction.response.send_message(f"❌ {champion} is not the champion!", ephemeral=True)
+                await interaction.response.send_message(f"❌ Wrong guess! **{champion}** is not correct. Look at the ability icon again!", ephemeral=True)
             except:
                 await interaction.response.send_message(embed=embed)
                 try:
