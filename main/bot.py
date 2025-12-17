@@ -669,6 +669,9 @@ class MyBot(commands.Bot):
                 print("🔄 Initializing Kassalytics modules...")
                 print(f"⏰ Kassalytics init start: {datetime.datetime.now()}")
                 
+                # Primary guild for guild-specific commands
+                primary_guild = discord.Object(id=GUILD_ID)
+                
                 # Initialize database
                 db = initialize_database(DATABASE_URL)
                 if db:
@@ -774,9 +777,6 @@ class MyBot(commands.Bot):
         self.tree.interaction_check = orianna_check
         
         print("🔧 Registering command groups...")
-        
-        # Primary guild for instant updates
-        primary_guild = discord.Object(id=1153027935553454191)
         
         # Note: COG commands (ProfileCommands, StatsCommands, LeaderboardCommands) 
         # are automatically added to the tree when we call add_cog()
