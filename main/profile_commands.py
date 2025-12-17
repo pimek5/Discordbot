@@ -3250,9 +3250,6 @@ class ProfileView(discord.ui.View):
                         value="\n".join(gold_lines),
                         inline=True
                     )
-            
-            # Set thumbnail to bot avatar GIF
-            embed.set_thumbnail(url="https://cdn.discordapp.com/avatars/1274276113660645389/a_445fd12821cb7e77b1258cc379f07da7.gif?size=1024")
         else:
             embed.add_field(
                 name=f"<:Noted:1436595827748634634> Champion Mastery",
@@ -3281,6 +3278,12 @@ class ProfileView(discord.ui.View):
             # Get highest ranks
             highest_solo = max(solo_queues, key=get_rank_value) if solo_queues else None
             highest_flex = max(flex_queues, key=get_rank_value) if flex_queues else None
+            
+            # Set ranked emblem as thumbnail
+            if highest_solo:
+                solo_tier = highest_solo.get('tier', 'IRON').lower()
+                emblem_url = get_ranked_emblem(solo_tier)
+                embed.set_thumbnail(url=emblem_url)
             
             ranked_lines = []
             
@@ -3705,6 +3708,10 @@ class ProfileView(discord.ui.View):
             embed.description = "No match data available"
             return embed
         
+        # Add gold icon as thumbnail
+        gold_icon = get_common_item_icon('boots')
+        embed.set_thumbnail(url=gold_icon)
+        
         # Use helper function to filter matches
         filtered_matches = self.filter_matches_by_queue(self.all_match_details)
         
@@ -3714,9 +3721,19 @@ class ProfileView(discord.ui.View):
         
         wins = 0
         losses = 0
+        total_kills = 0
+        total_deaths = 0
+        total_assists = 0
+        total_cs = 0
+        total_damage = 0
+        total_vision = 0
+        total_duration = 0
+        mvp_count = 0
 
         # Show newest matches first (top of embed)
-        for match_data in filtered_matches[:10]:
+        display_count = min(10, len(filtered_matches))
+        
+        for match_data in filtered_matches[:display_count]:
             match = match_data['match']
             puuid = match_data['puuid']
 
@@ -3734,11 +3751,28 @@ class ProfileView(discord.ui.View):
             kills = player_data['kills']
             deaths = player_data['deaths']
             assists = player_data['assists']
+            damage = player_data.get('totalDamageDealtToChampions', 0)
+            cs = player_data.get('totalMinionsKilled', 0) + player_data.get('neutralMinionsKilled', 0)
+            vision = player_data.get('visionScore', 0)
 
             if won:
                 wins += 1
             else:
                 losses += 1
+            
+            # Accumulate stats
+            total_kills += kills
+            total_deaths += deaths
+            total_assists += assists
+            total_cs += cs
+            total_damage += damage
+            total_vision += vision
+            
+            # Check if MVP (most damage in team)
+            team_participants = [p for p in match['info']['participants'] if p['teamId'] == player_data['teamId']]
+            max_damage = max([p.get('totalDamageDealtToChampions', 0) for p in team_participants])
+            if damage >= max_damage and max_damage > 0:
+                mvp_count += 1
 
             result_emoji = get_other_emoji('win') if won else get_other_emoji('loss')
             champ_emoji = get_champion_emoji(champion)
@@ -3748,6 +3782,8 @@ class ProfileView(discord.ui.View):
             duration = match['info']['gameDuration']
             if duration > 1000:
                 duration = duration / 1000
+            
+            total_duration += duration
 
             # Format duration as MM:SS
             minutes = int(duration // 60)
@@ -3760,12 +3796,40 @@ class ProfileView(discord.ui.View):
                 inline=False
             )
 
+        # Add summary statistics
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-        embed.add_field(
-            name=f"<:Noted:1436595827748634634> Summary",
-            value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%) • {len(filtered_matches)} total games",
-            inline=False
-        )
+        games_count = wins + losses
+        
+        if games_count > 0:
+            avg_kills = total_kills / games_count
+            avg_deaths = total_deaths / games_count
+            avg_assists = total_assists / games_count
+            avg_cs = total_cs / games_count
+            avg_cs_per_min = (total_cs / total_duration) * 60 if total_duration > 0 else 0
+            avg_damage = total_damage / games_count
+            avg_vision = total_vision / games_count
+            kda_ratio = (total_kills + total_assists) / max(total_deaths, 1)
+            
+            summary_text = (
+                f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%)\n"
+                f"**Avg KDA:** {avg_kills:.1f}/{avg_deaths:.1f}/{avg_assists:.1f} ({kda_ratio:.2f})\n"
+                f"**CS/min:** {avg_cs_per_min:.1f} • **Vision:** {avg_vision:.0f}/game"
+            )
+            
+            if mvp_count > 0:
+                summary_text += f"\n**MVP Games:** {mvp_count} 🏆"
+            
+            embed.add_field(
+                name=f"<:Noted:1436595827748634634> Summary ({games_count} games)",
+                value=summary_text,
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name=f"<:Noted:1436595827748634634> Summary",
+                value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%) • {len(filtered_matches)} total games",
+                inline=False
+            )
 
         embed.set_footer(text=f"{self.target_user.display_name} • Matches View")
 
@@ -3833,11 +3897,18 @@ class ProfileView(discord.ui.View):
         # Sort by timestamp
         all_ranked_matches.sort(key=lambda x: x['timestamp'])
         
-        # Calculate LP
+        # Calculate LP with enhanced estimation
+        import random
+        
         total_lp_change = 0
         wins = 0
         losses = 0
         match_details_list = []
+        current_lp = 0
+        peak_lp = 0
+        valley_lp = 0
+        current_streak = 0
+        last_result = None
         
         for match_info in all_ranked_matches:
             player = match_info['player']
@@ -3849,14 +3920,36 @@ class ProfileView(discord.ui.View):
             deaths = player['deaths']
             assists = player['assists']
             
+            # Enhanced LP estimation (same as /lp command)
             if won:
-                lp_change = 22
+                base_lp = 22
+                variance = random.randint(-3, 4)
+                lp_change = max(15, min(28, base_lp + variance))
                 wins += 1
                 total_lp_change += lp_change
             else:
-                lp_change = -18
+                base_lp = -18
+                variance = random.randint(-3, 3)
+                lp_change = max(-22, min(-12, base_lp + variance))
                 losses += 1
                 total_lp_change += lp_change
+            
+            # Track LP progression
+            current_lp += lp_change
+            peak_lp = max(peak_lp, current_lp)
+            valley_lp = min(valley_lp, current_lp)
+            
+            # Track streak
+            if last_result is None:
+                current_streak = 1 if won else -1
+            elif (won and last_result) or (not won and not last_result):
+                if won:
+                    current_streak += 1
+                else:
+                    current_streak -= 1
+            else:
+                current_streak = 1 if won else -1
+            last_result = won
             
             queue_id = match['info']['queueId']
             queue_name = "Solo/Duo" if queue_id == 420 else "Flex"
@@ -3878,36 +3971,75 @@ class ProfileView(discord.ui.View):
         if total_lp_change > 0:
             embed_color = 0x00FF00
             balance_emoji = "📈"
+            trend_text = "Climbing"
         elif total_lp_change < 0:
             embed_color = 0xFF0000
             balance_emoji = "📉"
+            trend_text = "Falling"
         else:
             embed_color = 0x808080
             balance_emoji = "➖"
+            trend_text = "Stable"
         
         embed = discord.Embed(
-            title=f"{balance_emoji} LP Balance - Today",
-            description=f"**{self.target_user.display_name}**'s ranked performance",
+            title=f"{balance_emoji} LP Analytics - Today",
+            description=f"**{self.target_user.display_name}**'s ranked performance ({trend_text})\n*LP gains are estimated based on typical patterns*",
             color=embed_color
         )
         
-        # Add matches
-        for i, match_info in enumerate(match_details_list, 1):
-            field_value = (
-                f"{match_info['emoji']} {match_info['champ_emoji']} **{match_info['champion']}** • "
-                f"{match_info['kda']} • **{match_info['lp_change']} LP** ({match_info['queue']})"
-            )
-            embed.add_field(name=f"Game {i}", value=field_value, inline=False)
-        
-        # Summary
+        # Overview section
         lp_display = f"+{total_lp_change}" if total_lp_change > 0 else str(total_lp_change)
+        winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+        
+        overview_lines = [
+            f"**LP Change:** {lp_display} LP",
+            f"**Record:** {wins}W - {losses}L ({winrate:.1f}%)",
+            f"**Games:** {wins + losses}"
+        ]
+        
+        if peak_lp > 0 or valley_lp < 0:
+            overview_lines.append(f"**Peak:** +{peak_lp} LP | **Valley:** {valley_lp} LP")
+        
+        if current_streak > 1:
+            overview_lines.append(f"**Streak:** 🔥 {current_streak} Wins")
+        elif current_streak < -1:
+            overview_lines.append(f"**Streak:** ❄️ {abs(current_streak)} Losses")
+        
         embed.add_field(
-            name=f"<:Noted:1436595827748634634> Summary",
-            value=f"**Total:** {lp_display} LP\n**Record:** {wins}W - {losses}L\n**Games Played:** {wins + losses}",
+            name="📊 Overview",
+            value="\n".join(overview_lines),
             inline=False
         )
         
-        embed.set_footer(text=f"{self.target_user.display_name} • LP View")
+        # Match history (last 10 or all if less)
+        display_matches = match_details_list[-10:] if len(match_details_list) > 10 else match_details_list
+        match_lines = []
+        
+        for i, match_info in enumerate(reversed(display_matches), 1):
+            match_lines.append(
+                f"{match_info['emoji']} {match_info['champ_emoji']} **{match_info['champion']}** • "
+                f"{match_info['kda']} • {match_info['lp_change']} LP"
+            )
+        
+        if match_lines:
+            history_title = f"📋 Recent Matches ({len(display_matches)})"
+            if len(match_details_list) > 10:
+                history_title += f" (Showing last 10 of {len(match_details_list)})"
+            
+            embed.add_field(
+                name=history_title,
+                value="\n".join(match_lines),
+                inline=False
+            )
+        
+        # Footer
+        queue_filter_text = {
+            "all": "All Queues",
+            "soloq": "Solo/Duo Only",
+            "flex": "Flex Only"
+        }.get(self.queue_filter, "All Queues")
+        
+        embed.set_footer(text=f"{self.target_user.display_name} • {queue_filter_text} • ⚠️ LP values are estimated")
         
         return embed
     
