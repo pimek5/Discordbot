@@ -13,7 +13,7 @@ from permissions import has_admin_permissions
 
 logger = logging.getLogger('help_commands')
 
-HELP_CHANNEL_ID = 1435422230421962762
+HELP_CHANNEL_ID = 1450838645933342762
 
 class HelpView(discord.ui.View):
     """Persistent view for help commands"""
