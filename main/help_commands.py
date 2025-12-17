@@ -62,19 +62,13 @@ class HelpView(discord.ui.View):
         
         embed.add_field(
             name="/lp",
-            value="View today's LP gains/losses\n`/lp` or `/lp user:@someone`",
+            value="View LP gains/losses with comprehensive analytics\n`/lp` or `/lp user:@someone timeframe:today queue:all`\n• Timeframes: today, yesterday, 3days, week, 7days, month\n• Queue filters: all, solo, flex\n• LP progression graph, champion pool, performance metrics",
             inline=False
         )
         
         embed.add_field(
             name="/matches",
             value="View recent match history\n`/matches` or `/matches user:@someone`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="/rankupdate",
-            value="Update your Discord rank roles based on your League accounts\n`/rankupdate`",
             inline=False
         )
         
@@ -230,6 +224,24 @@ class HelpView(discord.ui.View):
         embed.add_field(
             name="/update_ranks",
             value="Update rank roles for all members (Admin only)\n`/update_ranks`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/rankupdate",
+            value="Update your Discord rank roles based on your League accounts\n`/rankupdate`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/toggle_runeforge",
+            value="Toggle RuneForge mod scanning on/off (Admin only)\n`/toggle_runeforge`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/toggle_twitter",
+            value="Toggle Twitter monitoring on/off (Admin only)\n`/toggle_twitter`",
             inline=False
         )
         
