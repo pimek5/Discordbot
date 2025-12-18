@@ -4276,7 +4276,7 @@ class ProfileView(discord.ui.View):
         self.current_view = "profile"
         self.update_navigation_buttons()
         embed = await self.create_profile_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
     @discord.ui.button(label="Statistics", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="Noted", id=1436595827748634634), row=0)
     async def stats_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4288,7 +4288,7 @@ class ProfileView(discord.ui.View):
         self.current_view = "stats"
         self.update_navigation_buttons()
         embed = await self.create_stats_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
     @discord.ui.button(label="Matches", style=discord.ButtonStyle.success, emoji="🎮", row=0)
     async def matches_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4300,7 +4300,7 @@ class ProfileView(discord.ui.View):
         self.current_view = "matches"
         self.update_navigation_buttons()
         embed = await self.create_matches_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
     @discord.ui.button(label="LP", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="LP", id=1436591112025407590), row=0)
     async def lp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4312,7 +4312,7 @@ class ProfileView(discord.ui.View):
         self.current_view = "lp"
         self.update_navigation_buttons()
         embed = await self.create_lp_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
 
     @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="Challenger", id=1439080558029443082), row=0)
     async def ranks_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4325,7 +4325,7 @@ class ProfileView(discord.ui.View):
         self.ranks_page = 0  # Reset to first page
         self.update_navigation_buttons()  # Update button visibility
         embed = await self.create_ranks_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
     @discord.ui.button(label="Graphs", style=discord.ButtonStyle.secondary, emoji="📊", row=1)
     async def graphs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4351,16 +4351,16 @@ class ProfileView(discord.ui.View):
         # Refresh current view with new filter
         if self.current_view == "profile":
             embed = await self.create_profile_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "stats":
             embed = await self.create_stats_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "graphs":
             embed, chart_file = await self.create_graphs_embed()
             if chart_file:
@@ -4369,7 +4369,7 @@ class ProfileView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, attachments=[], view=self)
         else:  # ranks
             embed = await self.create_ranks_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
     @discord.ui.button(label="Solo Q", style=discord.ButtonStyle.secondary, emoji="🏆", row=1)
     async def filter_soloq_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4379,16 +4379,16 @@ class ProfileView(discord.ui.View):
         # Refresh current view with new filter
         if self.current_view == "profile":
             embed = await self.create_profile_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "stats":
             embed = await self.create_stats_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "graphs":
             embed, chart_file = await self.create_graphs_embed()
             if chart_file:
@@ -4397,7 +4397,7 @@ class ProfileView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, attachments=[], view=self)
         else:  # ranks
             embed = await self.create_ranks_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
     @discord.ui.button(label="Flex", style=discord.ButtonStyle.secondary, emoji="👥", row=1)
     async def filter_flex_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4407,16 +4407,16 @@ class ProfileView(discord.ui.View):
         # Refresh current view with new filter
         if self.current_view == "profile":
             embed = await self.create_profile_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "stats":
             embed = await self.create_stats_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         elif self.current_view == "graphs":
             embed, chart_file = await self.create_graphs_embed()
             if chart_file:
@@ -4425,7 +4425,7 @@ class ProfileView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, attachments=[], view=self)
         else:  # ranks
             embed = await self.create_ranks_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
     @discord.ui.button(label="Normals", style=discord.ButtonStyle.secondary, emoji="🎯", row=1)
     async def filter_normals_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4494,7 +4494,7 @@ class ProfileView(discord.ui.View):
         self.ranks_page = max(0, self.ranks_page - 1)
         self.update_navigation_buttons()
         embed = await self.create_ranks_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
     @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, row=2, disabled=True)
     async def ranks_next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4508,7 +4508,7 @@ class ProfileView(discord.ui.View):
         self.ranks_page = min(total_pages - 1, self.ranks_page + 1)
         self.update_navigation_buttons()
         embed = await self.create_ranks_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
     def update_navigation_buttons(self):
         """Update navigation button states based on current view and page"""
