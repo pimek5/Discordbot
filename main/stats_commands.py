@@ -673,20 +673,46 @@ class StatsCommands(commands.Cog):
         flex1 = self._format_rank(snapshot1['ranked'], 'RANKED_FLEX_SR')
         flex2 = self._format_rank(snapshot2['ranked'], 'RANKED_FLEX_SR')
 
+        def _role_pretty(role_code: str) -> str:
+            mapping = {
+                'TOP': '🔝 Top',
+                'JUNGLE': '🌲 Jungle',
+                'MIDDLE': '🧠 Mid',
+                'BOTTOM': '🎯 ADC',
+                'UTILITY': '🛡️ Support',
+            }
+            return mapping.get(role_code, role_code.title())
+
+        def _format_roles(roles: dict, total_games: int) -> str:
+            if not roles:
+                return "—"
+            items = sorted(roles.items(), key=lambda kv: kv[1]['games'], reverse=True)[:3]
+            parts = []
+            for code, data in items:
+                pct = (data['games'] / max(total_games, 1) * 100)
+                parts.append(f"{_role_pretty(code)} ({pct:.0f}% | {data['games']}g)")
+            return " • ".join(parts)
+
+        def _format_champs(champs: dict) -> str:
+            if not champs:
+                return "—"
+            items = sorted(champs.items(), key=lambda kv: kv[1]['games'], reverse=True)[:3]
+            parts = []
+            for cname, data in items:
+                champ_emoji = get_champion_emoji(cname)
+                wr = (data['wins'] / max(data['games'], 1) * 100)
+                parts.append(f"{champ_emoji} {cname} ({data['games']}g • {wr:.0f}% WR)")
+            return " \u2022 ".join(parts)
+
         def format_player_block(user: discord.Member, snap: dict) -> str:
-            top_roles = self._format_toplist(snap['roles'], 3, "R")
-            top_champs = self._format_toplist(snap['champs'], 3, "C")
             streak = " ".join("✅" if s == 'W' else "❌" for s in snap['streak'][:8])
+            solo_txt = solo1 if user == user1 else solo2
+            flex_txt = flex1 if user == user1 else flex2
             return (
-                f"Tag: **{snap['tag']}** ({snap['region'].upper()})\n"
-                f"SoloQ: {solo1 if user == user1 else solo2}\n"
-                f"Flex: {flex1 if user == user1 else flex2}\n"
-                f"Winrate: **{snap['winrate']:.1f}%** ({snap['wins']}/{snap['games']})\n"
-                f"KDA: **{snap['avg_kda']:.2f}** ({snap['avg_kills']:.1f}/{snap['avg_deaths']:.1f}/{snap['avg_assists']:.1f}) | KP: {snap['avg_kp']*100:.1f}%\n"
-                f"CS/min: {snap['avg_cs_per_min']:.2f} | Vision: {snap['avg_vision']:.1f} | DMG: {snap['avg_damage']:,.0f}\n"
-                f"Top role: {top_roles}\n"
-                f"Top champs: {top_champs}\n"
-                f"Last games: {streak}"
+                f"🪪 **{snap['tag']}** `{snap['region'].upper()}`\n"
+                f"🏆 SoloQ: {solo_txt}\n"
+                f"👥 Flex: {flex_txt}\n"
+                f"🔥 Streak: {streak}\n"
             )
 
         categories = [
@@ -700,9 +726,10 @@ class StatsCommands(commands.Cog):
 
         def edge_line(name: str, a: float, b: float) -> str:
             if abs(a - b) < 0.01:
-                return f"{name}: tie"
+                return f"➖ {name}: tie"
             winner = user1 if a > b else user2
-            return f"{name}: {winner.display_name} ({a:.2f} vs {b:.2f})"
+            medal = "🏆" if winner == user1 else "🥇"
+            return f"{medal} {name}: {winner.display_name} ({a:.2f} vs {b:.2f})"
 
         edges = "\n".join(edge_line(n, a, b) for n, a, b in categories)
 
@@ -714,23 +741,48 @@ class StatsCommands(commands.Cog):
         }.get(queue_filter, 'Ranked')
 
         embed = discord.Embed(
-            title=f"⚔️ Player comparison ({queue_label}, last {games} games)",
+            title=f"⚔️ Player Comparison",
+            description=f"{queue_label} • last {games} games",
             color=0x1F8EFA
         )
 
-        embed.add_field(
-            name=f"👤 {user1.display_name}",
-            value=format_player_block(user1, snapshot1),
-            inline=False
-        )
+        # Header blocks for each player (side by side)
+        embed.add_field(name=f"👤 {user1.display_name}", value=format_player_block(user1, snapshot1), inline=True)
+        embed.add_field(name=f"👤 {user2.display_name}", value=format_player_block(user2, snapshot2), inline=True)
+        # spacer
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
 
-        embed.add_field(
-            name=f"👤 {user2.display_name}",
-            value=format_player_block(user2, snapshot2),
-            inline=False
-        )
+        # Performance table in a code block for readability
+        def _fmt(v, kind="num"):
+            if kind == "pct":
+                return f"{v:5.1f}%"
+            if kind == "num":
+                return f"{v:5.2f}"
+            if kind == "int":
+                return f"{int(v):5d}"
+            return str(v)
 
-        embed.add_field(name="🏆 Edges", value=edges, inline=False)
+        perf_rows = []
+        perf_rows.append(f"{'Metric':<10} | {user1.display_name:<14} | {user2.display_name:<14} | Win")
+        perf_rows.append("-" * 50)
+        perf_rows.append(f"{'WR':<10} | {_fmt(snapshot1['winrate'],'pct'):<14} | {_fmt(snapshot2['winrate'],'pct'):<14} | {'◀' if snapshot1['winrate']>snapshot2['winrate'] else '▶' if snapshot2['winrate']>snapshot1['winrate'] else '–'}")
+        perf_rows.append(f"{'KDA':<10} | {_fmt(snapshot1['avg_kda']):<14} | {_fmt(snapshot2['avg_kda']):<14} | {'◀' if snapshot1['avg_kda']>snapshot2['avg_kda'] else '▶' if snapshot2['avg_kda']>snapshot1['avg_kda'] else '–'}")
+        perf_rows.append(f"{'KP':<10} | {_fmt(snapshot1['avg_kp']*100,'pct'):<14} | {_fmt(snapshot2['avg_kp']*100,'pct'):<14} | {'◀' if snapshot1['avg_kp']>snapshot2['avg_kp'] else '▶' if snapshot2['avg_kp']>snapshot1['avg_kp'] else '–'}")
+        perf_rows.append(f"{'CS/min':<10} | {_fmt(snapshot1['avg_cs_per_min']):<14} | {_fmt(snapshot2['avg_cs_per_min']):<14} | {'◀' if snapshot1['avg_cs_per_min']>snapshot2['avg_cs_per_min'] else '▶' if snapshot2['avg_cs_per_min']>snapshot1['avg_cs_per_min'] else '–'}")
+        perf_rows.append(f"{'Vision':<10} | {_fmt(snapshot1['avg_vision']):<14} | {_fmt(snapshot2['avg_vision']):<14} | {'◀' if snapshot1['avg_vision']>snapshot2['avg_vision'] else '▶' if snapshot2['avg_vision']>snapshot1['avg_vision'] else '–'}")
+        perf_rows.append(f"{'DMG':<10} | {snapshot1['avg_damage']:>10,.0f}     | {snapshot2['avg_damage']:>10,.0f}     | {'◀' if snapshot1['avg_damage']>snapshot2['avg_damage'] else '▶' if snapshot2['avg_damage']>snapshot1['avg_damage'] else '–'}")
+        table = "\n".join(perf_rows)
+        embed.add_field(name="📈 Performance", value=f"```\n{table}\n```", inline=False)
+
+        # Top roles/champs
+        embed.add_field(name="🧭 Top Roles", value=_format_roles(snapshot1['roles'], snapshot1['games']), inline=True)
+        embed.add_field(name="🧭 Top Roles", value=_format_roles(snapshot2['roles'], snapshot2['games']), inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        embed.add_field(name="🏆 Top Champs", value=_format_champs(snapshot1['champs']), inline=True)
+        embed.add_field(name="🏆 Top Champs", value=_format_champs(snapshot2['champs']), inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+
+        embed.add_field(name="🏅 Edges", value=edges, inline=False)
         embed.set_footer(text=f"Requested by {interaction.user.name}")
 
         message = await interaction.followup.send(embed=embed)
