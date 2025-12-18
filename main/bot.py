@@ -5946,6 +5946,32 @@ async def run_bot_with_retry():
             print(f"🚀 Starting Discord bot (attempt {attempt}/{max_retries})...")
             await bot.start(os.getenv("BOT_TOKEN"))
             break  # If successful, exit loop
+        except discord.errors.HTTPException as e:
+            # Handle rate limiting (429) specifically
+            if e.status == 429:
+                # Extract retry-after from response if available
+                retry_after = 60  # Default to 60 seconds
+                if hasattr(e, 'retry_after'):
+                    retry_after = max(e.retry_after, 60)
+                else:
+                    # For global rate limits, wait longer
+                    retry_after = 300  # 5 minutes for global rate limit
+                
+                print(f"⚠️ Rate limited (429) on attempt {attempt}/{max_retries}")
+                print(f"⏳ Waiting {retry_after:.0f} seconds before retry (Discord global rate limit)...")
+                await asyncio.sleep(retry_after)
+                
+                if attempt >= max_retries:
+                    print(f"❌ Failed after {max_retries} attempts due to rate limiting")
+                    print(f"💡 Check if multiple bot instances are running. Stop all instances and wait 5-10 minutes.")
+                    raise
+            else:
+                # Other HTTP errors
+                print(f"❌ HTTP error {e.status}: {e}")
+                import traceback
+                traceback.print_exc()
+                await bot.close()
+                raise
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError, aiohttp.client_exceptions.ConnectionTimeoutError) as e:
             print(f"⚠️ Connection error on attempt {attempt}/{max_retries}: {e}")
             if attempt < max_retries:
