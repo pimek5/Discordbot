@@ -301,6 +301,104 @@ class ProfileCommands(commands.Cog):
         except Exception as e:
             logger.warning("⚠️ Failed to build LP chart: %s", e)
             return None
+
+    def _build_graphs_chart(self, match_details: list) -> Optional[discord.File]:
+        """Create a combined chart image with season stats trend and LP trend."""
+        try:
+            if not match_details:
+                return None
+
+            # Prepare data for stats subplot (KDA and CS/min)
+            sample = list(reversed(match_details[:30]))
+            games = len(sample)
+            if games == 0:
+                return None
+            game_idx = list(range(1, games + 1))
+            kda_vals = []
+            cs_vals = []
+            win_mask = []
+
+            for md in sample:
+                match = md['match']
+                puuid = md['puuid']
+                participant = next((p for p in match['info']['participants'] if p.get('puuid') == puuid), None)
+                if not participant:
+                    continue
+                deaths = max(participant.get('deaths', 0), 1)
+                kda_vals.append((participant.get('kills', 0) + participant.get('assists', 0)) / deaths)
+                duration = match['info'].get('gameDuration', 0)
+                if duration > 10000:
+                    duration = duration / 1000
+                minutes = max(duration / 60, 1)
+                cs_vals.append((participant.get('totalMinionsKilled', 0) + participant.get('neutralMinionsKilled', 0)) / minutes)
+                win_mask.append(participant.get('win', False))
+
+            # Prepare data for LP subplot (estimated)
+            ranked = [m for m in match_details if m['match']['info'].get('queueId') in (420, 440)]
+            ranked = sorted(ranked, key=lambda x: x['timestamp']) if ranked else []
+            lp_progress = []
+            lp = 0
+            for md in ranked:
+                match = md['match']
+                puuid = md['puuid']
+                participant = next((p for p in match['info']['participants'] if p.get('puuid') == puuid), None)
+                if not participant:
+                    continue
+                win = participant.get('win', False)
+                delta = 20 if win else -16
+                lp += delta
+                lp_progress.append(lp)
+
+            # Build figure with two rows
+            rows = 2
+            fig, (ax1, ax2) = plt.subplots(rows, 1, figsize=(8, 6), facecolor="#2C2F33")
+            for ax in (ax1, ax2):
+                ax.set_facecolor('#23272A')
+
+            # Subplot 1: KDA and CS/min
+            if kda_vals:
+                ax1.plot(game_idx[:len(kda_vals)], kda_vals, color='#1F8EFA', marker='o', linewidth=2, label='KDA ratio')
+                ax1.set_ylabel('KDA', color='#99AAB5')
+                ax1.tick_params(axis='y', colors='#99AAB5')
+                ax1.set_xlabel('Game (old → new)', color='#99AAB5')
+                ax1.tick_params(axis='x', colors='#99AAB5')
+
+                ax1b = ax1.twinx()
+                ax1b.plot(game_idx[:len(cs_vals)], cs_vals, color='#FFD166', marker='s', linewidth=1.5, label='CS/min')
+                ax1b.set_ylabel('CS/min', color='#99AAB5')
+                ax1b.tick_params(axis='y', colors='#99AAB5')
+
+                for idx, won in enumerate(win_mask):
+                    ax1.axvspan(idx + 0.5, idx + 1.5, color='#2ecc71' if won else '#e74c3c', alpha=0.08)
+
+                ax1.grid(True, alpha=0.15, color='#99AAB5')
+                ax1.set_title('Season Trends: KDA & CS/min', color='#99AAB5')
+            else:
+                ax1.text(0.5, 0.5, 'No data for stats trend', color='#99AAB5', ha='center', va='center')
+                ax1.set_axis_off()
+
+            # Subplot 2: LP progression
+            if lp_progress and len(lp_progress) >= 2:
+                ax2.plot(range(1, len(lp_progress) + 1), lp_progress, color='#00e676', linewidth=2, marker='o')
+                ax2.axhline(0, color='#99AAB5', linestyle='--', linewidth=1)
+                ax2.set_xlabel('Ranked games (old → new)', color='#99AAB5')
+                ax2.set_ylabel('Estimated LP change', color='#99AAB5')
+                ax2.tick_params(colors='#99AAB5')
+                ax2.grid(True, alpha=0.15, color='#99AAB5')
+                ax2.set_title('Estimated LP Progression', color='#99AAB5')
+            else:
+                ax2.text(0.5, 0.5, 'Not enough ranked games for LP trend', color='#99AAB5', ha='center', va='center')
+                ax2.set_axis_off()
+
+            buf = io.BytesIO()
+            plt.tight_layout()
+            plt.savefig(buf, format='png', bbox_inches='tight')
+            buf.seek(0)
+            plt.close(fig)
+            return discord.File(buf, filename="profile_graphs.png")
+        except Exception as e:
+            logger.warning("⚠️ Failed to build combined graphs chart: %s", e)
+            return None
     
     @app_commands.command(name="link", description="Link your Riot account to Discord")
     @app_commands.describe(
@@ -1398,12 +1496,10 @@ class ProfileCommands(commands.Cog):
                     active_game = {'game': game_data, 'account': acc}
                     break
 
-            # Prebuild charts for statistics and LP views
-            stats_chart_file = self._build_stats_chart(all_match_details)
-            lp_chart_file = self._build_lp_chart(all_match_details)
-            chart_files = [f for f in [stats_chart_file, lp_chart_file] if f]
-            stats_chart_name = stats_chart_file.filename if stats_chart_file else None
-            lp_chart_name = lp_chart_file.filename if lp_chart_file else None
+            # Prebuild combined charts for Graphs view
+            graphs_chart_file = self._build_graphs_chart(all_match_details)
+            chart_files = [f for f in [graphs_chart_file] if f]
+            graphs_chart_name = graphs_chart_file.filename if graphs_chart_file else None
         
             # Create interactive view with buttons
             view = ProfileView(
@@ -1418,8 +1514,7 @@ class ProfileCommands(commands.Cog):
                 account_ranks=account_ranks,
                 active_game=active_game,
                 chart_files=chart_files,
-                stats_chart_name=stats_chart_name,
-                lp_chart_name=lp_chart_name
+                graphs_chart_name=graphs_chart_name
             )
         
             # Clear the "Calculating..." message before sending embed
@@ -2828,8 +2923,7 @@ class ProfileView(discord.ui.View):
                  user_data: dict, all_accounts: list, all_match_details: list,
                  combined_stats: dict, champ_stats: list, all_ranked_stats: list,
                  account_ranks: dict = None, active_game: dict = None,
-                 chart_files: Optional[list] = None, stats_chart_name: Optional[str] = None,
-                 lp_chart_name: Optional[str] = None):
+                 chart_files: Optional[list] = None, graphs_chart_name: Optional[str] = None):
         super().__init__(timeout=120)  # 2 minutes timeout
         self.cog = cog
         self.target_user = target_user
@@ -2846,8 +2940,7 @@ class ProfileView(discord.ui.View):
         self.ranks_page = 0  # Page for ranks view
         self.message = None  # Will store the message to delete later
         self.chart_files = chart_files or []
-        self.stats_chart_name = stats_chart_name
-        self.lp_chart_name = lp_chart_name
+        self.graphs_chart_name = graphs_chart_name
     
     async def on_timeout(self):
         """Called when the view times out - delete the message"""
@@ -3785,10 +3878,6 @@ class ProfileView(discord.ui.View):
             
             embed.add_field(name="⏱️ **Early Game**", value=f"{early_rating}\nGold lead at 10min", inline=True)
 
-        # Attach season stats chart if available
-        if getattr(self, 'stats_chart_name', None):
-            embed.set_image(url=f"attachment://{self.stats_chart_name}")
-        
         embed.set_footer(text=f"{self.target_user.display_name} • Statistics View")
         
         return embed
@@ -4139,9 +4228,6 @@ class ProfileView(discord.ui.View):
                 inline=False
             )
         
-        if getattr(self, 'lp_chart_name', None):
-            embed.set_image(url=f"attachment://{self.lp_chart_name}")
-
         # Footer
         queue_filter_text = {
             "all": "All Queues",
@@ -4150,6 +4236,22 @@ class ProfileView(discord.ui.View):
         }.get(self.queue_filter, "All Queues")
         
         embed.set_footer(text=f"{self.target_user.display_name} • {queue_filter_text} • ⚠️ LP values are estimated")
+        
+        return embed
+
+    async def create_graphs_embed(self) -> discord.Embed:
+        """Create the Graphs embed that displays all charts together."""
+        embed = discord.Embed(
+            title=f"📊 Graphs",
+            description=f"Season trends for {self.target_user.display_name}",
+            color=0x7289DA
+        )
+
+        if getattr(self, 'graphs_chart_name', None):
+            embed.set_image(url=f"attachment://{self.graphs_chart_name}")
+            embed.set_footer(text=f"{self.target_user.display_name} • Graphs View")
+        else:
+            embed.description = "No chart data available. Play some games first!"
         
         return embed
     
@@ -4200,6 +4302,18 @@ class ProfileView(discord.ui.View):
         self.update_navigation_buttons()
         embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Graphs", style=discord.ButtonStyle.secondary, emoji="📊", row=0)
+    async def graphs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Switch to graphs view containing all charts in one embed"""
+        if self.current_view == "graphs":
+            await interaction.response.defer()
+            return
+
+        self.current_view = "graphs"
+        self.update_navigation_buttons()
+        embed = await self.create_graphs_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="Challenger", id=1439080558029443082), row=0)
     async def ranks_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4229,6 +4343,8 @@ class ProfileView(discord.ui.View):
             embed = await self.create_matches_embed()
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        elif self.current_view == "graphs":
+            embed = await self.create_graphs_embed()
         else:  # ranks
             embed = await self.create_ranks_embed()
         
@@ -4248,6 +4364,8 @@ class ProfileView(discord.ui.View):
             embed = await self.create_matches_embed()
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        elif self.current_view == "graphs":
+            embed = await self.create_graphs_embed()
         else:  # ranks
             embed = await self.create_ranks_embed()
         
@@ -4267,6 +4385,8 @@ class ProfileView(discord.ui.View):
             embed = await self.create_matches_embed()
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        elif self.current_view == "graphs":
+            embed = await self.create_graphs_embed()
         else:  # ranks
             embed = await self.create_ranks_embed()
         
@@ -4286,6 +4406,8 @@ class ProfileView(discord.ui.View):
             embed = await self.create_matches_embed()
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        elif self.current_view == "graphs":
+            embed = await self.create_graphs_embed()
         else:  # ranks
             embed = await self.create_ranks_embed()
         
@@ -4305,6 +4427,8 @@ class ProfileView(discord.ui.View):
             embed = await self.create_matches_embed()
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+        elif self.current_view == "graphs":
+            embed = await self.create_graphs_embed()
         else:  # ranks
             embed = await self.create_ranks_embed()
         
