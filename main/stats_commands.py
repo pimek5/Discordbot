@@ -624,21 +624,14 @@ class StatsCommands(commands.Cog):
         except:
             pass
     
-    @app_commands.command(name="compare", description="Compare two players: form, KDA, ranks, roles, and champs")
+    @app_commands.command(name="compare", description="Compare two players: form, KDA, ranks, roles, and champs (SoloQ only)")
     @app_commands.describe(
         user1="First player",
         user2="Second player (defaults to you)",
-        games="Number of recent games to analyze (5-20)",
-        queue="Queue filter: ranked/aram/arena/all"
+        games="Number of recent games to analyze (5-20)"
     )
-    @app_commands.choices(queue=[
-        app_commands.Choice(name="Ranked (Solo/Flex)", value="ranked"),
-        app_commands.Choice(name="ARAM", value="aram"),
-        app_commands.Choice(name="Arena", value="arena"),
-        app_commands.Choice(name="All queues", value="all")
-    ])
     async def compare(self, interaction: discord.Interaction, user1: discord.Member, 
-                     user2: Optional[discord.Member] = None, games: int = 10, queue: app_commands.Choice[str] = None):
+                     user2: Optional[discord.Member] = None, games: int = 10):
         """Player vs player using recent games (winrate, KDA, KP, CS/min, roles, top champs)."""
         await interaction.response.defer()
 
