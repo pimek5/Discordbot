@@ -50,13 +50,176 @@ class StatsCommands(commands.Cog):
         self.bot = bot
         self.riot_api = riot_api
         self.guild = discord.Object(id=guild_id)
+
+    def _pick_primary_account(self, accounts: list) -> Optional[dict]:
+        """Return first verified account (prefer the one marked primary)."""
+        primary = None
+        for acc in accounts:
+            if not acc.get('verified'):
+                continue
+            if acc.get('primary_account'):
+                return acc
+            if not primary:
+                primary = acc
+        return primary
+
+    def _format_rank(self, ranked_entries: list, queue: str) -> str:
+        """Format rank string for a given queue type."""
+        entry = None
+        for r in ranked_entries or []:
+            if r.get('queueType') == queue:
+                entry = r
+                break
+        if not entry:
+            return "Unranked"
+        tier = entry.get('tier', '').title()
+        division = entry.get('rank', '')
+        lp = entry.get('leaguePoints', 0)
+        wins = entry.get('wins', 0)
+        losses = entry.get('losses', 0)
+        wr = f"{(wins / max(wins + losses, 1) * 100):.1f}%" if (wins + losses) else "--"
+        return f"{tier} {division} {lp} LP ({wr})"
+
+    def _format_toplist(self, data: dict, limit: int, label: str) -> str:
+        """Format top roles or champions for embeds."""
+        if not data:
+            return "brak danych"
+        sorted_items = sorted(data.items(), key=lambda kv: kv[1]['games'] if isinstance(kv[1], dict) else kv[1], reverse=True)
+        lines = []
+        for idx, (key, val) in enumerate(sorted_items[:limit]):
+            if isinstance(val, dict):
+                games = val.get('games', 0)
+                wins = val.get('wins', 0)
+                wr = f"{(wins / max(games, 1) * 100):.0f}%" if games else "--"
+                lines.append(f"{label} {idx+1}: {key} ({games} gier, {wr} WR)")
+            else:
+                lines.append(f"{label} {idx+1}: {key} ({val})")
+        return "\n".join(lines)
+
+    async def _collect_player_snapshot(self, account: dict, games: int, queue_filter: str) -> Optional[dict]:
+        """Fetch recent games and aggregate performance metrics for one player."""
+        puuid = account['puuid']
+        region = account['region']
+        tag = f"{account['riot_id_game_name']}#{account['riot_id_tagline']}"
+
+        match_ids = await self.riot_api.get_match_history(puuid, region, count=max(games * 2, games + 2))
+        if not match_ids:
+            return None
+
+        filtered_matches = []
+        for mid in match_ids:
+            details = await self.riot_api.get_match_details(mid, region)
+            if not details or 'info' not in details:
+                continue
+            queue_id = details['info'].get('queueId', 0)
+            if queue_filter == 'ranked' and queue_id not in (420, 440):
+                continue
+            if queue_filter == 'aram' and queue_id != 450:
+                continue
+            if queue_filter == 'arena' and queue_id not in (1700, 1710):
+                continue
+            filtered_matches.append(details)
+            if len(filtered_matches) >= games:
+                break
+
+        if not filtered_matches:
+            return None
+
+        stats_list = []
+        roles: dict = {}
+        champs: dict = {}
+        streak = []
+
+        for match in filtered_matches:
+            info = match['info']
+            participant = None
+            for p in info.get('participants', []):
+                if p.get('puuid') == puuid:
+                    participant = p
+                    break
+            if not participant:
+                continue
+
+            duration = info.get('gameDuration', 0)
+            if duration > 10000:
+                duration = duration / 1000
+            duration_minutes = max(duration / 60, 1)
+
+            team_kills = sum(pp.get('kills', 0) for pp in info.get('participants', []) if pp.get('teamId') == participant.get('teamId'))
+            kp = (participant.get('kills', 0) + participant.get('assists', 0)) / team_kills if team_kills > 0 else 0
+
+            stats_list.append({
+                'win': participant.get('win', False),
+                'kills': participant.get('kills', 0),
+                'deaths': participant.get('deaths', 0),
+                'assists': participant.get('assists', 0),
+                'damage': participant.get('totalDamageDealtToChampions', 0),
+                'cs': participant.get('totalMinionsKilled', 0) + participant.get('neutralMinionsKilled', 0),
+                'vision': participant.get('visionScore', 0),
+                'kp': kp,
+                'duration_min': duration_minutes,
+                'champion_id': participant.get('championId'),
+                'role': participant.get('teamPosition', 'UTILITY') or 'UTILITY'
+            })
+
+            role = stats_list[-1]['role']
+            roles[role] = roles.get(role, 0) + 1
+
+            cid = stats_list[-1]['champion_id']
+            cname = CHAMPION_ID_TO_NAME.get(cid, f"Champ {cid}")
+            if cname not in champs:
+                champs[cname] = {'games': 0, 'wins': 0}
+            champs[cname]['games'] += 1
+            if stats_list[-1]['win']:
+                champs[cname]['wins'] += 1
+
+            streak.append('W' if stats_list[-1]['win'] else 'L')
+
+        total_games = len(stats_list)
+        wins = sum(1 for s in stats_list if s['win'])
+        losses = total_games - wins
+        winrate = wins / total_games * 100 if total_games else 0
+
+        avg_kills = sum(s['kills'] for s in stats_list) / total_games
+        avg_deaths = sum(s['deaths'] for s in stats_list) / total_games
+        avg_assists = sum(s['assists'] for s in stats_list) / total_games
+        avg_kda = (avg_kills + avg_assists) / avg_deaths if avg_deaths > 0 else (avg_kills + avg_assists)
+        avg_damage = sum(s['damage'] for s in stats_list) / total_games
+        avg_cs = sum(s['cs'] for s in stats_list) / total_games
+        avg_vision = sum(s['vision'] for s in stats_list) / total_games
+        avg_cs_per_min = sum(s['cs'] / s['duration_min'] for s in stats_list) / total_games
+        avg_kp = sum(s['kp'] for s in stats_list) / total_games if total_games else 0
+
+        ranked_entries = await self.riot_api.get_ranked_stats_by_puuid(puuid, region) or []
+
+        return {
+            'tag': tag,
+            'region': region,
+            'games': total_games,
+            'wins': wins,
+            'losses': losses,
+            'winrate': winrate,
+            'avg_kills': avg_kills,
+            'avg_deaths': avg_deaths,
+            'avg_assists': avg_assists,
+            'avg_kda': avg_kda,
+            'avg_damage': avg_damage,
+            'avg_cs': avg_cs,
+            'avg_cs_per_min': avg_cs_per_min,
+            'avg_vision': avg_vision,
+            'avg_kp': avg_kp,
+            'roles': {k: {'games': v, 'wins': 0} for k, v in roles.items()},
+            'champs': champs,
+            'streak': streak[:8],
+            'ranked': ranked_entries,
+        }
     
     @app_commands.command(name="stats", description="View your recent match statistics and performance")
     @app_commands.describe(
         user="The user to check (defaults to yourself)",
-        games="Number of recent games to analyze (5-20, default: 10)"
+        games="Number of games to analyze (5-100, default: 60)"
     )
-    async def stats(self, interaction: discord.Interaction, user: Optional[discord.Member] = None, games: int = 10):
+    async def stats(self, interaction: discord.Interaction, user: Optional[discord.Member] = None, games: int = 60):
         """Show recent match statistics with performance graphs"""
         await interaction.response.defer()
         
@@ -75,14 +238,14 @@ class StatsCommands(commands.Cog):
         
         try:
             # Validate games parameter
-            if games < 5 or games > 20:
+            if games < 5 or games > 100:
                 keep_alive_task.cancel()
                 # Remove loading message before error
                 try:
                     await interaction.delete_original_response()
                 except Exception:
                     pass
-                await interaction.followup.send("❌ Games must be between 5 and 20!", ephemeral=True)
+                await interaction.followup.send("❌ Games must be between 5 and 100!", ephemeral=True)
                 return
             
             target = user or interaction.user
@@ -452,140 +615,127 @@ class StatsCommands(commands.Cog):
         except:
             pass
     
-    @app_commands.command(name="compare", description="Compare champion mastery between two players")
+    @app_commands.command(name="compare", description="Compare two players: form, KDA, ranks, roles, and champs")
     @app_commands.describe(
-        champion="The champion to compare",
         user1="First player",
-        user2="Second player (defaults to yourself)"
+        user2="Second player (defaults to you)",
+        games="Number of recent games to analyze (5-20)",
+        queue="Queue filter: ranked/aram/arena/all"
     )
-    async def compare(self, interaction: discord.Interaction, champion: str, 
-                     user1: discord.Member, user2: Optional[discord.Member] = None):
-        """Compare two players' mastery on a champion"""
+    @app_commands.choices(queue=[
+        app_commands.Choice(name="Ranked (Solo/Flex)", value="ranked"),
+        app_commands.Choice(name="ARAM", value="aram"),
+        app_commands.Choice(name="Arena", value="arena"),
+        app_commands.Choice(name="All queues", value="all")
+    ])
+    async def compare(self, interaction: discord.Interaction, user1: discord.Member, 
+                     user2: Optional[discord.Member] = None, games: int = 10, queue: app_commands.Choice[str] = None):
+        """Player vs player using recent games (winrate, KDA, KP, CS/min, roles, top champs)."""
         await interaction.response.defer()
-        
+
         user2 = user2 or interaction.user
+        queue_filter = queue.value if queue else 'ranked'
+        games = max(5, min(games, 20))
+
         db = get_db()
-        
-        # Get users
         db_user1 = db.get_user_by_discord_id(user1.id)
         db_user2 = db.get_user_by_discord_id(user2.id)
-        
+
         if not db_user1:
             await interaction.followup.send(f"❌ {user1.mention} has not linked a Riot account!", ephemeral=True)
             return
-        
         if not db_user2:
             await interaction.followup.send(f"❌ {user2.mention} has not linked a Riot account!", ephemeral=True)
             return
-        
-        # Find champion
-        champ_result = find_champion_id(champion)
-        if not champ_result:
-            matching = [(cid, cn) for cid, cn in CHAMPION_ID_TO_NAME.items() if champion.lower() in cn.lower()]
-            if len(matching) > 1:
-                options = ", ".join([cn for _, cn in matching[:5]])
-                await interaction.followup.send(
-                    f"❌ Multiple champions found: **{options}**\nPlease be more specific!",
-                    ephemeral=True
-                )
-            else:
-                await interaction.followup.send(f"❌ Champion **{champion}** not found!", ephemeral=True)
+
+        acc1 = self._pick_primary_account(db.get_user_accounts(db_user1['id']))
+        acc2 = self._pick_primary_account(db.get_user_accounts(db_user2['id']))
+
+        if not acc1:
+            await interaction.followup.send(f"❌ {user1.mention} has no verified account!", ephemeral=True)
             return
-        
-        champion_id, champion_name = champ_result
-        
-        # Get mastery stats for both users (summed across all accounts)
-        conn = db.get_connection()
-        try:
-            with conn.cursor() as cur:
-                # User 1 total mastery
-                cur.execute("""
-                    SELECT 
-                        SUM(score) as total_points,
-                        MAX(level) as max_level
-                    FROM user_champion_stats
-                    WHERE user_id = %s AND champion_id = %s
-                """, (db_user1['id'], champion_id))
-                result1 = cur.fetchone()
-                points1 = result1[0] if result1 and result1[0] else 0
-                level1 = result1[1] if result1 and result1[1] else 0
-                
-                # User 2 total mastery
-                cur.execute("""
-                    SELECT 
-                        SUM(score) as total_points,
-                        MAX(level) as max_level
-                    FROM user_champion_stats
-                    WHERE user_id = %s AND champion_id = %s
-                """, (db_user2['id'], champion_id))
-                result2 = cur.fetchone()
-                points2 = result2[0] if result2 and result2[0] else 0
-                level2 = result2[1] if result2 and result2[1] else 0
-        finally:
-            db.return_connection(conn)
-        
-        # Determine winner
-        winner = user1 if points1 > points2 else user2 if points2 > points1 else None
-        difference = abs(points1 - points2)
-        
-        # Get champion emoji
-        champ_emoji = get_champion_emoji(champion_name)
-        
-        # Create embed
+        if not acc2:
+            await interaction.followup.send(f"❌ {user2.mention} has no verified account!", ephemeral=True)
+            return
+
+        snapshot1 = await self._collect_player_snapshot(acc1, games, queue_filter)
+        snapshot2 = await self._collect_player_snapshot(acc2, games, queue_filter)
+
+        if not snapshot1:
+            await interaction.followup.send(f"❌ No matches found for {user1.mention} with this filter.", ephemeral=True)
+            return
+        if not snapshot2:
+            await interaction.followup.send(f"❌ No matches found for {user2.mention} with this filter.", ephemeral=True)
+            return
+
+        solo1 = self._format_rank(snapshot1['ranked'], 'RANKED_SOLO_5x5')
+        solo2 = self._format_rank(snapshot2['ranked'], 'RANKED_SOLO_5x5')
+        flex1 = self._format_rank(snapshot1['ranked'], 'RANKED_FLEX_SR')
+        flex2 = self._format_rank(snapshot2['ranked'], 'RANKED_FLEX_SR')
+
+        def format_player_block(user: discord.Member, snap: dict) -> str:
+            top_roles = self._format_toplist(snap['roles'], 3, "R")
+            top_champs = self._format_toplist(snap['champs'], 3, "C")
+            streak = " ".join("✅" if s == 'W' else "❌" for s in snap['streak'][:8])
+            return (
+                f"Tag: **{snap['tag']}** ({snap['region'].upper()})\n"
+                f"SoloQ: {solo1 if user == user1 else solo2}\n"
+                f"Flex: {flex1 if user == user1 else flex2}\n"
+                f"Winrate: **{snap['winrate']:.1f}%** ({snap['wins']}/{snap['games']})\n"
+                f"KDA: **{snap['avg_kda']:.2f}** ({snap['avg_kills']:.1f}/{snap['avg_deaths']:.1f}/{snap['avg_assists']:.1f}) | KP: {snap['avg_kp']*100:.1f}%\n"
+                f"CS/min: {snap['avg_cs_per_min']:.2f} | Vision: {snap['avg_vision']:.1f} | DMG: {snap['avg_damage']:,.0f}\n"
+                f"Top role: {top_roles}\n"
+                f"Top champs: {top_champs}\n"
+                f"Last games: {streak}"
+            )
+
+        categories = [
+            ("Winrate", snapshot1['winrate'], snapshot2['winrate']),
+            ("KDA", snapshot1['avg_kda'], snapshot2['avg_kda']),
+            ("KP%", snapshot1['avg_kp']*100, snapshot2['avg_kp']*100),
+            ("CS/min", snapshot1['avg_cs_per_min'], snapshot2['avg_cs_per_min']),
+            ("Vision", snapshot1['avg_vision'], snapshot2['avg_vision']),
+            ("DMG", snapshot1['avg_damage'], snapshot2['avg_damage']),
+        ]
+
+        def edge_line(name: str, a: float, b: float) -> str:
+            if abs(a - b) < 0.01:
+                return f"{name}: tie"
+            winner = user1 if a > b else user2
+            return f"{name}: {winner.display_name} ({a:.2f} vs {b:.2f})"
+
+        edges = "\n".join(edge_line(n, a, b) for n, a, b in categories)
+
+        queue_label = {
+            'ranked': 'Ranked',
+            'aram': 'ARAM',
+            'arena': 'Arena',
+            'all': 'All queues'
+        }.get(queue_filter, 'Ranked')
+
         embed = discord.Embed(
-            title=f"{champ_emoji} {champion_name} Mastery Comparison",
+            title=f"⚔️ Player comparison ({queue_label}, last {games} games)",
             color=0x1F8EFA
         )
-        
-        # Format level emojis
-        level1_emoji = "🔟" if level1 >= 10 else f"{level1}⭐" if level1 >= 7 else f"{level1}"
-        level2_emoji = "🔟" if level2 >= 10 else f"{level2}⭐" if level2 >= 7 else f"{level2}"
-        
+
         embed.add_field(
             name=f"👤 {user1.display_name}",
-            value=f"{level1_emoji} **Level {level1}**\n**{points1:,}** points",
-            inline=True
+            value=format_player_block(user1, snapshot1),
+            inline=False
         )
-        
-        embed.add_field(
-            name="⚔️ VS",
-            value="\u200b",
-            inline=True
-        )
-        
+
         embed.add_field(
             name=f"👤 {user2.display_name}",
-            value=f"{level2_emoji} **Level {level2}**\n**{points2:,}** points",
-            inline=True
+            value=format_player_block(user2, snapshot2),
+            inline=False
         )
-        
-        # Winner
-        if winner:
-            if difference >= 1000000:
-                diff_str = f"{difference/1000000:.2f}M"
-            elif difference >= 1000:
-                diff_str = f"{difference/1000:.0f}K"
-            else:
-                diff_str = f"{difference:,}"
-            
-            embed.add_field(
-                name="🏆 Winner",
-                value=f"{winner.mention} by **{diff_str}** points!",
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="🤝 Result",
-                value="It's a tie!",
-                inline=False
-            )
-        
+
+        embed.add_field(name="🏆 Edges", value=edges, inline=False)
         embed.set_footer(text=f"Requested by {interaction.user.name}")
-        
+
         message = await interaction.followup.send(embed=embed)
-        
-        # Auto-delete after 60 seconds
-        await asyncio.sleep(60)
+
+        await asyncio.sleep(90)
         try:
             await message.delete()
         except:

@@ -12,6 +12,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 import logging
 import asyncio
+import io
+
+import matplotlib
+matplotlib.use('Agg')  # Render charts headlessly
+import matplotlib.pyplot as plt
 
 from database import get_db
 from riot_api import RiotAPI, RIOT_REGIONS, get_champion_icon_url, get_rank_icon_url, CHAMPION_ID_TO_NAME
@@ -191,6 +196,111 @@ class ProfileCommands(commands.Cog):
         self.bot = bot
         self.riot_api = riot_api
         self.guild = discord.Object(id=guild_id)
+
+    def _build_stats_chart(self, match_details: list) -> Optional[discord.File]:
+        """Create a compact season stats chart (KDA + CS/min trend)."""
+        try:
+            if not match_details:
+                return None
+
+            # Oldest -> newest sample (up to 30 games for readability)
+            sample = list(reversed(match_details[:30]))
+            games = len(sample)
+            game_idx = list(range(1, games + 1))
+            kda_vals = []
+            cs_vals = []
+            win_mask = []
+
+            for md in sample:
+                match = md['match']
+                puuid = md['puuid']
+                participant = next((p for p in match['info']['participants'] if p.get('puuid') == puuid), None)
+                if not participant:
+                    continue
+                deaths = max(participant.get('deaths', 0), 1)
+                kda_vals.append((participant.get('kills', 0) + participant.get('assists', 0)) / deaths)
+                duration = match['info'].get('gameDuration', 0)
+                if duration > 10000:
+                    duration = duration / 1000
+                minutes = max(duration / 60, 1)
+                cs_vals.append((participant.get('totalMinionsKilled', 0) + participant.get('neutralMinionsKilled', 0)) / minutes)
+                win_mask.append(participant.get('win', False))
+
+            if not kda_vals:
+                return None
+
+            fig, ax1 = plt.subplots(figsize=(8, 3), facecolor="#2C2F33")
+            ax1.set_facecolor('#23272A')
+            ax1.plot(game_idx[:len(kda_vals)], kda_vals, color='#1F8EFA', marker='o', linewidth=2, label='KDA ratio')
+            ax1.set_ylabel('KDA', color='#99AAB5')
+            ax1.tick_params(axis='y', colors='#99AAB5')
+            ax1.set_xlabel('Game (old → new)', color='#99AAB5')
+            ax1.tick_params(axis='x', colors='#99AAB5')
+
+            ax2 = ax1.twinx()
+            ax2.plot(game_idx[:len(cs_vals)], cs_vals, color='#FFD166', marker='s', linewidth=1.5, label='CS/min')
+            ax2.set_ylabel('CS/min', color='#99AAB5')
+            ax2.tick_params(axis='y', colors='#99AAB5')
+
+            # Highlight wins/losses on background bars
+            for idx, won in enumerate(win_mask):
+                ax1.axvspan(idx + 0.5, idx + 1.5, color='#2ecc71' if won else '#e74c3c', alpha=0.08)
+
+            ax1.grid(True, alpha=0.15, color='#99AAB5')
+            fig.legend(loc='upper left', facecolor='#2C2F33', edgecolor='#2C2F33', labelcolor='#99AAB5')
+
+            buf = io.BytesIO()
+            plt.tight_layout()
+            plt.savefig(buf, format='png', bbox_inches='tight')
+            buf.seek(0)
+            plt.close(fig)
+            return discord.File(buf, filename="profile_stats_chart.png")
+        except Exception as e:
+            logger.warning("⚠️ Failed to build stats chart: %s", e)
+            return None
+
+    def _build_lp_chart(self, match_details: list) -> Optional[discord.File]:
+        """Create a simple LP trend chart using ranked matches (estimated LP deltas)."""
+        try:
+            ranked = [m for m in match_details if m['match']['info'].get('queueId') in (420, 440)]
+            if len(ranked) < 2:
+                return None
+
+            ranked = sorted(ranked, key=lambda x: x['timestamp'])
+            lp_progress = []
+            lp = 0
+            for md in ranked:
+                match = md['match']
+                puuid = md['puuid']
+                participant = next((p for p in match['info']['participants'] if p.get('puuid') == puuid), None)
+                if not participant:
+                    continue
+                win = participant.get('win', False)
+                delta = 20 if win else -16  # deterministic estimate
+                lp += delta
+                lp_progress.append(lp)
+
+            if not lp_progress:
+                return None
+
+            fig, ax = plt.subplots(figsize=(7, 3), facecolor="#2C2F33")
+            ax.set_facecolor('#23272A')
+            ax.plot(range(1, len(lp_progress) + 1), lp_progress, color='#00e676', linewidth=2, marker='o')
+            ax.axhline(0, color='#99AAB5', linestyle='--', linewidth=1)
+            ax.set_xlabel('Ranked games (old → new)', color='#99AAB5')
+            ax.set_ylabel('Estimated LP change', color='#99AAB5')
+            ax.tick_params(colors='#99AAB5')
+            ax.grid(True, alpha=0.15, color='#99AAB5')
+
+            buf = io.BytesIO()
+            plt.tight_layout()
+            plt.savefig(buf, format='png', bbox_inches='tight')
+            buf.seek(0)
+            plt.close(fig)
+            return discord.File(buf, filename="profile_lp_chart.png")
+        except Exception as e:
+            logger.warning("⚠️ Failed to build LP chart: %s", e)
+            return None
     
     @app_commands.command(name="link", description="Link your Riot account to Discord")
     @app_commands.describe(
@@ -794,15 +904,15 @@ class ProfileCommands(commands.Cog):
             try:
                 logger.info(f"📊 Fetching match history for {len(visible_accounts)} visible accounts...")
             
-                # First, collect ALL match IDs from visible accounts
+                # First, collect a deep set of match IDs for visible accounts (aim for season-wide coverage)
                 all_match_ids_with_context = []  # [(match_id, puuid, region), ...]
             
                 for acc in visible_accounts:
                     if not acc.get('verified'):
                         continue
                 
-                    # Get match IDs for this account
-                    match_ids = await self.riot_api.get_match_history(acc['puuid'], acc['region'], count=30)
+                    # Grab up to 100 games (riot cap) to approximate season history
+                    match_ids = await self.riot_api.get_match_history(acc['puuid'], acc['region'], count=100)
                     if match_ids:
                         logger.info(f"  Found {len(match_ids)} match IDs for {acc['riot_id_game_name']}")
                         for match_id in match_ids:
@@ -810,9 +920,9 @@ class ProfileCommands(commands.Cog):
             
                 logger.info(f"📋 Total match IDs collected: {len(all_match_ids_with_context)}")
             
-                # Fetch match details and sort by timestamp
+                # Fetch match details (cap at 80 for performance) and sort by timestamp
                 temp_matches = []
-                for match_id, puuid, region in all_match_ids_with_context[:40]:  # Fetch up to 40 to ensure we get 20 valid ones
+                for match_id, puuid, region in all_match_ids_with_context[:80]:
                     match_details = await self.riot_api.get_match_details(match_id, region)
                     if match_details:
                         temp_matches.append({
@@ -821,9 +931,9 @@ class ProfileCommands(commands.Cog):
                             'timestamp': match_details['info']['gameCreation']
                         })
             
-                # Sort by timestamp (newest first) and take top 20
+                # Sort by timestamp (newest first) and take top 80
                 temp_matches.sort(key=lambda x: x['timestamp'], reverse=True)
-                all_match_details = temp_matches[:20]
+                all_match_details = temp_matches[:80]
             
                 # Collect recently played champions (first 3 unique)
                 for match_data in all_match_details[:10]:
@@ -987,8 +1097,8 @@ class ProfileCommands(commands.Cog):
                 if combined_stats and combined_stats.get('total_games', 0) > 0:
                     total_games = combined_stats['total_games']
                 
-                    # Calculate averages for recent 20 games (or less if fewer games)
-                    recent_games_count = min(20, total_games)
+                    # Calculate averages across the season sample (all fetched games)
+                    recent_games_count = total_games
                     avg_kills = combined_stats['kills'] / recent_games_count
                     avg_deaths = combined_stats['deaths'] / recent_games_count
                     avg_assists = combined_stats['assists'] / recent_games_count
@@ -1007,31 +1117,26 @@ class ProfileCommands(commands.Cog):
                     embed.set_thumbnail(url=vision_icon)
                     
                     embed.add_field(
-                        name="📊 Recent Performance",
+                        name="📊 Season Performance",
                         value="\n".join(perf_lines),
                         inline=True
                     )
                 
                     # 2. WIN RATE STATISTICS
                     overall_wr = (combined_stats['wins'] / total_games * 100) if total_games > 0 else 0
-                
-                    # Recent 20 games winrate - use simple approach with available data
-                    recent_20_count = min(20, total_games)
-                    # If we have 20 or fewer games, use overall wins, otherwise approximate
-                    if total_games <= 20:
-                        recent_wins = combined_stats['wins']
-                    else:
-                        # Count wins in first 20 matches from our details
-                        recent_wins = 0
-                        for i, match_data in enumerate(all_match_details[:20]):
-                            match = match_data['match']
-                            puuid = match_data['puuid']
-                            for participant in match['info'].get('participants', []):
-                                if participant.get('puuid') == puuid and participant.get('win'):
-                                    recent_wins += 1
-                                    break
-                
-                    recent_wr = (recent_wins / recent_20_count * 100) if recent_20_count > 0 else 0
+
+                    # Recent sample (up to 20 most recent games) for trend
+                    recent_sample = min(20, total_games)
+                    recent_wins = 0
+                    for match_data in all_match_details[:recent_sample]:
+                        match = match_data['match']
+                        puuid = match_data['puuid']
+                        for participant in match['info'].get('participants', []):
+                            if participant.get('puuid') == puuid and participant.get('win'):
+                                recent_wins += 1
+                                break
+
+                    recent_wr = (recent_wins / recent_sample * 100) if recent_sample > 0 else 0
                 
                     # Best champion winrate (min 5 games)
                     best_champ_wr = 0
@@ -1044,8 +1149,8 @@ class ProfileCommands(commands.Cog):
                                 best_champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f"Champion {champ_id}")
                 
                     wr_lines = [
-                        f"**Overall:** {overall_wr:.0f}% ({combined_stats['wins']}W/{combined_stats['losses']}L)",
-                        f"**Recent 20:** {recent_wr:.0f}% ({recent_wins}W/{recent_20_count-recent_wins}L)"
+                        f"**Season:** {overall_wr:.0f}% ({combined_stats['wins']}W/{combined_stats['losses']}L)",
+                        f"**Recent {recent_sample}:** {recent_wr:.0f}% ({recent_wins}W/{recent_sample-recent_wins}L)"
                     ]
                 
                     if best_champ_name != "N/A":
@@ -1184,7 +1289,7 @@ class ProfileCommands(commands.Cog):
                 embed.set_thumbnail(url="https://cdn.discordapp.com/avatars/1274276113660645389/a_445fd12821cb7e77b1258cc379f07da7.gif?size=1024")
             else:
                 embed.add_field(
-                    name=f"<:Noted:1436595827748634634> Champion Mastery",
+                    name=f"📘 Champion Mastery",
                     value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
                     inline=False
                 )
@@ -1292,6 +1397,13 @@ class ProfileCommands(commands.Cog):
                 if game_data:
                     active_game = {'game': game_data, 'account': acc}
                     break
+
+            # Prebuild charts for statistics and LP views
+            stats_chart_file = self._build_stats_chart(all_match_details)
+            lp_chart_file = self._build_lp_chart(all_match_details)
+            chart_files = [f for f in [stats_chart_file, lp_chart_file] if f]
+            stats_chart_name = stats_chart_file.filename if stats_chart_file else None
+            lp_chart_name = lp_chart_file.filename if lp_chart_file else None
         
             # Create interactive view with buttons
             view = ProfileView(
@@ -1304,7 +1416,10 @@ class ProfileCommands(commands.Cog):
                 champ_stats=champ_stats,
                 all_ranked_stats=all_ranked_stats,
                 account_ranks=account_ranks,
-                active_game=active_game
+                active_game=active_game,
+                chart_files=chart_files,
+                stats_chart_name=stats_chart_name,
+                lp_chart_name=lp_chart_name
             )
         
             # Clear the "Calculating..." message before sending embed
@@ -1313,7 +1428,7 @@ class ProfileCommands(commands.Cog):
             except:
                 pass  # Ignore if already deleted
             
-            message = await interaction.followup.send(embed=embed, view=view)
+            message = await interaction.followup.send(embed=embed, view=view, files=chart_files if chart_files else None)
             view.message = message  # Store message for deletion on timeout
         
         finally:
@@ -1791,7 +1906,7 @@ class ProfileCommands(commands.Cog):
             logger.info(f"✅ Collected {len(all_ranked_matches)} ranked matches total")
             
             if not all_ranked_matches:
-                noted_emoji = "<:Noted:1436595827748634634>"
+                noted_emoji = "📘"
                 queue_text = {
                     "all": "ranked",
                     "solo": "Solo/Duo",
@@ -2493,7 +2608,7 @@ class ProfileCommands(commands.Cog):
                 inline=False
             )
         
-        # Summary stats - use custom noted emoji
+        # Summary stats - use friendly emoji
         avg_kda = f"{total_kills/len(all_matches):.1f}/{total_deaths/len(all_matches):.1f}/{total_assists/len(all_matches):.1f}"
         kda_ratio = (total_kills + total_assists) / max(total_deaths, 1)
         winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
@@ -2501,7 +2616,7 @@ class ProfileCommands(commands.Cog):
         avg_cs_min = (total_cs / total_duration) if total_duration > 0 else 0
         avg_damage = total_damage / len(all_matches) if all_matches else 0
         
-        noted_emoji = "<:Noted:1436595827748634634>"
+        noted_emoji = "📘"
         
         summary_text = (
             f"**Record:** {wins}W - {losses}L ({winrate:.0f}%)\n"
@@ -2712,7 +2827,9 @@ class ProfileView(discord.ui.View):
     def __init__(self, cog: 'ProfileCommands', target_user: discord.User, 
                  user_data: dict, all_accounts: list, all_match_details: list,
                  combined_stats: dict, champ_stats: list, all_ranked_stats: list,
-                 account_ranks: dict = None, active_game: dict = None):
+                 account_ranks: dict = None, active_game: dict = None,
+                 chart_files: Optional[list] = None, stats_chart_name: Optional[str] = None,
+                 lp_chart_name: Optional[str] = None):
         super().__init__(timeout=120)  # 2 minutes timeout
         self.cog = cog
         self.target_user = target_user
@@ -2728,6 +2845,9 @@ class ProfileView(discord.ui.View):
         self.queue_filter = "all"  # Filter for all views: all, soloq, flex, normals, other
         self.ranks_page = 0  # Page for ranks view
         self.message = None  # Will store the message to delete later
+        self.chart_files = chart_files or []
+        self.stats_chart_name = stats_chart_name
+        self.lp_chart_name = lp_chart_name
     
     async def on_timeout(self):
         """Called when the view times out - delete the message"""
@@ -3252,7 +3372,7 @@ class ProfileView(discord.ui.View):
                     )
         else:
             embed.add_field(
-                name=f"<:Noted:1436595827748634634> Champion Mastery",
+                name=f"📘 Champion Mastery",
                 value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
                 inline=False
             )
@@ -3360,7 +3480,7 @@ class ProfileView(discord.ui.View):
     async def create_stats_embed(self) -> discord.Embed:
         """Create statistics embed with detailed performance data"""
         # Use direct emoji format instead of get_other_emoji
-        noted_emoji = "<:Noted:1436595827748634634>"
+        noted_emoji = "📘"
         
         embed = discord.Embed(
             title=f"{noted_emoji} **{self.target_user.display_name}'s Statistics**",
@@ -3391,18 +3511,15 @@ class ProfileView(discord.ui.View):
         embed.set_thumbnail(url=kills_icon)
         
         embed.add_field(
-            name=f"⚔️ **Combat Stats** ({min(20, total_games)} games)",
+            name=f"⚔️ **Combat Stats** ({total_games} games)",
             value=(
                 f"💀 **Average KDA:** {avg_kills:.1f} / {avg_deaths:.1f} / {avg_assists:.1f}\n"
                 f"**KDA Ratio:** {kda_str}\n"
                 f"🗡️ **CS/min:** {avg_cs_per_min:.1f}\n"
                 f"👁️ **Vision Score:** {avg_vision:.1f}/game"
             ),
-            inline=False
+            inline=True
         )
-        
-        # Spacer
-        embed.add_field(name="\u200b", value="\u200b", inline=False)
         
         # === WIN RATE ===
         overall_wr = (self.combined_stats['wins'] / total_games * 100) if total_games > 0 else 0
@@ -3424,10 +3541,7 @@ class ProfileView(discord.ui.View):
             champ_emoji = get_champion_emoji(best_champ_name)
             wr_text += f"**Best Champion:** {champ_emoji} {best_champ_name} ({best_champ_wr:.0f}% in {best_champ_games} games)"
         
-        embed.add_field(name="🎯 **Win Rate**", value=wr_text, inline=False)
-        
-        # Spacer
-        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        embed.add_field(name="🎯 **Win Rate**", value=wr_text, inline=True)
         
         # === CHAMPION POOL ===
         unique_champs = len(self.combined_stats.get('champions', {}))
@@ -3450,10 +3564,7 @@ class ProfileView(discord.ui.View):
             f"**Most Played:**\n" + "\n".join(top_3_list) if top_3_list else f"**Unique Champions:** {unique_champs}"
         )
         
-        embed.add_field(name="🏆 **Champion Pool**", value=pool_text, inline=False)
-        
-        # Spacer
-        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        embed.add_field(name="🏆 **Champion Pool**", value=pool_text, inline=True)
         
         # === GAME MODES & ACTIVITY ===
         avg_game_time = self.combined_stats['game_duration'] / total_games if total_games > 0 else 0
@@ -3481,10 +3592,7 @@ class ProfileView(discord.ui.View):
                 mode_lines.append(f"• {mode}: {games}G ({wr:.0f}% WR)")
             mode_text = "\n\n**Queue Types:**\n" + "\n".join(mode_lines[:3])
         
-        embed.add_field(name="📅 **Activity & Queues**", value=activity_text + mode_text, inline=False)
-        
-        # Spacer
-        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        embed.add_field(name="📅 **Activity & Queues**", value=activity_text + mode_text, inline=True)
         
         # === CAREER MILESTONES ===
         milestone_lines = []
@@ -3517,12 +3625,9 @@ class ProfileView(discord.ui.View):
         
         milestone_lines.append(f"**Peak Rank:** {peak_rank}")
         
-        embed.add_field(name="🏅 **Career Milestones**", value="\n".join(milestone_lines), inline=False)
+        embed.add_field(name="🏅 **Career Milestones**", value="\n".join(milestone_lines), inline=True)
         
-        # Spacer
-        embed.add_field(name="\u200b", value="\u200b", inline=False)
-        
-        # === DAMAGE BREAKDOWN (from recent 20 matches) ===
+        # === DAMAGE BREAKDOWN (season sample) ===
         total_damage = 0
         total_physical = 0
         total_magic = 0
@@ -3531,8 +3636,9 @@ class ProfileView(discord.ui.View):
         total_to_objectives = 0
         total_mitigated = 0
         damage_games = 0
-        
-        for match_data in self.all_match_details[:20]:
+        damage_sample = min(30, len(self.all_match_details))
+
+        for match_data in self.all_match_details[:damage_sample]:
             match = match_data['match']
             puuid = match_data['puuid']
             for participant in match['info']['participants']:
@@ -3565,20 +3671,18 @@ class ProfileView(discord.ui.View):
                 f"**To Objectives:** {avg_to_obj:,.0f}/game\n"
                 f"**Mitigated:** {avg_mitigated:,.0f}/game"
             )
-            embed.add_field(name="💎 **Damage Breakdown** (last 20 games)", value=damage_text, inline=False)
+            embed.add_field(name=f"💎 **Damage Breakdown** (last {damage_sample} games)", value=damage_text, inline=True)
         
-        # Spacer
-        embed.add_field(name="\u200b", value="\u200b", inline=False)
-        
-        # === OBJECTIVE CONTROL (from recent 20 matches) ===
+        # === OBJECTIVE CONTROL (season sample) ===
         dragons = {'CHEMTECH': 0, 'HEXTECH': 0, 'INFERNAL': 0, 'MOUNTAIN': 0, 'OCEAN': 0, 'CLOUD': 0, 'ELDER': 0}
         barons = 0
         heralds = 0
         towers = 0
         inhibs = 0
         obj_games = 0
-        
-        for match_data in self.all_match_details[:20]:
+        obj_sample = min(30, len(self.all_match_details))
+
+        for match_data in self.all_match_details[:obj_sample]:
             match = match_data['match']
             puuid = match_data['puuid']
             
@@ -3633,17 +3737,16 @@ class ProfileView(discord.ui.View):
                 f"👹 **Barons:** {avg_barons:.1f}/game • 👁️ **Heralds:** {avg_heralds:.1f}/game\n"
                 f"🗼 **Towers:** {avg_towers:.1f}/game • 🏛️ **Inhibitors:** {avg_inhibs:.1f}/game"
             )
-            embed.add_field(name="🎯 **Objective Control** (last 20 games)", value=obj_text, inline=False)
-        
-        # Spacer
-        embed.add_field(name="\u200b", value="\u200b", inline=False)
+            embed.add_field(name=f"🎯 **Objective Control** (last {obj_sample} games)", value=obj_text, inline=True)
         
         # === MATCH TIMELINE ANALYSIS (gold diff @10, @15, @20) ===
         gold_at_10 = []
         gold_at_15 = []
         gold_at_20 = []
         
-        for match_data in self.all_match_details[:10]:  # Last 10 games only
+        gold_sample = min(15, len(self.all_match_details))
+
+        for match_data in self.all_match_details[:gold_sample]:
             match = match_data['match']
             puuid = match_data['puuid']
             
@@ -3668,7 +3771,7 @@ class ProfileView(discord.ui.View):
                 f"**@15min:** {avg_15:,.0f}g\n"
                 f"**@20min:** {avg_20:,.0f}g"
             )
-            embed.add_field(name=f"<:Noted:1436595827748634634> **Gold Timeline** (last 10 games)", value=timeline_text, inline=True)
+            embed.add_field(name=f"📘 **Gold Timeline** (last {len(gold_at_10)} games)", value=timeline_text, inline=True)
             
             # Early game performance
             if avg_10 >= 4000:
@@ -3681,6 +3784,10 @@ class ProfileView(discord.ui.View):
                 early_rating = "🥉 Below Average"
             
             embed.add_field(name="⏱️ **Early Game**", value=f"{early_rating}\nGold lead at 10min", inline=True)
+
+        # Attach season stats chart if available
+        if getattr(self, 'stats_chart_name', None):
+            embed.set_image(url=f"attachment://{self.stats_chart_name}")
         
         embed.set_footer(text=f"{self.target_user.display_name} • Statistics View")
         
@@ -3820,13 +3927,13 @@ class ProfileView(discord.ui.View):
                 summary_text += f"\n**MVP Games:** {mvp_count} 🏆"
             
             embed.add_field(
-                name=f"<:Noted:1436595827748634634> Summary ({games_count} games)",
+                name=f"📘 Summary ({games_count} games)",
                 value=summary_text,
                 inline=False
             )
         else:
             embed.add_field(
-                name=f"<:Noted:1436595827748634634> Summary",
+                name=f"📘 Summary",
                 value=f"**W/L:** {wins}W - {losses}L ({winrate:.0f}%) • {len(filtered_matches)} total games",
                 inline=False
             )
@@ -4032,6 +4139,9 @@ class ProfileView(discord.ui.View):
                 inline=False
             )
         
+        if getattr(self, 'lp_chart_name', None):
+            embed.set_image(url=f"attachment://{self.lp_chart_name}")
+
         # Footer
         queue_filter_text = {
             "all": "All Queues",
