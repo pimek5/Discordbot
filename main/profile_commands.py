@@ -4303,18 +4303,6 @@ class ProfileView(discord.ui.View):
         embed = await self.create_lp_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Graphs", style=discord.ButtonStyle.secondary, emoji="📊", row=0)
-    async def graphs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Switch to graphs view containing all charts in one embed"""
-        if self.current_view == "graphs":
-            await interaction.response.defer()
-            return
-
-        self.current_view = "graphs"
-        self.update_navigation_buttons()
-        embed = await self.create_graphs_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-    
     @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="Challenger", id=1439080558029443082), row=0)
     async def ranks_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to ranks view showing all accounts"""
@@ -4326,6 +4314,18 @@ class ProfileView(discord.ui.View):
         self.ranks_page = 0  # Reset to first page
         self.update_navigation_buttons()  # Update button visibility
         embed = await self.create_ranks_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Graphs", style=discord.ButtonStyle.secondary, emoji="📊", row=1)
+    async def graphs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Switch to graphs view containing all charts in one embed"""
+        if self.current_view == "graphs":
+            await interaction.response.defer()
+            return
+
+        self.current_view = "graphs"
+        self.update_navigation_buttons()
+        embed = await self.create_graphs_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
     # Queue filter buttons (second row) - work for all views
