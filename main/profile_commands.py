@@ -1496,11 +1496,6 @@ class ProfileCommands(commands.Cog):
                     active_game = {'game': game_data, 'account': acc}
                     break
 
-            # Prebuild combined charts for Graphs view
-            graphs_chart_file = self._build_graphs_chart(all_match_details)
-            chart_files = [f for f in [graphs_chart_file] if f]
-            graphs_chart_name = graphs_chart_file.filename if graphs_chart_file else None
-        
             # Create interactive view with buttons
             view = ProfileView(
                 cog=self,
@@ -1512,9 +1507,7 @@ class ProfileCommands(commands.Cog):
                 champ_stats=champ_stats,
                 all_ranked_stats=all_ranked_stats,
                 account_ranks=account_ranks,
-                active_game=active_game,
-                chart_files=chart_files,
-                graphs_chart_name=graphs_chart_name
+                active_game=active_game
             )
         
             # Clear the "Calculating..." message before sending embed
@@ -1523,7 +1516,7 @@ class ProfileCommands(commands.Cog):
             except:
                 pass  # Ignore if already deleted
             
-            message = await interaction.followup.send(embed=embed, view=view, files=chart_files if chart_files else None)
+            message = await interaction.followup.send(embed=embed, view=view)
             view.message = message  # Store message for deletion on timeout
         
         finally:
@@ -2922,8 +2915,7 @@ class ProfileView(discord.ui.View):
     def __init__(self, cog: 'ProfileCommands', target_user: discord.User, 
                  user_data: dict, all_accounts: list, all_match_details: list,
                  combined_stats: dict, champ_stats: list, all_ranked_stats: list,
-                 account_ranks: dict = None, active_game: dict = None,
-                 chart_files: Optional[list] = None, graphs_chart_name: Optional[str] = None):
+                 account_ranks: dict = None, active_game: dict = None):
         super().__init__(timeout=120)  # 2 minutes timeout
         self.cog = cog
         self.target_user = target_user
@@ -2939,8 +2931,6 @@ class ProfileView(discord.ui.View):
         self.queue_filter = "all"  # Filter for all views: all, soloq, flex, normals, other
         self.ranks_page = 0  # Page for ranks view
         self.message = None  # Will store the message to delete later
-        self.chart_files = chart_files or []
-        self.graphs_chart_name = graphs_chart_name
     
     async def on_timeout(self):
         """Called when the view times out - delete the message"""
@@ -4239,21 +4229,24 @@ class ProfileView(discord.ui.View):
         
         return embed
 
-    async def create_graphs_embed(self) -> discord.Embed:
-        """Create the Graphs embed that displays all charts together."""
+    async def create_graphs_embed(self) -> tuple[discord.Embed, Optional[discord.File]]:
+        """Create the Graphs embed and build chart on-demand."""
         embed = discord.Embed(
             title=f"📊 Graphs",
             description=f"Season trends for {self.target_user.display_name}",
             color=0x7289DA
         )
 
-        if getattr(self, 'graphs_chart_name', None):
-            embed.set_image(url=f"attachment://{self.graphs_chart_name}")
+        # Build chart on-demand
+        chart_file = self.cog._build_graphs_chart(self.all_match_details)
+        
+        if chart_file:
+            embed.set_image(url=f"attachment://{chart_file.filename}")
             embed.set_footer(text=f"{self.target_user.display_name} • Graphs View")
+            return embed, chart_file
         else:
             embed.description = "No chart data available. Play some games first!"
-        
-        return embed
+            return embed, None
     
     @discord.ui.button(label="Profile", style=discord.ButtonStyle.primary, emoji="👤", row=0)
     async def profile_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4325,8 +4318,11 @@ class ProfileView(discord.ui.View):
 
         self.current_view = "graphs"
         self.update_navigation_buttons()
-        embed = await self.create_graphs_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        embed, chart_file = await self.create_graphs_embed()
+        if chart_file:
+            await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
+        else:
+            await interaction.response.edit_message(embed=embed, attachments=[], view=self)
     
     # Queue filter buttons (second row) - work for all views
     @discord.ui.button(label="All", style=discord.ButtonStyle.primary, emoji="📋", row=1)
@@ -4337,18 +4333,25 @@ class ProfileView(discord.ui.View):
         # Refresh current view with new filter
         if self.current_view == "profile":
             embed = await self.create_profile_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "stats":
             embed = await self.create_stats_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "graphs":
-            embed = await self.create_graphs_embed()
+            embed, chart_file = await self.create_graphs_embed()
+            if chart_file:
+                await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
+            else:
+                await interaction.response.edit_message(embed=embed, attachments=[], view=self)
         else:  # ranks
             embed = await self.create_ranks_embed()
-        
-        await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="Solo Q", style=discord.ButtonStyle.secondary, emoji="🏆", row=1)
     async def filter_soloq_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4358,18 +4361,25 @@ class ProfileView(discord.ui.View):
         # Refresh current view with new filter
         if self.current_view == "profile":
             embed = await self.create_profile_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "stats":
             embed = await self.create_stats_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "graphs":
-            embed = await self.create_graphs_embed()
+            embed, chart_file = await self.create_graphs_embed()
+            if chart_file:
+                await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
+            else:
+                await interaction.response.edit_message(embed=embed, attachments=[], view=self)
         else:  # ranks
             embed = await self.create_ranks_embed()
-        
-        await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="Flex", style=discord.ButtonStyle.secondary, emoji="👥", row=1)
     async def filter_flex_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4379,18 +4389,25 @@ class ProfileView(discord.ui.View):
         # Refresh current view with new filter
         if self.current_view == "profile":
             embed = await self.create_profile_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "stats":
             embed = await self.create_stats_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "graphs":
-            embed = await self.create_graphs_embed()
+            embed, chart_file = await self.create_graphs_embed()
+            if chart_file:
+                await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
+            else:
+                await interaction.response.edit_message(embed=embed, attachments=[], view=self)
         else:  # ranks
             embed = await self.create_ranks_embed()
-        
-        await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="Normals", style=discord.ButtonStyle.secondary, emoji="🎯", row=1)
     async def filter_normals_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4400,18 +4417,25 @@ class ProfileView(discord.ui.View):
         # Refresh current view with new filter
         if self.current_view == "profile":
             embed = await self.create_profile_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "stats":
             embed = await self.create_stats_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "graphs":
-            embed = await self.create_graphs_embed()
+            embed, chart_file = await self.create_graphs_embed()
+            if chart_file:
+                await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
+            else:
+                await interaction.response.edit_message(embed=embed, attachments=[], view=self)
         else:  # ranks
             embed = await self.create_ranks_embed()
-        
-        await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="Other", style=discord.ButtonStyle.secondary, emoji="🎲", row=2)
     async def filter_other_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -4421,18 +4445,25 @@ class ProfileView(discord.ui.View):
         # Refresh current view with new filter
         if self.current_view == "profile":
             embed = await self.create_profile_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "stats":
             embed = await self.create_stats_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "matches":
             embed = await self.create_matches_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "lp":
             embed = await self.create_lp_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         elif self.current_view == "graphs":
-            embed = await self.create_graphs_embed()
+            embed, chart_file = await self.create_graphs_embed()
+            if chart_file:
+                await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
+            else:
+                await interaction.response.edit_message(embed=embed, attachments=[], view=self)
         else:  # ranks
             embed = await self.create_ranks_embed()
-        
-        await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self)
     
     # Navigation buttons for Ranks view (row 2)
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, row=2, disabled=True)
