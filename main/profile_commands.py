@@ -4413,7 +4413,7 @@ class ProfileView(discord.ui.View):
         
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="Other", style=discord.ButtonStyle.secondary, emoji="🎲", row=1)
+    @discord.ui.button(label="Other", style=discord.ButtonStyle.secondary, emoji="🎲", row=2)
     async def filter_other_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Show other game modes"""
         self.queue_filter = "other"
