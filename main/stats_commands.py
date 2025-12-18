@@ -674,14 +674,24 @@ class StatsCommands(commands.Cog):
         flex2 = self._format_rank(snapshot2['ranked'], 'RANKED_FLEX_SR')
 
         def _role_pretty(role_code: str) -> str:
-            mapping = {
-                'TOP': '🔝 Top',
-                'JUNGLE': '🌲 Jungle',
-                'MIDDLE': '🧠 Mid',
-                'BOTTOM': '🎯 ADC',
-                'UTILITY': '🛡️ Support',
+            # Custom lane emojis provided by user
+            lane_emojis = {
+                'JUNGLE': discord.PartialEmoji(name='Jungle', id=1451180910132334652),
+                'TOP': discord.PartialEmoji(name='Toplane', id=1451180878783971520),
+                'UTILITY': discord.PartialEmoji(name='Support', id=1451180843988160574),
+                'MIDDLE': discord.PartialEmoji(name='Midlane', id=1451180808705671228),
+                'BOTTOM': discord.PartialEmoji(name='Bottom', id=1451180746814521364),
             }
-            return mapping.get(role_code, role_code.title())
+            label_map = {
+                'TOP': 'Top',
+                'JUNGLE': 'Jungle',
+                'MIDDLE': 'Mid',
+                'BOTTOM': 'ADC',
+                'UTILITY': 'Support',
+            }
+            emoji = lane_emojis.get(role_code)
+            label = label_map.get(role_code, role_code.title())
+            return f"{emoji} {label}" if emoji else label
 
         def _format_roles(roles: dict, total_games: int) -> str:
             if not roles:
@@ -781,6 +791,16 @@ class StatsCommands(commands.Cog):
         embed.add_field(name="🏆 Top Champs", value=_format_champs(snapshot1['champs']), inline=True)
         embed.add_field(name="🏆 Top Champs", value=_format_champs(snapshot2['champs']), inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=False)
+
+        # Mini LP comparison (estimated) - only for ranked filter
+        if queue_filter == 'ranked':
+            lp1 = snapshot1['wins'] * 20 - (snapshot1['games'] - snapshot1['wins']) * 16
+            lp2 = snapshot2['wins'] * 20 - (snapshot2['games'] - snapshot2['wins']) * 16
+            arrow = '◀' if lp1 > lp2 else '▶' if lp2 > lp1 else '–'
+            lp_table = [
+                f"{'LP est.':<10} | {('+'+str(lp1)) if lp1>0 else str(lp1):<14} | {('+'+str(lp2)) if lp2>0 else str(lp2):<14} | {arrow}"
+            ]
+            embed.add_field(name="💠 LP (estimated)", value=f"```\n{lp_table[0]}\n```", inline=False)
 
         embed.add_field(name="🏅 Edges", value=edges, inline=False)
         embed.set_footer(text=f"Requested by {interaction.user.name}")
