@@ -495,12 +495,10 @@ class StatsCommands(commands.Cog):
                 inline=False
             )
             
-            embed.set_image(url="attachment://stats.png")
-            embed.set_footer(text=f"Requested by {interaction.user.name} • Data from Riot API")
-            
-            file = discord.File(buf, filename='stats.png')
-            
-            message = await interaction.followup.send(embed=embed, file=file)
+            # Graphs are now shown only in the Profile → Graphs tab
+            embed.set_footer(text=f"Requested by {interaction.user.name} • Use /profile → Graphs for charts")
+
+            message = await interaction.followup.send(embed=embed)
             
             # Auto-delete after 60 seconds
             await asyncio.sleep(60)

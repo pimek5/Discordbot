@@ -303,92 +303,110 @@ class ProfileCommands(commands.Cog):
             return None
 
     def _build_graphs_chart(self, match_details: list) -> Optional[discord.File]:
-        """Create a combined chart image with season stats trend and LP trend."""
+        """Create a combined chart image: KDA, Damage, CS, Win/Loss, LP."""
         try:
             if not match_details:
                 return None
 
-            # Prepare data for stats subplot (KDA and CS/min)
+            # Prepare samples (reverse to oldest->newest)
             sample = list(reversed(match_details[:30]))
             games = len(sample)
             if games == 0:
                 return None
-            game_idx = list(range(1, games + 1))
-            kda_vals = []
-            cs_vals = []
-            win_mask = []
+            idx = list(range(1, games + 1))
 
+            kda_vals, dmg_vals, cs_vals, wl_vals = [], [], [], []
             for md in sample:
                 match = md['match']
                 puuid = md['puuid']
-                participant = next((p for p in match['info']['participants'] if p.get('puuid') == puuid), None)
-                if not participant:
+                p = next((x for x in match['info']['participants'] if x.get('puuid') == puuid), None)
+                if not p:
+                    # Keep alignment
+                    kda_vals.append(0)
+                    dmg_vals.append(0)
+                    cs_vals.append(0)
+                    wl_vals.append(0)
                     continue
-                deaths = max(participant.get('deaths', 0), 1)
-                kda_vals.append((participant.get('kills', 0) + participant.get('assists', 0)) / deaths)
-                duration = match['info'].get('gameDuration', 0)
-                if duration > 10000:
-                    duration = duration / 1000
-                minutes = max(duration / 60, 1)
-                cs_vals.append((participant.get('totalMinionsKilled', 0) + participant.get('neutralMinionsKilled', 0)) / minutes)
-                win_mask.append(participant.get('win', False))
+                deaths = max(p.get('deaths', 0), 1)
+                kda_vals.append((p.get('kills', 0) + p.get('assists', 0)) / deaths)
+                dmg_vals.append(p.get('totalDamageDealtToChampions', 0))
+                # CS per game
+                cs_vals.append(p.get('totalMinionsKilled', 0) + p.get('neutralMinionsKilled', 0))
+                wl_vals.append(1 if p.get('win') else -1)
 
-            # Prepare data for LP subplot (estimated)
+            # LP progression (estimated) from ranked only
             ranked = [m for m in match_details if m['match']['info'].get('queueId') in (420, 440)]
             ranked = sorted(ranked, key=lambda x: x['timestamp']) if ranked else []
-            lp_progress = []
-            lp = 0
+            lp_progress, cur_lp = [], 0
             for md in ranked:
                 match = md['match']
                 puuid = md['puuid']
-                participant = next((p for p in match['info']['participants'] if p.get('puuid') == puuid), None)
-                if not participant:
+                p = next((x for x in match['info']['participants'] if x.get('puuid') == puuid), None)
+                if not p:
                     continue
-                win = participant.get('win', False)
-                delta = 20 if win else -16
-                lp += delta
-                lp_progress.append(lp)
+                delta = 20 if p.get('win') else -16
+                cur_lp += delta
+                lp_progress.append(cur_lp)
 
-            # Build figure with two rows
-            rows = 2
-            fig, (ax1, ax2) = plt.subplots(rows, 1, figsize=(8, 6), facecolor="#2C2F33")
-            for ax in (ax1, ax2):
-                ax.set_facecolor('#23272A')
+            # Figure with 3 rows, 2 cols; bottom spans both for LP
+            from matplotlib import gridspec
+            fig = plt.figure(figsize=(10, 9), facecolor="#2C2F33")
+            gs = gridspec.GridSpec(3, 2, height_ratios=[1, 1, 1.1])
 
-            # Subplot 1: KDA and CS/min
-            if kda_vals:
-                ax1.plot(game_idx[:len(kda_vals)], kda_vals, color='#1F8EFA', marker='o', linewidth=2, label='KDA ratio')
-                ax1.set_ylabel('KDA', color='#99AAB5')
-                ax1.tick_params(axis='y', colors='#99AAB5')
-                ax1.set_xlabel('Game (old → new)', color='#99AAB5')
-                ax1.tick_params(axis='x', colors='#99AAB5')
+            ax_kda = fig.add_subplot(gs[0, 0]); ax_kda.set_facecolor('#23272A')
+            ax_dmg = fig.add_subplot(gs[0, 1]); ax_dmg.set_facecolor('#23272A')
+            ax_cs  = fig.add_subplot(gs[1, 0]); ax_cs.set_facecolor('#23272A')
+            ax_wl  = fig.add_subplot(gs[1, 1]); ax_wl.set_facecolor('#23272A')
+            ax_lp  = fig.add_subplot(gs[2, :]); ax_lp.set_facecolor('#23272A')
 
-                ax1b = ax1.twinx()
-                ax1b.plot(game_idx[:len(cs_vals)], cs_vals, color='#FFD166', marker='s', linewidth=1.5, label='CS/min')
-                ax1b.set_ylabel('CS/min', color='#99AAB5')
-                ax1b.tick_params(axis='y', colors='#99AAB5')
-
-                for idx, won in enumerate(win_mask):
-                    ax1.axvspan(idx + 0.5, idx + 1.5, color='#2ecc71' if won else '#e74c3c', alpha=0.08)
-
-                ax1.grid(True, alpha=0.15, color='#99AAB5')
-                ax1.set_title('Season Trends: KDA & CS/min', color='#99AAB5')
+            # KDA (bar)
+            if any(kda_vals):
+                colors = ['#2ecc71' if v > 3 else '#f1c40f' if v > 2 else '#e74c3c' for v in kda_vals]
+                ax_kda.bar(idx, kda_vals, color=colors, alpha=0.8)
+                ax_kda.set_title('KDA per Game', color='#99AAB5')
+                ax_kda.set_xlabel('Game (old → new)', color='#99AAB5'); ax_kda.set_ylabel('KDA', color='#99AAB5')
+                ax_kda.tick_params(colors='#99AAB5'); ax_kda.grid(True, alpha=0.15, color='#99AAB5')
             else:
-                ax1.text(0.5, 0.5, 'No data for stats trend', color='#99AAB5', ha='center', va='center')
-                ax1.set_axis_off()
+                ax_kda.text(0.5, 0.5, 'No KDA data', color='#99AAB5', ha='center', va='center'); ax_kda.set_axis_off()
 
-            # Subplot 2: LP progression
+            # Damage (line)
+            if any(dmg_vals):
+                ax_dmg.plot(idx, dmg_vals, color='#FF6B35', marker='o', linewidth=2)
+                ax_dmg.set_title('Damage to Champions', color='#99AAB5')
+                ax_dmg.set_xlabel('Game', color='#99AAB5'); ax_dmg.set_ylabel('Damage', color='#99AAB5')
+                ax_dmg.tick_params(colors='#99AAB5'); ax_dmg.grid(True, alpha=0.15, color='#99AAB5')
+            else:
+                ax_dmg.text(0.5, 0.5, 'No Damage data', color='#99AAB5', ha='center', va='center'); ax_dmg.set_axis_off()
+
+            # CS (line)
+            if any(cs_vals):
+                ax_cs.plot(idx, cs_vals, color='#FFD166', marker='s', linewidth=2)
+                ax_cs.set_title('CS per Game', color='#99AAB5')
+                ax_cs.set_xlabel('Game', color='#99AAB5'); ax_cs.set_ylabel('CS', color='#99AAB5')
+                ax_cs.tick_params(colors='#99AAB5'); ax_cs.grid(True, alpha=0.15, color='#99AAB5')
+            else:
+                ax_cs.text(0.5, 0.5, 'No CS data', color='#99AAB5', ha='center', va='center'); ax_cs.set_axis_off()
+
+            # Win/Loss history (bar)
+            if any(wl_vals):
+                colors_wl = ['#2ecc71' if v > 0 else '#e74c3c' for v in wl_vals]
+                ax_wl.bar(idx, wl_vals, color=colors_wl, alpha=0.8)
+                ax_wl.set_title('Win/Loss History', color='#99AAB5')
+                ax_wl.set_xlabel('Game', color='#99AAB5')
+                ax_wl.set_yticks([1, -1]); ax_wl.set_yticklabels(['WIN', 'LOSS'], color='#99AAB5')
+                ax_wl.tick_params(colors='#99AAB5'); ax_wl.grid(True, alpha=0.15, color='#99AAB5', axis='x')
+            else:
+                ax_wl.text(0.5, 0.5, 'No Win/Loss data', color='#99AAB5', ha='center', va='center'); ax_wl.set_axis_off()
+
+            # LP progression (line)
             if lp_progress and len(lp_progress) >= 2:
-                ax2.plot(range(1, len(lp_progress) + 1), lp_progress, color='#00e676', linewidth=2, marker='o')
-                ax2.axhline(0, color='#99AAB5', linestyle='--', linewidth=1)
-                ax2.set_xlabel('Ranked games (old → new)', color='#99AAB5')
-                ax2.set_ylabel('Estimated LP change', color='#99AAB5')
-                ax2.tick_params(colors='#99AAB5')
-                ax2.grid(True, alpha=0.15, color='#99AAB5')
-                ax2.set_title('Estimated LP Progression', color='#99AAB5')
+                ax_lp.plot(range(1, len(lp_progress) + 1), lp_progress, color='#00e676', linewidth=2, marker='o')
+                ax_lp.axhline(0, color='#99AAB5', linestyle='--', linewidth=1)
+                ax_lp.set_title('Estimated LP Progression (Ranked)', color='#99AAB5')
+                ax_lp.set_xlabel('Ranked games (old → new)', color='#99AAB5'); ax_lp.set_ylabel('LP Δ', color='#99AAB5')
+                ax_lp.tick_params(colors='#99AAB5'); ax_lp.grid(True, alpha=0.15, color='#99AAB5')
             else:
-                ax2.text(0.5, 0.5, 'Not enough ranked games for LP trend', color='#99AAB5', ha='center', va='center')
-                ax2.set_axis_off()
+                ax_lp.text(0.5, 0.5, 'Not enough ranked games for LP trend', color='#99AAB5', ha='center', va='center'); ax_lp.set_axis_off()
 
             buf = io.BytesIO()
             plt.tight_layout()
