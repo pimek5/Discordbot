@@ -114,6 +114,8 @@ class StatsCommands(commands.Cog):
             queue_id = details['info'].get('queueId', 0)
             if queue_filter == 'ranked' and queue_id not in (420, 440):
                 continue
+            if queue_filter == 'soloq' and queue_id != 420:
+                continue
             if queue_filter == 'aram' and queue_id != 450:
                 continue
             if queue_filter == 'arena' and queue_id not in (1700, 1710):
@@ -126,6 +128,7 @@ class StatsCommands(commands.Cog):
             return None
 
         stats_list = []
+        recent_champs = []
         roles: dict = {}
         champs: dict = {}
         streak = []
@@ -161,6 +164,11 @@ class StatsCommands(commands.Cog):
                 'champion_id': participant.get('championId'),
                 'role': participant.get('teamPosition', 'UTILITY') or 'UTILITY'
             })
+
+            # Track recents (based on filtered order, likely newest-first)
+            cname_recent = participant.get('championName') or CHAMPION_ID_TO_NAME.get(participant.get('championId'))
+            if cname_recent:
+                recent_champs.append(cname_recent)
 
             role = stats_list[-1]['role']
             roles[role] = roles.get(role, 0) + 1
@@ -211,6 +219,7 @@ class StatsCommands(commands.Cog):
             'roles': {k: {'games': v, 'wins': 0} for k, v in roles.items()},
             'champs': champs,
             'streak': streak[:8],
+            'recent_champs': recent_champs[:5],
             'ranked': ranked_entries,
         }
     
@@ -634,7 +643,7 @@ class StatsCommands(commands.Cog):
         await interaction.response.defer()
 
         user2 = user2 or interaction.user
-        queue_filter = queue.value if queue else 'ranked'
+        queue_filter = 'soloq'
         games = max(5, min(games, 20))
 
         db = get_db()
@@ -718,11 +727,13 @@ class StatsCommands(commands.Cog):
             streak = " ".join("✅" if s == 'W' else "❌" for s in snap['streak'][:8])
             solo_txt = solo1 if user == user1 else solo2
             flex_txt = flex1 if user == user1 else flex2
+            last5 = "".join([str(get_champion_emoji(cn)) for cn in snap.get('recent_champs', [])]) or "—"
             return (
                 f"🪪 **{snap['tag']}** `{snap['region'].upper()}`\n"
                 f"🏆 SoloQ: {solo_txt}\n"
                 f"👥 Flex: {flex_txt}\n"
                 f"🔥 Streak: {streak}\n"
+                f"🧩 Last 5: {last5}\n"
             )
 
         categories = [
@@ -743,12 +754,7 @@ class StatsCommands(commands.Cog):
 
         edges = "\n".join(edge_line(n, a, b) for n, a, b in categories)
 
-        queue_label = {
-            'ranked': 'Ranked',
-            'aram': 'ARAM',
-            'arena': 'Arena',
-            'all': 'All queues'
-        }.get(queue_filter, 'Ranked')
+        queue_label = 'SoloQ'
 
         embed = discord.Embed(
             title=f"⚔️ Player Comparison",
@@ -792,8 +798,8 @@ class StatsCommands(commands.Cog):
         embed.add_field(name="🏆 Top Champs", value=_format_champs(snapshot2['champs']), inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=False)
 
-        # Mini LP comparison (estimated) - only for ranked filter
-        if queue_filter == 'ranked':
+        # Mini LP comparison (estimated) - SoloQ only
+        if queue_filter == 'soloq':
             lp1 = snapshot1['wins'] * 20 - (snapshot1['games'] - snapshot1['wins']) * 16
             lp2 = snapshot2['wins'] * 20 - (snapshot2['games'] - snapshot2['wins']) * 16
             arrow = '◀' if lp1 > lp2 else '▶' if lp2 > lp1 else '–'
