@@ -5930,8 +5930,8 @@ async def diagnose_network():
 
 async def run_bot_with_retry():
     """Run bot with connection retry logic"""
-    max_retries = 10  # Zwiększone z 5 do 10
-    retry_delay = 15  # Zwiększone z 10 do 15 sekund
+    max_retries = 3  # Reduced to prevent hammering Discord API
+    retry_delay = 30  # Increased initial delay
     
     # Run network diagnostics first
     print("=" * 60)
@@ -5947,24 +5947,28 @@ async def run_bot_with_retry():
             await bot.start(os.getenv("BOT_TOKEN"))
             break  # If successful, exit loop
         except discord.errors.HTTPException as e:
-            # Handle rate limiting (429) specifically
+            # Handle rate limiting (429) specifically - DO NOT RETRY
             if e.status == 429:
-                # Extract retry-after from response if available
-                retry_after = 60  # Default to 60 seconds
-                if hasattr(e, 'retry_after'):
-                    retry_after = max(e.retry_after, 60)
-                else:
-                    # For global rate limits, wait longer
-                    retry_after = 300  # 5 minutes for global rate limit
+                print(f"❌ RATE LIMITED (429) - Bot is blocked by Discord/Cloudflare")
+                print(f"")
+                print(f"🛑 IMMEDIATE ACTIONS REQUIRED:")
+                print(f"   1. STOP ALL bot instances on Railway NOW")
+                print(f"   2. DO NOT restart for at least 30 minutes")
+                print(f"   3. Check if multiple instances are running")
+                print(f"   4. Your IP may be temporarily banned by Cloudflare")
+                print(f"")
+                print(f"💡 The bot will now EXIT without retrying to prevent further bans.")
+                print(f"💡 Wait 30-60 minutes before attempting to restart.")
                 
-                print(f"⚠️ Rate limited (429) on attempt {attempt}/{max_retries}")
-                print(f"⏳ Waiting {retry_after:.0f} seconds before retry (Discord global rate limit)...")
-                await asyncio.sleep(retry_after)
+                # Close bot and exit immediately - do not retry
+                try:
+                    await bot.close()
+                except:
+                    pass
                 
-                if attempt >= max_retries:
-                    print(f"❌ Failed after {max_retries} attempts due to rate limiting")
-                    print(f"💡 Check if multiple bot instances are running. Stop all instances and wait 5-10 minutes.")
-                    raise
+                # Exit the program completely
+                import sys
+                sys.exit(1)
             else:
                 # Other HTTP errors
                 print(f"❌ HTTP error {e.status}: {e}")
