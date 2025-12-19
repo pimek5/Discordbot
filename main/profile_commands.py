@@ -1,6 +1,6 @@
 ﻿"""
 Profile Commands Module
-/link, /verify, /profile, /unlink
+/link, /verify, /profile, /unlink, /forcelink, /forceunlink
 """
 
 import discord
@@ -1661,6 +1661,53 @@ class ProfileCommands(commands.Cog):
         await interaction.followup.send(
             f"✅ Force-linked **{game_name}#{tagline}** ({region.upper()}) to {user.mention}\n"
             f"Level: {summoner_data.get('summonerLevel', 'Unknown')} • PUUID: {puuid[:20]}...",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="forceunlink", description="[OWNER ONLY] Force unlink a Riot account from a user")
+    @app_commands.describe(
+        user="The Discord user to unlink"
+    )
+    async def forceunlink(self, interaction: discord.Interaction, user: discord.User):
+        """Force unlink an account without user confirmation (owner only)"""
+        
+        # Import admin permissions check
+        from permissions import has_admin_permissions
+        
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message("❌ This command requires admin permissions!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Get database user
+        db = get_db()
+        db_user = db.get_user_by_discord_id(user.id)
+        
+        if not db_user:
+            await interaction.followup.send(
+                f"❌ {user.mention} doesn't have a linked account!",
+                ephemeral=True
+            )
+            return
+        
+        # Get account info for confirmation message
+        account = db.get_primary_account(db_user['id'])
+        
+        if not account:
+            await interaction.followup.send(
+                f"❌ No linked account found for {user.mention}!",
+                ephemeral=True
+            )
+            return
+        
+        account_info = f"{account['riot_id_game_name']}#{account['riot_id_tagline']} ({account['region'].upper()})"
+        
+        # Delete account
+        db.delete_account(db_user['id'])
+        
+        await interaction.followup.send(
+            f"✅ Force-unlinked **{account_info}** from {user.mention}",
             ephemeral=True
         )
 
