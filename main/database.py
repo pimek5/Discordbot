@@ -214,6 +214,37 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    def delete_specific_account(self, user_id: int, riot_id_game_name: str, riot_id_tagline: str, region: str) -> bool:
+        """Delete a specific account for a user by riot_id and region"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    DELETE FROM league_accounts 
+                    WHERE user_id = %s 
+                    AND riot_id_game_name = %s 
+                    AND riot_id_tagline = %s 
+                    AND region = %s
+                """, (user_id, riot_id_game_name, riot_id_tagline, region))
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            self.return_connection(conn)
+    
+    def get_all_accounts(self, user_id: int) -> list:
+        """Get all League accounts for a user"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM league_accounts 
+                    WHERE user_id = %s 
+                    ORDER BY primary_account DESC, created_at ASC
+                """, (user_id,))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+    
     def set_primary_account(self, user_id: int, account_id: int) -> bool:
         """Set a specific account as primary for a user"""
         conn = self.get_connection()

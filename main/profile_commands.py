@@ -1666,9 +1666,29 @@ class ProfileCommands(commands.Cog):
 
     @app_commands.command(name="forceunlink", description="[OWNER ONLY] Force unlink a Riot account from a user")
     @app_commands.describe(
-        user="The Discord user to unlink"
+        user="The Discord user to unlink",
+        riot_id="Riot ID (GameName#TAG) - optional, unlinks all if not specified",
+        region="Region - optional, required if riot_id is specified"
     )
-    async def forceunlink(self, interaction: discord.Interaction, user: discord.User):
+    @app_commands.choices(region=[
+        app_commands.Choice(name="EUNE", value="eune"),
+        app_commands.Choice(name="EUW", value="euw"),
+        app_commands.Choice(name="NA", value="na"),
+        app_commands.Choice(name="KR", value="kr"),
+        app_commands.Choice(name="BR", value="br"),
+        app_commands.Choice(name="JP", value="jp"),
+        app_commands.Choice(name="LAN", value="lan"),
+        app_commands.Choice(name="LAS", value="las"),
+        app_commands.Choice(name="OCE", value="oce"),
+        app_commands.Choice(name="TR", value="tr"),
+        app_commands.Choice(name="RU", value="ru"),
+        app_commands.Choice(name="PH", value="ph"),
+        app_commands.Choice(name="SG", value="sg"),
+        app_commands.Choice(name="TH", value="th"),
+        app_commands.Choice(name="TW", value="tw"),
+        app_commands.Choice(name="VN", value="vn"),
+    ])
+    async def forceunlink(self, interaction: discord.Interaction, user: discord.User, riot_id: str = None, region: str = None):
         """Force unlink an account without user confirmation (owner only)"""
         
         # Import admin permissions check
@@ -1691,25 +1711,92 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        # Get account info for confirmation message
-        account = db.get_primary_account(db_user['id'])
-        
-        if not account:
+        # If riot_id is specified, validate and delete specific account
+        if riot_id:
+            # Parse Riot ID
+            if '#' not in riot_id:
+                await interaction.followup.send("❌ Invalid format! Use: GameName#TAG", ephemeral=True)
+                return
+            
+            if not region:
+                await interaction.followup.send("❌ Region is required when specifying a Riot ID!", ephemeral=True)
+                return
+            
+            game_name, tagline = riot_id.split('#', 1)
+            region = region.lower()
+            
+            # Get all accounts to check if this one exists
+            all_accounts = db.get_all_accounts(db_user['id'])
+            account_to_delete = None
+            
+            for acc in all_accounts:
+                if (acc['riot_id_game_name'] == game_name and 
+                    acc['riot_id_tagline'] == tagline and 
+                    acc['region'] == region):
+                    account_to_delete = acc
+                    break
+            
+            if not account_to_delete:
+                # List available accounts
+                accounts_list = "\n".join([
+                    f"• {acc['riot_id_game_name']}#{acc['riot_id_tagline']} ({acc['region'].upper()})"
+                    for acc in all_accounts
+                ])
+                await interaction.followup.send(
+                    f"❌ Account not found: **{game_name}#{tagline}** ({region.upper()})\n\n"
+                    f"Available accounts for {user.mention}:\n{accounts_list}",
+                    ephemeral=True
+                )
+                return
+            
+            # Delete specific account
+            success = db.delete_specific_account(db_user['id'], game_name, tagline, region)
+            
+            if success:
+                account_info = f"{game_name}#{tagline} ({region.upper()})"
+                remaining_accounts = db.get_all_accounts(db_user['id'])
+                
+                if remaining_accounts:
+                    await interaction.followup.send(
+                        f"✅ Force-unlinked **{account_info}** from {user.mention}\n"
+                        f"Remaining accounts: {len(remaining_accounts)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        f"✅ Force-unlinked **{account_info}** from {user.mention}\n"
+                        f"ℹ️ User has no remaining accounts",
+                        ephemeral=True
+                    )
+            else:
+                await interaction.followup.send(
+                    f"❌ Failed to unlink account",
+                    ephemeral=True
+                )
+        else:
+            # No specific account - delete all accounts (old behavior)
+            all_accounts = db.get_all_accounts(db_user['id'])
+            
+            if not all_accounts:
+                await interaction.followup.send(
+                    f"❌ No linked accounts found for {user.mention}!",
+                    ephemeral=True
+                )
+                return
+            
+            # List all accounts that will be deleted
+            accounts_list = "\n".join([
+                f"• {acc['riot_id_game_name']}#{acc['riot_id_tagline']} ({acc['region'].upper()})"
+                for acc in all_accounts
+            ])
+            
+            # Delete all accounts
+            db.delete_account(db_user['id'])
+            
             await interaction.followup.send(
-                f"❌ No linked account found for {user.mention}!",
+                f"✅ Force-unlinked **ALL accounts** ({len(all_accounts)}) from {user.mention}:\n{accounts_list}",
                 ephemeral=True
             )
-            return
-        
-        account_info = f"{account['riot_id_game_name']}#{account['riot_id_tagline']} ({account['region'].upper()})"
-        
-        # Delete account
-        db.delete_account(db_user['id'])
-        
-        await interaction.followup.send(
-            f"✅ Force-unlinked **{account_info}** from {user.mention}",
-            ephemeral=True
-        )
 
     async def region_autocomplete_batch(
         self,
