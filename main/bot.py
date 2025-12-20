@@ -238,7 +238,8 @@ loldle_data = {
     'daily_date': None,
     'players': {},  # {user_id: {'guesses': [], 'solved': False, 'correct_attributes': {}}}
     'embed_message_id': None,  # Stores message ID for persistent embed
-    'recent_guesses': []  # Track recent guesses for display
+    'recent_guesses': [],  # Track recent guesses for display
+    'game_embeds': {}  # {game_id: message_id} - Track game embed messages
 }
 
 # Global Loldle statistics tracking
@@ -3790,28 +3791,112 @@ async def loldle(interaction: discord.Interaction, champion: str):
         # Wrong guess - update progress in database
         db.update_loldle_player_progress(game_id, user_id, guesses_list, False)
         
-        # Build comparison hints
-        embed = discord.Embed(
-            title=f"🎮 LoLdle - Guess the Champion!",
-            description=f"**{interaction.user.name}** guessed **{champion}**",
-            color=0xFF6B6B
-        )
-        
-        # Compare attributes with emojis
-        hints = []
+        # Build known correct attributes from all previous guesses
+        known_correct = {}
         attributes_to_check = ['gender', 'position', 'species', 'resource', 'range', 'region']
         
+        for prev_guess in guesses_list[:-1]:  # All previous guesses (not including current)
+            prev_data = CHAMPIONS.get(prev_guess, {})
+            for attr in attributes_to_check:
+                if attr not in known_correct:  # Only set if not already known
+                    prev_val = prev_data.get(attr, 'N/A')
+                    correct_val = correct_data.get(attr, 'N/A')
+                    if get_hint_emoji(prev_val, correct_val, attr) == "🟩":
+                        known_correct[attr] = correct_val
+        
+        # Build detailed comparison table showing all guesses
+        embed = discord.Embed(
+            title=f"🎮 LoLdle - Daily Challenge",
+            description=f"Guess the champion! Each guess reveals clues.",
+            color=0x1DA1F2
+        )
+        
+        # Build comparison table for the latest guess, showing known correct attributes
+        comparison_lines = []
+        
         for attr in attributes_to_check:
-            guess_val = guess_data.get(attr, 'N/A')
-            correct_val = correct_data.get(attr, 'N/A')
-            emoji = get_hint_emoji(guess_val, correct_val, attr)
-            hints.append(f"**{attr.title()}:** {guess_val} {emoji}")
+            if attr in known_correct:
+                # Already found correct - show it with green check
+                comparison_lines.append(f"**{attr.title()}:** {known_correct[attr]} 🟩 ✓")
+            else:
+                # Still searching - show current guess result
+                guess_val = guess_data.get(attr, 'N/A')
+                correct_val = correct_data.get(attr, 'N/A')
+                emoji = get_hint_emoji(guess_val, correct_val, attr)
+                comparison_lines.append(f"**{attr.title()}:** {guess_val} {emoji}")
+                
+                # If this guess found it, mark as known for display
+                if emoji == "🟩":
+                    known_correct[attr] = correct_val
         
-        embed.add_field(name="Hints", value="\n".join(hints), inline=False)
-        embed.add_field(name="Your Guesses", value=", ".join(guesses_list), inline=False)
-        embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong")
+        # Show latest guess comparison
+        embed.add_field(
+            name=f"Latest Guess: {champion}",
+            value="\n".join(comparison_lines),
+            inline=False
+        )
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # Show all guesses history
+        if len(guesses_list) > 1:
+            guesses_summary = []
+            for prev_guess in guesses_list[:-1]:  # All except the latest
+                prev_data = CHAMPIONS.get(prev_guess, {})
+                # Quick summary with key indicators
+                match_count = sum([
+                    get_hint_emoji(prev_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr) == "🟩"
+                    for attr in attributes_to_check
+                ])
+                guesses_summary.append(f"`{prev_guess}` - {match_count}/6 correct")
+            
+            embed.add_field(
+                name=f"Previous Guesses ({len(guesses_list)-1})",
+                value="\n".join(guesses_summary),
+                inline=False
+            )
+        
+        embed.add_field(
+            name="Total Attempts",
+            value=f"{len(guesses_list)} guess{'es' if len(guesses_list) > 1 else ''}",
+            inline=True
+        )
+        
+        # Show progress: X/6 attributes found
+        found_count = len(known_correct)
+        embed.add_field(
+            name="Progress",
+            value=f"{found_count}/6 attributes found",
+            inline=True
+        )
+        
+        embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong | ✓ = Already Found")
+        
+        # Try to edit existing embed or create new one
+        embed_msg_id = loldle_data['game_embeds'].get(game_id)
+        
+        if embed_msg_id:
+            try:
+                channel = interaction.channel
+                message = await channel.fetch_message(embed_msg_id)
+                await message.edit(embed=embed)
+                await interaction.response.send_message(
+                    f"❌ **{champion}** is not correct! Check the updated board above for hints.",
+                    ephemeral=True
+                )
+                return
+            except discord.NotFound:
+                # Message was deleted, will create new one
+                pass
+            except Exception as e:
+                print(f"⚠️ Failed to edit embed: {e}")
+                pass
+        
+        # Create new embed (first guess or edit failed)
+        await interaction.response.send_message(embed=embed)
+        try:
+            msg = await interaction.original_response()
+            loldle_data['game_embeds'][game_id] = msg.id
+        except:
+            pass
         
     except Exception as e:
         print(f"❌ Error in /loldle: {e}")
