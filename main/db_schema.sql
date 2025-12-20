@@ -214,3 +214,54 @@ CREATE TABLE IF NOT EXISTS guild_settings (
 -- Index for guild settings
 CREATE INDEX IF NOT EXISTS idx_guild_settings_guild ON guild_settings(guild_id);
 CREATE INDEX IF NOT EXISTS idx_guild_settings_key ON guild_settings(guild_id, key);
+
+-- ================================
+--    LOLDLE GAME TABLES
+-- ================================
+
+-- Loldle player statistics (persistent)
+CREATE TABLE IF NOT EXISTS loldle_stats (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    guild_id BIGINT NOT NULL,
+    total_games INTEGER DEFAULT 0,
+    total_wins INTEGER DEFAULT 0,
+    total_guesses INTEGER DEFAULT 0,
+    best_streak INTEGER DEFAULT 0,
+    current_streak INTEGER DEFAULT 0,
+    last_win_date DATE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(user_id, guild_id)
+);
+
+-- Loldle daily games (track daily champion and progress)
+CREATE TABLE IF NOT EXISTS loldle_daily_games (
+    id SERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    game_date DATE NOT NULL,
+    champion_name VARCHAR(50) NOT NULL,
+    mode VARCHAR(20) DEFAULT 'classic',  -- classic, quote, ability, emoji, splash
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(guild_id, game_date, mode)
+);
+
+-- Loldle player progress (per daily game)
+CREATE TABLE IF NOT EXISTS loldle_player_progress (
+    id SERIAL PRIMARY KEY,
+    game_id INTEGER NOT NULL REFERENCES loldle_daily_games(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    guesses TEXT[],  -- Array of champion names guessed
+    solved BOOLEAN DEFAULT FALSE,
+    attempts INTEGER DEFAULT 0,
+    solved_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(game_id, user_id)
+);
+
+-- Indexes for loldle
+CREATE INDEX IF NOT EXISTS idx_loldle_stats_user ON loldle_stats(user_id);
+CREATE INDEX IF NOT EXISTS idx_loldle_stats_guild ON loldle_stats(guild_id);
+CREATE INDEX IF NOT EXISTS idx_loldle_daily_date ON loldle_daily_games(guild_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_loldle_progress_game ON loldle_player_progress(game_id);
+CREATE INDEX IF NOT EXISTS idx_loldle_progress_user ON loldle_player_progress(user_id);

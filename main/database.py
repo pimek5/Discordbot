@@ -1046,6 +1046,157 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    # ==================== LOLDLE OPERATIONS ====================
+    
+    def get_loldle_stats(self, user_id: int, guild_id: int) -> Optional[Dict]:
+        """Get Loldle stats for a user"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM loldle_stats
+                    WHERE user_id = %s AND guild_id = %s
+                """, (user_id, guild_id))
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+    
+    def update_loldle_stats(self, user_id: int, guild_id: int, won: bool, guesses: int):
+        """Update Loldle statistics for a user"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Get or create stats
+                cur.execute("""
+                    INSERT INTO loldle_stats (user_id, guild_id, total_games, total_wins, total_guesses, current_streak, last_win_date)
+                    VALUES (%s, %s, 0, 0, 0, 0, NULL)
+                    ON CONFLICT (user_id, guild_id) DO NOTHING
+                """, (user_id, guild_id))
+                
+                # Update stats
+                if won:
+                    cur.execute("""
+                        UPDATE loldle_stats
+                        SET total_games = total_games + 1,
+                            total_wins = total_wins + 1,
+                            total_guesses = total_guesses + %s,
+                            current_streak = current_streak + 1,
+                            best_streak = GREATEST(best_streak, current_streak + 1),
+                            last_win_date = CURRENT_DATE,
+                            updated_at = NOW()
+                        WHERE user_id = %s AND guild_id = %s
+                    """, (guesses, user_id, guild_id))
+                else:
+                    cur.execute("""
+                        UPDATE loldle_stats
+                        SET total_games = total_games + 1,
+                            total_guesses = total_guesses + %s,
+                            current_streak = 0,
+                            updated_at = NOW()
+                        WHERE user_id = %s AND guild_id = %s
+                    """, (guesses, user_id, guild_id))
+                
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def get_loldle_daily_game(self, guild_id: int, mode: str = 'classic') -> Optional[Dict]:
+        """Get today's Loldle game for a guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM loldle_daily_games
+                    WHERE guild_id = %s AND game_date = CURRENT_DATE AND mode = %s
+                """, (guild_id, mode))
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+    
+    def create_loldle_daily_game(self, guild_id: int, champion_name: str, mode: str = 'classic') -> int:
+        """Create a new daily Loldle game"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO loldle_daily_games (guild_id, game_date, champion_name, mode)
+                    VALUES (%s, CURRENT_DATE, %s, %s)
+                    ON CONFLICT (guild_id, game_date, mode) 
+                    DO UPDATE SET champion_name = EXCLUDED.champion_name
+                    RETURNING id
+                """, (guild_id, champion_name, mode))
+                game_id = cur.fetchone()[0]
+                conn.commit()
+                return game_id
+        finally:
+            self.return_connection(conn)
+    
+    def get_loldle_player_progress(self, game_id: int, user_id: int) -> Optional[Dict]:
+        """Get player's progress for a specific game"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM loldle_player_progress
+                    WHERE game_id = %s AND user_id = %s
+                """, (game_id, user_id))
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+    
+    def update_loldle_player_progress(self, game_id: int, user_id: int, guesses: list, solved: bool):
+        """Update player's progress for a game"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                if solved:
+                    cur.execute("""
+                        INSERT INTO loldle_player_progress (game_id, user_id, guesses, solved, attempts, solved_at)
+                        VALUES (%s, %s, %s, %s, %s, NOW())
+                        ON CONFLICT (game_id, user_id)
+                        DO UPDATE SET guesses = EXCLUDED.guesses, solved = TRUE, attempts = EXCLUDED.attempts, solved_at = NOW()
+                    """, (game_id, user_id, guesses, solved, len(guesses)))
+                else:
+                    cur.execute("""
+                        INSERT INTO loldle_player_progress (game_id, user_id, guesses, solved, attempts)
+                        VALUES (%s, %s, %s, FALSE, %s)
+                        ON CONFLICT (game_id, user_id)
+                        DO UPDATE SET guesses = EXCLUDED.guesses, attempts = EXCLUDED.attempts
+                    """, (game_id, user_id, guesses, len(guesses)))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def get_loldle_leaderboard(self, guild_id: int, limit: int = 10) -> List[Dict]:
+        """Get Loldle leaderboard for a guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT 
+                        user_id,
+                        total_games,
+                        total_wins,
+                        total_guesses,
+                        best_streak,
+                        current_streak,
+                        CASE 
+                            WHEN total_wins > 0 THEN ROUND(total_guesses::numeric / total_wins, 2)
+                            ELSE 999
+                        END as avg_guesses,
+                        CASE 
+                            WHEN total_games > 0 THEN ROUND((total_wins::numeric / total_games * 100), 1)
+                            ELSE 0
+                        END as win_rate
+                    FROM loldle_stats
+                    WHERE guild_id = %s AND total_games > 0
+                    ORDER BY avg_guesses ASC, total_wins DESC
+                    LIMIT %s
+                """, (guild_id, limit))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+    
     def close(self):
         """Close all connections"""
         if self.connection_pool:
