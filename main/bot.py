@@ -4267,11 +4267,10 @@ async def quote(interaction: discord.Interaction, champion: str):
         )
         embed.add_field(name="Total Guesses", value=str(len(guesses_list)), inline=True)
         
-        # Recent guesses (last 5)
-        recent = guesses_list[-5:]
+        # All guesses from this round
         embed.add_field(
-            name=f"Recent Guesses ({len(recent)})",
-            value=" → ".join(recent),
+            name=f"All Guesses ({len(guesses_list)})",
+            value=" → ".join(guesses_list) if len(guesses_list) <= 20 else " → ".join(guesses_list[:10]) + f"\n... +{len(guesses_list)-10} more",
             inline=False
         )
         
@@ -4412,10 +4411,10 @@ async def emoji(interaction: discord.Interaction, champion: str):
         embed.add_field(name="Total Guesses", value=str(len(guesses_list)), inline=True)
         embed.add_field(name="Revealed", value=f"{revealed_count}/{len(full_emoji)}", inline=True)
         
-        recent = guesses_list[-5:]
+        # All guesses from this round
         embed.add_field(
-            name=f"Recent Guesses ({len(recent)})",
-            value=" → ".join(recent),
+            name=f"All Guesses ({len(guesses_list)})",
+            value=" → ".join(guesses_list) if len(guesses_list) <= 20 else " → ".join(guesses_list[:10]) + f"\n... +{len(guesses_list)-10} more",
             inline=False
         )
         
@@ -4567,10 +4566,10 @@ async def ability(interaction: discord.Interaction, champion: str):
         )
         embed.add_field(name="Total Guesses", value=str(len(guesses_list)), inline=True)
         
-        recent = guesses_list[-5:]
+        # All guesses from this round
         embed.add_field(
-            name=f"Recent Guesses ({len(recent)})",
-            value=" → ".join(recent),
+            name=f"All Guesses ({len(guesses_list)})",
+            value=" → ".join(guesses_list) if len(guesses_list) <= 20 else " → ".join(guesses_list[:10]) + f"\n... +{len(guesses_list)-10} more",
             inline=False
         )
         
