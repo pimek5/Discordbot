@@ -241,8 +241,9 @@ class CreatorBot(commands.Bot):
             }
             
             async with aiohttp.ClientSession() as session:
-                # Get total count to calculate random page
-                total_api_url = "https://runeforge.dev/api/mods?page=0&limit=1"
+                # Get total count to calculate random index across all mods
+                mods_per_page = 50  # explicit page size to control distribution
+                total_api_url = f"https://runeforge.dev/api/mods?page=0&limit=1"
                 async with session.get(total_api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                     if response.status != 200:
                         logger.error("❌ Failed to fetch mods from RuneForge (Status: %s)", response.status)
@@ -254,17 +255,15 @@ class CreatorBot(commands.Bot):
                     if total_mods == 0:
                         logger.warning("⚠️ No mods available!")
                         return
-                    
-                    # RuneForge API returns 24 mods per page
-                    mods_per_page = 24
+                    # Pick a global random index then derive page + offset to ensure uniform sampling
+                    random_index = random.randint(0, total_mods - 1)
+                    random_page = random_index // mods_per_page
+                    page_offset = random_index % mods_per_page
                     total_pages = (total_mods + mods_per_page - 1) // mods_per_page
-                    
-                    # Pick random page
-                    random_page = random.randint(0, max(0, total_pages - 1))
-                    logger.info(f"🎲 Picking mod from page {random_page}/{total_pages} (total: {total_mods} mods)")
+                    logger.info(f"🎲 Picking mod #{random_index} from page {random_page}/{total_pages} (total: {total_mods} mods)")
                 
-                # Fetch random page
-                api_url = f"https://runeforge.dev/api/mods?page={random_page}"
+                # Fetch random page with explicit limit
+                api_url = f"https://runeforge.dev/api/mods?page={random_page}&limit={mods_per_page}"
                 async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                     if response.status != 200:
                         logger.error("❌ Failed to fetch mods page (Status: %s)", response.status)
@@ -277,8 +276,8 @@ class CreatorBot(commands.Bot):
                         logger.warning("⚠️ No mods found on this page!")
                         return
                     
-                    # Pick a random mod from the page
-                    mod = random.choice(mods)
+                    # Pick the exact offset if available, otherwise random fallback from page
+                    mod = mods[page_offset] if page_offset < len(mods) else random.choice(mods)
                     mod_id = mod.get('id') or mod.get('slug', '')
                     mod_name = mod.get('name') or mod.get('title', 'Unknown Mod')
                     mod_url = mod.get('url', f"https://runeforge.dev/mods/{mod_id}")

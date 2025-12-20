@@ -551,13 +551,13 @@ class StatsCommands(commands.Cog):
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT 
-                        cs.champion_id,
-                        SUM(cs.score) as total_points,
-                        MAX(cs.level) as max_level,
-                        SUM(CASE WHEN cs.chest_granted THEN 1 ELSE 0 END) as chests_earned
-                    FROM champion_stats cs
-                    WHERE cs.user_id = %s
-                    GROUP BY cs.champion_id
+                        ucs.champion_id,
+                        SUM(ucs.score) as total_points,
+                        MAX(ucs.level) as max_level,
+                        SUM(CASE WHEN ucs.chest_granted THEN 1 ELSE 0 END) as chests_earned
+                    FROM user_champion_stats ucs
+                    WHERE ucs.user_id = %s
+                    GROUP BY ucs.champion_id
                     ORDER BY total_points DESC
                     LIMIT 10
                 """, (db_user['id'],))

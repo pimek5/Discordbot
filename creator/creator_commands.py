@@ -96,6 +96,24 @@ class CreatorCommands(commands.Cog):
             if not creator_id:
                 await interaction.followup.send("❌ Failed to add creator to database!", ephemeral=True)
                 return
+
+            # Seed existing content so random draws have material immediately (no notifications)
+            content = []
+            if platform == 'runeforge':
+                content = await self.runeforge_scraper.get_user_mods(username)
+            else:
+                content = await self.divineskins_scraper.get_user_skins(username)
+            if content:
+                for item in content:
+                    db.add_mod(
+                        creator_id,
+                        item.get('id', ''),
+                        item.get('name', 'Untitled'),
+                        item.get('url', url),
+                        item.get('updated_at', ''),
+                        platform
+                    )
+                logger.info("📥 Seeded %s items for %s (%s)", len(content), username, platform)
             
             # Success embed
             embed = discord.Embed(
@@ -271,6 +289,25 @@ class CreatorCommands(commands.Cog):
                 await interaction.followup.send("❌ Failed to fetch profile data!", ephemeral=True)
                 return
             db.add_creator(user.id, platform, creator['profile_url'], profile_data)
+
+            # Re-seed existing content to keep random pool fresh (no notifications)
+            content = []
+            if platform == 'runeforge':
+                content = await self.runeforge_scraper.get_user_mods(username)
+            else:
+                content = await self.divineskins_scraper.get_user_skins(username)
+            if content:
+                for item in content:
+                    db.add_mod(
+                        creator['id'],
+                        item.get('id', ''),
+                        item.get('name', 'Untitled'),
+                        item.get('url', creator['profile_url']),
+                        item.get('updated_at', ''),
+                        platform
+                    )
+                logger.info("📥 Re-seeded %s items for %s (%s)", len(content), username, platform)
+
             await interaction.followup.send(
                 f"✅ Refreshed data for **{username}** on {platform.title()}",
                 ephemeral=True
