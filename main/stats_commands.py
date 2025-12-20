@@ -521,9 +521,6 @@ class StatsCommands(commands.Cog):
         finally:
             if not keep_alive_task.done():
                 keep_alive_task.cancel()
-            print(f"Error in stats command: {e}")
-            import traceback
-            traceback.print_exc()
     
     @app_commands.command(name="points", description="Show your TOP 10 champion masteries")
     @app_commands.describe(
@@ -541,6 +538,16 @@ class StatsCommands(commands.Cog):
         if not db_user:
             await interaction.followup.send(
                 f"❌ {target.mention} has not linked a Riot account!",
+                ephemeral=True
+            )
+            return
+
+        # Prefer verified accounts; we may fetch live mastery if DB is empty
+        accounts = db.get_user_accounts(db_user['id'])
+        verified_accounts = [a for a in accounts if a.get('verified')]
+        if not verified_accounts:
+            await interaction.followup.send(
+                f"❌ {target.mention} has no verified League account!",
                 ephemeral=True
             )
             return
@@ -564,6 +571,46 @@ class StatsCommands(commands.Cog):
                 masteries = cur.fetchall()
         finally:
             db.return_connection(conn)
+
+        # If no cached data, pull live mastery once and cache it
+        if not masteries:
+            for acc in verified_accounts:
+                try:
+                    mastery_data = await self.riot_api.get_champion_mastery(acc['puuid'], acc['region'], 200)
+                    if not mastery_data:
+                        continue
+                    for champ in mastery_data:
+                        db.update_champion_mastery(
+                            db_user['id'],
+                            champ['championId'],
+                            champ['championPoints'],
+                            champ['championLevel'],
+                            champ.get('chestGranted', False),
+                            champ.get('tokensEarned', 0),
+                            champ.get('lastPlayTime')
+                        )
+                except Exception as fetch_err:
+                    logger.warning("⚠️ Live mastery fetch failed for %s: %s", acc.get('puuid'), fetch_err)
+
+            # Re-run aggregation after caching
+            conn = db.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT 
+                            ucs.champion_id,
+                            SUM(ucs.score) as total_points,
+                            MAX(ucs.level) as max_level,
+                            SUM(CASE WHEN ucs.chest_granted THEN 1 ELSE 0 END) as chests_earned
+                        FROM user_champion_stats ucs
+                        WHERE ucs.user_id = %s
+                        GROUP BY ucs.champion_id
+                        ORDER BY total_points DESC
+                        LIMIT 10
+                    """, (db_user['id'],))
+                    masteries = cur.fetchall()
+            finally:
+                db.return_connection(conn)
         
         if not masteries:
             embed = discord.Embed(
