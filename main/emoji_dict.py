@@ -192,6 +192,10 @@ RANK_EMOJIS = {
 
 OTHER_EMOJIS = {
     'mastery_10': '<:mastery_10:1435691564620841010>',
+    'mastery_9': '<:mastery_9:1451923259049119857>',
+    'mastery_8': '<:mastery_8:1451923257841418282>',
+    'mastery_6': '<:mastery_6:1451923256306176060>',
+    'mastery_4': '<:mastery_4:1451923254766731304>',
     'mastery_5': '<:mastery_5:1435691566584037507>',
     'mastery_7': '<:mastery_7:1435691569368928480>',
     'lp': '<:LP:1436591112025407590>',
@@ -202,8 +206,12 @@ OTHER_EMOJIS = {
 
 # Create MASTERY_EMOJIS for easier access
 MASTERY_EMOJIS = {
+    4: OTHER_EMOJIS['mastery_4'],
     5: OTHER_EMOJIS['mastery_5'],
+    6: OTHER_EMOJIS['mastery_6'],
     7: OTHER_EMOJIS['mastery_7'],
+    8: OTHER_EMOJIS['mastery_8'],
+    9: OTHER_EMOJIS['mastery_9'],
     10: OTHER_EMOJIS['mastery_10'],
 }
 
@@ -219,10 +227,18 @@ def get_mastery_emoji(level: int) -> str:
     """Get emoji for mastery level, return empty if not found"""
     if level >= 10:
         return MASTERY_EMOJIS[10]
-    elif level >= 7:
+    if level >= 9:
+        return MASTERY_EMOJIS[9]
+    if level >= 8:
+        return MASTERY_EMOJIS[8]
+    if level >= 7:
         return MASTERY_EMOJIS[7]
-    elif level >= 5:
+    if level >= 6:
+        return MASTERY_EMOJIS[6]
+    if level >= 5:
         return MASTERY_EMOJIS[5]
+    if level >= 4:
+        return MASTERY_EMOJIS[4]
     return ""
 
 def get_other_emoji(name: str) -> str:

@@ -18,7 +18,7 @@ import logging
 
 from database import get_db
 from riot_api import RiotAPI, CHAMPION_ID_TO_NAME
-from emoji_dict import get_champion_emoji
+from emoji_dict import get_champion_emoji, get_mastery_emoji
 from objective_icons import get_objective_icon, get_item_icon
 
 logger = logging.getLogger('stats_commands')
@@ -641,13 +641,8 @@ class StatsCommands(commands.Cog):
             champion_name = CHAMPION_ID_TO_NAME.get(champion_id, f"Champion {champion_id}")
             champ_emoji = get_champion_emoji(champion_name)
             
-            # Mastery level emoji
-            if max_level >= 10:
-                level_emoji = "🔟"
-            elif max_level >= 7:
-                level_emoji = f"{max_level}⭐"
-            else:
-                level_emoji = f"{max_level}"
+            # Mastery level emoji (fallback to text if missing)
+            level_emoji = get_mastery_emoji(max_level) or f"Lvl {max_level}"
             
             # Chest icon
             chest_icon = "📦" if chests_earned > 0 else ""
@@ -655,7 +650,7 @@ class StatsCommands(commands.Cog):
             medal = medal_emojis[idx]
             embed.add_field(
                 name=f"{medal} #{idx + 1} {champ_emoji} {champion_name}",
-                value=f"**Level {level_emoji}** • {total_points:,} points {chest_icon}",
+                value=f"{level_emoji} • {total_points:,} points {chest_icon}",
                 inline=False
             )
         
