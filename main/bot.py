@@ -2912,7 +2912,7 @@ async def twitter_post(interaction: discord.Interaction):
             if channel:
                 embed = await create_tweet_embed(tweets[0])
                 msg = await channel.send(
-                    content=f"Latest post from **{TWITTER_USERNAME}** <:HEARTBROKEN:1451802268373352458>\n{tweets[0]['url']}",
+                    content=f"Latest post from **{TWITTER_USERNAME}** <:heartbroken:1175070212240978028>\n{tweets[0]['url']}",
                     embed=embed
                 )
                 await interaction.edit_original_response(
@@ -3349,7 +3349,7 @@ async def check_for_new_tweets():
                 # Post with header text and link, then embed
                 embed = await create_tweet_embed(latest_tweet)
                 await channel.send(
-                    content=f"Latest post from **{TWITTER_USERNAME}** <:HEARTBROKEN:1451802268373352458>\n{latest_tweet['url']}",
+                    content=f"Latest post from **{TWITTER_USERNAME}** <:heartbroken:1175070212240978028>\n{latest_tweet['url']}",
                     embed=embed
                 )
                 
