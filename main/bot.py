@@ -2906,17 +2906,20 @@ async def twitter_post(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     
     try:
-        tweets = await get_twitter_user_tweets(limit=1)
+        tweets = await get_twitter_user_tweets(TWITTER_USERNAME, max_results=1)
         if tweets:
-            channel = bot.get_channel(TWITTER_CHANNEL_ID)
+            channel = bot.get_channel(TWEETS_CHANNEL_ID)
             if channel:
-                embed = create_tweet_embed(tweets[0], show_details=True)
-                msg = await channel.send(embed=embed)
+                embed = await create_tweet_embed(tweets[0])
+                msg = await channel.send(
+                    content=f"Latest post from **{TWITTER_USERNAME}** <:HEARTBROKEN:1451802268373352458>\n{tweets[0]['url']}",
+                    embed=embed
+                )
                 await interaction.edit_original_response(
-                    content=f"✅ Posted tweet to <#{TWITTER_CHANNEL_ID}>\nMessage ID: {msg.id}\nTweet ID: {tweets[0]['id']}"
+                    content=f"✅ Posted tweet to <#{TWEETS_CHANNEL_ID}>\nMessage ID: {msg.id}\nTweet ID: {tweets[0]['id']}"
                 )
             else:
-                await interaction.edit_original_response(content=f"❌ Channel <#{TWITTER_CHANNEL_ID}> not found")
+                await interaction.edit_original_response(content=f"❌ Channel <#{TWEETS_CHANNEL_ID}> not found")
         else:
             await interaction.edit_original_response(content="❌ No tweets found")
     except Exception as e:
@@ -3076,56 +3079,103 @@ async def get_specific_tweet(tweet_id):
 
 async def get_twitter_user_tweets(username, max_results=5):
     """
-    Fetch the latest tweets from a Twitter user using multiple methods:
-    1. Nitter RSS (free, no auth needed)
-    2. Direct web scraping (if Nitter fails)
-    3. Twitter API v2 (requires bearer token)
-    Tries each method until one works
+    Fetch the latest tweets from a Twitter user using Twitter API v2
+    Falls back to Nitter RSS if API unavailable
     """
     print(f"🔍 Starting tweet fetch for @{username} (max {max_results} tweets)")
     print(f"⏰ Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # METHOD 1: Try RSS alternatives first (free, no rate limits)
+    # METHOD 1: Twitter API v2 (most reliable if configured)
+    if TWITTER_BEARER_TOKEN:
+        try:
+            import tweepy
+            print(f"📡 Using Twitter API v2 with Tweepy...")
+            
+            client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
+            user = client.get_user(username=username)
+            
+            if not user or not user.data:
+                print(f"❌ Twitter API: User @{username} not found")
+            else:
+                user_id = user.data.id
+                print(f"✅ Found user @{username} (ID: {user_id})")
+                
+                api_max = max(5, max_results)
+                response = client.get_users_tweets(
+                    user_id,
+                    max_results=api_max,
+                    exclude=['retweets', 'replies'],
+                    tweet_fields=['created_at', 'public_metrics', 'attachments'],
+                    expansions=['attachments.media_keys'],
+                    media_fields=['type', 'url', 'preview_image_url']
+                )
+                
+                if response and response.data:
+                    tweets = []
+                    media_dict = {}
+                    if response.includes and 'media' in response.includes:
+                        for media in response.includes['media']:
+                            media_dict[media.media_key] = media
+                    
+                    for tweet_data in response.data:
+                        try:
+                            tweet_obj = {
+                                'id': str(tweet_data.id),
+                                'text': tweet_data.text,
+                                'url': f'https://twitter.com/{username}/status/{tweet_data.id}',
+                                'created_at': tweet_data.created_at.isoformat() if tweet_data.created_at else '',
+                                'description': tweet_data.text,
+                                'metrics': {
+                                    'like_count': tweet_data.public_metrics.get('like_count', 0) if tweet_data.public_metrics else 0,
+                                    'retweet_count': tweet_data.public_metrics.get('retweet_count', 0) if tweet_data.public_metrics else 0,
+                                    'reply_count': tweet_data.public_metrics.get('reply_count', 0) if tweet_data.public_metrics else 0,
+                                }
+                            }
+                            
+                            if tweet_data.attachments and 'media_keys' in tweet_data.attachments:
+                                media_list = []
+                                for media_key in tweet_data.attachments['media_keys']:
+                                    if media_key in media_dict:
+                                        media_obj = media_dict[media_key]
+                                        media_list.append({
+                                            'type': media_obj.type,
+                                            'url': getattr(media_obj, 'url', getattr(media_obj, 'preview_image_url', ''))
+                                        })
+                                if media_list:
+                                    tweet_obj['media'] = media_list
+                            
+                            tweets.append(tweet_obj)
+                            tweet_cache[tweet_obj['id']] = tweet_obj
+                        except Exception as e:
+                            print(f"⚠️ Error parsing tweet: {e}")
+                            continue
+                    
+                    if tweets:
+                        print(f"✅ Twitter API: Fetched {len(tweets)} tweets")
+                        return tweets[:max_results]
+                        
+        except tweepy.errors.TooManyRequests:
+            print(f"⚠️ Twitter API rate limit - falling back to RSS")
+        except Exception as e:
+            print(f"⚠️ Twitter API error: {e} - falling back to RSS")
+    
+    # METHOD 2: Nitter RSS (free, reliable fallback)
     try:
-        print(f"📡 Method 1: Trying RSS feeds...")
+        print(f"📡 Using Nitter RSS feed...")
         
-        # Multiple RSS sources - WORKING Nitter instances
         rss_sources = [
-            # Nitter privacydev (most stable)
-            {
-                "name": "Nitter (privacydev.net)",
-                "url": f"https://nitter.privacydev.net/{username}/rss",
-                "type": "nitter"
-            },
-            # Backup Nitter instances
-            {
-                "name": "Nitter (poast.org)",
-                "url": f"https://nitter.poast.org/{username}/rss",
-                "type": "nitter"
-            },
+            f"https://nitter.privacydev.net/{username}/rss",
+            f"https://nitter.poast.org/{username}/rss",
         ]
         
-        print(f"🌐 Trying {len(rss_sources)} RSS sources...")
-        
-        # Get user's tweets - try each source one by one
-        raw_tweets = None
-        last_error = None
-        working_sources_found = []
-        
-        for attempt, source in enumerate(rss_sources):  # Try each source
+        for rss_url in rss_sources:
             try:
-                print(f"🔄 Attempt {attempt + 1}/{len(rss_sources)} trying: {source['name']}")
-                
-                rss_url = source['url']
-                print(f"   📡 Trying RSS: {rss_url}")
-                
+                print(f"   📡 Trying: {rss_url}")
                 async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
                     async with session.get(rss_url, ssl=False) as response:
                         if response.status == 200:
                             from xml.etree import ElementTree as ET
                             rss_text = await response.text()
-                            
-                            # Parse RSS XML
                             root = ET.fromstring(rss_text)
                             items = root.findall('.//item')
                             
@@ -3135,298 +3185,42 @@ async def get_twitter_user_tweets(username, max_results=5):
                                     try:
                                         title = item.find('title').text or ""
                                         link = item.find('link').text or ""
-                                        description = item.find('description').text or ""
                                         
-                                        # Extract tweet ID from link
-                                        if '/status/' in link:
+                                        if '/status/' in link and not title.startswith('RT ') and not title.startswith('R to '):
                                             tweet_id = link.split('/status/')[-1].split('#')[0].split('?')[0]
-                                            
-                                            # Filter retweets and replies
-                                            if title.startswith('RT ') or title.startswith('R to '):
-                                                continue
-                                            
-                                            tweets.append({
+                                            tweet_obj = {
                                                 'id': tweet_id,
                                                 'text': title,
                                                 'url': f'https://twitter.com/{username}/status/{tweet_id}',
-                                                'description': description,
+                                                'description': title,
                                                 'created_at': '',
                                                 'metrics': {}
-                                            })
+                                            }
+                                            tweets.append(tweet_obj)
+                                            tweet_cache[tweet_id] = tweet_obj
                                     except Exception as e:
-                                        print(f"   ⚠️ Error parsing RSS item: {e}")
+                                        print(f"   ⚠️ Error parsing item: {e}")
                                         continue
                                 
                                 if tweets:
-                                    # Update cache with fresh tweets
-                                    for tweet in tweets:
-                                        tweet_cache[tweet['id']] = tweet
-                                    
-                                    print(f"✅ Successfully fetched {len(tweets)} tweets from {source['name']} via RSS")
-                                    print(f"🟢 Working RSS source: {source['name']}")
-                                    print(f"💾 Cache updated: {len(tweet_cache)} tweets cached")
-                                    working_sources_found.append(source['name'])
+                                    print(f"✅ Nitter RSS: Fetched {len(tweets)} tweets")
                                     return tweets
                         else:
-                            print(f"   ⚠️ RSS returned status {response.status}")
-                            
+                            print(f"   ⚠️ Status {response.status}")
             except Exception as e:
-                last_error = str(e)
-                print(f"⚠️ Source {source['name']} failed: {e}")
-                if attempt < len(rss_sources) - 1:  # Don't sleep on last attempt
-                    await asyncio.sleep(0.5)  # Wait before retry
-        
-        # RSS method FAILED - try Twitter API
-        if working_sources_found:
-            print(f"💡 These RSS sources ARE working: {', '.join(working_sources_found)}")
-        else:
-            print(f"💡 ⚠️ ALL RSS sources appear to be down or blocked")
-            print(f"💡 Sources tried: {', '.join([s['name'] for s in rss_sources])}")
-        print(f"❌ RSS failed after trying {len(rss_sources)} sources. Last error: {last_error}")
-        print(f"💡 Trying fallback methods...")
-            
-    except ImportError:
-        print(f"❌ Required libraries not installed!")
-    except Exception as e:
-        print(f"❌ Nitter RSS error: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    # METHOD 2: Try direct web scraping from alternative Twitter frontends (shorter headers)
-    print(f"📡 Method 2: Trying alternative Twitter frontends...")
-    try:
-        # Use minimal headers to avoid "header too long" errors
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Safari/537.36',
-        }
-        
-        # Try VxTwitter profile endpoint first (more reliable)
-        profile_urls = [
-            f"https://vxtwitter.com/{username}",
-            f"https://fxtwitter.com/{username}",
-        ]
-        
-        for profile_url in profile_urls:
-            try:
-                print(f"   📡 Trying: {profile_url}")
-                async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
-                    async with session.get(profile_url, headers=headers, ssl=False) as response:
-                        if response.status == 200:
-                            html = await response.text()
-                            # If we got HTML, try to extract tweets
-                            if len(html) > 100:
-                                print(f"   ✅ Got HTML response from {profile_url}")
-                                
-                                try:
-                                    # Try to parse tweets from HTML using BeautifulSoup
-                                    soup = BeautifulSoup(html, 'html.parser')
-                                    
-                                    # Look for ALL links with /status/ in them (more aggressive)
-                                    tweets = []
-                                    seen_ids = set()
-                                    
-                                    # Find all <a> tags
-                                    all_links = soup.find_all('a', href=True)
-                                    print(f"   🔍 Found {len(all_links)} total links in HTML")
-                                    
-                                    for link in all_links:
-                                        href = link.get('href', '')
-                                        if '/status/' in href:
-                                            try:
-                                                # Extract tweet ID
-                                                tweet_id = href.split('/status/')[-1].split('?')[0].split('#')[0].split('/')[0]
-                                                
-                                                # Skip duplicates
-                                                if tweet_id in seen_ids or not tweet_id.isdigit():
-                                                    continue
-                                                seen_ids.add(tweet_id)
-                                                
-                                                # Get text content
-                                                text = link.get_text(strip=True) or f"Tweet from @{username}"
-                                                
-                                                tweet_obj = {
-                                                    'id': tweet_id,
-                                                    'text': text[:280] if text else f"New tweet from @{username}",
-                                                    'url': f'https://twitter.com/{username}/status/{tweet_id}',
-                                                    'description': text[:280] if text else '',
-                                                    'created_at': '',
-                                                    'metrics': {}
-                                                }
-                                                
-                                                # Cache it
-                                                tweet_cache[tweet_id] = tweet_obj
-                                                tweets.append(tweet_obj)
-                                                
-                                                if len(tweets) >= max_results:
-                                                    break
-                                            except Exception as e:
-                                                print(f"   ⚠️ Error parsing link {href}: {e}")
-                                                continue
-                                    
-                                    if tweets:
-                                        print(f"✅ Scraped {len(tweets)} tweets from {profile_url}")
-                                        print(f"💾 Cached {len(tweets)} tweets")
-                                        return tweets
-                                    else:
-                                        print(f"   💡 No /status/ links found in HTML")
-                                        # Use cache if available
-                                        if tweet_cache:
-                                            cached_tweets = list(tweet_cache.values())[:max_results]
-                                            if cached_tweets:
-                                                print(f"✅ Using {len(cached_tweets)} cached tweets as fallback")
-                                                return cached_tweets
-                                
-                                except Exception as parse_error:
-                                    print(f"   ⚠️ Error parsing HTML: {parse_error}")
-                                    # If parsing fails, try cache
-                                    if tweet_cache:
-                                        cached_tweets = list(tweet_cache.values())[:max_results]
-                                        if cached_tweets:
-                                            print(f"✅ Returning {len(cached_tweets)} cached tweets")
-                                            return cached_tweets
-                                
-                                break
-                        else:
-                            print(f"   ⚠️ {profile_url} returned status {response.status}")
-            except Exception as e:
-                print(f"   ⚠️ {profile_url} failed: {e}")
+                print(f"   ⚠️ Failed: {e}")
                 continue
+                
     except Exception as e:
-        print(f"⚠️ Alternative frontends failed: {e}")
+        print(f"❌ RSS error: {e}")
     
-    # METHOD 3: Twitter API v2 (requires TWITTER_BEARER_TOKEN)
-    if TWITTER_BEARER_TOKEN:
-        try:
-            import tweepy
-            print(f"📡 Method 2: Trying Twitter API v2 with Tweepy...")
-            
-            # Create Twitter API client
-            client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
-            
-            # Get user ID first
-            user = client.get_user(username=username)
-            if not user or not user.data:
-                print(f"❌ Twitter API: User @{username} not found")
-                return []
-            
-            user_id = user.data.id
-            print(f"✅ Found user @{username} (ID: {user_id})")
-            
-            # Twitter API requires max_results between 5 and 100 for this endpoint.
-            # Use at least 5 for the API call, but we'll only return the number the caller requested.
-            api_max = max(5, max_results)
-            print(f"📡 Twitter API: requesting up to {api_max} tweets (client requested {max_results})")
-            response = client.get_users_tweets(
-                user_id,
-                max_results=api_max,
-                exclude=['retweets', 'replies'],  # No retweets or replies
-                tweet_fields=['created_at', 'public_metrics', 'attachments'],
-                expansions=['attachments.media_keys'],
-                media_fields=['type', 'url', 'preview_image_url']
-            )
-            
-            if not response or not response.data:
-                print(f"❌ Twitter API: No tweets found for @{username}")
-                return []
-            
-            # Parse tweets
-            tweets = []
-            media_dict = {}
-            if response.includes and 'media' in response.includes:
-                for media in response.includes['media']:
-                    media_dict[media.media_key] = media
-            
-            for tweet_data in response.data:
-                try:
-                    tweet_obj = {
-                        'id': str(tweet_data.id),
-                        'text': tweet_data.text,
-                        'url': f'https://twitter.com/{username}/status/{tweet_data.id}',
-                        'created_at': tweet_data.created_at.isoformat() if tweet_data.created_at else '',
-                        'description': tweet_data.text,
-                        'metrics': {
-                            'like_count': tweet_data.public_metrics.get('like_count', 0) if tweet_data.public_metrics else 0,
-                            'retweet_count': tweet_data.public_metrics.get('retweet_count', 0) if tweet_data.public_metrics else 0,
-                            'reply_count': tweet_data.public_metrics.get('reply_count', 0) if tweet_data.public_metrics else 0,
-                            'impression_count': tweet_data.public_metrics.get('impression_count', 0) if tweet_data.public_metrics else 0,
-                        }
-                    }
-                    
-                    # Add media if available
-                    if tweet_data.attachments and 'media_keys' in tweet_data.attachments:
-                        media_list = []
-                        for media_key in tweet_data.attachments['media_keys']:
-                            if media_key in media_dict:
-                                media_obj = media_dict[media_key]
-                                media_list.append({
-                                    'type': media_obj.type,
-                                    'url': getattr(media_obj, 'url', getattr(media_obj, 'preview_image_url', ''))
-                                })
-                        if media_list:
-                            tweet_obj['media'] = media_list
-                    
-                    tweets.append(tweet_obj)
-                    
-                except Exception as e:
-                    print(f"⚠️ Error parsing Twitter API tweet: {e}")
-                    continue
-            # Only return the number of tweets requested by caller (may be less than api_max)
-            if tweets:
-                # Update cache with fresh tweets
-                for tweet in tweets:
-                    tweet_cache[tweet['id']] = tweet
-                
-                print(f"✅ Twitter API: Found {len(tweets)} tweets (returning {min(len(tweets), max_results)})")
-                print(f"🆕 Latest tweet ID: {tweets[0]['id']}")
-                print(f"📝 Latest tweet text: {tweets[0]['text'][:100]}...")
-                print(f"💾 Cache updated: {len(tweet_cache)} tweets cached")
-                return tweets[:max_results]
-            else:
-                print(f"❌ Twitter API: No valid tweets found")
-                return []
-                
-        except ImportError:
-            print(f"❌ Tweepy not installed! Install with: pip install tweepy")
-        except tweepy.errors.TooManyRequests as e:
-            print(f"❌ Twitter API rate limit exceeded (429 Too Many Requests)")
-            print(f"💡 Waiting for rate limit to reset. Check interval is now {TWITTER_CHECK_INTERVAL} seconds.")
-            print(f"💡 Consider increasing TWITTER_CHECK_INTERVAL to avoid rate limits.")
-            
-            # FALLBACK: Use cached tweets if available
-            if tweet_cache:
-                print(f"💾 Using cached tweets ({len(tweet_cache)} tweets in cache)")
-                cached_tweets = list(tweet_cache.values())[:max_results]
-                if cached_tweets:
-                    print(f"✅ Returning {len(cached_tweets)} cached tweets")
-                    return cached_tweets
-            
-            return []
-        except Exception as e:
-            print(f"❌ Twitter API error: {e}")
-            import traceback
-            traceback.print_exc()
-    else:
-        print(f"❌ TWITTER_BEARER_TOKEN not configured in .env")
-        print(f"💡 Using cache as fallback...")
-        
-        # FALLBACK: Use cached tweets if all methods failed
-        if tweet_cache:
-            print(f"💾 Tweet cache available with {len(tweet_cache)} tweets")
-            cached_tweets = list(tweet_cache.values())[:max_results]
-            if cached_tweets:
-                print(f"✅ Returning {len(cached_tweets)} cached tweets from previous fetches")
-                return cached_tweets
-        else:
-            print(f"⚠️ No cached tweets available yet")
+    # FALLBACK: Use cache if both methods failed
+    if tweet_cache:
+        cached_tweets = list(tweet_cache.values())[:max_results]
+        print(f"💾 Using {len(cached_tweets)} cached tweets as fallback")
+        return cached_tweets
     
-    # All methods failed
-    print(f"❌ ALL METHODS FAILED - Unable to fetch tweets from @{username}")
-    print(f"💡 SOLUTIONS:")
-    print(f"   1️⃣ Add TWITTER_BEARER_TOKEN to Railway Environment Variables")
-    print(f"      Get from: https://developer.twitter.com/en/portal/dashboard")
-    print(f"   2️⃣ Use Nitter instances (check if nitter.net, nitter.fediverse.observer work)")
-    print(f"   3️⃣ Wait 1 hour for Twitter API rate limit to reset")
-    print(f"   4️⃣ Cache will be used if tweets were previously fetched")
+    print(f"❌ No tweets available. Add TWITTER_BEARER_TOKEN to .env for best results.")
     return []
 
 async def create_tweet_embed(tweet_data):
@@ -3552,8 +3346,12 @@ async def check_for_new_tweets():
             # Now post the tweet
             channel = bot.get_channel(TWEETS_CHANNEL_ID)
             if channel:
+                # Post with header text and link, then embed
                 embed = await create_tweet_embed(latest_tweet)
-                await channel.send(embed=embed)
+                await channel.send(
+                    content=f"Latest post from **{TWITTER_USERNAME}** <:HEARTBROKEN:1451802268373352458>\n{latest_tweet['url']}",
+                    embed=embed
+                )
                 
                 # Log the action
                 log_channel = bot.get_channel(LOG_CHANNEL_ID)
