@@ -22,98 +22,32 @@ SOURCES = {
     'lolpros_backup': 'https://raw.githubusercontent.com/lolpros/lolpros-data/main/pros.json',
 }
 
-# Streamers to add manually (from popular streamers)
+# Streamers to add manually
+# HOW TO GET CORRECT RIOT IDs:
+# 1. Go to https://www.op.gg or https://u.gg
+# 2. Search for streamer name
+# 3. Copy EXACT Riot ID format: "Name#TAG" (example: "Agurin#4367")
+# 4. Check their stream to see all accounts they use
+# 
+# OR use /trackpros command in Discord to add them with correct data
+#
+# Template:
+# 'StreamerName': {
+#     'accounts': ['RiotID#TAG', 'AltAccount#TAG'],
+#     'region': 'euw1',  # euw1, na1, kr, etc.
+#     'role': 'Top',      # Top, Jungle, Mid, ADC, Support
+#     'source': 'manual'
+# },
+
 KNOWN_STREAMERS = {
-    'DesperateNasus': {
-        'accounts': ['DesperateNasus#EUW', 'MeanNasus#EUW', 'GrimNasus#EUW'],
-        'region': 'euw1',
-        'role': 'Top',
-        'source': 'manual'
-    },
-    'Agurin': {
-        'accounts': ['Agurin#EUW', 'Agurinlol#EUW', 'Agurin1#EUW'],
-        'region': 'euw1',
-        'role': 'Jungle',
-        'source': 'manual'
-    },
-    'Thebausffs': {
-        'accounts': ['Thebausffs#EUW', 'Bausffs#EUW', 'simonhermansson#EUW'],
-        'region': 'euw1',
-        'role': 'Top',
-        'source': 'manual'
-    },
-    'Nemesis': {
-        'accounts': ['Nemesis#EUW', 'NemesisLOL#EUW'],
-        'region': 'euw1',
-        'role': 'Mid',
-        'source': 'manual'
-    },
-    'Caedrel': {
-        'accounts': ['Caedrel#EUW', 'CaedrelTV#EUW'],
-        'region': 'euw1',
-        'role': 'Jungle',
-        'source': 'manual'
-    },
-    'Ratirl': {
-        'accounts': ['RATIRL#EUW', 'RAT IRL#EUW', 'ap0calypse#6345'],
-        'region': 'euw1',
-        'role': 'ADC',
-        'source': 'manual'
-    },
-    'Drututt': {
-        'accounts': ['Drututt#EUW', 'drututtlol#EUW'],
-        'region': 'euw1',
-        'role': 'Top',
-        'source': 'manual'
-    },
-    'Rekkles': {
-        'accounts': ['Rekkles#EUW', 'RekklesTooGood#EUW'],
-        'region': 'euw1',
-        'role': 'ADC',
-        'source': 'manual'
-    },
-    'Doublelift': {
-        'accounts': ['Doublelift#NA1', 'DLIFTXD#NA1'],
-        'region': 'na1',
-        'role': 'ADC',
-        'source': 'manual'
-    },
-    'Tyler1': {
-        'accounts': ['TYLER1#NA1', 'Built Different#NA1'],
-        'region': 'na1',
-        'role': 'ADC',
-        'source': 'manual'
-    },
-    'Faker': {
-        'accounts': ['Hide on bush#KR', 'SKT T1 Faker#KR'],
-        'region': 'kr',
-        'role': 'Mid',
-        'source': 'manual'
-    },
-    'Caps': {
-        'accounts': ['Caps#EUW', 'G2 Caps#EUW'],
-        'region': 'euw1',
-        'role': 'Mid',
-        'source': 'manual'
-    },
-    'Perkz': {
-        'accounts': ['Perkz#EUW', 'C9 Perkz#NA1'],
-        'region': 'euw1',
-        'role': 'Mid',
-        'source': 'manual'
-    },
-    'Jankos': {
-        'accounts': ['Jankos#EUW', 'G2 Jankos#EUW'],
-        'region': 'euw1',
-        'role': 'Jungle',
-        'source': 'manual'
-    },
-    'Bwipo': {
-        'accounts': ['Bwipo#EUW', 'FNC Bwipo#EUW'],
-        'region': 'euw1',
-        'role': 'Top',
-        'source': 'manual'
-    },
+    # Add your streamers here with CORRECT Riot IDs
+    # Example (replace with real data):
+    # 'Agurin': {
+    #     'accounts': ['Agurin#4367'],  # Get from op.gg or their stream
+    #     'region': 'euw1',
+    #     'role': 'Jungle',
+    #     'source': 'manual'
+    # },
 }
 
 
