@@ -1,0 +1,98 @@
+{
+  "scraped_at": "2025-12-22T18:59:03.187432",
+  "total_players": 8,
+  "players": [
+    {
+      "name": "DesperateNasus",
+      "accounts": [
+        "DesperateNasus#EUW",
+        "MeanNasus#EUW",
+        "GrimNasus#EUW"
+      ],
+      "role": "Top",
+      "region": "euw1",
+      "source": "manual",
+      "team": "Streamer"
+    },
+    {
+      "name": "Agurin",
+      "accounts": [
+        "Agurin#EUW",
+        "Agurinlol#EUW",
+        "Agurin1#EUW"
+      ],
+      "role": "Jungle",
+      "region": "euw1",
+      "source": "manual",
+      "team": "Streamer"
+    },
+    {
+      "name": "Thebausffs",
+      "accounts": [
+        "Thebausffs#EUW",
+        "Bausffs#EUW",
+        "simonhermansson#EUW"
+      ],
+      "role": "Top",
+      "region": "euw1",
+      "source": "manual",
+      "team": "Streamer"
+    },
+    {
+      "name": "Nemesis",
+      "accounts": [
+        "Nemesis#EUW",
+        "NemesisLOL#EUW"
+      ],
+      "role": "Mid",
+      "region": "euw1",
+      "source": "manual",
+      "team": "Streamer"
+    },
+    {
+      "name": "Caedrel",
+      "accounts": [
+        "Caedrel#EUW",
+        "CaedrelTV#EUW"
+      ],
+      "role": "Jungle",
+      "region": "euw1",
+      "source": "manual",
+      "team": "Streamer"
+    },
+    {
+      "name": "Ratirl",
+      "accounts": [
+        "RATIRL#EUW",
+        "RAT IRL#EUW",
+        "ap0calypse#6345"
+      ],
+      "role": "ADC",
+      "region": "euw1",
+      "source": "manual",
+      "team": "Streamer"
+    },
+    {
+      "name": "Drututt",
+      "accounts": [
+        "Drututt#EUW",
+        "drututtlol#EUW"
+      ],
+      "role": "Top",
+      "region": "euw1",
+      "source": "manual",
+      "team": "Streamer"
+    },
+    {
+      "name": "Rekkles",
+      "accounts": [
+        "Rekkles#EUW",
+        "RekklesTooGood#EUW"
+      ],
+      "role": "ADC",
+      "region": "euw1",
+      "source": "manual",
+      "team": "Streamer"
+    }
+  ]
+}
