@@ -2671,7 +2671,44 @@ TWITTER_CHECK_INTERVAL = 120  # 2 minutes
 
 last_tweet_id = None
 TWEET_ID_FILE = "last_tweet_id.txt"
+POSTED_TWEETS_FILE = "posted_tweets.json"
 tweet_cache = {}  # Cache recent tweets for commands
+posted_tweets = set()  # Set of all posted tweet IDs
+
+def load_posted_tweets():
+    """Load history of all posted tweet IDs from file"""
+    global posted_tweets
+    try:
+        if os.path.exists(POSTED_TWEETS_FILE):
+            with open(POSTED_TWEETS_FILE, 'r') as f:
+                posted_tweets = set(json.load(f))
+                print(f"📂 Loaded {len(posted_tweets)} posted tweet IDs from history")
+        else:
+            posted_tweets = set()
+            print(f"📂 No posted tweets history found, starting fresh")
+    except Exception as e:
+        print(f"⚠️ Error loading posted tweets: {e}")
+        posted_tweets = set()
+
+def save_posted_tweets():
+    """Save history of all posted tweet IDs to file"""
+    try:
+        with open(POSTED_TWEETS_FILE, 'w') as f:
+            json.dump(list(posted_tweets), f)
+        print(f"💾 Saved {len(posted_tweets)} posted tweet IDs to history")
+    except Exception as e:
+        print(f"⚠️ Error saving posted tweets: {e}")
+
+def add_posted_tweet(tweet_id):
+    """Add tweet ID to posted history and save"""
+    global posted_tweets
+    posted_tweets.add(str(tweet_id))
+    save_posted_tweets()
+    print(f"✅ Added tweet {tweet_id} to posted history")
+
+def is_tweet_posted(tweet_id):
+    """Check if tweet was already posted"""
+    return str(tweet_id) in posted_tweets
 
 def load_last_tweet_id():
     """Load the last tweet ID from file"""
@@ -2908,6 +2945,15 @@ async def twitter_post(interaction: discord.Interaction):
     try:
         tweets = await get_twitter_user_tweets(TWITTER_USERNAME, max_results=1)
         if tweets:
+            tweet_id = tweets[0]['id']
+            
+            # Check if already posted
+            if is_tweet_posted(tweet_id):
+                await interaction.edit_original_response(
+                    content=f"⚠️ Tweet {tweet_id} was already posted!\nUse this command only for tweets that weren't auto-posted."
+                )
+                return
+            
             channel = bot.get_channel(TWEETS_CHANNEL_ID)
             if channel:
                 embed = await create_tweet_embed(tweets[0])
@@ -2915,8 +2961,12 @@ async def twitter_post(interaction: discord.Interaction):
                     content=f"Latest post from **{TWITTER_USERNAME}** <:heartbroken:1175070212240978028>\n{tweets[0]['url']}",
                     embed=embed
                 )
+                
+                # Mark as posted
+                add_posted_tweet(tweet_id)
+                
                 await interaction.edit_original_response(
-                    content=f"✅ Posted tweet to <#{TWEETS_CHANNEL_ID}>\nMessage ID: {msg.id}\nTweet ID: {tweets[0]['id']}"
+                    content=f"✅ Posted tweet to <#{TWEETS_CHANNEL_ID}>\nMessage ID: {msg.id}\nTweet ID: {tweet_id}"
                 )
             else:
                 await interaction.edit_original_response(content=f"❌ Channel <#{TWEETS_CHANNEL_ID}> not found")
@@ -3337,6 +3387,14 @@ async def check_for_new_tweets():
             # New tweet found!
             print(f"🆕 NEW TWEET DETECTED! ID: {current_tweet_id}")
             
+            # CHECK IF ALREADY POSTED (duplicate prevention)
+            if is_tweet_posted(current_tweet_id):
+                print(f"⚠️ Tweet {current_tweet_id} was already posted before! Skipping duplicate.")
+                # Update last_tweet_id to move forward
+                last_tweet_id = current_tweet_id
+                save_last_tweet_id(current_tweet_id)
+                return
+            
             # Update last_tweet_id IMMEDIATELY to prevent duplicate posts
             old_tweet_id = last_tweet_id
             last_tweet_id = current_tweet_id
@@ -3352,6 +3410,9 @@ async def check_for_new_tweets():
                     content=f"Latest post from **{TWITTER_USERNAME}** <:heartbroken:1175070212240978028>\n{latest_tweet['url']}",
                     embed=embed
                 )
+                
+                # Mark tweet as posted in history
+                add_posted_tweet(current_tweet_id)
                 
                 # Log the action
                 log_channel = bot.get_channel(LOG_CHANNEL_ID)
@@ -3374,8 +3435,10 @@ async def check_for_new_tweets():
 async def before_tweet_check():
     """Wait for bot to be ready before starting the tweet check loop"""
     await bot.wait_until_ready()
+    load_posted_tweets()  # Load history of posted tweets
     load_last_tweet_id()  # Load saved tweet ID from file
     print(f"🐦 Tweet monitoring initialized! Last known tweet ID: {last_tweet_id or 'None (will initialize on first check)'}")
+    print(f"📊 Posted tweets history: {len(posted_tweets)} tweets tracked")
 
 # ================================
 #    BAN EXPIRATION BACKGROUND TASK
