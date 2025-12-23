@@ -73,6 +73,12 @@ class HelpView(discord.ui.View):
         )
         
         embed.add_field(
+            name="/decay",
+            value="Check LP decay status for all Diamond+ accounts\n`/decay` or `/decay user:@someone`\n• Shows days remaining until decay\n• Includes accurate banking calculation\n• Auto-updates account names",
+            inline=False
+        )
+        
+        embed.add_field(
             name="/unlink",
             value="Unlink your Riot account\n`/unlink`",
             inline=False
