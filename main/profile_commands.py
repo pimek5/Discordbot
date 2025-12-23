@@ -1581,7 +1581,7 @@ class ProfileCommands(commands.Cog):
         user: Optional[discord.User] = None
     ):
         """Check LP decay status for all Diamond+ accounts"""
-        await interaction.response.defer()
+        await interaction.response.defer(thinking=True)
         
         target = user or interaction.user
         db = get_db()
@@ -1722,7 +1722,7 @@ class ProfileCommands(commands.Cog):
             # Add footer with info
             embed.set_footer(text="💎 Diamond: 30d max (+7d/game) | 👑 Master+: 14d max (+1d/game)")
             
-            await interaction.edit_original_response(content=None, embed=embed)
+            await interaction.followup.send(embed=embed)
             
         except Exception as e:
             logger.error(f"Error checking decay: {e}")
