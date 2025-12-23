@@ -598,4 +598,180 @@ class RiotAPI:
                 return None
         
         return None
-
+    
+    async def check_decay_status(self, puuid: str, region: str) -> Dict:
+        """Check if account is at risk of LP decay with accurate banking system
+        
+        Decay rules:
+        - Diamond: max 30 days bank, +7 days per game (max 30)
+        - Master/GM/Chall: max 14 days bank, +1 day per game (max 14)
+        
+        Returns dict with:
+        - at_risk: bool
+        - days_remaining: int
+        - days_in_bank: int
+        - max_bank: int
+        - last_ranked_game: str
+        - tier: str
+        - message: str
+        """
+        from datetime import datetime, timezone
+        
+        # Pobierz ranked stats
+        ranked_stats = await self.get_ranked_stats_by_puuid(puuid, region)
+        if not ranked_stats:
+            return {
+                'at_risk': False,
+                'days_remaining': None,
+                'days_in_bank': 0,
+                'max_bank': 0,
+                'last_ranked_game': None,
+                'tier': 'UNRANKED',
+                'message': '❌ Brak danych rankingowych'
+            }
+        
+        # Znajdź solo queue
+        solo_queue = None
+        for queue in ranked_stats:
+            if queue.get('queueType') == 'RANKED_SOLO_5x5':
+                solo_queue = queue
+                break
+        
+        if not solo_queue:
+            return {
+                'at_risk': False,
+                'days_remaining': None,
+                'days_in_bank': 0,
+                'max_bank': 0,
+                'last_ranked_game': None,
+                'tier': 'UNRANKED',
+                'message': '❌ Brak danych Solo Queue'
+            }
+        
+        tier = solo_queue.get('tier', 'UNRANKED')
+        rank = solo_queue.get('rank', '')
+        lp = solo_queue.get('leaguePoints', 0)
+        
+        # Decay działa tylko dla Diamond+
+        decay_tiers = ['DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER']
+        if tier not in decay_tiers:
+            return {
+                'at_risk': False,
+                'days_remaining': None,
+                'days_in_bank': 0,
+                'max_bank': 0,
+                'last_ranked_game': None,
+                'tier': f'{tier} {rank}',
+                'message': f'✅ {tier} {rank} ({lp} LP) - brak decay poniżej Diamond'
+            }
+        
+        # Ustaw parametry decay
+        if tier == 'DIAMOND':
+            max_bank = 30
+            days_per_game = 7
+        else:  # Master+
+            max_bank = 14
+            days_per_game = 1
+        
+        # Pobierz ostatnie mecze
+        match_ids = await self.get_match_history(puuid, region, count=50)
+        if not match_ids:
+            return {
+                'at_risk': True,
+                'days_remaining': 0,
+                'days_in_bank': 0,
+                'max_bank': max_bank,
+                'last_ranked_game': None,
+                'tier': f'{tier} {rank}',
+                'message': f'⚠️ {tier} {rank} ({lp} LP) - brak danych o grach'
+            }
+        
+        # Znajdź ostatnią ranked grę i policz gry
+        last_ranked_timestamp = None
+        ranked_games_count = 0
+        
+        for match_id in match_ids:
+            match_data = await self.get_match_details(match_id, region)
+            if not match_data:
+                continue
+            
+            info = match_data.get('info', {})
+            if info.get('queueId') == 420:  # Ranked Solo/Duo
+                timestamp = info.get('gameCreation')
+                if not last_ranked_timestamp:
+                    last_ranked_timestamp = timestamp
+                ranked_games_count += 1
+        
+        if not last_ranked_timestamp:
+            return {
+                'at_risk': True,
+                'days_remaining': 0,
+                'days_in_bank': 0,
+                'max_bank': max_bank,
+                'last_ranked_game': None,
+                'tier': f'{tier} {rank}',
+                'message': f'⚠️ {tier} {rank} ({lp} LP) - brak ranked gier w historii'
+            }
+        
+        # Oblicz dni od ostatniej gry
+        last_game_date = datetime.fromtimestamp(last_ranked_timestamp / 1000, tz=timezone.utc)
+        now = datetime.now(timezone.utc)
+        days_since = (now - last_game_date).days
+        
+        # Oblicz bank z ograniczeniem do max
+        # Każda gra dodaje dni, ale nie przekracza max_bank
+        days_in_bank = min(ranked_games_count * days_per_game, max_bank)
+        days_remaining = days_in_bank - days_since
+        
+        # Jeśli days_remaining < 0, decay aktywny
+        if days_remaining <= 0:
+            return {
+                'at_risk': True,
+                'days_remaining': 0,
+                'days_in_bank': 0,
+                'max_bank': max_bank,
+                'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
+                'tier': f'{tier} {rank}',
+                'message': f'🚨 **DECAY AKTYWNY!** {tier} {rank} ({lp} LP)\n' +
+                          f'Ostatnia gra: {days_since} dni temu\n' +
+                          f'Bank wyczerpany! Graj natychmiast!'
+            }
+        elif days_remaining <= 3:
+            return {
+                'at_risk': True,
+                'days_remaining': days_remaining,
+                'days_in_bank': max(0, days_remaining),
+                'max_bank': max_bank,
+                'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
+                'tier': f'{tier} {rank}',
+                'message': f'⚠️ **UWAGA DECAY!** {tier} {rank} ({lp} LP)\n' +
+                          f'Ostatnia gra: {days_since} dni temu\n' +
+                          f'Bank: {days_remaining}/{max_bank} dni\n' +
+                          f'**Zostało {days_remaining} dni!**'
+            }
+        elif days_remaining <= 7:
+            return {
+                'at_risk': True,
+                'days_remaining': days_remaining,
+                'days_in_bank': days_remaining,
+                'max_bank': max_bank,
+                'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
+                'tier': f'{tier} {rank}',
+                'message': f'⚡ {tier} {rank} ({lp} LP)\n' +
+                          f'Ostatnia gra: {days_since} dni temu\n' +
+                          f'Bank: {days_remaining}/{max_bank} dni\n' +
+                          f'Zostało {days_remaining} dni'
+            }
+        else:
+            return {
+                'at_risk': False,
+                'days_remaining': days_remaining,
+                'days_in_bank': days_remaining,
+                'max_bank': max_bank,
+                'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
+                'tier': f'{tier} {rank}',
+                'message': f'✅ {tier} {rank} ({lp} LP)\n' +
+                          f'Ostatnia gra: {days_since} dni temu\n' +
+                          f'Bank: {days_remaining}/{max_bank} dni\n' +
+                          f'Bezpieczny jeszcze przez {days_remaining} dni'
+            }
