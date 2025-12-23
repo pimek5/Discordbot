@@ -699,6 +699,13 @@ class MyBot(commands.Bot):
                 print("🔄 Loading command cogs...")
                 await self.add_cog(profile_commands.ProfileCommands(self, riot_api, GUILD_ID))
                 print("  ✅ ProfileCommands loaded")
+                
+                # Log all commands in ProfileCommands cog
+                profile_cog = self.get_cog('ProfileCommands')
+                if profile_cog:
+                    profile_cmd_names = [cmd.name for cmd in profile_cog.walk_app_commands()]
+                    print(f"  📋 ProfileCommands contains: {profile_cmd_names}")
+                
                 await self.add_cog(stats_commands.StatsCommands(self, riot_api, GUILD_ID))
                 print("  ✅ StatsCommands loaded")
                 await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
