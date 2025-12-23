@@ -3644,15 +3644,60 @@ async def loldle(interaction: discord.Interaction, champion: str):
             # Update user's global stats
             db.update_loldle_stats(user_id, True, len(guesses_list))
             
-            # Send winner announcement embed
+            # Build winner embed showing final board
             winner_embed = discord.Embed(
                 title="🎉 CORRECT! Champion Guessed!",
                 description=f"**{interaction.user.mention} Guessed! 👑**\n\nThe champion was **{correct_champion}**!",
                 color=0x00FF00
             )
+            
+            # Show all guesses history
+            if len(guesses_list) > 1:
+                guesses_summary = []
+                for prev_guess in guesses_list[:-1]:
+                    prev_data = CHAMPIONS.get(prev_guess, {})
+                    attributes_to_check = ['gender', 'position', 'species', 'resource', 'range', 'region']
+                    match_count = sum([
+                        get_hint_emoji(prev_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr) == "🟩"
+                        for attr in attributes_to_check
+                    ])
+                    guesses_summary.append(f"`{prev_guess}` - {match_count}/6 correct")
+                
+                winner_embed.add_field(
+                    name=f"All Guesses ({len(guesses_list)})",
+                    value="\n".join(guesses_summary) + f"\n✅ `{correct_champion}` - CORRECT!",
+                    inline=False
+                )
+            
             winner_embed.add_field(name="Attempts", value=f"{len(guesses_list)} guess{'es' if len(guesses_list) > 1 else ''}", inline=True)
             
+            # Try to edit existing embed or create new one
+            embed_msg_id = loldle_data['game_embeds'].get(game_id)
+            
+            if embed_msg_id:
+                try:
+                    channel = interaction.channel
+                    message = await channel.fetch_message(embed_msg_id)
+                    await message.edit(embed=winner_embed)
+                    await interaction.response.send_message(
+                        f"🎉 **Correct!** You guessed **{correct_champion}** in {len(guesses_list)} attempts!",
+                        ephemeral=True
+                    )
+                    logger.info(f"🎮 {interaction.user.name} solved LoLdle in {len(guesses_list)} attempts")
+                    return
+                except discord.NotFound:
+                    pass
+                except Exception as e:
+                    print(f"⚠️ Failed to edit embed: {e}")
+                    pass
+            
+            # Create new embed if edit failed
             await interaction.response.send_message(embed=winner_embed)
+            try:
+                msg = await interaction.original_response()
+                loldle_data['game_embeds'][game_id] = msg.id
+            except:
+                pass
             logger.info(f"🎮 {interaction.user.name} solved LoLdle in {len(guesses_list)} attempts")
             return
         
@@ -4113,7 +4158,35 @@ async def quote(interaction: discord.Interaction, champion: str):
                 color=0x00FF00
             )
             winner_embed.add_field(name="Attempts", value=f"{len(guesses_list)}", inline=True)
+            winner_embed.add_field(
+                name=f"All Guesses ({len(guesses_list)})",
+                value=" → ".join(guesses_list[-20:]) if len(guesses_list) <= 20 else "... " + " → ".join(guesses_list[-10:]),
+                inline=False
+            )
+            
+            # Try to edit existing embed
+            embed_msg_id = loldle_data['game_embeds'].get(game_id)
+            if embed_msg_id:
+                try:
+                    channel = interaction.channel
+                    message = await channel.fetch_message(embed_msg_id)
+                    await message.edit(embed=winner_embed)
+                    await interaction.response.send_message(
+                        f"🎉 **Correct!** You guessed **{correct_champion}** in {len(guesses_list)} attempts!",
+                        ephemeral=True
+                    )
+                    logger.info(f"💬 {interaction.user.name} solved Quote mode in {len(guesses_list)} attempts")
+                    return
+                except:
+                    pass
+            
+            # Fallback: create new embed
             await interaction.response.send_message(embed=winner_embed)
+            try:
+                msg = await interaction.original_response()
+                loldle_data['game_embeds'][game_id] = msg.id
+            except:
+                pass
             logger.info(f"💬 {interaction.user.name} solved Quote mode in {len(guesses_list)} attempts")
             return
         
@@ -4251,7 +4324,35 @@ async def emoji(interaction: discord.Interaction, champion: str):
                 color=0x00FF00
             )
             winner_embed.add_field(name="Attempts", value=f"{len(guesses_list)}", inline=True)
+            winner_embed.add_field(
+                name=f"All Guesses ({len(guesses_list)})",
+                value=" → ".join(guesses_list[-20:]) if len(guesses_list) <= 20 else "... " + " → ".join(guesses_list[-10:]),
+                inline=False
+            )
+            
+            # Try to edit existing embed
+            embed_msg_id = loldle_data['game_embeds'].get(game_id)
+            if embed_msg_id:
+                try:
+                    channel = interaction.channel
+                    message = await channel.fetch_message(embed_msg_id)
+                    await message.edit(embed=winner_embed)
+                    await interaction.response.send_message(
+                        f"🎉 **Correct!** You guessed **{correct_champion}** in {len(guesses_list)} attempts!",
+                        ephemeral=True
+                    )
+                    logger.info(f"😃 {interaction.user.name} solved Emoji mode in {len(guesses_list)} attempts")
+                    return
+                except:
+                    pass
+            
+            # Fallback: create new embed
             await interaction.response.send_message(embed=winner_embed)
+            try:
+                msg = await interaction.original_response()
+                loldle_data['game_embeds'][game_id] = msg.id
+            except:
+                pass
             logger.info(f"😃 {interaction.user.name} solved Emoji mode in {len(guesses_list)} attempts")
             return
         
@@ -4274,7 +4375,7 @@ async def emoji(interaction: discord.Interaction, champion: str):
         # All guesses from this round
         embed.add_field(
             name=f"All Guesses ({len(guesses_list)})",
-            value=" → ".join(guesses_list) if len(guesses_list) <= 20 else " → ".join(guesses_list[:10]) + f"\n... +{len(guesses_list)-10} more",
+            value=" → ".join(guesses_list[-20:]) if len(guesses_list) <= 20 else "... " + " → ".join(guesses_list[-10:]),
             inline=False
         )
         
@@ -4412,7 +4513,35 @@ async def ability(interaction: discord.Interaction, champion: str):
                 color=0x00FF00
             )
             winner_embed.add_field(name="Attempts", value=f"{len(guesses_list)}", inline=True)
+            winner_embed.add_field(
+                name=f"All Guesses ({len(guesses_list)})",
+                value=" → ".join(guesses_list[-20:]) if len(guesses_list) <= 20 else "... " + " → ".join(guesses_list[-10:]),
+                inline=False
+            )
+            
+            # Try to edit existing embed
+            embed_msg_id = loldle_data['game_embeds'].get(game_id)
+            if embed_msg_id:
+                try:
+                    channel = interaction.channel
+                    message = await channel.fetch_message(embed_msg_id)
+                    await message.edit(embed=winner_embed)
+                    await interaction.response.send_message(
+                        f"🎉 **Correct!** You guessed **{correct_champion}** in {len(guesses_list)} attempts!",
+                        ephemeral=True
+                    )
+                    logger.info(f"🔮 {interaction.user.name} solved Ability mode in {len(guesses_list)} attempts")
+                    return
+                except:
+                    pass
+            
+            # Fallback: create new embed
             await interaction.response.send_message(embed=winner_embed)
+            try:
+                msg = await interaction.original_response()
+                loldle_data['game_embeds'][game_id] = msg.id
+            except:
+                pass
             logger.info(f"🔮 {interaction.user.name} solved Ability mode in {len(guesses_list)} attempts")
             return
         
@@ -4429,7 +4558,7 @@ async def ability(interaction: discord.Interaction, champion: str):
         # All guesses from this round
         embed.add_field(
             name=f"All Guesses ({len(guesses_list)})",
-            value=" → ".join(guesses_list) if len(guesses_list) <= 20 else " → ".join(guesses_list[:10]) + f"\n... +{len(guesses_list)-10} more",
+            value=" → ".join(guesses_list[-20:]) if len(guesses_list) <= 20 else "... " + " → ".join(guesses_list[-10:]),
             inline=False
         )
         
