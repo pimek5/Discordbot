@@ -689,6 +689,7 @@ class RiotAPI:
                 'max_bank': 0,
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
+                'lp': lp,
                 'message': f'✅ {tier} {rank} ({lp} LP) - brak decay poniżej Diamond'
             }
         
@@ -759,6 +760,7 @@ class RiotAPI:
                 'max_bank': max_bank,
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
+                'lp': lp,
                 'message': f'🚨 **DECAY AKTYWNY!** {tier} {rank} ({lp} LP)\n' +
                           f'Ostatnia gra: {days_since} dni temu\n' +
                           f'Bank wyczerpany! Graj natychmiast!'
@@ -771,6 +773,7 @@ class RiotAPI:
                 'max_bank': max_bank,
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
+                'lp': lp,
                 'message': f'⚠️ **UWAGA DECAY!** {tier} {rank} ({lp} LP)\n' +
                           f'Ostatnia gra: {days_since} dni temu\n' +
                           f'Bank: {days_remaining}/{max_bank} dni\n' +
@@ -784,6 +787,7 @@ class RiotAPI:
                 'max_bank': max_bank,
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
+                'lp': lp,
                 'message': f'⚡ {tier} {rank} ({lp} LP)\n' +
                           f'Ostatnia gra: {days_since} dni temu\n' +
                           f'Bank: {days_remaining}/{max_bank} dni\n' +
@@ -797,6 +801,7 @@ class RiotAPI:
                 'max_bank': max_bank,
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
+                'lp': lp,
                 'message': f'✅ {tier} {rank} ({lp} LP)\n' +
                           f'Ostatnia gra: {days_since} dni temu\n' +
                           f'Bank: {days_remaining}/{max_bank} dni\n' +

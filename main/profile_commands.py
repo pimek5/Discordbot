@@ -1696,7 +1696,7 @@ class ProfileCommands(commands.Cog):
                 # Format account info
                 name = f"{emoji} {account['riot_id_game_name']}#{account['riot_id_tagline']}"
                 region = account['region'].upper()
-                tier_display = result['tier']
+                tier_display = f"{result['tier']} ({result['lp']} LP)"
                 
                 # Decay counter
                 if days_remaining is not None:
