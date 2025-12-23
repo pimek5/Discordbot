@@ -3743,38 +3743,22 @@ async def loldle(interaction: discord.Interaction, champion: str):
         # Wrong guess - update progress in database
         db.update_loldle_player_progress(game_id, user_id, guesses_list, False)
         
-        # Build known correct attributes from all previous guesses
-        known_correct = {}
+        # Build detailed comparison table showing all guesses
         attributes_to_check = ['gender', 'position', 'species', 'resource', 'range', 'region']
         
-        for prev_guess in guesses_list[:-1]:  # All previous guesses (not including current)
-            prev_data = CHAMPIONS.get(prev_guess, {})
-            for attr in attributes_to_check:
-                if attr not in known_correct:  # Only set if not already known
-                    prev_val = prev_data.get(attr, 'N/A')
-                    correct_val = correct_data.get(attr, 'N/A')
-                    if get_hint_emoji(prev_val, correct_val, attr) == "🟩":
-                        known_correct[attr] = correct_val
-        
-        # Build detailed comparison table showing all guesses
         embed = discord.Embed(
             title="🎮 LoLdle - Daily Challenge",
             description="Guess the champion! Each guess reveals clues.",
             color=0x1DA1F2
         )
 
-        # Latest guess block (full breakdown)
+        # Latest guess block (full breakdown) - ALWAYS show actual guess values
         latest_lines = []
         for attr in attributes_to_check:
             guess_val = guess_data.get(attr, 'N/A')
             correct_val = correct_data.get(attr, 'N/A')
-            if attr in known_correct:
-                emoji = "🟩"
-                display_val = known_correct[attr]
-            else:
-                emoji = get_hint_emoji(guess_val, correct_val, attr)
-                display_val = guess_val
-            latest_lines.append(f"**{attr.title()}:** {display_val} {emoji}")
+            emoji = get_hint_emoji(guess_val, correct_val, attr)
+            latest_lines.append(f"**{attr.title()}:** {guess_val} {emoji}")
         embed.add_field(
             name=f"Latest Guess: {champion}",
             value="\n".join(latest_lines),
@@ -3792,8 +3776,15 @@ async def loldle(interaction: discord.Interaction, champion: str):
             inline=True
         )
 
-        # Progress
-        found_count = len(known_correct)
+        # Progress - count how many attributes have been found correct (🟩) across ALL guesses
+        found_count = 0
+        for attr in attributes_to_check:
+            for g in guesses_list:
+                gdata = CHAMPIONS.get(g, {})
+                gval = gdata.get(attr, 'N/A')
+                if get_hint_emoji(gval, correct_data.get(attr, 'N/A'), attr) == "🟩":
+                    found_count += 1
+                    break  # Found this attribute, move to next
         embed.add_field(
             name="Progress",
             value=f"{found_count}/6 attributes found",
@@ -3824,9 +3815,9 @@ async def loldle(interaction: discord.Interaction, champion: str):
             inline=True
         )
 
-
         # Guessing history (last 2 previous guesses, inline). If only one previous, show that one.
         history_guesses = guesses_list[:-1][-2:] if len(guesses_list) > 1 else []
+        
         # Debug logging of counts for visibility in production
         try:
             pos_count = sum(1 for v in best_status.values() if v and v.get('emoji') in ['🟩', '🟨'])
@@ -3840,6 +3831,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
             )
         except Exception as e:
             logger.debug(f"LoLdle classic count logging failed: {e}")
+        
         for past_guess in history_guesses:
             past_data = CHAMPIONS.get(past_guess, {})
             lines = []
@@ -3856,7 +3848,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
             embed.add_field(name="Guessing History", value="No previous guesses", inline=False)
 
         # Footer legend
-        embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong | ✓ = Already Found")
+        embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong")
         
         # Try to edit existing embed or create new one
         embed_msg_id = loldle_data['game_embeds'].get(game_id)
