@@ -695,13 +695,13 @@ class RiotAPI:
                 'message': f'✅ {tier} {rank} ({lp} LP) - brak decay poniżej Diamond'
             }
         
-        # Ustaw parametry decay
+        # Ustaw parametry decay wg rankingu
         if tier == 'DIAMOND':
-            max_bank = 30
-            days_per_game = 7
+            decay_starts_after = 28  # Decay starts after 28 days
+            decay_per_day = 75       # -75 LP per day
         else:  # Master+
-            max_bank = 14
-            days_per_game = 1
+            decay_starts_after = 10  # Decay starts after 10 days
+            decay_per_day = 75       # -75 LP per day
         
         # Pobierz ostatnie mecze
         match_ids = await self.get_match_history(puuid, region, count=50)
@@ -710,7 +710,7 @@ class RiotAPI:
                 'at_risk': True,
                 'days_remaining': 0,
                 'days_in_bank': 0,
-                'max_bank': max_bank,
+                'max_bank': 0,
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
                 'lp': lp,
@@ -719,7 +719,6 @@ class RiotAPI:
         
         # Znajdź ostatnią ranked grę w Solo Queue
         last_ranked_timestamp = None
-        total_games = wins + losses  # Use total games from ranked stats
         
         for match_id in match_ids:
             match_data = await self.get_match_details(match_id, region)
@@ -738,22 +737,28 @@ class RiotAPI:
                 'at_risk': True,
                 'days_remaining': 0,
                 'days_in_bank': 0,
-                'max_bank': max_bank,
+                'max_bank': 0,
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
                 'lp': lp,
                 'message': f'⚠️ {tier} {rank} ({lp} LP) - brak ranked gier w historii'
             }
         
-        # Oblicz dni od ostatniej gry
+        # Oblicz dni od ostatniej gry (ze dokładnością do godzin)
         last_game_date = datetime.fromtimestamp(last_ranked_timestamp / 1000, tz=timezone.utc)
         now = datetime.now(timezone.utc)
-        days_since = (now - last_game_date).days
+        time_diff = now - last_game_date
+        # Konwertuj na dni z frakcjami
+        days_since_float = time_diff.total_seconds() / (24 * 3600)
+        days_since = int(days_since_float)
         
-        # Oblicz bank z total games from ranked stats (wins + losses)
-        # Each game adds days_per_game days, capped at max_bank
-        days_in_bank = min(total_games * days_per_game, max_bank)
-        days_remaining = days_in_bank - days_since
+        # Logika decay'u League of Legends:
+        # - Masz bank dni (max_bank)
+        # - Każdy dzień bez gry zmniejsza bank o 1 dzień
+        # - Gdy bank = 0, zaczynają ci spadać punkty (-75 LP/dzień)
+        max_bank = decay_starts_after  # Bank = days before decay starts
+        days_in_bank = max_bank  # Always at max (you accumulate it over the season)
+        days_remaining = max(0, max_bank - days_since)
         
         # Jeśli days_remaining < 0, decay aktywny
         if days_remaining <= 0:
