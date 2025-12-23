@@ -697,10 +697,10 @@ class RiotAPI:
         
         # Ustaw parametry decay wg rankingu
         if tier == 'DIAMOND':
-            decay_starts_after = 28  # Decay starts after 28 days
+            decay_starts_after = 30  # Decay starts after 30 days
             decay_per_day = 75       # -75 LP per day
         else:  # Master+
-            decay_starts_after = 10  # Decay starts after 10 days
+            decay_starts_after = 14  # Decay starts after 14 days
             decay_per_day = 75       # -75 LP per day
         
         # Pobierz ostatnie mecze
