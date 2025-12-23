@@ -644,7 +644,7 @@ class RiotAPI:
         - lp: int
         - message: str
         """
-        from datetime import datetime, timezone
+        from datetime import datetime, timezone, timedelta
         
         # Pobierz ranked stats
         ranked_stats = await self.get_ranked_stats_by_puuid(puuid, region)
@@ -772,8 +772,8 @@ class RiotAPI:
         # Fallback: użyj match history jeśli API nie ma inactiveStartTime
         logger.info(f"📊 Falling back to match history for decay calculation")
         
-        # Pobierz match history (ostatnie 20 gier)
-        match_ids = await self.get_match_history(puuid, region, count=20)
+        # Pobierz match history (ostatnie 100 gier aby mieć pełny obraz)
+        match_ids = await self.get_match_history(puuid, region, count=100)
         if not match_ids:
             return {
                 'at_risk': True,
@@ -786,9 +786,8 @@ class RiotAPI:
                 'message': f'⚠️ {tier} {rank} ({lp} LP) - brak danych match history'
             }
         
-        # Znajdź ostatnią ranked grę w Solo Queue
-        last_ranked_timestamp = None
-        
+        # Zbierz daty wszystkich ranked solo queue gier
+        ranked_game_dates = []
         for match_id in match_ids:
             match_data = await self.get_match_details(match_id, region)
             if not match_data:
@@ -797,11 +796,11 @@ class RiotAPI:
             info = match_data.get('info', {})
             if info.get('queueId') == 420:  # Ranked Solo/Duo
                 timestamp = info.get('gameCreation')
-                if not last_ranked_timestamp:
-                    last_ranked_timestamp = timestamp
-                    break  # Found the most recent, we can stop
+                if timestamp:
+                    game_date = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                    ranked_game_dates.append(game_date)
         
-        if not last_ranked_timestamp:
+        if not ranked_game_dates:
             return {
                 'at_risk': True,
                 'days_remaining': 0,
@@ -813,31 +812,52 @@ class RiotAPI:
                 'message': f'⚠️ {tier} {rank} ({lp} LP) - brak ranked gier w historii'
             }
         
-        # Oblicz dni od ostatniej gry (ze dokładnością do godzin)
-        last_game_date = datetime.fromtimestamp(last_ranked_timestamp / 1000, tz=timezone.utc)
+        # Sortuj daty od najstarszej do najnowszej
+        ranked_game_dates.sort()
+        
         now = datetime.now(timezone.utc)
-        time_diff = now - last_game_date
-        # Konwertuj na dni z frakcjami
-        days_since_float = time_diff.total_seconds() / (24 * 3600)
-        days_since = int(days_since_float)
+        last_game_date = ranked_game_dates[-1]
         
-        # Logika decay'u League of Legends:
-        # - Masz bank dni który się zmniejsza co dzień bez gry
-        # - Diamond: każda gra dodaje +7 dni do banku (max 30)
-        # - Master+: każda gra dodaje +1 dzień do banku (max 14)
-        # - Gdy bank = 0, zaczynają ci spadać punkty (-75 LP/dzień)
+        # Parametry banku wg ranku
+        max_bank = decay_starts_after
+        bank_per_game = 7 if tier == 'DIAMOND' else 1  # Diamond +7 dni/grę, Master+ +1 dzień/grę
         
-        max_bank = decay_starts_after  # Bank max
+        # Symuluj bank od ostatnich 60 dni (lub od najstarszej gry)
+        simulation_start = max(ranked_game_dates[0], now - timedelta(days=60))
         
-        # Oblicz aktualny bank na podstawie ostatniej gry
-        # Bank = max_bank - dni_od_ostatniej_gry
-        # Ale nie może być ujemny ani większy niż max
-        days_remaining = max(0, max_bank - days_since)
+        # Grupuj gry po dniach (bez godzin)
+        games_by_day = {}
+        for game_date in ranked_game_dates:
+            if game_date >= simulation_start:
+                day_key = game_date.date()
+                games_by_day[day_key] = games_by_day.get(day_key, 0) + 1
         
-        # Bank nie może być większy niż max (teoretycznie zawsze prawda przy tej kalkulacji)
-        days_in_bank = min(days_remaining, max_bank)
+        # Symuluj bank dzień po dniu
+        current_bank = max_bank  # Startujemy z pełnym bankiem
+        current_date = simulation_start.date()
+        today = now.date()
         
-        # Jeśli days_remaining < 0, decay aktywny
+        while current_date <= today:
+            if current_date in games_by_day:
+                # Była gra tego dnia - dodaj dni do banku za każdą grę
+                games_played = games_by_day[current_date]
+                current_bank += games_played * bank_per_game
+                current_bank = min(current_bank, max_bank)  # Cap na max
+            else:
+                # Nie było gry - bank maleje o 1
+                current_bank -= 1
+            
+            current_date += timedelta(days=1)
+        
+        days_remaining = max(0, current_bank)
+        days_in_bank = days_remaining
+        
+        # Oblicz dni od ostatniej gry dla wyświetlenia
+        days_since = (now - last_game_date).days
+        
+        logger.info(f"✅ Simulated bank for {tier} {rank}: {days_remaining}/{max_bank} days (last game: {last_game_date.strftime('%Y-%m-%d')})")
+        
+        # Jeśli days_remaining <= 0, decay aktywny
         if days_remaining <= 0:
             return {
                 'at_risk': True,
