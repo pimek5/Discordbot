@@ -128,6 +128,28 @@ from riot_api import RiotAPI, load_champion_data
 from permissions import has_admin_permissions
 import profile_commands
 import stats_commands
+
+# Utility: normalize various DB-stored guess formats into a Python list
+def normalize_guesses(raw):
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return list(raw)
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.startswith('[') and s.endswith(']'):
+            try:
+                v = json.loads(s)
+                return v if isinstance(v, list) else [str(v)]
+            except Exception:
+                pass
+        if s.startswith('{') and s.endswith('}'):
+            inner = s[1:-1]
+            if not inner:
+                return []
+            return [part.strip().strip('"') for part in inner.split(',')]
+        return [s]
+    return [raw]
 import leaderboard_commands
 
 # Orianna configuration
@@ -3539,6 +3561,7 @@ def get_daily_champion():
         # New day - pick random champion
         import random
         import json
+        import re
         loldle_data['daily_champion'] = random.choice(list(CHAMPIONS.keys()))
         loldle_data['daily_date'] = today
         loldle_data['players'] = {}
@@ -3578,6 +3601,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
         return
     
     try:
+
         # Get or create daily game in database
         db = get_db()
         guild_id = interaction.guild.id
@@ -3599,21 +3623,12 @@ async def loldle(interaction: discord.Interaction, champion: str):
         
         if not progress:
             # First guess for this user today
-            progress = {'guesses': [], 'won': False}
+            progress = {'guesses': [], 'solved': False}
             guesses_list = []
             won = False
         else:
-            raw_guesses = progress.get('guesses_list', [])
-            # Normalize DB value to list
-            if isinstance(raw_guesses, str):
-                try:
-                    raw_guesses = json.loads(raw_guesses)
-                except Exception:
-                    raw_guesses = [raw_guesses]
-            elif not isinstance(raw_guesses, list):
-                raw_guesses = [raw_guesses]
-            guesses_list = raw_guesses
-            won = progress.get('won', False)
+            guesses_list = normalize_guesses(progress.get('guesses'))
+            won = progress.get('solved', False)
             
             # Check if already solved
             if won:
@@ -3796,8 +3811,22 @@ async def loldle(interaction: discord.Interaction, champion: str):
             inline=True
         )
 
+
         # Guessing history (last 2 previous guesses, inline). If only one previous, show that one.
         history_guesses = guesses_list[:-1][-2:] if len(guesses_list) > 1 else []
+        # Debug logging of counts for visibility in production
+        try:
+            pos_count = sum(1 for v in best_status.values() if v and v.get('emoji') in ['🟩', '🟨'])
+            logger.info(
+                "LoLdle classic counts: user=%s total=%d recent=%d history=%d positives=%d",
+                interaction.user.id,
+                len(guesses_list),
+                len(recent_source),
+                len(history_guesses),
+                pos_count,
+            )
+        except Exception as e:
+            logger.debug(f"LoLdle classic count logging failed: {e}")
         for past_guess in history_guesses:
             past_data = CHAMPIONS.get(past_guess, {})
             lines = []
@@ -3882,8 +3911,8 @@ async def loldlestats(interaction: discord.Interaction):
         
         # Today's Progress
         if progress:
-            guesses_list = progress.get('guesses_list', [])
-            won = progress.get('won', False)
+            guesses_list = normalize_guesses(progress.get('guesses'))
+            won = progress.get('solved', False)
             
             if won:
                 embed.description = f"✅ **Today: Solved!** You guessed in **{len(guesses_list)}** attempts."
@@ -4155,16 +4184,8 @@ async def quote(interaction: discord.Interaction, champion: str):
             guesses_list = []
             won = False
         else:
-            raw_guesses = progress.get('guesses_list', [])
-            if isinstance(raw_guesses, str):
-                try:
-                    raw_guesses = json.loads(raw_guesses)
-                except Exception:
-                    raw_guesses = [raw_guesses]
-            elif not isinstance(raw_guesses, list):
-                raw_guesses = [raw_guesses]
-            guesses_list = raw_guesses
-            won = progress.get('won', False)
+            guesses_list = normalize_guesses(progress.get('guesses'))
+            won = progress.get('solved', False)
             if won:
                 await interaction.response.send_message(
                     f"✅ You already solved today's Quote! The champion is **{correct_champion}**.",
@@ -4329,16 +4350,8 @@ async def emoji(interaction: discord.Interaction, champion: str):
             guesses_list = []
             won = False
         else:
-            raw_guesses = progress.get('guesses_list', [])
-            if isinstance(raw_guesses, str):
-                try:
-                    raw_guesses = json.loads(raw_guesses)
-                except Exception:
-                    raw_guesses = [raw_guesses]
-            elif not isinstance(raw_guesses, list):
-                raw_guesses = [raw_guesses]
-            guesses_list = raw_guesses
-            won = progress.get('won', False)
+            guesses_list = normalize_guesses(progress.get('guesses'))
+            won = progress.get('solved', False)
             if won:
                 await interaction.response.send_message(
                     f"✅ You already solved today's Emoji! The champion is **{correct_champion}**.",
@@ -4526,16 +4539,8 @@ async def ability(interaction: discord.Interaction, champion: str):
             guesses_list = []
             won = False
         else:
-            raw_guesses = progress.get('guesses_list', [])
-            if isinstance(raw_guesses, str):
-                try:
-                    raw_guesses = json.loads(raw_guesses)
-                except Exception:
-                    raw_guesses = [raw_guesses]
-            elif not isinstance(raw_guesses, list):
-                raw_guesses = [raw_guesses]
-            guesses_list = raw_guesses
-            won = progress.get('won', False)
+            guesses_list = normalize_guesses(progress.get('guesses'))
+            won = progress.get('solved', False)
             if won:
                 await interaction.response.send_message(
                     f"✅ You already solved today's Ability! The champion is **{correct_champion}**.",
