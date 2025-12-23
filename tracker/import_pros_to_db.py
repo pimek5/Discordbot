@@ -12,7 +12,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-def import_from_json(json_file='scraped_pros_advanced.json'):
+def import_from_json(json_file='browser_scraped_pros.json'):
     """Import players from JSON to database"""
     
     print(f"📂 Loading {json_file}...")
@@ -20,7 +20,8 @@ def import_from_json(json_file='scraped_pros_advanced.json'):
     with open(json_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    players = data.get('players', [])
+    # Support both formats: old (data['players']) and new (data['players'])
+    players = data.get('players', data if isinstance(data, list) else [])
     print(f"  Found {len(players)} players in JSON")
     
     if not players:
@@ -68,15 +69,26 @@ def import_from_json(json_file='scraped_pros_advanced.json'):
         
         for player in players:
             try:
-                name = player.get('name')
-                accounts = player.get('accounts', [])
+                # Support both formats:
+                # Old: {'name': 'Player', 'accounts': ['Name#TAG']}
+                # New Selenium: {'riot_id': 'Name#TAG', 'name': 'Name', 'tag': 'TAG'}
                 
-                if not name or not accounts:
+                if 'riot_id' in player:
+                    # New format from Selenium scraper
+                    riot_id = player['riot_id']
+                    player_name = player.get('name', riot_id.split('#')[0])
+                    accounts = [riot_id]
+                else:
+                    # Old format
+                    player_name = player.get('name')
+                    accounts = player.get('accounts', [])
+                
+                if not player_name or not accounts:
                     skipped += 1
                     continue
                 
                 # Check if exists
-                cur.execute("SELECT id, accounts FROM tracked_pros WHERE player_name = %s", (name,))
+                cur.execute("SELECT id, accounts FROM tracked_pros WHERE player_name = %s", (player_name,))
                 existing = cur.fetchone()
                 
                 if existing:
@@ -99,10 +111,11 @@ def import_from_json(json_file='scraped_pros_advanced.json'):
                         player.get('team'),
                         player.get('role'),
                         player.get('region'),
-                        name
+                        player_name
                     ))
                     updated += 1
-                    print(f"  🔄 Updated: {name} ({len(all_accounts)} accounts)")
+                    if (added + updated) % 10 == 0:
+                        print(f"  🔄 Updated: {player_name} ({len(all_accounts)} accounts)")
                 else:
                     # Insert new
                     cur.execute("""
@@ -110,7 +123,7 @@ def import_from_json(json_file='scraped_pros_advanced.json'):
                         (player_name, accounts, source, team, role, region)
                         VALUES (%s, %s, %s, %s, %s, %s)
                     """, (
-                        name,
+                        player_name,
                         json.dumps(accounts),
                         player.get('source'),
                         player.get('team'),
@@ -118,14 +131,15 @@ def import_from_json(json_file='scraped_pros_advanced.json'):
                         player.get('region')
                     ))
                     added += 1
-                    print(f"  ✅ Added: {name} ({len(accounts)} accounts)")
+                    if (added + updated) % 10 == 0:
+                        print(f"  ✅ Added: {player_name} ({len(accounts)} accounts)")
                 
                 # Commit every 5 players
                 if (added + updated) % 5 == 0:
                     conn.commit()
             
             except Exception as e:
-                print(f"  ⚠️ Error with {player.get('name', 'unknown')}: {e}")
+                print(f"  ⚠️ Error with {player.get('name', player.get('riot_id', 'unknown'))}: {e}")
                 conn.rollback()
         
         conn.commit()
