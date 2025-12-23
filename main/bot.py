@@ -3704,7 +3704,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
             inline=False
         )
         
-        # Show all guesses history
+        # Show all guesses history (without latest, which is shown above)
         if len(guesses_list) > 1:
             guesses_summary = []
             for prev_guess in guesses_list[:-1]:  # All except the latest
@@ -3734,14 +3734,6 @@ async def loldle(interaction: discord.Interaction, champion: str):
             name="Progress",
             value=f"{found_count}/6 attributes found",
             inline=True
-        )
-
-        # Show recent guesses (latest 5) so players see history
-        recent = guesses_list[-5:]
-        embed.add_field(
-            name=f"Recent Guesses ({len(recent)})",
-            value=" → ".join(recent),
-            inline=False
         )
         
         embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong | ✓ = Already Found")
