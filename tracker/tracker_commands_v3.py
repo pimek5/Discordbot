@@ -334,89 +334,11 @@ class TrackerCommandsV3(commands.Cog):
         self.monitor_user_games.cancel()
     
     async def _update_missing_summoner_ids(self):
-        """Update league_accounts with correct PUUIDs on startup (summoner_id no longer needed)"""
+        """Check if any accounts need updates (disabled - all accounts should have PUUIDs from main bot)"""
         await self.bot.wait_until_ready()
         
-        logger.info("🔧 Checking for accounts with missing/incorrect PUUIDs...")
-        
-        conn = self.db.get_connection()
-        try:
-            cur = conn.cursor()
-            
-            # Get accounts that might need PUUID update (NULL or very old)
-            cur.execute("""
-                SELECT id, puuid, region, riot_id_game_name, riot_id_tagline
-                FROM league_accounts
-                WHERE puuid IS NULL OR last_updated < NOW() - INTERVAL '30 days'
-                LIMIT 50
-            """)
-            
-            accounts = cur.fetchall()
-            
-            if not accounts:
-                logger.info("✅ All accounts have recent PUUIDs")
-                return
-            
-            logger.info(f"📊 Found {len(accounts)} accounts to update PUUID, processing...")
-            
-            updated = 0
-            for account_id, stored_puuid, region, game_name, tagline in accounts:
-                try:
-                    # Get fresh account data from Riot ID to get real PUUID
-                    logger.debug(f"🔍 Getting account data for {game_name}#{tagline}...")
-                    account_data = await self.riot_api.get_account_by_riot_id(game_name, tagline, region)
-                    
-                    if not account_data:
-                        logger.warning(f"⚠️ Could not get account data for {game_name}#{tagline}, skipping...")
-                        continue
-                    
-                    real_puuid = account_data.get('puuid')
-                    if not real_puuid:
-                        logger.warning(f"⚠️ No PUUID in response for {game_name}#{tagline}")
-                        continue
-                    
-                    logger.info(f"✅ Got PUUID for {game_name}#{tagline}")
-                    
-                    # Get encrypted summoner_id (needed for Spectator API)
-                    # Use game_name directly instead of fetching from broken /by-puuid/ endpoint
-                    encrypted_summoner_id = None
-                    summoner_full = await self.riot_api.get_summoner_by_name(game_name, region)
-                    if summoner_full and 'id' in summoner_full:
-                        encrypted_summoner_id = summoner_full.get('id')
-                        logger.info(f"✅ Got encrypted summoner_id for {game_name}#{tagline}")
-                    else:
-                        logger.warning(f"⚠️ Could not get summoner_id for {game_name}#{tagline}")
-                    
-                    # Update database with PUUID and summoner_id
-                    try:
-                        cur.execute("""
-                            UPDATE league_accounts
-                            SET puuid = %s, summoner_id = %s, last_updated = NOW()
-                            WHERE id = %s
-                        """, (real_puuid, encrypted_summoner_id, account_id))
-                        
-                        conn.commit()
-                        updated += 1
-                        logger.info(f"✅ Updated {game_name}#{tagline} with PUUID (ID: {account_id})")
-                    except Exception as db_error:
-                        logger.error(f"❌ Database error updating {game_name}#{tagline}: {db_error}")
-                        conn.rollback()
-                        continue
-                    
-                    await asyncio.sleep(0.7)  # Rate limit
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error updating {game_name}#{tagline}: {e}")
-                    conn.rollback()
-                    continue
-            
-            logger.info(f"✅ Updated {updated}/{len(accounts)} accounts with correct PUUIDs")
-            
-        except Exception as e:
-            logger.error(f"Error updating PUUIDs: {e}")
-            conn.rollback()
-        finally:
-            self.db.return_connection(conn)
+        logger.info("✅ Skipping PUUID check - accounts managed by main bot")
+        return
     
     async def _load_threads_from_db(self):
         """Load existing threads from database"""
