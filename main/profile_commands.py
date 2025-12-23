@@ -1694,7 +1694,7 @@ class ProfileCommands(commands.Cog):
                     emoji = "🟢"
                 
                 # Format account info
-                name = f"{emoji} {account['summoner_name']}"
+                name = f"{emoji} {account['riot_id_game_name']}#{account['riot_id_tagline']}"
                 region = account['region'].upper()
                 tier_display = f"{result['tier']} {result['rank']} ({result['lp']} LP)"
                 
