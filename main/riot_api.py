@@ -154,6 +154,33 @@ class RiotAPI:
         logger.warning(f"⚠️ Account not found after trying routings: {game_name}#{tag_line}")
         return None
     
+    async def get_riot_id_from_puuid(self, puuid: str) -> Optional[Dict]:
+        """Get current Riot ID (Name#TAG) from PUUID"""
+        if not self.api_key:
+            return None
+        
+        # Try all routing regions
+        for routing in set(RIOT_REGIONS.values()):
+            url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
+            
+            try:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            return {
+                                'gameName': data.get('gameName'),
+                                'tagLine': data.get('tagLine')
+                            }
+                        elif response.status == 404:
+                            continue
+            except:
+                continue
+        
+        logger.warning(f"⚠️ Could not get Riot ID for PUUID {puuid[:8]}")
+        return None
+    
     async def find_summoner_region(self, puuid: str, retries: int = 2) -> Optional[str]:
         """Auto-detect which region a summoner plays on - uses routing endpoints"""
         if not self.api_key:

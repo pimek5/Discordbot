@@ -273,6 +273,27 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    def update_account_name(self, puuid: str, game_name: str, tagline: str) -> bool:
+        """Update account Riot ID (name and tagline) by PUUID"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE league_accounts 
+                    SET riot_id_game_name = %s,
+                        riot_id_tagline = %s,
+                        last_updated = NOW()
+                    WHERE puuid = %s
+                """, (game_name, tagline, puuid))
+                conn.commit()
+                return cur.rowcount > 0
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error updating account name: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+    
     # ==================== CHAMPION MASTERY OPERATIONS ====================
     
     def update_champion_mastery(self, user_id: int, champion_id: int, 
