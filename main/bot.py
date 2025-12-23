@@ -3742,10 +3742,11 @@ async def loldle(interaction: discord.Interaction, champion: str):
             inline=False
         )
 
-        # Recent guesses (arrow separated)
+        # Recent guesses (arrow separated) - show up to last 15
+        recent_display = " → ".join(guesses_list) if len(guesses_list) <= 15 else " → ".join(guesses_list[-15:])
         embed.add_field(
             name="Recent Guesses",
-            value=" → ".join(guesses_list[-5:]),
+            value=recent_display,
             inline=True
         )
 
@@ -3757,25 +3758,32 @@ async def loldle(interaction: discord.Interaction, champion: str):
             inline=True
         )
 
-        # Positive / best status per attribute across all guesses
+        # Positive / best status per attribute across all guesses (remember best value too)
         best_status = {}
         for g in guesses_list:
             gdata = CHAMPIONS.get(g, {})
             for attr in attributes_to_check:
-                emoji = get_hint_emoji(gdata.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr)
+                gval = gdata.get(attr, 'N/A')
+                emoji = get_hint_emoji(gval, correct_data.get(attr, 'N/A'), attr)
                 priority = {'🟩': 3, '🟨': 2, '🟥': 1}.get(emoji, 0)
                 current = best_status.get(attr)
-                if not current or priority > current['priority']:
-                    best_status[attr] = {'emoji': emoji, 'priority': priority}
-        positive_lines = [f"{attr.title()} = {best_status.get(attr, {'emoji': '⬜'}).get('emoji', '⬜')}" for attr in attributes_to_check]
+                if (not current) or (priority > current['priority']):
+                    best_status[attr] = {'emoji': emoji, 'priority': priority, 'value': gval}
+        positive_lines = []
+        for attr in attributes_to_check:
+            info = best_status.get(attr)
+            if info and info['emoji'] in ['🟩', '🟨']:
+                positive_lines.append(f"{attr.title()}: {info['value']} {info['emoji']}")
+            else:
+                positive_lines.append(f"{attr.title()}: {info['emoji'] if info else '⬜'}")
         embed.add_field(
             name="Positive Guesses",
             value="\n".join(positive_lines),
             inline=True
         )
 
-        # Guessing history (last 2 previous guesses, inline)
-        history_guesses = guesses_list[-3:-1] if len(guesses_list) > 1 else []
+        # Guessing history (last 2 previous guesses, inline). If only one previous, show that one.
+        history_guesses = guesses_list[:-1][-2:] if len(guesses_list) > 1 else []
         for past_guess in history_guesses:
             past_data = CHAMPIONS.get(past_guess, {})
             lines = []
