@@ -5,6 +5,7 @@ Handles all Riot Games API interactions with retry logic
 
 import aiohttp
 import asyncio
+import json
 from typing import Optional, Dict, List
 import logging
 
@@ -689,6 +690,8 @@ class RiotAPI:
         inactive = solo_queue.get('inactive', False)
         inactive_start_time = solo_queue.get('inactiveStartTime')
         
+        # Log all available fields to understand API structure
+        logger.info(f"📊 Full solo_queue data for {tier} {rank}: {json.dumps(solo_queue, indent=2)}")
         logger.debug(f"📊 Decay data: inactive={inactive}, inactiveStartTime={inactive_start_time}")
         
         # Decay działa tylko dla Diamond+
