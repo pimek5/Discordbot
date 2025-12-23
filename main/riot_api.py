@@ -678,6 +678,8 @@ class RiotAPI:
         tier = solo_queue.get('tier', 'UNRANKED')
         rank = solo_queue.get('rank', '')
         lp = solo_queue.get('leaguePoints', 0)
+        wins = solo_queue.get('wins', 0)
+        losses = solo_queue.get('losses', 0)
         
         # Decay działa tylko dla Diamond+
         decay_tiers = ['DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER']
@@ -711,12 +713,13 @@ class RiotAPI:
                 'max_bank': max_bank,
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
+                'lp': lp,
                 'message': f'⚠️ {tier} {rank} ({lp} LP) - brak danych o grach'
             }
         
-        # Znajdź ostatnią ranked grę i policz gry
+        # Znajdź ostatnią ranked grę w Solo Queue
         last_ranked_timestamp = None
-        ranked_games_count = 0
+        total_games = wins + losses  # Use total games from ranked stats
         
         for match_id in match_ids:
             match_data = await self.get_match_details(match_id, region)
@@ -728,7 +731,7 @@ class RiotAPI:
                 timestamp = info.get('gameCreation')
                 if not last_ranked_timestamp:
                     last_ranked_timestamp = timestamp
-                ranked_games_count += 1
+                    break  # Found the most recent, we can stop
         
         if not last_ranked_timestamp:
             return {
@@ -738,6 +741,7 @@ class RiotAPI:
                 'max_bank': max_bank,
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
+                'lp': lp,
                 'message': f'⚠️ {tier} {rank} ({lp} LP) - brak ranked gier w historii'
             }
         
@@ -746,9 +750,9 @@ class RiotAPI:
         now = datetime.now(timezone.utc)
         days_since = (now - last_game_date).days
         
-        # Oblicz bank z ograniczeniem do max
-        # Każda gra dodaje dni, ale nie przekracza max_bank
-        days_in_bank = min(ranked_games_count * days_per_game, max_bank)
+        # Oblicz bank z total games from ranked stats (wins + losses)
+        # Each game adds days_per_game days, capped at max_bank
+        days_in_bank = min(total_games * days_per_game, max_bank)
         days_remaining = days_in_bank - days_since
         
         # Jeśli days_remaining < 0, decay aktywny
