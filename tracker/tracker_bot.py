@@ -32,12 +32,12 @@ logging.basicConfig(
 logger = logging.getLogger('tracker_bot')
 
 # Bot configuration
-TRACKER_BOT_TOKEN = os.getenv('TRACKER_BOT_TOKEN')
+TRACKER_BOT_TOKEN = os.getenv('TRACKER_BOT_TOKEN') or os.getenv('DISCORD_TOKEN')
 GUILD_ID = int(os.getenv('DISCORD_GUILD_ID', 0))
 RIOT_API_KEY = os.getenv('RIOT_API_KEY')
 
 if not TRACKER_BOT_TOKEN:
-    raise ValueError("TRACKER_BOT_TOKEN not found in environment variables")
+    raise ValueError("TRACKER_BOT_TOKEN or DISCORD_TOKEN not found in environment variables")
 
 if not RIOT_API_KEY:
     raise ValueError("RIOT_API_KEY not found in environment variables")

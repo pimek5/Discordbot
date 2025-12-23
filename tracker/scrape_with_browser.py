@@ -12,6 +12,7 @@ from selenium.webdriver.chrome.service import Service
 import json
 import time
 import re
+import html as html_lib
 from datetime import datetime
 
 class BrowserScraper:
@@ -52,6 +53,7 @@ class BrowserScraper:
         
         self.players = []
         self.seen_riot_ids = set()
+        self.riot_id_pattern = re.compile(r"\b([A-Za-z0-9\s]{2,16})#([A-Z0-9]{3,5})\b")
     
     def scrape_dpm(self, region='euw1'):
         """Scrape dpm.lol with browser"""
@@ -108,8 +110,7 @@ class BrowserScraper:
             # OP.GG shows Riot IDs in leaderboard
             page_source = self.driver.page_source
             
-            riot_id_pattern = re.compile(r'\b([A-Za-z0-9\s]{2,16})#([A-Z0-9]{3,5})\b')
-            matches = riot_id_pattern.findall(page_source)
+            matches = self.riot_id_pattern.findall(page_source)
             
             found_count = 0
             for name, tag in matches[:100]:  # Top 100
@@ -129,6 +130,109 @@ class BrowserScraper:
             print(f"  ✅ Found {found_count} players")
             return found_count > 0
             
+        except Exception as e:
+            print(f"  ❌ Error: {e}")
+            return False
+
+    def _extract_next_data(self):
+        """Extract __NEXT_DATA__ JSON from current page"""
+        try:
+            html = self.driver.page_source
+            match = re.search(r'id="__NEXT_DATA__"[^>]*>(\{.*?\})</script>', html, re.DOTALL)
+            if not match:
+                return None
+            raw = html_lib.unescape(match.group(1))
+            return json.loads(raw)
+        except Exception as e:
+            print(f"  ⚠️ Could not parse __NEXT_DATA__: {e}")
+            return None
+
+    def _collect_riot_ids_from_obj(self, obj, region_hint=None):
+        """Walk nested JSON and pull Riot IDs"""
+        results = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                game = node.get('gameName') or node.get('game_name') or node.get('name')
+                tag = node.get('tagLine') or node.get('tag_line') or node.get('tag')
+                riot_id_field = node.get('riotId') or node.get('riot_id') or node.get('riot_id_name')
+
+                if game and tag:
+                    results.append({'name': str(game).strip(), 'tag': str(tag).strip(), 'region': node.get('region') or region_hint})
+                if riot_id_field and isinstance(riot_id_field, str) and '#' in riot_id_field:
+                    name_part, tag_part = riot_id_field.split('#', 1)
+                    results.append({'name': name_part.strip(), 'tag': tag_part.strip(), 'region': node.get('region') or region_hint})
+
+                for val in node.values():
+                    walk(val)
+
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+            elif isinstance(node, str):
+                m = self.riot_id_pattern.search(node)
+                if m:
+                    results.append({'name': m.group(1).strip(), 'tag': m.group(2).strip(), 'region': region_hint})
+
+        walk(obj)
+        return results
+
+    def _add_players(self, riot_id_entries, region_hint=None, source='op.gg'):
+        """Deduplicate and store Riot IDs"""
+        added = 0
+        for entry in riot_id_entries:
+            name = entry.get('name') or ''
+            tag = entry.get('tag') or ''
+            if not name or not tag:
+                continue
+
+            riot_id = f"{name}#{tag}"
+            if len(name.strip()) < 2 or riot_id in self.seen_riot_ids:
+                continue
+
+            region = entry.get('region') or region_hint or 'unknown'
+            self.seen_riot_ids.add(riot_id)
+            self.players.append({
+                'riot_id': riot_id,
+                'name': name.strip(),
+                'tag': tag.strip(),
+                'region': region,
+                'source': source
+            })
+            added += 1
+
+        return added
+
+    def scrape_opgg_new_leaderboards(self, region='euw'):
+        """Scrape https://op.gg/lol/leaderboards with Selenium"""
+        print(f"\n🔍 Scraping OP.GG new leaderboard page ({region})...")
+
+        try:
+            url = "https://op.gg/lol/leaderboards"
+            if region:
+                url = f"{url}?region={region}"
+
+            self.driver.get(url)
+            print("  ⏳ Waiting for page & scripts...")
+            time.sleep(6)
+
+            # Try structured __NEXT_DATA__ first
+            next_data = self._extract_next_data()
+            added = 0
+            if next_data:
+                riot_entries = self._collect_riot_ids_from_obj(next_data, region_hint=region)
+                added += self._add_players(riot_entries, region_hint=region, source='op.gg-next')
+
+            # Fallback to regex on rendered HTML
+            if added == 0:
+                matches = self.riot_id_pattern.findall(self.driver.page_source)
+                riot_entries = [{'name': name.strip(), 'tag': tag.strip(), 'region': region} for name, tag in matches]
+                added += self._add_players(riot_entries, region_hint=region, source='op.gg-html')
+
+            print(f"  ✅ Added {added} players from OP.GG leaderboards page")
+            return added > 0
+
         except Exception as e:
             print(f"  ❌ Error: {e}")
             return False
@@ -253,8 +357,8 @@ def main():
         # Scrape multiple sources
         print("\n🚀 Starting scraping...")
         
-        # OP.GG leaderboard (usually works best)
-        scraper.scrape_opgg_leaderboard('euw')
+        # OP.GG new leaderboard page
+        scraper.scrape_opgg_new_leaderboards('euw')
         time.sleep(3)
         
         # U.GG leaderboard
