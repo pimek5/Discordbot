@@ -3639,7 +3639,20 @@ async def loldle(interaction: discord.Interaction, champion: str):
                 return
     
         # Validate champion name (case-insensitive, handle spaces)
+        raw_input = champion
         champion = champion.strip().title().replace("'", "'")
+        try:
+            logger.info(
+                "LoLdle classic pre-append: user=%s game=%s input='%s' norm='%s' existing=%s correct=%s",
+                interaction.user.id,
+                game_id,
+                str(raw_input),
+                champion,
+                guesses_list,
+                correct_champion,
+            )
+        except Exception:
+            pass
         if champion not in CHAMPIONS:
             await interaction.response.send_message(
                 f"❌ '{champion}' is not a valid champion name. Try again!",
