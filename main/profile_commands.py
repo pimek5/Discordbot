@@ -4659,18 +4659,14 @@ class ProfileView(discord.ui.View):
         # Update next button
         self.ranks_next_button.disabled = not in_ranks_view or self.ranks_page >= total_pages - 1
     
-    @app_commands.command(name="decay", description="Check LP decay status for Diamond+ accounts")
-    @app_commands.describe(
-        user="The user to check (defaults to yourself)",
-        account_number="Which account to check (1 = primary, 2 = second alt, etc.)"
-    )
+    @app_commands.command(name="decay", description="Check LP decay status for all Diamond+ accounts")
+    @app_commands.describe(user="The user to check (defaults to yourself)")
     async def decay(
         self,
         interaction: discord.Interaction,
-        user: Optional[discord.User] = None,
-        account_number: Optional[int] = 1
+        user: Optional[discord.User] = None
     ):
-        """Check LP decay status with accurate banking system"""
+        """Check LP decay status for all Diamond+ accounts"""
         await interaction.response.defer()
         
         target = user or interaction.user
@@ -4685,7 +4681,7 @@ class ProfileView(discord.ui.View):
                     description=f"{'You have' if target == interaction.user else f'{target.mention} has'} not linked any League of Legends accounts.",
                     color=0xFF0000
                 )
-                await interaction.followup.send(embed=embed)
+                await interaction.followup.send(embed=embed, delete_after=60)
                 return
             
             accounts = db.get_user_accounts(target.id)
@@ -4695,88 +4691,154 @@ class ProfileView(discord.ui.View):
                     description="No linked accounts in database.",
                     color=0xFF0000
                 )
-                await interaction.followup.send(embed=embed)
+                await interaction.followup.send(embed=embed, delete_after=60)
                 return
             
-            # Validate account number
-            if account_number < 1 or account_number > len(accounts):
+            # Filter only enabled accounts (not hidden)
+            enabled_accounts = [acc for acc in accounts if acc.get('enabled', True)]
+            
+            if not enabled_accounts:
                 embed = discord.Embed(
-                    title="❌ Invalid Account Number",
-                    description=f"{'You have' if target == interaction.user else f'{target.mention} has'} {len(accounts)} linked account(s). Use a number between 1 and {len(accounts)}.",
+                    title="❌ No Active Accounts",
+                    description="All accounts are hidden. Use `/accounts` to manage.",
                     color=0xFF0000
                 )
-                await interaction.followup.send(embed=embed)
+                await interaction.followup.send(embed=embed, delete_after=60)
                 return
             
-            # Get the specified account (1-indexed)
-            account = accounts[account_number - 1]
+            # Check all accounts for Diamond+ rank
+            diamond_accounts = []
+            has_any_ranked = False
             
-            # Check decay status
-            decay_data = await self.riot_api.check_decay_status(
-                account['puuid'],
-                account['region']
-            )
+            for account in enabled_accounts:
+                ranked_stats = await self.riot_api.get_ranked_stats_by_puuid(
+                    account['puuid'],
+                    account['region']
+                )
+                
+                if ranked_stats:
+                    has_any_ranked = True
+                    for queue in ranked_stats:
+                        if queue.get('queueType') == 'RANKED_SOLO_5x5':
+                            tier = queue.get('tier', 'UNRANKED')
+                            if tier in ['DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER']:
+                                diamond_accounts.append({
+                                    'account': account,
+                                    'tier': tier,
+                                    'rank': queue.get('rank', ''),
+                                    'lp': queue.get('leaguePoints', 0)
+                                })
+                            break
             
-            # Create embed
-            tier = decay_data['tier']
-            message = decay_data['message']
-            at_risk = decay_data['at_risk']
+            # If no Diamond+ accounts
+            if not diamond_accounts:
+                if has_any_ranked:
+                    embed = discord.Embed(
+                        title="✅ No Decay Risk",
+                        description="**U can't decay!**\n\nAll your accounts are below Diamond.\nDecay only affects Diamond, Master, Grandmaster, and Challenger ranks.",
+                        color=0x00FF00
+                    )
+                else:
+                    embed = discord.Embed(
+                        title="❌ No Ranked Data",
+                        description="No ranked stats found for any account.",
+                        color=0xFF0000
+                    )
+                await interaction.followup.send(embed=embed, delete_after=60)
+                return
             
-            # Color based on risk
-            if not at_risk:
-                color = 0x00FF00  # Green - safe
-            elif decay_data['days_remaining'] and decay_data['days_remaining'] > 7:
-                color = 0xFFFF00  # Yellow - warning
-            elif decay_data['days_remaining'] and decay_data['days_remaining'] > 3:
-                color = 0xFFA500  # Orange - urgent
-            else:
-                color = 0xFF0000  # Red - critical
+            # Check decay for each Diamond+ account
+            await interaction.edit_original_response(content=f"⏳ Checking decay for {len(diamond_accounts)} Diamond+ account(s)...")
             
+            decay_results = []
+            for acc_data in diamond_accounts:
+                account = acc_data['account']
+                decay_status = await self.riot_api.check_decay_status(
+                    account['puuid'],
+                    account['region']
+                )
+                decay_results.append({
+                    'account': account,
+                    'decay': decay_status,
+                    'tier': acc_data['tier'],
+                    'rank': acc_data['rank'],
+                    'lp': acc_data['lp']
+                })
+            
+            # Create embed with all accounts
             embed = discord.Embed(
-                title=f"⏰ LP Decay Status",
-                description=message,
-                color=color
+                title="⏰ LP Decay Status",
+                description=f"Showing {len(decay_results)} Diamond+ account(s)",
+                color=0x5865F2
             )
             
-            embed.add_field(
-                name="👤 Account",
-                value=f"{account['summoner_name']}\n{account['region'].upper()}",
-                inline=True
-            )
+            # Sort by days remaining (most urgent first)
+            decay_results.sort(key=lambda x: x['decay']['days_remaining'] if x['decay']['days_remaining'] is not None else 999)
             
-            if decay_data['days_remaining'] is not None:
-                bank_info = f"{decay_data['days_in_bank']}/{decay_data['max_bank']} days"
+            for i, result in enumerate(decay_results, 1):
+                account = result['account']
+                decay = result['decay']
+                
+                # Emoji based on urgency
+                if decay['days_remaining'] is None or decay['days_remaining'] > 14:
+                    emoji = "✅"
+                elif decay['days_remaining'] <= 0:
+                    emoji = "🚨"
+                elif decay['days_remaining'] <= 3:
+                    emoji = "⚠️"
+                elif decay['days_remaining'] <= 7:
+                    emoji = "⚡"
+                else:
+                    emoji = "🟢"
+                
+                # Format account info
+                name = f"{emoji} {account['summoner_name']}"
+                region = account['region'].upper()
+                tier_display = f"{result['tier']} {result['rank']} ({result['lp']} LP)"
+                
+                # Decay counter
+                if decay['days_remaining'] is not None:
+                    if decay['days_remaining'] <= 0:
+                        counter = f"**DECAY ACTIVE** 🚨"
+                    else:
+                        counter = f"**{decay['days_remaining']} days** remaining"
+                    bank = f"Bank: {decay['days_in_bank']}/{decay['max_bank']} days"
+                else:
+                    counter = "Safe ✅"
+                    bank = ""
+                
+                value = f"{tier_display}\n{region}\n{counter}"
+                if bank:
+                    value += f"\n{bank}"
+                
                 embed.add_field(
-                    name="🏦 Decay Bank",
-                    value=bank_info,
+                    name=name,
+                    value=value,
                     inline=True
                 )
             
-            if decay_data['last_ranked_game']:
-                embed.add_field(
-                    name="🕐 Last Ranked Game",
-                    value=decay_data['last_ranked_game'],
-                    inline=False
-                )
+            # Add footer with info
+            embed.set_footer(text="💎 Diamond: 30d max (+7d/game) | 👑 Master+: 14d max (+1d/game) | Auto-deletes in 1 minute")
             
-            # Add info footer
-            if tier in ['DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER']:
-                if tier == 'DIAMOND':
-                    info = "Diamond: max 30 days bank, +7 days per game"
-                else:
-                    info = "Master+: max 14 days bank, +1 day per game"
-                embed.set_footer(text=info)
+            await interaction.edit_original_response(content=None, embed=embed)
             
-            await interaction.followup.send(embed=embed)
+            # Auto-delete after 60 seconds
+            await asyncio.sleep(60)
+            try:
+                await interaction.delete_original_response()
+            except:
+                pass  # Message may already be deleted
             
         except Exception as e:
             logger.error(f"Error checking decay: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             embed = discord.Embed(
                 title="❌ Error",
                 description=f"Failed to check decay status: {str(e)}",
                 color=0xFF0000
             )
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed, delete_after=60)
 
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
