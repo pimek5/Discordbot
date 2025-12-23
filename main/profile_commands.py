@@ -1680,16 +1680,15 @@ class ProfileCommands(commands.Cog):
                     logger.error(f"Failed to check decay for {account['riot_id_game_name']}")
                     continue
                 
-                decay = result['decay']
-                
                 # Emoji based on urgency
-                if decay['days_remaining'] is None or decay['days_remaining'] > 14:
+                days_remaining = result.get('days_remaining')
+                if days_remaining is None or days_remaining > 14:
                     emoji = "✅"
-                elif decay['days_remaining'] <= 0:
+                elif days_remaining <= 0:
                     emoji = "🚨"
-                elif decay['days_remaining'] <= 3:
+                elif days_remaining <= 3:
                     emoji = "⚠️"
-                elif decay['days_remaining'] <= 7:
+                elif days_remaining <= 7:
                     emoji = "⚡"
                 else:
                     emoji = "🟢"
@@ -1697,15 +1696,15 @@ class ProfileCommands(commands.Cog):
                 # Format account info
                 name = f"{emoji} {account['riot_id_game_name']}#{account['riot_id_tagline']}"
                 region = account['region'].upper()
-                tier_display = f"{result['tier']} {result['rank']} ({result['lp']} LP)"
+                tier_display = result['tier']
                 
                 # Decay counter
-                if decay['days_remaining'] is not None:
-                    if decay['days_remaining'] <= 0:
+                if days_remaining is not None:
+                    if days_remaining <= 0:
                         counter = f"**DECAY ACTIVE** 🚨"
                     else:
-                        counter = f"**{decay['days_remaining']} days** remaining"
-                    bank = f"Bank: {decay['days_in_bank']}/{decay['max_bank']} days"
+                        counter = f"**{days_remaining} days** remaining"
+                    bank = f"Bank: {result['days_in_bank']}/{result['max_bank']} days"
                 else:
                     counter = "Safe ✅"
                     bank = ""
