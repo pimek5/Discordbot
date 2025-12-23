@@ -357,17 +357,18 @@ def main():
         # Scrape multiple sources
         print("\n🚀 Starting scraping...")
         
-        # OP.GG new leaderboard page
-        scraper.scrape_opgg_new_leaderboards('euw')
-        time.sleep(3)
+        # OP.GG multiple regions
+        for region in ['euw', 'kr', 'na']:
+            scraper.scrape_opgg_new_leaderboards(region)
+            time.sleep(3)
         
-        # U.GG leaderboard
-        scraper.scrape_ugg_leaderboard('euw1')
-        time.sleep(3)
+        # U.GG leaderboard (optional - slower)
+        # scraper.scrape_ugg_leaderboard('euw1')
+        # time.sleep(3)
         
-        # DPM.lol
-        scraper.scrape_dpm('euw1')
-        time.sleep(3)
+        # DPM.lol (optional)
+        # scraper.scrape_dpm('euw1')
+        # time.sleep(3)
         
         # Show results
         if scraper.players:
