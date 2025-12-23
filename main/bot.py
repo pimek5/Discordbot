@@ -3719,68 +3719,76 @@ async def loldle(interaction: discord.Interaction, champion: str):
         
         # Build detailed comparison table showing all guesses
         embed = discord.Embed(
-            title=f"🎮 LoLdle - Daily Challenge",
-            description=f"Guess the champion! Each guess reveals clues.",
+            title="🎮 LoLdle - Daily Challenge",
+            description="Guess the champion! Each guess reveals clues.",
             color=0x1DA1F2
         )
-        
-        # Build comparison table for the latest guess, showing known correct attributes
-        comparison_lines = []
-        
+
+        # Latest guess block (full breakdown)
+        latest_lines = []
         for attr in attributes_to_check:
+            guess_val = guess_data.get(attr, 'N/A')
+            correct_val = correct_data.get(attr, 'N/A')
             if attr in known_correct:
-                # Already found correct - show it with green check
-                comparison_lines.append(f"**{attr.title()}:** {known_correct[attr]} 🟩 ✓")
+                emoji = "🟩"
+                display_val = known_correct[attr]
             else:
-                # Still searching - show current guess result
-                guess_val = guess_data.get(attr, 'N/A')
-                correct_val = correct_data.get(attr, 'N/A')
                 emoji = get_hint_emoji(guess_val, correct_val, attr)
-                comparison_lines.append(f"**{attr.title()}:** {guess_val} {emoji}")
-                
-                # If this guess found it, mark as known for display
-                if emoji == "🟩":
-                    known_correct[attr] = correct_val
-        
-        # Show latest guess comparison
+                display_val = guess_val
+            latest_lines.append(f"**{attr.title()}:** {display_val} {emoji}")
         embed.add_field(
             name=f"Latest Guess: {champion}",
-            value="\n".join(comparison_lines),
+            value="\n".join(latest_lines),
             inline=False
         )
-        
-        # Show all guesses history (without latest, which is shown above)
-        if len(guesses_list) > 1:
-            guesses_summary = []
-            for prev_guess in guesses_list[:-1]:  # All except the latest
-                prev_data = CHAMPIONS.get(prev_guess, {})
-                # Quick summary with key indicators
-                match_count = sum([
-                    get_hint_emoji(prev_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr) == "🟩"
-                    for attr in attributes_to_check
-                ])
-                guesses_summary.append(f"`{prev_guess}` - {match_count}/6 correct")
-            
-            embed.add_field(
-                name=f"Previous Guesses ({len(guesses_list)-1})",
-                value="\n".join(guesses_summary),
-                inline=False
-            )
-        
+
+        # Recent guesses (arrow separated)
         embed.add_field(
-            name="Total Attempts",
-            value=f"{len(guesses_list)} guess{'es' if len(guesses_list) > 1 else ''}",
+            name="Recent Guesses",
+            value=" → ".join(guesses_list[-5:]),
             inline=True
         )
-        
-        # Show progress: X/6 attributes found
+
+        # Progress
         found_count = len(known_correct)
         embed.add_field(
             name="Progress",
             value=f"{found_count}/6 attributes found",
             inline=True
         )
-        
+
+        # Positive / best status per attribute across all guesses
+        best_status = {}
+        for g in guesses_list:
+            gdata = CHAMPIONS.get(g, {})
+            for attr in attributes_to_check:
+                emoji = get_hint_emoji(gdata.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr)
+                priority = {'🟩': 3, '🟨': 2, '🟥': 1}.get(emoji, 0)
+                current = best_status.get(attr)
+                if not current or priority > current['priority']:
+                    best_status[attr] = {'emoji': emoji, 'priority': priority}
+        positive_lines = [f"{attr.title()} = {best_status.get(attr, {'emoji': '⬜'}).get('emoji', '⬜')}" for attr in attributes_to_check]
+        embed.add_field(
+            name="Positive Guesses",
+            value="\n".join(positive_lines),
+            inline=True
+        )
+
+        # Guessing history (last 2 previous guesses, inline)
+        history_guesses = guesses_list[-3:-1] if len(guesses_list) > 1 else []
+        for past_guess in history_guesses:
+            past_data = CHAMPIONS.get(past_guess, {})
+            lines = []
+            for attr in attributes_to_check:
+                emoji = get_hint_emoji(past_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr)
+                lines.append(f"**{attr.title()}:** {past_data.get(attr, 'N/A')} {emoji}")
+            embed.add_field(
+                name=past_guess,
+                value="\n".join(lines),
+                inline=True
+            )
+
+        # Footer legend
         embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong | ✓ = Already Found")
         
         # Try to edit existing embed or create new one
