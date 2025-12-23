@@ -772,6 +772,20 @@ class RiotAPI:
         # Fallback: użyj match history jeśli API nie ma inactiveStartTime
         logger.info(f"📊 Falling back to match history for decay calculation")
         
+        # Pobierz match history (ostatnie 20 gier)
+        match_ids = await self.get_match_history(puuid, region, count=20)
+        if not match_ids:
+            return {
+                'at_risk': True,
+                'days_remaining': 0,
+                'days_in_bank': 0,
+                'max_bank': 0,
+                'last_ranked_game': None,
+                'tier': f'{tier} {rank}',
+                'lp': lp,
+                'message': f'⚠️ {tier} {rank} ({lp} LP) - brak danych match history'
+            }
+        
         # Znajdź ostatnią ranked grę w Solo Queue
         last_ranked_timestamp = None
         
@@ -808,12 +822,20 @@ class RiotAPI:
         days_since = int(days_since_float)
         
         # Logika decay'u League of Legends:
-        # - Masz bank dni (max_bank)
-        # - Każdy dzień bez gry zmniejsza bank o 1 dzień
+        # - Masz bank dni który się zmniejsza co dzień bez gry
+        # - Diamond: każda gra dodaje +7 dni do banku (max 30)
+        # - Master+: każda gra dodaje +1 dzień do banku (max 14)
         # - Gdy bank = 0, zaczynają ci spadać punkty (-75 LP/dzień)
-        max_bank = decay_starts_after  # Bank = days before decay starts
-        days_in_bank = max_bank  # Always at max (you accumulate it over the season)
+        
+        max_bank = decay_starts_after  # Bank max
+        
+        # Oblicz aktualny bank na podstawie ostatniej gry
+        # Bank = max_bank - dni_od_ostatniej_gry
+        # Ale nie może być ujemny ani większy niż max
         days_remaining = max(0, max_bank - days_since)
+        
+        # Bank nie może być większy niż max (teoretycznie zawsze prawda przy tej kalkulacji)
+        days_in_bank = min(days_remaining, max_bank)
         
         # Jeśli days_remaining < 0, decay aktywny
         if days_remaining <= 0:
