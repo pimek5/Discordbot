@@ -630,8 +630,8 @@ class RiotAPI:
         """Check if account is at risk of LP decay with accurate banking system
         
         Decay rules:
-        - Diamond: max 30 days bank, +7 days per game (max 30)
-        - Master/GM/Chall: max 14 days bank, +1 day per game (max 14)
+        - Diamond: max 30 days bank, decay starts after 30 days inactivity
+        - Master/GM/Chall: max 14 days bank, decay starts after 14 days inactivity
         
         Returns dict with:
         - at_risk: bool
@@ -640,6 +640,7 @@ class RiotAPI:
         - max_bank: int
         - last_ranked_game: str
         - tier: str
+        - lp: int
         - message: str
         """
         from datetime import datetime, timezone
@@ -654,14 +655,16 @@ class RiotAPI:
                 'max_bank': 0,
                 'last_ranked_game': None,
                 'tier': 'UNRANKED',
+                'lp': 0,
                 'message': '❌ Brak danych rankingowych'
             }
         
-        # Znajdź solo queue
+        # Znajdź solo queue i sprawdź co dokładnie zawiera
         solo_queue = None
         for queue in ranked_stats:
             if queue.get('queueType') == 'RANKED_SOLO_5x5':
                 solo_queue = queue
+                logger.debug(f"🔍 Solo queue data: {queue}")  # Log all fields
                 break
         
         if not solo_queue:
@@ -672,6 +675,7 @@ class RiotAPI:
                 'max_bank': 0,
                 'last_ranked_game': None,
                 'tier': 'UNRANKED',
+                'lp': 0,
                 'message': '❌ Brak danych Solo Queue'
             }
         
@@ -680,6 +684,12 @@ class RiotAPI:
         lp = solo_queue.get('leaguePoints', 0)
         wins = solo_queue.get('wins', 0)
         losses = solo_queue.get('losses', 0)
+        
+        # Check if there's inactiveStartTime field from API
+        inactive = solo_queue.get('inactive', False)
+        inactive_start_time = solo_queue.get('inactiveStartTime')
+        
+        logger.debug(f"📊 Decay data: inactive={inactive}, inactiveStartTime={inactive_start_time}")
         
         # Decay działa tylko dla Diamond+
         decay_tiers = ['DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER']
@@ -697,25 +707,67 @@ class RiotAPI:
         
         # Ustaw parametry decay wg rankingu
         if tier == 'DIAMOND':
-            decay_starts_after = 30  # Decay starts after 30 days
-            decay_per_day = 75       # -75 LP per day
+            decay_starts_after = 30
         else:  # Master+
-            decay_starts_after = 14  # Decay starts after 14 days
-            decay_per_day = 75       # -75 LP per day
+            decay_starts_after = 14
         
-        # Pobierz ostatnie mecze
-        match_ids = await self.get_match_history(puuid, region, count=50)
-        if not match_ids:
-            return {
-                'at_risk': True,
-                'days_remaining': 0,
-                'days_in_bank': 0,
-                'max_bank': 0,
-                'last_ranked_game': None,
-                'tier': f'{tier} {rank}',
-                'lp': lp,
-                'message': f'⚠️ {tier} {rank} ({lp} LP) - brak danych o grach'
-            }
+        # Najlepsze źródło: jeśli API ma inactiveStartTime, użyj tego
+        if inactive and inactive_start_time:
+            try:
+                # inactiveStartTime może być timestamp w ms
+                if isinstance(inactive_start_time, (int, float)):
+                    inactive_date = datetime.fromtimestamp(inactive_start_time / 1000, tz=timezone.utc)
+                else:
+                    # Lub może być string ISO format
+                    inactive_date = datetime.fromisoformat(str(inactive_start_time).replace('Z', '+00:00'))
+                
+                now = datetime.now(timezone.utc)
+                days_since_inactive = (now - inactive_date).days
+                
+                logger.info(f"✅ Using API inactiveStartTime: {days_since_inactive} days inactive")
+                
+                max_bank = decay_starts_after
+                days_in_bank = max_bank
+                days_remaining = max(0, max_bank - days_since_inactive)
+                
+                if days_remaining <= 0:
+                    return {
+                        'at_risk': True,
+                        'days_remaining': 0,
+                        'days_in_bank': 0,
+                        'max_bank': max_bank,
+                        'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
+                        'tier': f'{tier} {rank}',
+                        'lp': lp,
+                        'message': f'🚨 **DECAY AKTYWNY!** {tier} {rank} ({lp} LP)\nInactive since: {days_since_inactive} days ago'
+                    }
+                elif days_remaining <= 3:
+                    return {
+                        'at_risk': True,
+                        'days_remaining': days_remaining,
+                        'days_in_bank': max(0, days_remaining),
+                        'max_bank': max_bank,
+                        'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
+                        'tier': f'{tier} {rank}',
+                        'lp': lp,
+                        'message': f'⚠️ **UWAGA DECAY!** {tier} {rank} ({lp} LP)\nInactive: {days_since_inactive} days\n**Zostało {days_remaining} dni!**'
+                    }
+                else:
+                    return {
+                        'at_risk': False,
+                        'days_remaining': days_remaining,
+                        'days_in_bank': days_remaining,
+                        'max_bank': max_bank,
+                        'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
+                        'tier': f'{tier} {rank}',
+                        'lp': lp,
+                        'message': f'✅ {tier} {rank} ({lp} LP) - Bezpieczny przez {days_remaining} dni'
+                    }
+            except Exception as e:
+                logger.warning(f"⚠️ Could not parse inactiveStartTime: {e}, falling back to match history")
+        
+        # Fallback: użyj match history jeśli API nie ma inactiveStartTime
+        logger.info(f"📊 Falling back to match history for decay calculation")
         
         # Znajdź ostatnią ranked grę w Solo Queue
         last_ranked_timestamp = None
