@@ -1595,7 +1595,7 @@ class ProfileCommands(commands.Cog):
                     description=f"{'You have' if target == interaction.user else f'{target.mention} has'} not linked any League of Legends accounts.",
                     color=0xFF0000
                 )
-                await interaction.followup.send(embed=embed, delete_after=60)
+                await interaction.followup.send(embed=embed)
                 return
             
             accounts = db.get_user_accounts(target.id)
@@ -1605,7 +1605,7 @@ class ProfileCommands(commands.Cog):
                     description="No linked accounts in database.",
                     color=0xFF0000
                 )
-                await interaction.followup.send(embed=embed, delete_after=60)
+                await interaction.followup.send(embed=embed)
                 return
             
             # Filter only enabled accounts (not hidden)
@@ -1617,7 +1617,7 @@ class ProfileCommands(commands.Cog):
                     description="All accounts are hidden. Use `/accounts` to manage.",
                     color=0xFF0000
                 )
-                await interaction.followup.send(embed=embed, delete_after=60)
+                await interaction.followup.send(embed=embed)
                 return
             
             # Check all accounts for Diamond+ rank
@@ -1658,7 +1658,7 @@ class ProfileCommands(commands.Cog):
                         description="No ranked stats found for any account.",
                         color=0xFF0000
                     )
-                await interaction.followup.send(embed=embed, delete_after=60)
+                await interaction.followup.send(embed=embed)
                 return
             
             # Check decay for each Diamond+ account
@@ -1720,16 +1720,9 @@ class ProfileCommands(commands.Cog):
                 )
             
             # Add footer with info
-            embed.set_footer(text="💎 Diamond: 30d max (+7d/game) | 👑 Master+: 14d max (+1d/game) | Auto-deletes in 1 minute")
+            embed.set_footer(text="💎 Diamond: 30d max (+7d/game) | 👑 Master+: 14d max (+1d/game)")
             
             await interaction.edit_original_response(content=None, embed=embed)
-            
-            # Auto-delete after 60 seconds
-            await asyncio.sleep(60)
-            try:
-                await interaction.delete_original_response()
-            except:
-                pass  # Message may already be deleted
             
         except Exception as e:
             logger.error(f"Error checking decay: {e}")
@@ -1740,12 +1733,7 @@ class ProfileCommands(commands.Cog):
                 description=f"Failed to check decay status: {str(e)}",
                 color=0xFF0000
             )
-            await interaction.followup.send(embed=embed, delete_after=60)
-        
-        await interaction.response.send_message(
-            f"✅ Unlinked account: **{account['riot_id_game_name']}#{account['riot_id_tagline']}**",
-            ephemeral=True
-        )
+            await interaction.followup.send(embed=embed)
     
     @app_commands.command(name="forcelink", description="[OWNER ONLY] Force link a Riot account without verification")
     @app_commands.describe(
