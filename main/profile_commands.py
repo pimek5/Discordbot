@@ -1587,7 +1587,7 @@ class ProfileCommands(commands.Cog):
         db = get_db()
         
         try:
-            # Get user accounts
+            # Get user from database
             db_user = db.get_user_by_discord_id(target.id)
             if not db_user:
                 embed = discord.Embed(
@@ -1598,8 +1598,9 @@ class ProfileCommands(commands.Cog):
                 await interaction.followup.send(embed=embed)
                 return
             
-            accounts = db.get_user_accounts(target.id)
-            if not accounts:
+            # Get all accounts
+            all_accounts = db.get_user_accounts(db_user['id'])
+            if not all_accounts:
                 embed = discord.Embed(
                     title="❌ No Accounts Found",
                     description="No linked accounts in database.",
@@ -1608,10 +1609,10 @@ class ProfileCommands(commands.Cog):
                 await interaction.followup.send(embed=embed)
                 return
             
-            # Filter only enabled accounts (not hidden)
-            enabled_accounts = [acc for acc in accounts if acc.get('enabled', True)]
+            # Filter only visible accounts (not hidden)
+            visible_accounts = db.get_visible_user_accounts(db_user['id'])
             
-            if not enabled_accounts:
+            if not visible_accounts:
                 embed = discord.Embed(
                     title="❌ No Active Accounts",
                     description="All accounts are hidden. Use `/accounts` to manage.",
@@ -1620,11 +1621,11 @@ class ProfileCommands(commands.Cog):
                 await interaction.followup.send(embed=embed)
                 return
             
-            # Check all accounts for Diamond+ rank
+            # Check all visible accounts for Diamond+ rank
             diamond_accounts = []
             has_any_ranked = False
             
-            for account in enabled_accounts:
+            for account in visible_accounts:
                 ranked_stats = await self.riot_api.get_ranked_stats_by_puuid(
                     account['puuid'],
                     account['region']
