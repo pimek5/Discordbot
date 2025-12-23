@@ -832,9 +832,6 @@ class ProfileCommands(commands.Cog):
         target = user or interaction.user
         db = get_db()
         
-        # Refresh account names in background
-        asyncio.create_task(self.refresh_account_names(target.id))
-        
         # Keep interaction alive with periodic updates
         async def keep_alive():
             """Update the interaction periodically to prevent timeout"""
@@ -4662,26 +4659,6 @@ class ProfileView(discord.ui.View):
         # Update next button
         self.ranks_next_button.disabled = not in_ranks_view or self.ranks_page >= total_pages - 1
     
-    async def refresh_account_names(self, user_id: int):
-        """Refresh Riot IDs for all user accounts (PUUID doesn't change, but names do)"""
-        db = get_db()
-        accounts = db.get_user_accounts(user_id)
-        
-        for account in accounts:
-            puuid = account['puuid']
-            try:
-                riot_id = await self.riot_api.get_riot_id_from_puuid(puuid)
-                if riot_id and riot_id.get('gameName') and riot_id.get('tagLine'):
-                    # Update if name changed
-                    current_name = account.get('riot_id_game_name')
-                    current_tag = account.get('riot_id_tagline')
-                    if riot_id['gameName'] != current_name or riot_id['tagLine'] != current_tag:
-                        db.update_account_name(puuid, riot_id['gameName'], riot_id['tagLine'])
-                        logger.info(f"✅ Updated name for {puuid[:8]}: {riot_id['gameName']}#{riot_id['tagLine']}")
-            except Exception as e:
-                logger.error(f"Error refreshing name for {puuid[:8]}: {e}")
-                continue
-    
     @app_commands.command(name="decay", description="Check LP decay status for all Diamond+ accounts")
     @app_commands.describe(user="The user to check (defaults to yourself)")
     async def decay(
@@ -4694,9 +4671,6 @@ class ProfileView(discord.ui.View):
         
         target = user or interaction.user
         db = get_db()
-        
-        # Refresh account names in background
-        asyncio.create_task(self.refresh_account_names(target.id))
         
         try:
             # Get user accounts
