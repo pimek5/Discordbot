@@ -3742,8 +3742,11 @@ async def loldle(interaction: discord.Interaction, champion: str):
             inline=False
         )
 
-        # Recent guesses (arrow separated) - show up to last 15
-        recent_display = " → ".join(guesses_list) if len(guesses_list) <= 15 else " → ".join(guesses_list[-15:])
+        # Recent guesses (exclude latest, arrow separated) - show up to last 15
+        recent_source = guesses_list[:-1]
+        recent_display = " → ".join(recent_source) if len(recent_source) <= 15 else " → ".join(recent_source[-15:])
+        if not recent_display:
+            recent_display = "—"
         embed.add_field(
             name="Recent Guesses",
             value=recent_display,
@@ -3795,6 +3798,9 @@ async def loldle(interaction: discord.Interaction, champion: str):
                 value="\n".join(lines),
                 inline=True
             )
+        # If there were no previous guesses, still add an empty history section to match layout
+        if not history_guesses:
+            embed.add_field(name="Guessing History", value="No previous guesses", inline=False)
 
         # Footer legend
         embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong | ✓ = Already Found")
