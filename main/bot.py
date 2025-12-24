@@ -5774,8 +5774,8 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
     embed.add_field(name="Next goal", value=f"{top_goal:,}", inline=True)
     embed.add_field(name="Remaining", value=f"{max(0, top_goal - current):,}", inline=True)
     embed.add_field(name="Progress", value=f"{progress_within_step}/{step} ({pct}%)", inline=True)
-    embed.add_field(name="Ladder", value=f"```
-" + "\n".join(ladder_lines) + "\n```", inline=False)
+    ladder_block = "\n".join(ladder_lines)
+    embed.add_field(name="Ladder", value=f"```\n{ladder_block}\n```", inline=False)
     embed.set_footer(text="Updates automatically")
     return embed
 
