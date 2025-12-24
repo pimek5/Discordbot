@@ -5796,18 +5796,19 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
     embed.add_field(name="WITHIN STEP", value=f"{progress_within_step}/{step} ({pct}%)", inline=True)
     embed.add_field(name="VECTOR BAR", value=f"[{bar}] {pct}%", inline=False)
 
-    # Ladder with clearer markers and separators
+    # Ladder: top goal / bottom goal window with current positioned inside the step
+    window_height = 10  # vertical slots between top and bottom labels
+    ratio = progress_within_step / step if step else 0
+    ratio = max(0, min(1, ratio))
+    current_slot = window_height - int(round(ratio * window_height))
     ladder_lines = []
-    inserted_current = False  # reset for display pass
-    for val in range(top_goal, bottom_goal - 1, -step):
-        marker = " ▶ GOAL" if val == top_goal else ""
-        ladder_lines.append(f"╟─ {val:,}{marker}")
-        next_val = val - step
-        if not inserted_current and next_val < current <= val:
+    ladder_lines.append(f"╔ {top_goal:,} ▶ GOAL")
+    for i in range(window_height + 1):
+        if i == current_slot:
             ladder_lines.append(f"╟→ {current:,} ★ current")
-            inserted_current = True
-    if not inserted_current:
-        ladder_lines.append(f"╟→ {current:,} ★ current")
+        else:
+            ladder_lines.append("║")
+    ladder_lines.append(f"╚ {bottom_goal:,}")
     ladder_block = "\n".join(ladder_lines)
     embed.add_field(name="LADDER", value=f"```\n{ladder_block}\n```", inline=False)
 
