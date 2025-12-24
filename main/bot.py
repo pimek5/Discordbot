@@ -5798,6 +5798,7 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
 
     # Ladder with clearer markers and separators
     ladder_lines = []
+    inserted_current = False  # reset for display pass
     for val in range(top_goal, bottom_goal - 1, -step):
         marker = " ▶ GOAL" if val == top_goal else ""
         ladder_lines.append(f"╟─ {val:,}{marker}")
