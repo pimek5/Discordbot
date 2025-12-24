@@ -5769,7 +5769,7 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
     # Progress bar (ASCII-only)
     bar_len = 24
     filled = max(0, min(bar_len, int(bar_len * pct / 100)))
-    bar = "#" * filled + "." * (bar_len - filled)
+    bar = "█" * filled + "░" * (bar_len - filled)
 
     embed = discord.Embed(
         title="HEXRTBRXEN // MEMBER FLUX",
