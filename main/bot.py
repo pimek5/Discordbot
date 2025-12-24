@@ -686,8 +686,8 @@ class MyBot(commands.Bot):
             # Trigger immediate ladder refresh
             try:
                 guild = member.guild
-                if guild and update_member_ladder.is_running():
-                    await update_member_ladder()  # run once now
+                if guild:
+                    await refresh_member_ladder(guild)
             except Exception:
                 pass
         except Exception as e:
@@ -5815,7 +5815,7 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
     # Recent joins (up to 10)
     joins = member_ladder_state.get('recent_joins', []) or []
     if joins:
-        lines = [f"• {name} ({uid})" for uid, name in joins]
+        lines = [f"• <@{uid}>" for uid, _name in joins]
         embed.add_field(name="Recent joins", value="\n".join(lines), inline=False)
 
     embed.set_footer(text="Auto-synced")
@@ -5862,16 +5862,11 @@ async def ensure_member_ladder_message(guild: discord.Guild):
     return msg
 
 
-@tasks.loop(minutes=5)
-async def update_member_ladder():
-    """Periodic updater for the member ladder embed."""
-    guild = bot.get_guild(GUILD_ID)
-    if not guild:
-        return
+async def refresh_member_ladder(guild: discord.Guild):
+    """Update or create the member ladder embed now for the given guild."""
     channel = guild.get_channel(MEMBER_LADDER_CHANNEL_ID) or bot.get_channel(MEMBER_LADDER_CHANNEL_ID)
     if not channel:
         return
-
     msg = await ensure_member_ladder_message(guild)
     if not msg:
         return
@@ -5882,6 +5877,15 @@ async def update_member_ladder():
         member_ladder_state['message_id'] = None
     except Exception as e:
         print(f"⚠️ Failed to update member ladder: {e}")
+
+
+@tasks.loop(minutes=5)
+async def update_member_ladder():
+    """Periodic updater for the member ladder embed."""
+    guild = bot.get_guild(GUILD_ID)
+    if not guild:
+        return
+    await refresh_member_ladder(guild)
 
 @bot.event
 async def on_ready():
