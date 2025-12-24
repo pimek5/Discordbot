@@ -5766,17 +5766,24 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
         progress_within_step = 0
     pct = max(0, min(100, int((progress_within_step / step) * 100)))
 
+    # Futuristic progress bar (ASCII-only for compatibility)
+    bar_len = 20
+    filled = max(0, min(bar_len, int(bar_len * pct / 100)))
+    bar = "=" * filled + "-" * (bar_len - filled)
+
     embed = discord.Embed(
-        title="HEXRTBRXEN CHROMAS",
-        description="member count",
-        color=0x2ECC71
+        title="HEXRTBRXEN // MEMBER FLUX",
+        description="Live member trajectory (100-step beacons)",
+        color=0x00D1FF
     )
-    embed.add_field(name="Next goal", value=f"{top_goal:,}", inline=True)
-    embed.add_field(name="Remaining", value=f"{max(0, top_goal - current):,}", inline=True)
-    embed.add_field(name="Progress", value=f"{progress_within_step}/{step} ({pct}%)", inline=True)
+    embed.add_field(name="NEXT BEACON", value=f"{top_goal:,}", inline=True)
+    embed.add_field(name="REMAINING", value=f"{max(0, top_goal - current):,}", inline=True)
+    embed.add_field(name="WITHIN STEP", value=f"{progress_within_step}/{step} ({pct}%)", inline=True)
+    embed.add_field(name="VECTOR BAR", value=f"[{bar}]", inline=False)
+
     ladder_block = "\n".join(ladder_lines)
-    embed.add_field(name="Ladder", value=f"```\n{ladder_block}\n```", inline=False)
-    embed.set_footer(text="Updates automatically")
+    embed.add_field(name="LADDER", value=f"```\n{ladder_block}\n```", inline=False)
+    embed.set_footer(text="Auto-synced • Futuristic display")
     return embed
 
 
