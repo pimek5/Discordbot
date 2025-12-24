@@ -5787,8 +5787,8 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
     bar = "█" * filled + "░" * (bar_len - filled)
 
     embed = discord.Embed(
-        title="HEXRTBRXEN // MEMBER FLUX",
-        description="Live member trajectory (100-step beacons)",
+        title="HEXRTBRXENCHROMAS",
+        description="Live member count",
         color=0x00D1FF
     )
     embed.add_field(name="NEXT BEACON", value=f"{top_goal:,}", inline=True)
