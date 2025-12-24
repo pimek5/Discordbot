@@ -264,6 +264,13 @@ loldle_data = {
     'game_embeds': {}  # {game_id: message_id} - Track game embed messages
 }
 
+# Member ladder (server progress) configuration
+MEMBER_LADDER_CHANNEL_ID = 1453423679957368865
+MEMBER_LADDER_STEP = 100
+member_ladder_state = {
+    'message_id': None,
+}
+
 # Global Loldle statistics tracking
 loldle_global_stats = {}  # {user_id: {'total_games': int, 'total_wins': int, 'total_guesses': int, 'best_streak': int, 'current_streak': int}}
 
@@ -5728,6 +5735,112 @@ async def auto_migrate_puuids():
     except Exception as e:
         print(f"❌ Error during PUUID migration: {e}")
 
+
+# ================================
+#   MEMBER LADDER (PROGRESS) TRACKER
+# ================================
+def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
+    """Build vertical progress-style embed for member count with 100-step goals."""
+    current = guild.member_count or 0
+    step = MEMBER_LADDER_STEP
+    # Next goal always one step above current, even if divisible by step
+    top_goal = ((current // step) + 1) * step
+    if current % step == 0:
+        top_goal = current + step
+    bottom_goal = top_goal - step * 6  # Show 6 steps below the goal (7 lines total)
+
+    ladder_lines = []
+    inserted_current = False
+    for val in range(top_goal, bottom_goal - 1, -step):
+        marker = " 🎯" if val == top_goal else ""
+        ladder_lines.append(f"{val:,}{marker}")
+        next_val = val - step
+        if not inserted_current and next_val < current <= val:
+            ladder_lines.append(f"{current:,} 🔵 current")
+            inserted_current = True
+    if not inserted_current:
+        ladder_lines.append(f"{current:,} 🔵 current")
+
+    progress_within_step = current - (top_goal - step)
+    if progress_within_step < 0:
+        progress_within_step = 0
+    pct = max(0, min(100, int((progress_within_step / step) * 100)))
+
+    embed = discord.Embed(
+        title="HEXRTBRXEN CHROMAS",
+        description="member count",
+        color=0x2ECC71
+    )
+    embed.add_field(name="Next goal", value=f"{top_goal:,}", inline=True)
+    embed.add_field(name="Remaining", value=f"{max(0, top_goal - current):,}", inline=True)
+    embed.add_field(name="Progress", value=f"{progress_within_step}/{step} ({pct}%)", inline=True)
+    embed.add_field(name="Ladder", value=f"```
+" + "\n".join(ladder_lines) + "\n```", inline=False)
+    embed.set_footer(text="Updates automatically")
+    return embed
+
+
+async def ensure_member_ladder_message(guild: discord.Guild):
+    """Find or create the ladder message in the configured channel."""
+    channel = guild.get_channel(MEMBER_LADDER_CHANNEL_ID) or bot.get_channel(MEMBER_LADDER_CHANNEL_ID)
+    if not channel:
+        return None
+
+    # Try cached message id
+    msg = None
+    if member_ladder_state.get('message_id'):
+        try:
+            msg = await channel.fetch_message(member_ladder_state['message_id'])
+        except discord.NotFound:
+            msg = None
+        except Exception:
+            msg = None
+
+    # Fallback: scan recent messages from the bot
+    if not msg:
+        try:
+            async for m in channel.history(limit=20):
+                if m.author == bot.user and m.embeds:
+                    msg = m
+                    member_ladder_state['message_id'] = m.id
+                    break
+        except Exception:
+            msg = None
+
+    # Create new message if none found
+    if not msg:
+        embed = build_member_ladder_embed(guild)
+        try:
+            msg = await channel.send(embed=embed)
+            member_ladder_state['message_id'] = msg.id
+        except Exception as e:
+            print(f"⚠️ Failed to create member ladder message: {e}")
+            msg = None
+
+    return msg
+
+
+@tasks.loop(minutes=5)
+async def update_member_ladder():
+    """Periodic updater for the member ladder embed."""
+    guild = bot.get_guild(GUILD_ID)
+    if not guild:
+        return
+    channel = guild.get_channel(MEMBER_LADDER_CHANNEL_ID) or bot.get_channel(MEMBER_LADDER_CHANNEL_ID)
+    if not channel:
+        return
+
+    msg = await ensure_member_ladder_message(guild)
+    if not msg:
+        return
+    embed = build_member_ladder_embed(guild)
+    try:
+        await msg.edit(embed=embed)
+    except discord.NotFound:
+        member_ladder_state['message_id'] = None
+    except Exception as e:
+        print(f"⚠️ Failed to update member ladder: {e}")
+
 @bot.event
 async def on_ready():
     global riot_api, orianna_initialized
@@ -5761,6 +5874,11 @@ async def on_ready():
     if not expire_bans_task.is_running():
         expire_bans_task.start()
         print(f"⏰ Started ban expiration monitoring (checks every 5 minutes)")
+
+    # Start member ladder updater
+    if not update_member_ladder.is_running():
+        update_member_ladder.start()
+        print(f"📈 Started member ladder updater")
 
 # Run bot - simple approach, let Docker/hosting service handle restarts
 import sys
