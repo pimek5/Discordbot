@@ -269,6 +269,7 @@ MEMBER_LADDER_CHANNEL_ID = 1453423679957368865
 MEMBER_LADDER_STEP = 100
 member_ladder_state = {
     'message_id': None,
+    'recent_joins': [],  # list of (id, name) most recent
 }
 
 # Global Loldle statistics tracking
@@ -675,6 +676,20 @@ class MyBot(commands.Bot):
                 if role:
                     await member.add_roles(role, reason="New member - default rank")
                     print(f"✅ Assigned UNRANKED role to new member: {member.name}")
+
+            # Track recent joins for ladder embed (keep last 10)
+            try:
+                entry = (member.id, member.display_name)
+                member_ladder_state['recent_joins'] = ([entry] + member_ladder_state.get('recent_joins', []))[:10]
+            except Exception:
+                pass
+            # Trigger immediate ladder refresh
+            try:
+                guild = member.guild
+                if guild and update_member_ladder.is_running():
+                    await update_member_ladder()  # run once now
+            except Exception:
+                pass
         except Exception as e:
             print(f"⚠️ Error assigning UNRANKED role to {member.name}: {e}")
 
@@ -5794,6 +5809,13 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
         ladder_lines.append(f"╟→ {current:,} ★ current")
     ladder_block = "\n".join(ladder_lines)
     embed.add_field(name="LADDER", value=f"```\n{ladder_block}\n```", inline=False)
+
+    # Recent joins (up to 10)
+    joins = member_ladder_state.get('recent_joins', []) or []
+    if joins:
+        lines = [f"• {name} ({uid})" for uid, name in joins]
+        embed.add_field(name="Recent joins", value="\n".join(lines), inline=False)
+
     embed.set_footer(text="Auto-synced")
     return embed
 
