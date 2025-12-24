@@ -5766,10 +5766,10 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
         progress_within_step = 0
     pct = max(0, min(100, int((progress_within_step / step) * 100)))
 
-    # Futuristic progress bar (ASCII-only for compatibility)
-    bar_len = 20
+    # Progress bar (ASCII-only)
+    bar_len = 24
     filled = max(0, min(bar_len, int(bar_len * pct / 100)))
-    bar = "=" * filled + "-" * (bar_len - filled)
+    bar = "#" * filled + "." * (bar_len - filled)
 
     embed = discord.Embed(
         title="HEXRTBRXEN // MEMBER FLUX",
@@ -5779,11 +5779,22 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
     embed.add_field(name="NEXT BEACON", value=f"{top_goal:,}", inline=True)
     embed.add_field(name="REMAINING", value=f"{max(0, top_goal - current):,}", inline=True)
     embed.add_field(name="WITHIN STEP", value=f"{progress_within_step}/{step} ({pct}%)", inline=True)
-    embed.add_field(name="VECTOR BAR", value=f"[{bar}]", inline=False)
+    embed.add_field(name="VECTOR BAR", value=f"[{bar}] {pct}%", inline=False)
 
+    # Ladder with clearer markers
+    ladder_lines = []
+    for val in range(top_goal, bottom_goal - 1, -step):
+        marker = " [GOAL]" if val == top_goal else ""
+        ladder_lines.append(f"| {val:,}{marker}")
+        next_val = val - step
+        if not inserted_current and next_val < current <= val:
+            ladder_lines.append(f"| {current:,} [current]")
+            inserted_current = True
+    if not inserted_current:
+        ladder_lines.append(f"| {current:,} [current]")
     ladder_block = "\n".join(ladder_lines)
     embed.add_field(name="LADDER", value=f"```\n{ladder_block}\n```", inline=False)
-    embed.set_footer(text="Auto-synced • Futuristic display")
+    embed.set_footer(text="Auto-synced")
     return embed
 
 
