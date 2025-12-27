@@ -55,8 +55,8 @@ class VoteCommands(commands.Cog):
         Validate champion names using aliases.
         Returns: (is_valid, error_message, normalized_names)
         """
-        if len(champion_names) != 5:
-            return False, "You must vote for exactly 5 champions!", []
+        if len(champion_names) < 1 or len(champion_names) > 5:
+            return False, "You must vote for 1 to 5 champions!", []
         
         # Get all valid champion names (values from CHAMPION_ID_TO_NAME)
         valid_champions = set(CHAMPION_ID_TO_NAME.values())
@@ -78,7 +78,7 @@ class VoteCommands(commands.Cog):
             normalized.append(champion)
         
         # Check for duplicates
-        if len(set(normalized)) != 5:
+        if len(set(normalized)) != len(normalized):
             return False, "❌ You cannot vote for the same champion twice!", []
         
         return True, None, normalized
@@ -87,7 +87,7 @@ class VoteCommands(commands.Cog):
         """Create the voting results embed with top 5 and others"""
         embed = discord.Embed(
             title="🗳️ Champion Voting - Live Results",
-            description="Vote with `/vote [champion1] [champion2] [champion3] [champion4] [champion5]`\n"
+            description="Vote with `/vote [champion1] [champion2] ... [champion5]` (1-5 champions)\n"
                        "Server Boosters get 2 points per champion! 💎",
             color=0x0099ff
         )
