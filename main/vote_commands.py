@@ -150,7 +150,7 @@ class VoteCommands(commands.Cog):
         embed.set_footer(text=f"Session ID: {session_id} • Use /vote stop to end voting")
         return embed
     
-    @app_commands.command(name="vote", description="Vote for 5 champions")
+    @app_commands.command(name="vote", description="Vote for 1-5 champions")
     @app_commands.describe(
         champion1="Your #1 pick",
         champion2="Your #2 pick",
@@ -162,12 +162,12 @@ class VoteCommands(commands.Cog):
         self,
         interaction: discord.Interaction,
         champion1: str,
-        champion2: str,
-        champion3: str,
-        champion4: str,
-        champion5: str
+        champion2: Optional[str] = None,
+        champion3: Optional[str] = None,
+        champion4: Optional[str] = None,
+        champion5: Optional[str] = None
     ):
-        """Vote for 5 champions in the current voting session"""
+        """Vote for 1-5 champions in the current voting session"""
         # Check if command is used in voting thread
         if not self.is_voting_thread(interaction):
             await interaction.response.send_message(
@@ -189,7 +189,7 @@ class VoteCommands(commands.Cog):
             return
         
         # Validate champions (with exclusions)
-        champion_names = [champion1, champion2, champion3, champion4, champion5]
+        champion_names = [c for c in [champion1, champion2, champion3, champion4, champion5] if c]
         excluded = session.get('excluded_champions') or []
         is_valid, error_msg, normalized_names = self.validate_champions(champion_names, excluded)
         
