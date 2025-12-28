@@ -2077,6 +2077,24 @@ async def process_skin_idea_thread(thread: discord.Thread):
     await idea_message.edit(view=voting_view)
     
     print(f"✅ Posted idea to Your Ideas channel: {idea_message.jump_url}")
+
+    # Mirror the Your Ideas link back into the source thread
+    try:
+        try:
+            await thread.join()
+        except Exception:
+            pass
+        mirror_embed = discord.Embed(
+            title="🗳️ Idea Posted in Your Ideas",
+            description=f"[View and vote here]({idea_message.jump_url})",
+            color=0x5865F2,
+            timestamp=datetime.datetime.now()
+        )
+        mirror_embed.set_footer(text=f"Idea by {starter_message.author.name}", icon_url=starter_message.author.display_avatar.url)
+        await thread.send(embed=mirror_embed)
+        print(f"🔁 Mirrored Your Ideas link into thread: {thread.id}")
+    except Exception as mirror_err:
+        print(f"⚠️ Failed to mirror Your Ideas link into thread: {mirror_err}")
     
     # Post to Mod Review channel
     mod_channel = bot.get_channel(MOD_REVIEW_CHANNEL_ID)
@@ -5927,50 +5945,9 @@ async def on_ready():
         print(f"📈 Started member ladder updater")
 
 
-@bot.event
-async def on_thread_create(thread: discord.Thread):
-    """When a thread is created in Skin Ideas, post a link to the source message inside the thread."""
-    try:
-        if not thread.guild:
-            return
-        # Only act for Skin Ideas channel
-        if thread.parent_id != SKIN_IDEAS_CHANNEL_ID:
-            return
-
-        # Try to build a jump URL to the parent message that started the thread
-        message_url = None
-        msg_id = getattr(thread, 'message_id', None)
-        if msg_id:
-            message_url = f"https://discord.com/channels/{thread.guild.id}/{thread.parent_id}/{msg_id}"
-        else:
-            # Fallback: try to locate the parent message that owns this thread
-            try:
-                parent = thread.parent or thread.guild.get_channel(thread.parent_id)
-                async for m in parent.history(limit=50):
-                    if getattr(m, 'thread', None) and m.thread and m.thread.id == thread.id:
-                        message_url = m.jump_url
-                        break
-            except Exception:
-                pass
-
-        # Join the thread before sending
-        try:
-            await thread.join()
-        except Exception:
-            pass
-
-        # Compose info post
-        pieces = []
-        if message_url:
-            pieces.append(f"🔗 Source message: {message_url}")
-        if getattr(thread, 'owner_id', None):
-            pieces.append(f"👤 Thread by <@{thread.owner_id}>")
-        content = "\n".join(pieces) if pieces else "🔗 Source message not found"
-
-        # Post inside the thread
-        await thread.send(content)
-    except Exception as e:
-        print(f"⚠️ on_thread_create handler failed: {e}")
+# Note: The thread auto-link reply inside Skin Ideas threads was intentionally
+# removed to align behavior with the existing "Your Ideas" flow, which handles
+# idea posting externally without auto-messages inside threads.
 
 # Run bot - simple approach, let Docker/hosting service handle restarts
 import sys
