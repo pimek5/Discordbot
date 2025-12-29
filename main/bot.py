@@ -270,6 +270,7 @@ MEMBER_LADDER_STEP = 100
 member_ladder_state = {
     'message_id': None,
     'recent_joins': [],  # list of (id, name) most recent
+    'recent_boosters': [],  # list of (id, name, premium_since) most recent
 }
 
 # Global Loldle statistics tracking
@@ -5725,6 +5726,20 @@ async def auto_migrate_puuids():
 # ================================
 #   MEMBER LADDER (PROGRESS) TRACKER
 # ================================
+async def update_recent_boosters(guild: discord.Guild):
+    """Capture the 10 most recent boosters from guild members."""
+    try:
+        boosters = []
+        for m in guild.members:
+            ts = getattr(m, "premium_since", None)
+            if ts:
+                boosters.append((m.id, m.display_name, ts))
+        boosters.sort(key=lambda x: x[2] or datetime.datetime.min, reverse=True)
+        member_ladder_state['recent_boosters'] = boosters[:10]
+    except Exception as e:
+        print(f"⚠️ Failed to update recent boosters: {e}")
+
+
 def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
     """Build vertical progress-style embed for member count with 100-step goals."""
     current = guild.member_count or 0
@@ -5789,6 +5804,17 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
         lines = [f"• <@{uid}>" for uid, _name in joins]
         embed.add_field(name="Recent joins", value="\n".join(lines), inline=False)
 
+    # Recent boosters (up to 10)
+    boosters = member_ladder_state.get('recent_boosters', []) or []
+    if boosters:
+        lines = []
+        for uid, _name, ts in boosters:
+            if ts:
+                lines.append(f"• <@{uid}> — <t:{int(ts.timestamp())}:R>")
+            else:
+                lines.append(f"• <@{uid}>")
+        embed.add_field(name="Recent boosters", value="\n".join(lines), inline=False)
+
     embed.set_footer(text="Auto-synced")
     return embed
 
@@ -5838,6 +5864,7 @@ async def refresh_member_ladder(guild: discord.Guild):
     channel = guild.get_channel(MEMBER_LADDER_CHANNEL_ID) or bot.get_channel(MEMBER_LADDER_CHANNEL_ID)
     if not channel:
         return
+    await update_recent_boosters(guild)
     msg = await ensure_member_ladder_message(guild)
     if not msg:
         return
@@ -5856,7 +5883,25 @@ async def update_member_ladder():
     guild = bot.get_guild(GUILD_ID)
     if not guild:
         return
+    await update_recent_boosters(guild)
     await refresh_member_ladder(guild)
+
+
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    """Track boosters and refresh ladder when someone boosts."""
+    try:
+        if before.guild.id != GUILD_ID:
+            return
+        before_ts = getattr(before, "premium_since", None)
+        after_ts = getattr(after, "premium_since", None)
+        started_boosting = (before_ts is None) and (after_ts is not None)
+        if started_boosting:
+            entry = (after.id, after.display_name, after_ts)
+            member_ladder_state['recent_boosters'] = ([entry] + member_ladder_state.get('recent_boosters', []))[:10]
+            await refresh_member_ladder(after.guild)
+    except Exception as e:
+        print(f"⚠️ on_member_update booster tracking failed: {e}")
 
 @bot.event
 async def on_ready():
