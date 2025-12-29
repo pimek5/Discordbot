@@ -2887,53 +2887,6 @@ def create_tweet_embed(tweet, show_details=False):
     
     return embed
 
-@tasks.loop(seconds=TWITTER_CHECK_INTERVAL)
-async def check_for_new_tweets():
-    """Check for new tweets every 2 minutes"""
-    global last_tweet_id
-    
-    try:
-        tweets = await get_twitter_user_tweets(limit=5)
-        if not tweets:
-            print("⚠️ No tweets fetched")
-            return
-        
-        latest_tweet = tweets[0]
-        
-        if last_tweet_id is None:
-            last_tweet_id = latest_tweet['id']
-            save_last_tweet_id(last_tweet_id)
-            print(f"🔄 First run - stored tweet ID: {last_tweet_id}")
-            return
-        
-        if latest_tweet['id'] != last_tweet_id:
-            print(f"🐦 New tweet detected! ID: {latest_tweet['id']}")
-            
-            channel = bot.get_channel(TWITTER_CHANNEL_ID)
-            if channel:
-                embed = create_tweet_embed(latest_tweet, show_details=True)
-                try:
-                    msg = await channel.send(embed=embed)
-                    print(f"✅ Posted tweet to Discord - Message ID: {msg.id}")
-                except Exception as e:
-                    print(f"❌ Failed to post tweet: {e}")
-            
-            last_tweet_id = latest_tweet['id']
-            save_last_tweet_id(last_tweet_id)
-        else:
-            print(f"✓ No new tweets (last ID: {last_tweet_id})")
-    
-    except Exception as e:
-        print(f"❌ Error checking tweets: {e}")
-        import traceback
-        traceback.print_exc()
-
-@check_for_new_tweets.before_loop
-async def before_tweet_check():
-    await bot.wait_until_ready()
-    load_last_tweet_id()
-    print(f"🐦 Tweet monitoring started for @{TWITTER_USERNAME}")
-
 # Twitter commands group
 twitter_group = app_commands.Group(name="twitter", description="Twitter monitoring commands")
 
