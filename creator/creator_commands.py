@@ -251,18 +251,19 @@ class CreatorCommands(commands.Cog):
     
     @creator_group.command(name="refresh", description="Manually refresh a creator's data (Admin only)")
     @app_commands.describe(
-        platform="Platform (runeforge or divineskins)",
-        user="Discord user"
+        platform="Platform (runeforge, divineskins, or all)",
+        user="Discord user (or 'all' to refresh everyone)"
     )
     @app_commands.choices(platform=[
         app_commands.Choice(name="RuneForge", value="runeforge"),
-        app_commands.Choice(name="Divine Skins", value="divineskins")
+        app_commands.Choice(name="Divine Skins", value="divineskins"),
+        app_commands.Choice(name="All Platforms", value="all")
     ])
     async def refresh_creator(
         self,
         interaction: discord.Interaction,
         platform: str,
-        user: discord.Member
+        user: discord.Member = None
     ):
         if not has_admin_permissions(interaction):
             await interaction.response.send_message(
@@ -271,8 +272,155 @@ class CreatorCommands(commands.Cog):
             )
             return
         await interaction.response.defer(ephemeral=True)
+        
         try:
             db = get_creator_db()
+            
+            # Handle "all creators" refresh
+            if user is None:
+                all_creators = db.get_all_creators()
+                if not all_creators:
+                    await interaction.followup.send("❌ No creators are being tracked!", ephemeral=True)
+                    return
+                
+                # Filter by platform if specified
+                if platform != 'all':
+                    all_creators = [c for c in all_creators if c['platform'] == platform]
+                
+                if not all_creators:
+                    await interaction.followup.send(
+                        f"❌ No creators found on {platform.title()}!",
+                        ephemeral=True
+                    )
+                    return
+                
+                total = len(all_creators)
+                success_count = 0
+                failed_count = 0
+                
+                status_msg = await interaction.followup.send(
+                    f"🔄 Refreshing {total} creator(s)...",
+                    ephemeral=True
+                )
+                
+                for idx, creator in enumerate(all_creators, 1):
+                    try:
+                        username = creator['username']
+                        creator_platform = creator['platform']
+                        
+                        # Update status every 5 creators
+                        if idx % 5 == 0:
+                            await status_msg.edit(content=f"🔄 Progress: {idx}/{total} creators...")
+                        
+                        if creator_platform == 'runeforge':
+                            profile_data = await self.runeforge_scraper.get_profile_data(username)
+                        else:
+                            profile_data = await self.divineskins_scraper.get_profile_data(username)
+                        
+                        if not profile_data:
+                            logger.warning("⚠️ Failed to fetch profile for %s (%s)", username, creator_platform)
+                            failed_count += 1
+                            continue
+                        
+                        db.add_creator(creator['discord_user_id'], creator_platform, creator['profile_url'], profile_data)
+                        
+                        # Re-seed content
+                        content = []
+                        if creator_platform == 'runeforge':
+                            content = await self.runeforge_scraper.get_user_mods(username)
+                        else:
+                            content = await self.divineskins_scraper.get_user_skins(username)
+                        
+                        if content:
+                            for item in content:
+                                db.add_mod(
+                                    creator['id'],
+                                    item.get('id', ''),
+                                    item.get('name', 'Untitled'),
+                                    item.get('url', creator['profile_url']),
+                                    item.get('updated_at', ''),
+                                    creator_platform
+                                )
+                            logger.info("📥 Re-seeded %s items for %s (%s)", len(content), username, creator_platform)
+                        
+                        success_count += 1
+                    except Exception as e:
+                        logger.error("❌ Error refreshing %s: %s", creator.get('username', 'unknown'), e)
+                        failed_count += 1
+                
+                # Final report
+                embed = discord.Embed(
+                    title="✅ Bulk Refresh Complete",
+                    color=0x00FF00 if failed_count == 0 else 0xFFA500
+                )
+                embed.add_field(name="Total", value=str(total), inline=True)
+                embed.add_field(name="Success", value=str(success_count), inline=True)
+                embed.add_field(name="Failed", value=str(failed_count), inline=True)
+                
+                await status_msg.edit(content=None, embed=embed)
+                return
+            
+            # Single user refresh
+            if platform == 'all':
+                # Refresh all platforms for this user
+                creators = [c for c in db.get_all_creators() if c['discord_user_id'] == user.id]
+                if not creators:
+                    await interaction.followup.send(
+                        f"❌ {user.mention} doesn't have any tracked profiles!",
+                        ephemeral=True
+                    )
+                    return
+                
+                success_platforms = []
+                failed_platforms = []
+                
+                for creator in creators:
+                    try:
+                        username = creator['username']
+                        creator_platform = creator['platform']
+                        
+                        if creator_platform == 'runeforge':
+                            profile_data = await self.runeforge_scraper.get_profile_data(username)
+                        else:
+                            profile_data = await self.divineskins_scraper.get_profile_data(username)
+                        
+                        if not profile_data:
+                            failed_platforms.append(creator_platform)
+                            continue
+                        
+                        db.add_creator(user.id, creator_platform, creator['profile_url'], profile_data)
+                        
+                        # Re-seed content
+                        content = []
+                        if creator_platform == 'runeforge':
+                            content = await self.runeforge_scraper.get_user_mods(username)
+                        else:
+                            content = await self.divineskins_scraper.get_user_skins(username)
+                        
+                        if content:
+                            for item in content:
+                                db.add_mod(
+                                    creator['id'],
+                                    item.get('id', ''),
+                                    item.get('name', 'Untitled'),
+                                    item.get('url', creator['profile_url']),
+                                    item.get('updated_at', ''),
+                                    creator_platform
+                                )
+                            logger.info("📥 Re-seeded %s items for %s (%s)", len(content), username, creator_platform)
+                        
+                        success_platforms.append(creator_platform)
+                    except Exception as e:
+                        logger.error("❌ Error refreshing %s on %s: %s", user, creator['platform'], e)
+                        failed_platforms.append(creator['platform'])
+                
+                msg = f"✅ Refreshed {user.mention} on: {', '.join(success_platforms)}"
+                if failed_platforms:
+                    msg += f"\n⚠️ Failed: {', '.join(failed_platforms)}"
+                await interaction.followup.send(msg, ephemeral=True)
+                return
+            
+            # Single user, single platform
             creator = db.get_creator(user.id, platform)
             if not creator:
                 await interaction.followup.send(
@@ -280,22 +428,26 @@ class CreatorCommands(commands.Cog):
                     ephemeral=True
                 )
                 return
+            
             username = creator['username']
             if platform == 'runeforge':
                 profile_data = await self.runeforge_scraper.get_profile_data(username)
             else:
                 profile_data = await self.divineskins_scraper.get_profile_data(username)
+            
             if not profile_data:
                 await interaction.followup.send("❌ Failed to fetch profile data!", ephemeral=True)
                 return
+            
             db.add_creator(user.id, platform, creator['profile_url'], profile_data)
-
+            
             # Re-seed existing content to keep random pool fresh (no notifications)
             content = []
             if platform == 'runeforge':
                 content = await self.runeforge_scraper.get_user_mods(username)
             else:
                 content = await self.divineskins_scraper.get_user_skins(username)
+            
             if content:
                 for item in content:
                     db.add_mod(
@@ -307,7 +459,7 @@ class CreatorCommands(commands.Cog):
                         platform
                     )
                 logger.info("📥 Re-seeded %s items for %s (%s)", len(content), username, platform)
-
+            
             await interaction.followup.send(
                 f"✅ Refreshed data for **{username}** on {platform.title()}",
                 ephemeral=True
