@@ -450,7 +450,19 @@ class CreatorBot(commands.Bot):
 
             platform_emoji = "🔧" if platform == 'runeforge' else "✨"
             platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
-            color = 0x3498db  # Professional blue color
+            
+            # Determine if this is an update or new post
+            is_update = 'update' in action.lower()
+            
+            # Different colors and emojis for new vs update
+            if is_update:
+                color = 0xFFA500  # Orange for updates
+                status_emoji = "🔄"
+                title_prefix = "Update"
+            else:
+                color = 0x00FF00  # Green for new
+                status_emoji = "🆕"
+                title_prefix = "New"
 
             # Fetch detailed mod information
             mod_details = {}
@@ -464,7 +476,7 @@ class CreatorBot(commands.Bot):
 
             # Use detailed data if available, fallback to basic data
             final_name = mod_details.get('name', mod_name)
-            final_description = mod_details.get('description', f"Check out this new {'mod' if platform == 'runeforge' else 'skin'}!")
+            final_description = mod_details.get('description', f"Check out this {'updated' if is_update else 'new'} {'mod' if platform == 'runeforge' else 'skin'}!")
             final_views = mod_details.get('views', views)
             final_downloads = mod_details.get('downloads', downloads)
             final_likes = mod_details.get('likes', 0)
@@ -472,9 +484,9 @@ class CreatorBot(commands.Bot):
             final_tags = mod_details.get('tags', [])
             final_image = mod_details.get('image_url', None)
 
-            # Create rich embed
+            # Create rich embed with clear update/new distinction
             embed = discord.Embed(
-                title=f"{platform_emoji} New {'Mod' if platform == 'runeforge' else 'Skin'} Released!",
+                title=f"{status_emoji} {platform_emoji} {title_prefix} {'Mod' if platform == 'runeforge' else 'Skin'} {'Updated' if is_update else 'Released'}!",
                 description=f"**{final_name}**\n{final_description[:200]}{'...' if len(final_description) > 200 else ''}",
                 color=color,
                 url=mod_url,
