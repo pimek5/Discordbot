@@ -265,3 +265,58 @@ CREATE INDEX IF NOT EXISTS idx_loldle_stats_guild ON loldle_stats(guild_id);
 CREATE INDEX IF NOT EXISTS idx_loldle_daily_date ON loldle_daily_games(guild_id, game_date);
 CREATE INDEX IF NOT EXISTS idx_loldle_progress_game ON loldle_player_progress(game_id);
 CREATE INDEX IF NOT EXISTS idx_loldle_progress_user ON loldle_player_progress(user_id);
+
+-- ================================
+--    PRO TEAMS & PLAYERS (RL-STATS.PL)
+-- ================================
+
+-- Professional teams
+CREATE TABLE IF NOT EXISTS pro_teams (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    tag VARCHAR(20) NOT NULL UNIQUE,
+    rank INTEGER,
+    rating INTEGER DEFAULT 0,
+    rating_change INTEGER DEFAULT 0,
+    url TEXT,
+    last_updated TIMESTAMP DEFAULT NOW(),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Professional players
+CREATE TABLE IF NOT EXISTS pro_players (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    role VARCHAR(20),
+    team_id INTEGER REFERENCES pro_teams(id) ON DELETE SET NULL,
+    kda DECIMAL(4,2),
+    avg_kills DECIMAL(4,1),
+    avg_deaths DECIMAL(4,1),
+    avg_assists DECIMAL(4,1),
+    rating DECIMAL(4,2),
+    win_rate DECIMAL(5,2),
+    games_played INTEGER DEFAULT 0,
+    cs_per_min DECIMAL(4,1),
+    url TEXT,
+    last_updated TIMESTAMP DEFAULT NOW(),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Professional player champion statistics
+CREATE TABLE IF NOT EXISTS pro_player_champions (
+    id SERIAL PRIMARY KEY,
+    player_id INTEGER NOT NULL REFERENCES pro_players(id) ON DELETE CASCADE,
+    champion VARCHAR(50) NOT NULL,
+    games INTEGER DEFAULT 0,
+    kda DECIMAL(4,2),
+    win_rate DECIMAL(5,2),
+    last_updated TIMESTAMP DEFAULT NOW(),
+    UNIQUE(player_id, champion)
+);
+
+-- Indexes for pro stats
+CREATE INDEX IF NOT EXISTS idx_pro_teams_tag ON pro_teams(tag);
+CREATE INDEX IF NOT EXISTS idx_pro_teams_rank ON pro_teams(rank);
+CREATE INDEX IF NOT EXISTS idx_pro_players_name ON pro_players(name);
+CREATE INDEX IF NOT EXISTS idx_pro_players_team ON pro_players(team_id);
+CREATE INDEX IF NOT EXISTS idx_pro_player_champs ON pro_player_champions(player_id);

@@ -1246,3 +1246,235 @@ def get_db() -> Database:
     if db is None:
         raise RuntimeError("Database not initialized. Call initialize_database() first.")
     return db
+
+
+# ==================== PRO STATS OPERATIONS ====================
+
+class ProStatsDatabase:
+    """Database operations for professional teams and players"""
+    
+    def __init__(self, database: Database):
+        self.db = database
+    
+    def add_or_update_team(self, name: str, tag: str, rank: int, rating: int, rating_change: int, url: str) -> int:
+        """Add or update a professional team"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO pro_teams (name, tag, rank, rating, rating_change, url, last_updated)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (tag) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        rank = EXCLUDED.rank,
+                        rating = EXCLUDED.rating,
+                        rating_change = EXCLUDED.rating_change,
+                        url = EXCLUDED.url,
+                        last_updated = NOW()
+                    RETURNING id
+                """, (name, tag, rank, rating, rating_change, url))
+                team_id = cur.fetchone()[0]
+                conn.commit()
+                return team_id
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Error adding/updating team {tag}: {e}")
+            raise
+        finally:
+            self.db.return_connection(conn)
+    
+    def add_or_update_player(self, name: str, role: str, team_tag: str = None, **stats) -> int:
+        """Add or update a professional player"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Get team_id if team_tag provided
+                team_id = None
+                if team_tag:
+                    cur.execute("SELECT id FROM pro_teams WHERE tag = %s", (team_tag,))
+                    result = cur.fetchone()
+                    if result:
+                        team_id = result[0]
+                
+                cur.execute("""
+                    INSERT INTO pro_players 
+                    (name, role, team_id, kda, avg_kills, avg_deaths, avg_assists, rating, 
+                     win_rate, games_played, cs_per_min, url, last_updated)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (name) DO UPDATE SET
+                        role = EXCLUDED.role,
+                        team_id = EXCLUDED.team_id,
+                        kda = EXCLUDED.kda,
+                        avg_kills = EXCLUDED.avg_kills,
+                        avg_deaths = EXCLUDED.avg_deaths,
+                        avg_assists = EXCLUDED.avg_assists,
+                        rating = EXCLUDED.rating,
+                        win_rate = EXCLUDED.win_rate,
+                        games_played = EXCLUDED.games_played,
+                        cs_per_min = EXCLUDED.cs_per_min,
+                        url = EXCLUDED.url,
+                        last_updated = NOW()
+                    RETURNING id
+                """, (
+                    name, role, team_id,
+                    stats.get('kda'), stats.get('avg_kills'), stats.get('avg_deaths'),
+                    stats.get('avg_assists'), stats.get('rating'), stats.get('win_rate'),
+                    stats.get('games_played'), stats.get('cs_per_min'), stats.get('url')
+                ))
+                player_id = cur.fetchone()[0]
+                conn.commit()
+                return player_id
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Error adding/updating player {name}: {e}")
+            raise
+        finally:
+            self.db.return_connection(conn)
+    
+    def add_player_champion(self, player_name: str, champion: str, games: int, kda: float, win_rate: float):
+        """Add or update player champion statistics"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Get player_id
+                cur.execute("SELECT id FROM pro_players WHERE name = %s", (player_name,))
+                result = cur.fetchone()
+                if not result:
+                    logger.warning(f"⚠️ Player {player_name} not found for champion stats")
+                    return
+                player_id = result[0]
+                
+                cur.execute("""
+                    INSERT INTO pro_player_champions (player_id, champion, games, kda, win_rate, last_updated)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (player_id, champion) DO UPDATE SET
+                        games = EXCLUDED.games,
+                        kda = EXCLUDED.kda,
+                        win_rate = EXCLUDED.win_rate,
+                        last_updated = NOW()
+                """, (player_id, champion, games, kda, win_rate))
+                conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Error adding player champion: {e}")
+            raise
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_team_by_tag(self, tag: str) -> Optional[Dict]:
+        """Get team information by tag"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM pro_teams WHERE UPPER(tag) = UPPER(%s)
+                """, (tag,))
+                return cur.fetchone()
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_team_roster(self, tag: str) -> List[Dict]:
+        """Get all players in a team"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT p.* FROM pro_players p
+                    JOIN pro_teams t ON p.team_id = t.id
+                    WHERE UPPER(t.tag) = UPPER(%s)
+                    ORDER BY 
+                        CASE p.role
+                            WHEN 'Top' THEN 1
+                            WHEN 'Jungle' THEN 2
+                            WHEN 'Mid' THEN 3
+                            WHEN 'ADC' THEN 4
+                            WHEN 'Support' THEN 5
+                            ELSE 6
+                        END
+                """, (tag,))
+                return cur.fetchall()
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_player_by_name(self, name: str) -> Optional[Dict]:
+        """Get player information by name"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT p.*, t.name as team_name, t.tag as team_tag
+                    FROM pro_players p
+                    LEFT JOIN pro_teams t ON p.team_id = t.id
+                    WHERE LOWER(p.name) = LOWER(%s)
+                """, (name,))
+                return cur.fetchone()
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_player_champions(self, name: str) -> List[Dict]:
+        """Get player's champion statistics"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT c.* FROM pro_player_champions c
+                    JOIN pro_players p ON c.player_id = p.id
+                    WHERE LOWER(p.name) = LOWER(%s)
+                    ORDER BY c.games DESC
+                    LIMIT 10
+                """, (name,))
+                return cur.fetchall()
+        finally:
+            self.db.return_connection(conn)
+    
+    def get_top_teams(self, limit: int = 10) -> List[Dict]:
+        """Get top ranked teams"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM pro_teams
+                    WHERE rank IS NOT NULL
+                    ORDER BY rank ASC
+                    LIMIT %s
+                """, (limit,))
+                return cur.fetchall()
+        finally:
+            self.db.return_connection(conn)
+    
+    def search_teams(self, query: str, limit: int = 5) -> List[Dict]:
+        """Search teams by name or tag"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM pro_teams
+                    WHERE LOWER(name) LIKE LOWER(%s) OR LOWER(tag) LIKE LOWER(%s)
+                    ORDER BY rank ASC NULLS LAST
+                    LIMIT %s
+                """, (f'%{query}%', f'%{query}%', limit))
+                return cur.fetchall()
+        finally:
+            self.db.return_connection(conn)
+    
+    def search_players(self, query: str, limit: int = 5) -> List[Dict]:
+        """Search players by name"""
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT p.*, t.name as team_name, t.tag as team_tag
+                    FROM pro_players p
+                    LEFT JOIN pro_teams t ON p.team_id = t.id
+                    WHERE LOWER(p.name) LIKE LOWER(%s)
+                    LIMIT %s
+                """, (f'%{query}%', limit))
+                return cur.fetchall()
+        finally:
+            self.db.return_connection(conn)
+
+
+def get_pro_stats_db() -> ProStatsDatabase:
+    """Get ProStatsDatabase instance"""
+    return ProStatsDatabase(get_db())
+

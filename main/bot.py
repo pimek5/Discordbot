@@ -151,6 +151,7 @@ def normalize_guesses(raw):
         return [s]
     return [raw]
 import leaderboard_commands
+import prostats_commands
 
 # Orianna configuration
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -755,6 +756,11 @@ class MyBot(commands.Bot):
                 print("  ✅ StatsCommands loaded")
                 await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
                 print("  ✅ LeaderboardCommands loaded")
+                
+                # Load pro stats commands
+                print("🔄 Loading ProStatsCommands...")
+                await self.add_cog(prostats_commands.ProStatsCommands(self))
+                print("  ✅ ProStatsCommands loaded")
                 
                 # Load configuration commands
                 import config_commands
@@ -3464,6 +3470,71 @@ async def before_tweet_check():
     print(f"📊 Posted tweets history: {len(posted_tweets)} tweets tracked")
 
 # ================================
+#    PRO STATS UPDATE TASK
+# ================================
+
+@tasks.loop(hours=12)  # Update twice daily
+async def update_pro_stats():
+    """Background task to update pro stats from RL-Stats.pl"""
+    try:
+        from rlstats_scraper import RLStatsScraper
+        from database import get_pro_stats_db
+        
+        print("📊 Starting pro stats update...")
+        scraper = RLStatsScraper()
+        db = get_pro_stats_db()
+        
+        # Fetch team rankings
+        teams = await scraper.get_team_rankings()
+        print(f"  📈 Fetched {len(teams)} teams")
+        
+        teams_added = 0
+        for team in teams:
+            team_id = db.add_or_update_team(
+                name=team['name'],
+                tag=team['tag'],
+                rank=team.get('rank'),
+                rating=team.get('rating'),
+                rating_change=team.get('rating_change'),
+                url=team['url']
+            )
+            if team_id:
+                teams_added += 1
+        
+        print(f"  ✅ Updated {teams_added} teams")
+        
+        # Fetch rosters for top 20 teams
+        players_added = 0
+        for team in teams[:20]:  # Top 20 only
+            try:
+                roster = await scraper.get_team_roster(team['tag'])
+                for player in roster:
+                    player_id = db.add_or_update_player(
+                        name=player['name'],
+                        team_tag=team['tag'],
+                        role=player.get('role'),
+                        stats=player
+                    )
+                    if player_id:
+                        players_added += 1
+                await asyncio.sleep(0.5)  # Rate limit
+            except Exception as e:
+                print(f"  ⚠️ Error fetching roster for {team['tag']}: {e}")
+        
+        print(f"  ✅ Updated {players_added} players")
+        print(f"📊 Pro stats update completed!")
+        
+    except Exception as e:
+        print(f"❌ Error updating pro stats: {e}")
+        traceback.print_exc()
+
+@update_pro_stats.before_loop
+async def before_pro_stats_update():
+    """Wait for bot to be ready before starting pro stats updates"""
+    await bot.wait_until_ready()
+    print("📊 Pro stats auto-update task initialized (runs every 12 hours)")
+
+# ================================
 #    BAN EXPIRATION BACKGROUND TASK
 # ================================
 
@@ -5941,6 +6012,11 @@ async def on_ready():
     if not update_member_ladder.is_running():
         update_member_ladder.start()
         print(f"📈 Started member ladder updater")
+    
+    # Start pro stats updater
+    if not update_pro_stats.is_running():
+        update_pro_stats.start()
+        print(f"📊 Started pro stats updater (updates every 12 hours)")
 
 
 # Note: The thread auto-link reply inside Skin Ideas threads was intentionally
