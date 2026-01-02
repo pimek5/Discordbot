@@ -1508,29 +1508,44 @@ async def help_command(interaction: discord.Interaction):
     
     commands_list = [
         ("🎵 Playback", [
-            "`/play <url/nazwa>` - Odtwórz muzykę lub dodaj do kolejki",
-            "`/pause` - Zatrzymaj Playback",
-            "`/resume` - Wznów Playback",
-            "`/stop` - Zatrzymaj i wyczyść kolejkę",
-            "`/skip` - Pomiń aktualny utwór (głosowanie)",
+            "`/play <url/nazwa>` - Play or add to queue",
+            "`/pause` - Pause playback",
+            "`/resume` - Resume playback",
+            "`/stop` - Stop and clear queue",
+            "`/skip` - Skip with voting system",
         ]),
-        ("📝 Queue", [
-            "`/queue` - Pokaż kolejkę utworów",
-            "`/nowplaying` - Pokaż aktualny utwór",
-            "`/clear` - Wyczyść kolejkę",
-            "`/shuffle` - Wymieszaj kolejkę",
-            "`/remove <pozycja>` - Usuń utwór z kolejki",
+        ("📝 Queue Management", [
+            "`/queue` - Show queue",
+            "`/nowplaying` - Current track",
+            "`/clear` - Clear queue",
+            "`/shuffle` - Shuffle queue",
+            "`/remove <pos>` - Remove track",
+            "`/move <from> <to>` - Move track",
+            "`/swap <pos1> <pos2>` - Swap tracks",
         ]),
-        ("🔄 Loop i History", [
-            "`/loop <tryb>` - Repeat track/kolejkę",
-            "`/history` - Pokaż ostatnio odtwarzane",
+        ("🎵 Features", [
+            "`/loop <mode>` - Loop on/off/track/queue",
+            "`/history` - Recently played",
+            "`/volume <0-100>` - Set volume",
+            "`/filter <preset>` - Audio filters (bass, nightcore, vaporwave, 8d, treble, vibrato)",
         ]),
-        ("🔧 Management", [
-            "`/join` - Dołącz do kanału głosowego",
-            "`/leave` - Rozłącz z kanału",
-            "`/volume <0-100>` - Ustaw Volume",
-            "`/stats` - Statystyki bota",
-            "`/wrapped` - Your music Wrapped!",
+        ("⭐ Favorites", [
+            "`/favorite` - Save current song",
+            "`/favorites` - View your favorites",
+            "`/playfav <number>` - Play from favorites",
+        ]),
+        ("🔍 Search & Stats", [
+            "`/search <query>` - Search for music",
+            "`/stats` - Bot statistics",
+            "`/wrapped [scope] [year]` - Your music Wrapped! (scope: My Stats/Server Stats)",
+        ]),
+        ("🎭 Server Management", [
+            "`/setdj <role>` - Set DJ role (admin only)",
+            "`/247` - Toggle 24/7 mode (admin only)",
+        ]),
+        ("📡 Connection", [
+            "`/join` - Join voice channel",
+            "`/leave` - Disconnect from voice",
         ]),
     ]
     
