@@ -35,7 +35,7 @@ YTDL_FORMAT_OPTIONS = {
     'format': 'bestaudio[ext=m4a]/bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
-    'noplaylist': True,
+    'noplaylist': False,  # Allow playlists
     'nocheckcertificate': True,
     'ignoreerrors': False,
     'logtostderr': False,
@@ -47,6 +47,7 @@ YTDL_FORMAT_OPTIONS = {
     'prefer_ffmpeg': True,
     'keepvideo': False,
     'cachedir': False,
+    'extract_flat': 'in_playlist',  # Fast playlist extraction
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -523,7 +524,7 @@ async def leave(interaction: discord.Interaction):
 
 
 @bot.tree.command(name="play", description="Play music from URL or search by name")
-@app_commands.describe(url="Link to track (YouTube, Spotify, SoundCloud, etc.) or track name")
+@app_commands.describe(url="Link to track/playlist (YouTube, Spotify, SoundCloud, etc.) or track name")
 async def play(interaction: discord.Interaction, url: str):
     """Play music from URL or search by name"""
     await interaction.response.defer()
@@ -542,72 +543,160 @@ async def play(interaction: discord.Interaction, url: str):
         await interaction.guild.voice_client.move_to(channel)
     
     try:
-        # Fetch track information
-        player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
-        player.requester = interaction.user
-        song = Song(player, interaction.user)
-        
         queue = bot.get_queue(interaction.guild.id)
         
-        # If nothing is playing, start playback
-        if not interaction.guild.voice_client.is_playing():
-            queue.current = song
+        # Extract info to check if it's a playlist
+        loop = bot.loop or asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+        
+        # Check if it's a playlist
+        if 'entries' in data:
+            # It's a playlist!
+            playlist_title = data.get('title', 'Playlist')
+            entries = [entry for entry in data['entries'] if entry]  # Filter out None entries
             
-            # Log to database
-            db.log_play(
-                guild_id=str(interaction.guild.id),
-                user_id=str(interaction.user.id),
-                username=interaction.user.name,
-                song_title=player.title,
-                song_url=url,
-                song_duration=player.duration or 0
-            )
+            if not entries:
+                await interaction.followup.send("❌ Playlist is empty or unavailable!")
+                return
             
-            interaction.guild.voice_client.play(
-                player,
-                after=lambda e: asyncio.run_coroutine_threadsafe(
-                    play_next(interaction), bot.loop
-                )
-            )
+            # Limit to 50 tracks to prevent abuse
+            MAX_PLAYLIST = 50
+            if len(entries) > MAX_PLAYLIST:
+                entries = entries[:MAX_PLAYLIST]
+                limited_msg = f" (limited to {MAX_PLAYLIST} tracks)"
+            else:
+                limited_msg = ""
             
+            # Send initial message
             embed = discord.Embed(
-                title="🎵 Now Playing",
-                description=f"**[{player.title}]({url})**",
-                color=discord.Color.green(),
-                timestamp=datetime.now()
-            )
-            if player.thumbnail:
-                embed.set_thumbnail(url=player.thumbnail)
-            embed.add_field(name="👤 Added by", value=interaction.user.mention, inline=True)
-            if player.duration:
-                mins, secs = divmod(player.duration, 60)
-                embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
-            embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
-            embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
-            
-            view = MusicControlView(interaction.guild.id)
-            await interaction.followup.send(embed=embed, view=view)
-        else:
-            # Add to queue
-            queue.add(song)
-            
-            embed = discord.Embed(
-                title="➕ Added to Queue",
-                description=f"**[{player.title}]({url})**",
+                title="📝 Loading Playlist...",
+                description=f"**{playlist_title}**\nAdding {len(entries)} tracks to queue{limited_msg}",
                 color=discord.Color.blue(),
                 timestamp=datetime.now()
             )
-            if player.thumbnail:
-                embed.set_thumbnail(url=player.thumbnail)
+            embed.set_footer(text="This may take a moment...")
+            await interaction.followup.send(embed=embed)
+            
+            # Add tracks to queue
+            added_count = 0
+            for entry in entries:
+                try:
+                    # Get the video URL
+                    video_url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
+                    
+                    # Create player
+                    player = await YTDLSource.from_url(video_url, loop=bot.loop, stream=False)
+                    player.requester = interaction.user
+                    song = Song(player, interaction.user)
+                    
+                    # If nothing is playing and this is the first track, start playing
+                    if not interaction.guild.voice_client.is_playing() and added_count == 0:
+                        queue.current = song
+                        
+                        # Log to database
+                        db.log_play(
+                            guild_id=str(interaction.guild.id),
+                            user_id=str(interaction.user.id),
+                            username=interaction.user.name,
+                            song_title=player.title,
+                            song_url=video_url,
+                            song_duration=player.duration or 0
+                        )
+                        
+                        interaction.guild.voice_client.play(
+                            player,
+                            after=lambda e: asyncio.run_coroutine_threadsafe(
+                                play_next(interaction), bot.loop
+                            )
+                        )
+                    else:
+                        # Add to queue
+                        queue.add(song)
+                    
+                    added_count += 1
+                except Exception as e:
+                    logger.error(f"Error loading track from playlist: {e}")
+                    continue
+            
+            # Send completion message
+            embed = discord.Embed(
+                title="✅ Playlist Added!",
+                description=f"**{playlist_title}**\n{added_count} tracks added to queue",
+                color=discord.Color.green(),
+                timestamp=datetime.now()
+            )
             embed.add_field(name="👤 Added by", value=interaction.user.mention, inline=True)
-            embed.add_field(name="📊 Position in queue", value=f"#{len(queue.queue)}", inline=True)
-            if player.duration:
-                mins, secs = divmod(player.duration, 60)
-                embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
+            embed.add_field(name="📊 Queue size", value=f"{len(queue.queue)} tracks", inline=True)
             embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
             
             view = MusicControlView(interaction.guild.id)
-            await interaction.followup.send(embed=embed, view=view)
+            await interaction.channel.send(embed=embed, view=view)
+            
+        else:
+            # Single track
+            player = await YTDLSource.from_url(url, loop=bot.loop, stream=False)
+            player.requester = interaction.user
+            song = Song(player, interaction.user)
+            
+            # If nothing is playing, start playback
+            if not interaction.guild.voice_client.is_playing():
+                queue.current = song
+                
+                # Log to database
+                db.log_play(
+                    guild_id=str(interaction.guild.id),
+                    user_id=str(interaction.user.id),
+                    username=interaction.user.name,
+                    song_title=player.title,
+                    song_url=url,
+                    song_duration=player.duration or 0
+                )
+                
+                interaction.guild.voice_client.play(
+                    player,
+                    after=lambda e: asyncio.run_coroutine_threadsafe(
+                        play_next(interaction), bot.loop
+                    )
+                )
+                
+                embed = discord.Embed(
+                    title="🎵 Now Playing",
+                    description=f"**[{player.title}]({url})**",
+                    color=discord.Color.green(),
+                    timestamp=datetime.now()
+                )
+                if player.thumbnail:
+                    embed.set_thumbnail(url=player.thumbnail)
+                embed.add_field(name="👤 Added by", value=interaction.user.mention, inline=True)
+                if player.duration:
+                    mins, secs = divmod(player.duration, 60)
+                    embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
+                embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
+                embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+                
+                view = MusicControlView(interaction.guild.id)
+                await interaction.followup.send(embed=embed, view=view)
+            else:
+                # Add to queue
+                queue.add(song)
+                
+                embed = discord.Embed(
+                    title="➕ Added to Queue",
+                    description=f"**[{player.title}]({url})**",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.now()
+                )
+                if player.thumbnail:
+                    embed.set_thumbnail(url=player.thumbnail)
+                embed.add_field(name="👤 Added by", value=interaction.user.mention, inline=True)
+                embed.add_field(name="📊 Position in queue", value=f"#{len(queue.queue)}", inline=True)
+                if player.duration:
+                    mins, secs = divmod(player.duration, 60)
+                    embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
+                embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+                
+                view = MusicControlView(interaction.guild.id)
+                await interaction.followup.send(embed=embed, view=view)
             
     except Exception as e:
         logger.error(f"Error during playback: {e}")
