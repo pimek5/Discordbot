@@ -622,42 +622,6 @@ class MusicBot(commands.Bot):
         if guild_id not in self.queues:
             self.queues[guild_id] = MusicQueue()
         return self.queues[guild_id]
-    
-    async def on_raw_message_delete(self, payload):
-        """Handle message deletion - stop playback if main control message is deleted"""
-        guild_id = payload.guild_id
-        message_id = payload.message_id
-        
-        # Check if deleted message is the main control message
-        if guild_id in main_control_messages and main_control_messages[guild_id] == message_id:
-            guild = self.get_guild(guild_id)
-            if guild and guild.voice_client and guild.voice_client.is_playing():
-                logger.info(f"Main control message deleted in {guild.name} - stopping playback")
-                queue = self.get_queue(guild_id)
-                # Cleanup current song file
-                if queue.current and hasattr(queue.current.source, 'filename') and queue.current.source.filename:
-                    cleanup_audio_file(queue.current.source.filename)
-                guild.voice_client.stop()
-                queue.clear()
-                
-                # Try to send notification
-                try:
-                    # Get the text channel where it was deleted from (if available)
-                    if payload.channel_id:
-                        channel = self.get_channel(payload.channel_id)
-                        if channel:
-                            embed = discord.Embed(
-                                title="⏹️ Playback Stopped",
-                                description="The main control message was deleted. Music has been stopped.",
-                                color=discord.Color.red(),
-                                timestamp=datetime.now()
-                            )
-                            asyncio.create_task(send_temp_embed(channel, embed))
-                except:
-                    pass
-            
-            # Remove tracking
-            del main_control_messages[guild_id]
 
 
 # Volume Modal
