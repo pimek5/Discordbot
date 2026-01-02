@@ -298,6 +298,35 @@ class MusicDatabase:
 db = MusicDatabase()
 
 
+async def handle_spotify_to_youtube(url):
+    """Convert Spotify URL to YouTube search if DRM error occurs"""
+    if 'spotify' in url.lower():
+        try:
+            # Extract track/artist info from Spotify using yt-dlp
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+            
+            # Get track info
+            title = data.get('title', '')
+            artist = data.get('uploader', '')
+            
+            if title:
+                # Search on YouTube
+                search_query = f"ytsearch:{artist} {title}".strip() if artist else f"ytsearch:{title}"
+                logger.info(f"🔄 Spotify DRM detected, searching YouTube: {search_query}")
+                return search_query
+        except Exception as e:
+            if 'DRM' in str(e):
+                logger.warning(f"⚠️ Spotify DRM protected - will attempt YouTube search")
+                # Extract artist and track from URL if possible
+                parts = url.split('/')
+                if 'track' in parts:
+                    track_id = parts[-1].split('?')[0]
+                    return f"ytsearch:{track_id}"
+    
+    return url
+
+
 class YTDLSource(discord.PCMVolumeTransformer):
     """Audio source for discord.py using yt-dlp"""
     
@@ -791,9 +820,22 @@ async def play(interaction: discord.Interaction, url: str):
     try:
         queue = bot.get_queue(interaction.guild.id)
         
+        # Handle Spotify DRM protection
+        if 'spotify' in url.lower():
+            url = await handle_spotify_to_youtube(url)
+        
         # Extract info to check if it's a playlist
         loop = bot.loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+        try:
+            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+        except Exception as e:
+            # If DRM error, try YouTube search
+            if 'DRM' in str(e):
+                logger.warning(f"⚠️ DRM protection detected, searching on YouTube instead")
+                url = f"ytsearch:{url.replace('spotify.com', '').split('/')[-1]}"
+                data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+            else:
+                raise
         
         # Check if it's a playlist
         if 'entries' in data:
@@ -1559,15 +1601,28 @@ async def play_favorite(interaction: discord.Interaction, number: int):
 
 
 @bot.tree.command(name="search", description="Search for music and choose from results")
-@app_commands.describe(query="Search query")
+@app_commands.describe(query="Search query or Spotify URL")
 async def search(interaction: discord.Interaction, query: str):
     """Search for music"""
     await interaction.response.defer()
     
     try:
+        # Handle Spotify URL
+        if 'spotify' in query.lower():
+            query = await handle_spotify_to_youtube(query)
+        
         loop = bot.loop or asyncio.get_event_loop()
-        search_query = f"ytsearch5:{query}"
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(search_query, download=False))
+        search_query = f"ytsearch5:{query}" if not query.startswith('ytsearch') else query
+        try:
+            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(search_query, download=False))
+        except Exception as e:
+            # If DRM error, try as search
+            if 'DRM' in str(e):
+                logger.warning(f"⚠️ DRM protection detected, searching on YouTube instead")
+                search_query = f"ytsearch5:{query}"
+                data = await loop.run_in_executor(None, lambda: ytdl.extract_info(search_query, download=False))
+            else:
+                raise
         
         if not data or 'entries' not in data or not data['entries']:
             await interaction.followup.send("❌ No results found!")
