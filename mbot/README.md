@@ -5,11 +5,18 @@ Bot do odtwarzania muzyki na Discordzie z różnych źródeł (YouTube, Spotify,
 ## 🚀 Funkcjonalności
 
 - ✅ Odtwarzanie muzyki z YouTube, Spotify, SoundCloud i wielu innych platform
-- ✅ System kolejki utworów
+- ✅ Zaawansowany system kolejki utworów
 - ✅ Zarządzanie odtwarzaniem (pause, resume, skip, stop)
-- ✅ Kontrola głośności
+- ✅ **System głosowania na pomijanie utworów** (50% głosów wymagane)
+- ✅ **Tryby powtarzania** (utwór, kolejka, wyłącz)
+- ✅ **Historia odtwarzania** (ostatnie 20 utworów)
+- ✅ **Mieszanie kolejki** (shuffle)
+- ✅ **Usuwanie pojedynczych utworów** z kolejki
+- ✅ Kontrola głośności (0-100%)
+- ✅ **Statystyki bota** (utwory, czas, serwery)
 - ✅ Automatyczne rozłączanie po bezczynności
-- ✅ Przyjazne embedy Discord z miniaturkami
+- ✅ **Piękne embeddy Discord** z miniaturkami i informacjami
+- ✅ **Dynamiczny status** bota
 - ✅ Wsparcie dla wielu serwerów jednocześnie
 
 ## 📋 Komendy
@@ -22,9 +29,16 @@ Bot do odtwarzania muzyki na Discordzie z różnych źródeł (YouTube, Spotify,
 - `/skip` - Pomiń aktualny utwór
 
 ### 📝 Kolejka
-- `/queue` - Wyświetl kolejkę utworów
-- `/nowplaying` - Pokaż aktualnie odtwarzany utwór
+- `/queue` - Wyświetl kolejkę utworów z czasem i miniaturkami
+- `/nowplaying` - Pokaż aktualnie odtwarzany utwór (pełne info)
 - `/clear` - Wyczyść całą kolejkę
+- `/shuffle` - Wymieszaj utwory w kolejce
+- `/remove <pozycja>` - Usuń konkretny utwór z kolejki
+
+### 🔄 Pętla i Historia
+- `/loop <tryb>` - Ustaw tryb powtarzania (off/t
+- `/stats` - Pokaż statystyki bota i kolejkirack/queue)
+- `/history` - Pokaż ostatnio odtwarzane utwory
 
 ### 🔧 Zarządzanie
 - `/join` - Dołącz bota do twojego kanału głosowego
@@ -178,12 +192,14 @@ Jeśli masz problemy:
 
 ## ✨ Przyszłe funkcjonalności
 
-- [ ] Wsparcie dla playlist
-- [ ] Zapisywanie ulubionych utworów
-- [ ] System głosowania na pomijanie
-- [ ] Powtarzanie utworów/kolejki
-- [ ] Mieszanie kolejki
+- [x] Wsparcie dla playlist
+- [x] System głosowania na pomijanie
+- [x] Powtarzanie utworów/kolejki
+- [x] Mieszanie kolejki
+- [x] Historia odtwarzania
 - [ ] Web dashboard
+- [ ] Zapisywanie ulubionych playlist
+- [ ] Filtry audio (bass boost, nightcore)
 
 ---
 
