@@ -943,7 +943,7 @@ async def play(interaction: discord.Interaction, url: str):
                 is_first_track = not interaction.guild.voice_client.is_playing()
                 for idx, query in enumerate(queries, 1):
                     try:
-                        player = await YTDLSource.from_url(query, loop=bot.loop, stream=False)
+                        player = await YTDLSource.from_url(query, loop=bot.loop, stream=True)
                         song = Song(player, interaction.user)
                         song.title = player.title
                         song.url = player.url
