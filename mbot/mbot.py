@@ -19,6 +19,8 @@ from collections import deque
 import sqlite3
 import json
 import glob
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
 
 # Logging configuration
 logging.basicConfig(
@@ -71,6 +73,24 @@ AUDIO_FILTERS = {
     'treble': 'treble=g=5',
     'vibrato': 'vibrato=f=6.5:d=0.5',
 }
+
+# Spotify API setup (optional)
+SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
+SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
+spotify_client = None
+
+if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
+    try:
+        auth_manager = SpotifyClientCredentials(
+            client_id=SPOTIFY_CLIENT_ID,
+            client_secret=SPOTIFY_CLIENT_SECRET
+        )
+        spotify_client = spotipy.Spotify(auth_manager=auth_manager)
+        logger.info("✅ Spotify API initialized successfully")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to initialize Spotify API: {e}")
+else:
+    logger.warning("⚠️ Spotify API credentials not configured (SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)")
 
 # Guild settings storage
 guild_settings = {}
@@ -298,11 +318,53 @@ class MusicDatabase:
 db = MusicDatabase()
 
 
+async def get_spotify_track_info(url):
+    """Fetch Spotify track info using Spotify API"""
+    if not spotify_client:
+        return None
+    
+    try:
+        # Extract track ID from URL
+        # Format: https://open.spotify.com/track/TRACK_ID or spotify:track:TRACK_ID
+        if 'spotify.com' in url:
+            track_id = url.split('/track/')[-1].split('?')[0]
+        elif 'spotify:track:' in url:
+            track_id = url.split('spotify:track:')[-1]
+        else:
+            return None
+        
+        # Fetch track info via Spotify API
+        track = spotify_client.track(track_id)
+        
+        artist_name = track['artists'][0]['name'] if track['artists'] else 'Unknown'
+        track_name = track['name']
+        album_art = track['album']['images'][0]['url'] if track['album']['images'] else None
+        
+        logger.info(f"🎵 Spotify API: {artist_name} - {track_name}")
+        
+        return {
+            'artist': artist_name,
+            'track': track_name,
+            'album_art': album_art,
+            'search_query': f"{artist_name} {track_name}"
+        }
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to fetch Spotify track info: {e}")
+        return None
+
+
 async def handle_spotify_to_youtube(url):
     """Convert Spotify URL to YouTube search if DRM error occurs"""
     if 'spotify' in url.lower():
         try:
-            # Extract track/artist info from Spotify using yt-dlp
+            # Try Spotify API first
+            if spotify_client:
+                spotify_info = await get_spotify_track_info(url)
+                if spotify_info:
+                    return f"ytsearch:{spotify_info['search_query']}"
+            
+            # Fallback to yt-dlp extraction
+
             loop = asyncio.get_event_loop()
             data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
             
