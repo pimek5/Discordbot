@@ -22,7 +22,7 @@ logger = logging.getLogger('MBot')
 
 # Wczytaj zmienne środowiskowe
 load_dotenv()
-TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+TOKEN = os.getenv('BOT_TOKEN')
 
 # Konfiguracja yt-dlp
 YTDL_FORMAT_OPTIONS = {
@@ -469,7 +469,7 @@ async def help_command(interaction: discord.Interaction):
 
 if __name__ == "__main__":
     if not TOKEN:
-        logger.error("❌ Brak tokenu Discord! Ustaw zmienną DISCORD_BOT_TOKEN w pliku .env")
+        logger.error("❌ Brak tokenu Discord! Ustaw zmienną BOT_TOKEN w pliku .env")
     else:
         try:
             bot.run(TOKEN)
