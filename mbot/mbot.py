@@ -1581,62 +1581,10 @@ async def nowplaying(interaction: discord.Interaction):
     main_control_messages[interaction.guild.id] = msg.id
 
 
-@bot.tree.command(name="restore", description="Przywróć embed kontroli jeśli został usunięty")
-async def restore(interaction: discord.Interaction):
-    """Przywróć embed kontroli"""
-    queue = bot.get_queue(interaction.guild.id)
-    
-    if not queue.current or not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
-        await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
-        return
-    
-    embed = discord.Embed(
-        title="🎵 Now Playing",
-        description=f"**[{queue.current.title}]({queue.current.url})**",
-        color=discord.Color.green(),
-        timestamp=datetime.now()
-    )
-    
-    if queue.current.thumbnail:
-        embed.set_image(url=queue.current.thumbnail)
-    
-    if queue.current.requester:
-        embed.add_field(name="👤 Dodane przez", value=queue.current.requester.mention, inline=True)
-    
-    if queue.current.duration:
-        mins, secs = divmod(queue.current.duration, 60)
-        embed.add_field(name="⏱️ Długość", value=f"{int(mins)}:{int(secs):02d}", inline=True)
-    
-    embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
-    
-    if queue.loop_mode != 'off':
-        loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
-        embed.add_field(name="🔄 Loop", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
-    
-    if not queue.is_empty():
-        embed.add_field(name="📝 W kolejce", value=f"{len(queue.queue)} utworów", inline=True)
-    
-    time_added = queue.current.added_at.strftime("%H:%M:%S")
-    embed.add_field(name="🕒 Dodano o", value=time_added, inline=True)
-    
-    embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
-    
-    view = MusicControlView(interaction.guild.id)
-    
-    await interaction.response.defer()
-    
-    # Usuń starą wiadomość now playing jeśli istnieje
-    if interaction.guild.id in main_control_messages:
-        try:
-            old_msg_id = main_control_messages[interaction.guild.id]
-            old_msg = await interaction.channel.fetch_message(old_msg_id)
-            await old_msg.delete()
-        except:
-            pass
-    
-    msg = await interaction.channel.send(embed=embed, view=view)
-    main_control_messages[interaction.guild.id] = msg.id
-    await interaction.followup.send("✅ Embed przywrócony!", ephemeral=True)
+@bot.tree.command(name="np", description="Przywróć panel kontrolny (alias dla nowplaying)")
+async def np(interaction: discord.Interaction):
+    """Alias dla nowplaying - przywraca panel kontrolny"""
+    await nowplaying.__wrapped__(interaction)
 
 
 @bot.tree.command(name="clear", description="Wyczyść kolejkę muzyki")
