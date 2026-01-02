@@ -316,6 +316,20 @@ class MusicBot(commands.Bot):
         """Event called when bot is ready"""
         logger.info(f'🎵 MBot logged in as {self.user}')
         logger.info(f'Bot is on {len(self.guilds)} servers')
+        
+        # Set bot avatar
+        try:
+            import aiohttp
+            avatar_url = "https://cdn.7tv.app/emote/01H80R5J8R00043Q6P4BN62X9A/4x.avif"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(avatar_url) as resp:
+                    if resp.status == 200:
+                        avatar_bytes = await resp.read()
+                        await self.user.edit(avatar=avatar_bytes)
+                        logger.info("✅ Bot avatar updated successfully")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not update avatar: {e}")
+        
         self.update_status.start()
         
     @tasks.loop(minutes=5)
