@@ -6,6 +6,7 @@ Odtwarzanie muzyki z YouTube, Spotify, SoundCloud i innych źródeł
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
+from discord.ui import Button, View
 import asyncio
 import yt_dlp
 import os
@@ -211,6 +212,88 @@ class MusicBot(commands.Bot):
         return self.queues[guild_id]
 
 
+# Music Control Buttons View
+class MusicControlView(View):
+    def __init__(self, guild_id):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+    
+    @discord.ui.button(emoji="⏸️", style=discord.ButtonStyle.primary, custom_id="pause_btn")
+    async def pause_button(self, interaction: discord.Interaction, button: Button):
+        if interaction.guild.voice_client and interaction.guild.voice_client.is_playing():
+            interaction.guild.voice_client.pause()
+            button.emoji = "▶️"
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send("⏸️ Paused", ephemeral=True)
+        elif interaction.guild.voice_client and interaction.guild.voice_client.is_paused():
+            interaction.guild.voice_client.resume()
+            button.emoji = "⏸️"
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send("▶️ Resumed", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Nothing playing!", ephemeral=True)
+    
+    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.primary, custom_id="skip_btn")
+    async def skip_button(self, interaction: discord.Interaction, button: Button):
+        if not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
+            await interaction.response.send_message("❌ Nothing playing!", ephemeral=True)
+            return
+        
+        # Admin skip without vote
+        if interaction.user.guild_permissions.administrator:
+            interaction.guild.voice_client.stop()
+            await interaction.response.send_message("⏭️ Skipped (admin)", ephemeral=True)
+            return
+        
+        # Voting system
+        queue = bot.get_queue(interaction.guild.id)
+        queue.skip_votes.add(interaction.user.id)
+        voice_channel = interaction.guild.voice_client.channel
+        members_count = len([m for m in voice_channel.members if not m.bot])
+        votes_needed = members_count // 2 + 1
+        
+        if len(queue.skip_votes) >= votes_needed:
+            interaction.guild.voice_client.stop()
+            await interaction.response.send_message(f"⏭️ Skipped! ({len(queue.skip_votes)}/{votes_needed})", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"🗳️ Vote: {len(queue.skip_votes)}/{votes_needed}", ephemeral=True)
+    
+    @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger, custom_id="stop_btn")
+    async def stop_button(self, interaction: discord.Interaction, button: Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Only admins can stop!", ephemeral=True)
+            return
+        
+        if interaction.guild.voice_client:
+            queue = bot.get_queue(interaction.guild.id)
+            queue.clear()
+            interaction.guild.voice_client.stop()
+            await interaction.response.send_message("⏹️ Stopped and cleared queue", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Nothing playing!", ephemeral=True)
+    
+    @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, custom_id="shuffle_btn")
+    async def shuffle_button(self, interaction: discord.Interaction, button: Button):
+        queue = bot.get_queue(interaction.guild.id)
+        if queue.is_empty():
+            await interaction.response.send_message("❌ Queue is empty!", ephemeral=True)
+            return
+        queue.shuffle()
+        await interaction.response.send_message(f"🔀 Shuffled {len(queue.queue)} tracks", ephemeral=True)
+    
+    @discord.ui.button(emoji="🔁", style=discord.ButtonStyle.secondary, custom_id="loop_btn")
+    async def loop_button(self, interaction: discord.Interaction, button: Button):
+        queue = bot.get_queue(interaction.guild.id)
+        modes = ['off', 'track', 'queue']
+        current_index = modes.index(queue.loop_mode)
+        queue.loop_mode = modes[(current_index + 1) % 3]
+        
+        emoji_map = {'off': '➡️', 'track': '🔂', 'queue': '🔁'}
+        button.emoji = emoji_map[queue.loop_mode]
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send(f"{button.emoji} Loop: {queue.loop_mode.title()}", ephemeral=True)
+
+
 # Bot initialization
 bot = MusicBot()
 
@@ -298,7 +381,8 @@ async def play(interaction: discord.Interaction, url: str):
             embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
             embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
             
-            await interaction.followup.send(embed=embed)
+            view = MusicControlView(interaction.guild.id)
+            await interaction.followup.send(embed=embed, view=view)
         else:
             # Add to queue
             queue.add(song)
@@ -318,7 +402,8 @@ async def play(interaction: discord.Interaction, url: str):
                 embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
             embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
             
-            await interaction.followup.send(embed=embed)
+            view = MusicControlView(interaction.guild.id)
+            await interaction.followup.send(embed=embed, view=view)
             
     except Exception as e:
         logger.error(f"Error during playback: {e}")
@@ -380,10 +465,13 @@ async def play_next(interaction: discord.Interaction):
         
         embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
         
+        # Create control buttons
+        view = MusicControlView(interaction.guild.id)
+        
         # Wyślij wiadomość na kanale tekstowym
         channel = interaction.channel
         if channel:
-            await channel.send(embed=embed)
+            await channel.send(embed=embed, view=view)
 
 
 @bot.tree.command(name="pause", description="Pause music playback")
@@ -533,7 +621,8 @@ async def queue_command(interaction: discord.Interaction):
     
     embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
     
-    await interaction.response.send_message(embed=embed)
+    view = MusicControlView(interaction.guild.id)
+    await interaction.response.send_message(embed=embed, view=view)
 
 
 @bot.tree.command(name="volume", description="Ustaw Volume odtwarzania (0-100)")
@@ -598,7 +687,8 @@ async def nowplaying(interaction: discord.Interaction):
     
     embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
     
-    await interaction.response.send_message(embed=embed)
+    view = MusicControlView(interaction.guild.id)
+    await interaction.response.send_message(embed=embed, view=view)
 
 
 @bot.tree.command(name="clear", description="Wyczyść kolejkę muzyki")
