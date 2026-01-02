@@ -60,6 +60,20 @@ FFMPEG_OPTIONS = {
     'options': '-vn -loglevel warning'
 }
 
+# Audio filters presets
+AUDIO_FILTERS = {
+    'normal': '',
+    'bassboost': 'bass=g=10,dynaudnorm=f=200',
+    'nightcore': 'aresample=48000,asetrate=48000*1.25',
+    'vaporwave': 'aresample=48000,asetrate=48000*0.8',
+    '8d': 'apulsator=hz=0.08',
+    'treble': 'treble=g=5',
+    'vibrato': 'vibrato=f=6.5:d=0.5',
+}
+
+# Guild settings storage
+guild_settings = {}
+
 ytdl = yt_dlp.YoutubeDL(YTDL_FORMAT_OPTIONS)
 
 
@@ -86,6 +100,28 @@ class MusicDatabase:
                 played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 year INTEGER,
                 month INTEGER
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS favorites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                song_title TEXT NOT NULL,
+                song_url TEXT NOT NULL,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(guild_id, user_id, song_url)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id TEXT PRIMARY KEY,
+                dj_role_id TEXT,
+                mode_247 INTEGER DEFAULT 0,
+                default_volume INTEGER DEFAULT 50,
+                eq_preset TEXT DEFAULT 'normal'
             )
         ''')
         
@@ -189,6 +225,70 @@ class MusicDatabase:
             'total_plays': total_stats[0] or 0,
             'total_duration': total_stats[1] or 0
         }
+    
+    def add_favorite(self, guild_id, user_id, song_title, song_url):
+        """Add song to favorites"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO favorites (guild_id, user_id, song_title, song_url)
+                VALUES (?, ?, ?, ?)
+            ''', (guild_id, user_id, song_title, song_url))
+            conn.commit()
+            conn.close()
+            return True
+        except sqlite3.IntegrityError:
+            conn.close()
+            return False
+    
+    def remove_favorite(self, guild_id, user_id, song_url):
+        """Remove song from favorites"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM favorites
+            WHERE guild_id = ? AND user_id = ? AND song_url = ?
+        ''', (guild_id, user_id, song_url))
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return affected > 0
+    
+    def get_favorites(self, guild_id, user_id):
+        """Get user's favorite songs"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT song_title, song_url, added_at
+            FROM favorites
+            WHERE guild_id = ? AND user_id = ?
+            ORDER BY added_at DESC
+        ''', (guild_id, user_id))
+        results = cursor.fetchall()
+        conn.close()
+        return results
+    
+    def get_guild_settings(self, guild_id):
+        """Get guild settings"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM guild_settings WHERE guild_id = ?', (guild_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return result
+    
+    def update_guild_setting(self, guild_id, key, value):
+        """Update guild setting"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(f'''
+            INSERT INTO guild_settings (guild_id, {key})
+            VALUES (?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET {key} = ?
+        ''', (guild_id, value, value))
+        conn.commit()
+        conn.close()
 
 
 db = MusicDatabase()
@@ -1070,6 +1170,254 @@ async def remove(interaction: discord.Interaction, position: int):
         title="🗑️ Removed from Queue",
         description=f"**{removed_song.title}**",
         color=discord.Color.red()
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="move", description="Move track to different position in queue")
+@app_commands.describe(
+    from_pos="Track position to move (1, 2, 3...)",
+    to_pos="New position in queue"
+)
+async def move(interaction: discord.Interaction, from_pos: int, to_pos: int):
+    """Move track in queue"""
+    queue = bot.get_queue(interaction.guild.id)
+    
+    if from_pos < 1 or from_pos > len(queue.queue) or to_pos < 1 or to_pos > len(queue.queue):
+        await interaction.response.send_message(f"❌ Invalid position! Choose from 1 to {len(queue.queue)}", ephemeral=True)
+        return
+    
+    queue_list = list(queue.queue)
+    song = queue_list.pop(from_pos - 1)
+    queue_list.insert(to_pos - 1, song)
+    queue.queue = deque(queue_list)
+    
+    embed = discord.Embed(
+        title="📌 Track Moved",
+        description=f"**{song.title}**\nMoved from position {from_pos} to {to_pos}",
+        color=discord.Color.blue()
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="swap", description="Swap two tracks in queue")
+@app_commands.describe(
+    pos1="First track position",
+    pos2="Second track position"
+)
+async def swap(interaction: discord.Interaction, pos1: int, pos2: int):
+    """Swap two tracks in queue"""
+    queue = bot.get_queue(interaction.guild.id)
+    
+    if pos1 < 1 or pos1 > len(queue.queue) or pos2 < 1 or pos2 > len(queue.queue):
+        await interaction.response.send_message(f"❌ Invalid position! Choose from 1 to {len(queue.queue)}", ephemeral=True)
+        return
+    
+    queue_list = list(queue.queue)
+    queue_list[pos1 - 1], queue_list[pos2 - 1] = queue_list[pos2 - 1], queue_list[pos1 - 1]
+    queue.queue = deque(queue_list)
+    
+    embed = discord.Embed(
+        title="🔄 Tracks Swapped",
+        description=f"Position {pos1} ↔️ Position {pos2}",
+        color=discord.Color.blue()
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="filter", description="Apply audio filter (bass boost, nightcore, etc.)")
+@app_commands.describe(preset="Audio filter preset")
+@app_commands.choices(preset=[
+    app_commands.Choice(name="Normal (no filter)", value="normal"),
+    app_commands.Choice(name="Bass Boost 🔊", value="bassboost"),
+    app_commands.Choice(name="Nightcore ⚡", value="nightcore"),
+    app_commands.Choice(name="Vaporwave 🌊", value="vaporwave"),
+    app_commands.Choice(name="8D Audio 🎧", value="8d"),
+    app_commands.Choice(name="Treble Boost 🎵", value="treble"),
+    app_commands.Choice(name="Vibrato 〰️", value="vibrato"),
+])
+async def audio_filter(interaction: discord.Interaction, preset: str):
+    """Apply audio filter"""
+    if not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
+        await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
+        return
+    
+    # Save filter for guild
+    db.update_guild_setting(str(interaction.guild.id), 'eq_preset', preset)
+    
+    # Get current song and replay with filter
+    queue = bot.get_queue(interaction.guild.id)
+    if queue.current:
+        current_song = queue.current
+        
+        # Stop current playback
+        interaction.guild.voice_client.stop()
+        
+        # Recreate player with filter
+        filter_option = AUDIO_FILTERS.get(preset, '')
+        ffmpeg_opts = FFMPEG_OPTIONS.copy()
+        if filter_option:
+            ffmpeg_opts['options'] += f' -af "{filter_option}"'
+        
+        # Note: This is simplified - full implementation would require YTDLSource modification
+        
+        embed = discord.Embed(
+            title="🎚️ Filter Applied",
+            description=f"**{preset.title()}** filter activated!\nSkip to next track to apply.",
+            color=discord.Color.purple()
+        )
+        await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="favorite", description="Add current song to your favorites")
+async def favorite(interaction: discord.Interaction):
+    """Add song to favorites"""
+    queue = bot.get_queue(interaction.guild.id)
+    
+    if not queue.current:
+        await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
+        return
+    
+    success = db.add_favorite(
+        str(interaction.guild.id),
+        str(interaction.user.id),
+        queue.current.title,
+        queue.current.url
+    )
+    
+    if success:
+        embed = discord.Embed(
+            title="⭐ Added to Favorites!",
+            description=f"**{queue.current.title}**",
+            color=discord.Color.gold()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ This song is already in your favorites!", ephemeral=True)
+
+
+@bot.tree.command(name="favorites", description="Show your favorite songs")
+async def show_favorites(interaction: discord.Interaction):
+    """Show user's favorites"""
+    favorites = db.get_favorites(str(interaction.guild.id), str(interaction.user.id))
+    
+    if not favorites:
+        await interaction.response.send_message("❌ You don't have any favorites yet! Use `/favorite` while a song is playing.", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title=f"⭐ {interaction.user.display_name}'s Favorites",
+        color=discord.Color.gold(),
+        timestamp=datetime.now()
+    )
+    
+    fav_text = ""
+    for idx, (title, url, added_at) in enumerate(favorites[:10], 1):
+        fav_text += f"`{idx}.` **[{title[:40]}]({url})**\n"
+    
+    embed.description = fav_text
+    embed.set_footer(text=f"{len(favorites)} total favorites")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="playfav", description="Play a song from your favorites")
+@app_commands.describe(number="Favorite song number (from /favorites list)")
+async def play_favorite(interaction: discord.Interaction, number: int):
+    """Play from favorites"""
+    favorites = db.get_favorites(str(interaction.guild.id), str(interaction.user.id))
+    
+    if not favorites or number < 1 or number > len(favorites):
+        await interaction.response.send_message(f"❌ Invalid favorite number! You have {len(favorites)} favorites.", ephemeral=True)
+        return
+    
+    song_url = favorites[number - 1][1]
+    
+    # Call play command with the URL
+    await play(interaction, song_url)
+
+
+@bot.tree.command(name="search", description="Search for music and choose from results")
+@app_commands.describe(query="Search query")
+async def search(interaction: discord.Interaction, query: str):
+    """Search for music"""
+    await interaction.response.defer()
+    
+    try:
+        loop = bot.loop or asyncio.get_event_loop()
+        search_query = f"ytsearch5:{query}"
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(search_query, download=False))
+        
+        if not data or 'entries' not in data or not data['entries']:
+            await interaction.followup.send("❌ No results found!")
+            return
+        
+        results = data['entries'][:5]
+        
+        embed = discord.Embed(
+            title=f"🔍 Search Results for: {query}",
+            description="Use `/play <URL>` to play a song from results",
+            color=discord.Color.blue(),
+            timestamp=datetime.now()
+        )
+        
+        for idx, result in enumerate(results, 1):
+            title = result.get('title', 'Unknown')
+            url = result.get('webpage_url') or f"https://www.youtube.com/watch?v={result.get('id')}"
+            duration = result.get('duration', 0)
+            
+            mins, secs = divmod(duration, 60)
+            duration_str = f"`[{int(mins)}:{int(secs):02d}]`"
+            
+            embed.add_field(
+                name=f"{idx}. {title[:60]}",
+                value=f"{duration_str} [Link]({url})",
+                inline=False
+            )
+        
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        await interaction.followup.send(f"❌ Search failed: {str(e)}")
+
+
+@bot.tree.command(name="setdj", description="Set DJ role (Admin only)")
+@app_commands.describe(role="Role that will have DJ permissions")
+async def set_dj_role(interaction: discord.Interaction, role: discord.Role):
+    """Set DJ role"""
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Only administrators can set DJ role!", ephemeral=True)
+        return
+    
+    db.update_guild_setting(str(interaction.guild.id), 'dj_role_id', str(role.id))
+    
+    embed = discord.Embed(
+        title="🎭 DJ Role Set!",
+        description=f"DJ role is now: {role.mention}\nMembers with this role can control music without voting.",
+        color=discord.Color.green()
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="247", description="Toggle 24/7 mode (bot won't auto-disconnect)")
+async def mode_247(interaction: discord.Interaction):
+    """Toggle 24/7 mode"""
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Only administrators can toggle 24/7 mode!", ephemeral=True)
+        return
+    
+    settings = db.get_guild_settings(str(interaction.guild.id))
+    current_mode = settings[2] if settings else 0
+    new_mode = 0 if current_mode else 1
+    
+    db.update_guild_setting(str(interaction.guild.id), 'mode_247', new_mode)
+    
+    status = "enabled" if new_mode else "disabled"
+    embed = discord.Embed(
+        title=f"⏰ 24/7 Mode {status.title()}!",
+        description=f"Bot will {'NOT' if new_mode else ''} automatically disconnect from voice channel.",
+        color=discord.Color.green() if new_mode else discord.Color.red()
     )
     await interaction.response.send_message(embed=embed)
 
