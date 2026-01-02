@@ -19,6 +19,7 @@ from collections import deque
 import sqlite3
 import json
 import glob
+import uuid
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
@@ -219,6 +220,21 @@ class MusicDatabase:
             )
         ''')
         
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS songquiz_scores (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                username TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                questions_asked INTEGER NOT NULL,
+                difficulty TEXT NOT NULL,
+                genre TEXT,
+                played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                game_id TEXT UNIQUE
+            )
+        ''')
+        
         conn.commit()
         conn.close()
     
@@ -383,6 +399,60 @@ class MusicDatabase:
         ''', (guild_id, value, value))
         conn.commit()
         conn.close()
+    
+    def save_songquiz_score(self, guild_id, user_id, username, score, questions_asked, difficulty, genre=None):
+        """Save SongQuiz game result"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        game_id = str(uuid.uuid4())
+        cursor.execute('''
+            INSERT INTO songquiz_scores 
+            (guild_id, user_id, username, score, questions_asked, difficulty, genre, game_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (guild_id, user_id, username, score, questions_asked, difficulty, genre, game_id))
+        
+        conn.commit()
+        conn.close()
+        return game_id
+    
+    def get_songquiz_leaderboard(self, guild_id, limit=10):
+        """Get SongQuiz leaderboard for guild"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT username, user_id, AVG(score) as avg_score, COUNT(*) as games_played, MAX(score) as best_score
+            FROM songquiz_scores
+            WHERE guild_id = ?
+            GROUP BY user_id, username
+            ORDER BY avg_score DESC
+            LIMIT ?
+        ''', (guild_id, limit))
+        
+        results = cursor.fetchall()
+        conn.close()
+        return results
+    
+    def get_user_songquiz_stats(self, guild_id, user_id):
+        """Get user's SongQuiz statistics"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                COUNT(*) as total_games,
+                AVG(score) as avg_score,
+                MAX(score) as best_score,
+                SUM(score) as total_score,
+                COUNT(CASE WHEN score >= 40 THEN 1 END) as perfect_games
+            FROM songquiz_scores
+            WHERE guild_id = ? AND user_id = ?
+        ''', (guild_id, user_id))
+        
+        result = cursor.fetchone()
+        conn.close()
+        return result
 
 
 db = MusicDatabase()
@@ -2295,6 +2365,11 @@ async def help_command(interaction: discord.Interaction):
             "`/favorites` - View your favorites",
             "`/playfav <number>` - Play from favorites",
         ]),
+        ("🎮 Games", [
+            "`/songquiz [difficulty] [questions]` - Play SongQuiz with genres and audio! 🎵🎧",
+            "`/songquiz-ranking` - View server leaderboard 🏆",
+            "`/songquiz-stats` - Your personal SongQuiz stats 📊",
+        ]),
         ("🔍 Search & Stats", [
             "`/search <query>` - Search for music",
             "`/stats` - Bot statistics",
@@ -2321,6 +2396,464 @@ async def help_command(interaction: discord.Interaction):
     embed.set_thumbnail(url=bot.user.display_avatar.url)
     
     await interaction.response.send_message(embed=embed)
+
+
+# SongQuiz Game State
+# Available genres for SongQuiz
+SONGQUIZ_GENRES = {
+    'pop': '🎤 Pop',
+    'rock': '🎸 Rock',
+    'hip-hop': '🎤 Hip-Hop/Rap',
+    'edm': '🎛️ EDM/Electronic',
+    'metal': '🤘 Metal',
+    'jazz': '🎷 Jazz',
+    'classical': '🎻 Classical',
+    'rnb': '🎵 R&B/Soul',
+    'indie': '🎺 Indie',
+    'country': '🤠 Country',
+    'latin': '🎸 Latin',
+    'kpop': '🇰🇷 K-Pop',
+    'mixed': '🎲 Mixed (All Genres)',
+}
+
+class SongQuizSession:
+    """Manages a SongQuiz game session"""
+    def __init__(self, guild_id):
+        self.guild_id = guild_id
+        self.is_active = False
+        self.score = 0
+        self.questions_asked = 0
+        self.max_questions = 5
+        self.current_question = None
+        self.correct_answer = None
+        self.correct_url = None
+        self.answered_users = set()
+        self.difficulty = 'medium'
+        self.genre = 'mixed'
+        self.user_id = None
+        self.username = None
+    
+    def reset(self):
+        self.is_active = False
+        self.score = 0
+        self.questions_asked = 0
+        self.current_question = None
+        self.correct_answer = None
+        self.correct_url = None
+        self.answered_users.clear()
+
+# SongQuiz sessions per guild
+songquiz_sessions = {}
+
+def get_songquiz_session(guild_id):
+    """Get or create quiz session for guild"""
+    if guild_id not in songquiz_sessions:
+        songquiz_sessions[guild_id] = SongQuizSession(guild_id)
+    return songquiz_sessions[guild_id]
+
+class GenreSelectView(View):
+    """View for selecting game genre"""
+    def __init__(self, session: SongQuizSession):
+        super().__init__(timeout=30)
+        self.session = session
+        self.selected = False
+        
+        # Create buttons for each genre
+        for genre_key, genre_name in list(SONGQUIZ_GENRES.items())[:12]:
+            button = discord.ui.Button(
+                label=genre_name.split()[1] if len(genre_name.split()) > 1 else genre_name[:12],
+                custom_id=f"genre_{genre_key}",
+                style=discord.ButtonStyle.primary
+            )
+            button.callback = self.make_genre_callback(genre_key)
+            self.add_item(button)
+    
+    def make_genre_callback(self, genre_key: str):
+        async def genre_callback(interaction: discord.Interaction):
+            if self.selected:
+                await interaction.response.send_message("❌ Genre already selected!", ephemeral=True)
+                return
+            
+            self.selected = True
+            self.session.genre = genre_key
+            
+            embed = discord.Embed(
+                title="✅ Genre Selected",
+                description=f"Selected: **{SONGQUIZ_GENRES[genre_key]}**\n\nLoading songs...",
+                color=discord.Color.green()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        return genre_callback
+
+class SongQuizView(View):
+    """Interactive buttons for SongQuiz game"""
+    def __init__(self, session: SongQuizSession, options: List[tuple], correct_idx: int, audio_url: str = None):
+        super().__init__(timeout=30)
+        self.session = session
+        self.options = options
+        self.correct_idx = correct_idx
+        self.audio_url = audio_url
+        self.answered = False
+        
+        # Create buttons for each option
+        labels = ['A', 'B', 'C', 'D']
+        for idx, (title, _) in enumerate(options[:4]):
+            short_title = title[:20]
+            button = discord.ui.Button(
+                label=f"{labels[idx]}: {short_title}",
+                custom_id=f"sq_opt_{idx}",
+                style=discord.ButtonStyle.primary
+            )
+            button.callback = self.make_answer_callback(idx)
+            self.add_item(button)
+        
+        # Add audio button if available
+        if audio_url:
+            audio_button = discord.ui.Button(
+                label="🎧 Listen (10s clip)",
+                custom_id="sq_audio",
+                style=discord.ButtonStyle.secondary,
+                url=audio_url
+            )
+            self.add_item(audio_button)
+    
+    def make_answer_callback(self, option_idx: int):
+        async def answer_callback(interaction: discord.Interaction):
+            if self.answered:
+                await interaction.response.send_message("❌ Quiz already answered!", ephemeral=True)
+                return
+            
+            self.answered = True
+            is_correct = option_idx == self.correct_idx
+            
+            if is_correct:
+                self.session.score += 10
+                embed = discord.Embed(
+                    title="✅ Correct!",
+                    description=f"Well done! **+10 points**\nTotal: **{self.session.score}** points",
+                    color=discord.Color.green()
+                )
+            else:
+                correct_title = self.options[self.correct_idx][0]
+                embed = discord.Embed(
+                    title="❌ Wrong!",
+                    description=f"The correct answer was: **{correct_title}**\nTotal: **{self.session.score}** points",
+                    color=discord.Color.red()
+                )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        return answer_callback
+
+
+@bot.tree.command(name="songquiz", description="🎵 Play SongQuiz - guess songs with audio and ranking!")
+@app_commands.describe(
+    difficulty="Game difficulty",
+    questions="Number of questions (5-20)"
+)
+@app_commands.choices(difficulty=[
+    app_commands.Choice(name="Easy 🟢", value="easy"),
+    app_commands.Choice(name="Medium 🟡", value="medium"),
+    app_commands.Choice(name="Hard 🔴", value="hard")
+])
+async def songquiz(interaction: discord.Interaction, difficulty: str = "medium", questions: int = 5):
+    """Start a SongQuiz game session with genre selection"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
+    
+    # Validate questions
+    if not 5 <= questions <= 20:
+        questions = 5
+    
+    session = get_songquiz_session(interaction.guild.id)
+    
+    if session.is_active:
+        await interaction.response.send_message("❌ A SongQuiz game is already in progress!", ephemeral=True)
+        return
+    
+    session.reset()
+    session.is_active = True
+    session.max_questions = questions
+    session.difficulty = difficulty
+    session.user_id = str(interaction.user.id)
+    session.username = interaction.user.display_name
+    
+    # Show genre selection
+    embed = discord.Embed(
+        title="🎵 SongQuiz Starting!",
+        description="Select your preferred genre to start the game:\n\nDifficulty: **" + difficulty.title() + "** 🎯\nQuestions: **" + str(questions) + "** 📝",
+        color=discord.Color.from_rgb(88, 101, 242)
+    )
+    embed.set_footer(text="Click a genre button to start")
+    
+    view = GenreSelectView(session)
+    await interaction.response.send_message(embed=embed, view=view)
+    
+    # Wait for genre selection (30 seconds)
+    await asyncio.sleep(0.5)
+    start_time = asyncio.get_event_loop().time()
+    while not session.genre or session.genre == 'mixed':
+        if asyncio.get_event_loop().time() - start_time > 30:
+            session.genre = 'mixed'  # Default to mixed
+            break
+        await asyncio.sleep(0.1)
+    
+    # Get songs from database history
+    conn = sqlite3.connect(db.db_path)
+    cursor = conn.cursor()
+    
+    # Filter by genre if not mixed
+    if session.genre != 'mixed':
+        # In a real app, you'd have genre metadata in database
+        # For now, get random songs and let the genre be more of a preference
+        cursor.execute('''
+            SELECT DISTINCT song_title, song_url 
+            FROM play_history 
+            WHERE guild_id = ?
+            ORDER BY RANDOM()
+            LIMIT 50
+        ''', (str(interaction.guild.id),))
+    else:
+        cursor.execute('''
+            SELECT DISTINCT song_title, song_url 
+            FROM play_history 
+            WHERE guild_id = ?
+            ORDER BY RANDOM()
+            LIMIT 50
+        ''', (str(interaction.guild.id),))
+    
+    songs = cursor.fetchall()
+    conn.close()
+    
+    if not songs or len(songs) < 4:
+        session.reset()
+        await interaction.channel.send(
+            "❌ Not enough songs in history! Play more music first to start SongQuiz."
+        )
+        return
+    
+    # Start embed
+    embed = discord.Embed(
+        title="🎵 SongQuiz Started!",
+        description=f"**{SONGQUIZ_GENRES.get(session.genre, session.genre)}** Genre\nDifficulty: **{difficulty.title()}** 🎯",
+        color=discord.Color.from_rgb(88, 101, 242)
+    )
+    embed.add_field(
+        name="How to Play",
+        value="🎧 Listen to the 10-second clip\n✅ Guess the song from 4 options\n📊 +10 points per correct answer",
+        inline=False
+    )
+    embed.set_footer(text="Score: 0 | Question: 0/" + str(questions))
+    
+    await interaction.channel.send(embed=embed)
+    
+    # Start asking questions
+    await asyncio.sleep(2)
+    await _ask_songquiz_question(interaction, session, songs, difficulty, questions)
+
+
+async def _ask_songquiz_question(interaction: discord.Interaction, session: SongQuizSession, 
+                                  all_songs: List, difficulty: str, total_questions: int):
+    """Ask a single SongQuiz question with audio support"""
+    if session.questions_asked >= total_questions:
+        # Game finished - Save score and show results
+        db.save_songquiz_score(
+            str(interaction.guild.id),
+            session.user_id,
+            session.username,
+            session.score,
+            session.questions_asked,
+            session.difficulty,
+            session.genre
+        )
+        
+        embed = discord.Embed(
+            title="🏁 SongQuiz Finished!",
+            description=f"Final Score: **{session.score}** points 🎉\nCorrect Answers: **{session.questions_asked}**/{total_questions}",
+            color=discord.Color.gold()
+        )
+        
+        # Award medal based on score
+        percentage = (session.score / (total_questions * 10)) * 100
+        if percentage >= 80:
+            medal = "🥇"
+            rank = "Perfect!"
+        elif percentage >= 60:
+            medal = "🥈"
+            rank = "Great!"
+        else:
+            medal = "🥉"
+            rank = "Good try!"
+        
+        embed.add_field(name="Achievement", value=f"{medal} {rank} ({percentage:.0f}%)", inline=False)
+        
+        # Get user's SongQuiz stats
+        user_stats = db.get_user_songquiz_stats(str(interaction.guild.id), session.user_id)
+        if user_stats and user_stats[0]:
+            avg_score = user_stats[1] or 0
+            best_score = user_stats[2] or 0
+            embed.add_field(
+                name="📊 Your Stats",
+                value=f"Average Score: **{avg_score:.0f}** points\nBest Score: **{best_score}** points\nGames Played: **{user_stats[0]}**",
+                inline=False
+            )
+        
+        embed.set_footer(text="Thanks for playing SongQuiz! Check /songquiz-ranking for leaderboard")
+        
+        await interaction.channel.send(embed=embed)
+        session.reset()
+        return
+    
+    session.questions_asked += 1
+    
+    # Select correct song
+    correct_song = random.choice(all_songs)
+    correct_title, correct_url = correct_song
+    
+    # Get 3 random different songs for options
+    other_songs = [s for s in all_songs if s[1] != correct_url]
+    if len(other_songs) < 3:
+        await interaction.channel.send("❌ Not enough unique songs for SongQuiz!")
+        session.reset()
+        return
+    
+    wrong_options = random.sample(other_songs, 3)
+    
+    # Create options
+    all_options = [(correct_title, correct_url)] + [(s[0], s[1]) for s in wrong_options]
+    random.shuffle(all_options)
+    
+    correct_idx = all_options.index((correct_title, correct_url))
+    
+    session.current_question = correct_title
+    session.correct_answer = correct_idx
+    session.correct_url = correct_url
+    
+    # Try to get audio URL (10-second clip from YouTube)
+    audio_url = None
+    try:
+        loop = bot.loop or asyncio.get_event_loop()
+        # Extract audio info from YouTube
+        ydl_audio_options = YTDL_FORMAT_OPTIONS.copy()
+        ydl_audio_options['format'] = 'worst/bestaudio'
+        
+        search_query = f"ytsearch1:{correct_title}"
+        data = await loop.run_in_executor(
+            None, 
+            lambda: yt_dlp.YoutubeDL(ydl_audio_options).extract_info(search_query, download=False)
+        )
+        
+        if data and 'entries' in data and data['entries']:
+            audio_url = data['entries'][0].get('url', None)
+    except Exception as e:
+        logger.warning(f"⚠️ Could not extract audio URL: {e}")
+        audio_url = None
+    
+    # Create question embed
+    question_num = session.questions_asked
+    embed = discord.Embed(
+        title=f"Question {question_num}/{total_questions}",
+        description="**🎧 Listen and Guess the Song!**",
+        color=discord.Color.from_rgb(88, 101, 242)
+    )
+    
+    # Add hint based on difficulty
+    if difficulty == "easy":
+        words = correct_title.split()
+        hint = f"First word: **{words[0]}**"
+    elif difficulty == "medium":
+        hint = f"Title has **{len(correct_title.split())}** words"
+    else:  # hard
+        hint = f"Title length: **{len(correct_title)}** characters"
+    
+    embed.add_field(name="💡 Hint", value=hint, inline=False)
+    
+    embed.set_footer(text=f"Score: {session.score} | Time: 30 seconds")
+    
+    # Send question with interactive buttons
+    view = SongQuizView(session, all_options, correct_idx, audio_url)
+    message = await interaction.channel.send(embed=embed, view=view)
+    
+    # Wait before next question
+    await asyncio.sleep(31)
+    
+    # Ask next question
+    await _ask_songquiz_question(interaction, session, all_songs, difficulty, total_questions)
+
+
+@bot.tree.command(name="songquiz-ranking", description="🏆 View SongQuiz leaderboard")
+async def songquiz_ranking(interaction: discord.Interaction):
+    """Show SongQuiz leaderboard for server"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
+    
+    leaderboard = db.get_songquiz_leaderboard(str(interaction.guild.id), limit=10)
+    
+    if not leaderboard:
+        await interaction.response.send_message(
+            "❌ No SongQuiz games played yet! Use `/songquiz` to start playing.",
+            ephemeral=True
+        )
+        return
+    
+    embed = discord.Embed(
+        title="🏆 SongQuiz Leaderboard",
+        description=f"Top 10 Players on {interaction.guild.name}",
+        color=discord.Color.gold(),
+        timestamp=datetime.now()
+    )
+    
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    leaderboard_text = ""
+    
+    for idx, (username, user_id, avg_score, games_played, best_score) in enumerate(leaderboard[:10]):
+        medal = medals[idx]
+        leaderboard_text += f"{medal} **{username}**\n"
+        leaderboard_text += f"   Avg: {avg_score:.0f}pts | Best: {best_score}pts | Games: {games_played}\n"
+    
+    embed.description = leaderboard_text
+    embed.set_footer(text="Keep playing to climb the ranks!")
+    
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="songquiz-stats", description="📊 Your SongQuiz statistics")
+async def songquiz_stats(interaction: discord.Interaction):
+    """Show user's SongQuiz statistics"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
+    
+    user_stats = db.get_user_songquiz_stats(str(interaction.guild.id), str(interaction.user.id))
+    
+    if not user_stats or not user_stats[0]:
+        await interaction.response.send_message(
+            "❌ No games played yet! Use `/songquiz` to start playing.",
+            ephemeral=True
+        )
+        return
+    
+    total_games, avg_score, best_score, total_score, perfect_games = user_stats
+    
+    embed = discord.Embed(
+        title=f"📊 {interaction.user.display_name}'s SongQuiz Stats",
+        color=discord.Color.blue(),
+        timestamp=datetime.now()
+    )
+    
+    embed.add_field(name="🎮 Total Games", value=str(total_games), inline=True)
+    embed.add_field(name="📈 Average Score", value=f"{avg_score:.0f} pts", inline=True)
+    embed.add_field(name="🎯 Best Score", value=f"{best_score} pts", inline=True)
+    embed.add_field(name="🏆 Perfect Games", value=f"{perfect_games} games (40/40 pts)", inline=True)
+    embed.add_field(name="💰 Total Points", value=f"{total_score} pts", inline=True)
+    embed.add_field(name="📊 Accuracy", value=f"{(avg_score/40)*100:.1f}%", inline=True)
+    
+    embed.set_footer(text="Keep improving your skills! 🎵")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="wrapped", description="Your personalized music Wrapped!")
