@@ -75,7 +75,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = data['entries'][0]
 
         filename = data['url'] if stream else ytdl.prepare_filename(data)
-      Song:
+        return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data)
+
+
+class Song:
     """Reprezentacja utworu muzycznego"""
     def __init__(self, source, requester):
         self.source = source
