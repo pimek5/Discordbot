@@ -346,6 +346,7 @@ class MusicQueue:
         self.history = deque(maxlen=20)
         self.skip_votes = set()
         self.autoplay = False
+        self.last_message_id = None  # For updating embed instead of sending new
         
     def add(self, song):
         """Add track to queue"""
@@ -368,6 +369,17 @@ class MusicQueue:
             self.history.clear()
             return self.next()
             
+        return None
+    
+    def previous(self):
+        """Go back to previous track"""
+        if self.history:
+            # Put current back to queue front
+            if self.current:
+                self.queue.appendleft(self.current)
+            # Get previous from history
+            self.current = self.history.pop()
+            return self.current
         return None
         
     def clear(self):
@@ -529,6 +541,46 @@ class VolumeModal(discord.ui.Modal, title="Set Volume"):
             await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
 
 
+def create_now_playing_embed(song, queue, bot_user, show_progress=False):
+    """Create Now Playing embed with optional progress bar"""
+    embed = discord.Embed(
+        title="🎵 Now Playing",
+        description=f"**[{song.title}]({song.url})**",
+        color=discord.Color.green(),
+        timestamp=datetime.now()
+    )
+    
+    if song.thumbnail:
+        embed.set_thumbnail(url=song.thumbnail)
+    
+    if song.requester:
+        embed.add_field(name="👤 Dodane przez", value=song.requester.mention, inline=True)
+    
+    if song.duration:
+        mins, secs = divmod(song.duration, 60)
+        duration_str = f"{int(mins)}:{int(secs):02d}"
+        embed.add_field(name="⏱️ Długość", value=duration_str, inline=True)
+        
+        # Add progress bar if playback is active
+        if show_progress:
+            bar_length = 20
+            filled = int((bar_length / song.duration) * (song.duration * 0.5))  # Approximate 50% as placeholder
+            bar = "█" * filled + "░" * (bar_length - filled)
+            embed.add_field(name="📊 Progres", value=f"`{bar}`", inline=False)
+    
+    embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
+    
+    if queue.loop_mode != 'off':
+        loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
+        embed.add_field(name="🔄 Tryb pętli", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
+    
+    if not queue.is_empty():
+        embed.add_field(name="📝 W kolejce", value=f"{len(queue.queue)} utworów", inline=True)
+    
+    embed.set_footer(text="MBot Music", icon_url=bot_user.display_avatar.url)
+    return embed
+
+
 # Music Control Buttons View
 class MusicControlView(View):
     def __init__(self, guild_id):
@@ -550,28 +602,75 @@ class MusicControlView(View):
         else:
             await interaction.response.send_message("❌ Nothing playing!", ephemeral=True)
     
+    @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.primary, custom_id="previous_btn")
+    async def previous_button(self, interaction: discord.Interaction, button: Button):
+        if not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
+            await interaction.response.send_message("❌ Nothing playing!", ephemeral=True)
+            return
+        
+        queue = bot.get_queue(interaction.guild.id)
+        song = queue.previous()
+        
+        if not song:
+            await interaction.response.send_message("❌ No previous track!", ephemeral=True)
+            return
+        
+        # Stop current and play previous
+        interaction.guild.voice_client.stop()
+        
+        try:
+            song.source = await YTDLSource.from_url(song.url, loop=bot.loop)
+            interaction.guild.voice_client.play(
+                song.source,
+                after=lambda e: asyncio.run_coroutine_threadsafe(
+                    play_next(interaction), bot.loop
+                )
+            )
+            
+            # Update the embed instead of sending new message
+            embed = create_now_playing_embed(song, queue, bot.user, show_progress=True)
+            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.followup.send("⏮️ Previous track", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
+    
     @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.primary, custom_id="skip_btn")
     async def skip_button(self, interaction: discord.Interaction, button: Button):
         if not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
             await interaction.response.send_message("❌ Nothing playing!", ephemeral=True)
             return
         
+        queue = bot.get_queue(interaction.guild.id)
+        
         # Admin skip without vote
         if interaction.user.guild_permissions.administrator:
-            interaction.guild.voice_client.stop()
-            await interaction.response.send_message("⏭️ Skipped (admin)", ephemeral=True)
+            song = queue.next() if not queue.is_empty() else None
+            if song:
+                interaction.guild.voice_client.stop()
+                embed = create_now_playing_embed(song, queue, bot.user, show_progress=True)
+                await interaction.response.edit_message(embed=embed, view=self)
+                await interaction.followup.send("⏭️ Skipped (admin)", ephemeral=True)
+            else:
+                interaction.guild.voice_client.stop()
+                await interaction.response.send_message("⏭️ Queue ended", ephemeral=True)
             return
         
         # Voting system
-        queue = bot.get_queue(interaction.guild.id)
         queue.skip_votes.add(interaction.user.id)
         voice_channel = interaction.guild.voice_client.channel
         members_count = len([m for m in voice_channel.members if not m.bot])
         votes_needed = members_count // 2 + 1
         
         if len(queue.skip_votes) >= votes_needed:
-            interaction.guild.voice_client.stop()
-            await interaction.response.send_message(f"⏭️ Skipped! ({len(queue.skip_votes)}/{votes_needed})", ephemeral=True)
+            song = queue.next() if not queue.is_empty() else None
+            if song:
+                interaction.guild.voice_client.stop()
+                embed = create_now_playing_embed(song, queue, bot.user, show_progress=True)
+                await interaction.response.edit_message(embed=embed, view=self)
+                await interaction.followup.send(f"⏭️ Skipped! ({len(queue.skip_votes)}/{votes_needed})", ephemeral=True)
+            else:
+                interaction.guild.voice_client.stop()
+                await interaction.response.send_message("⏭️ Queue ended", ephemeral=True)
         else:
             await interaction.response.send_message(f"🗳️ Vote: {len(queue.skip_votes)}/{votes_needed}", ephemeral=True)
     
@@ -910,29 +1009,7 @@ async def play_next(interaction: discord.Interaction):
             )
         )
         
-        embed = discord.Embed(
-            title="🎵 Now Playing",
-            description=f"**[{song.title}]({song.url})**",
-            color=discord.Color.green(),
-            timestamp=datetime.now()
-        )
-        if song.thumbnail:
-            embed.set_thumbnail(url=song.thumbnail)
-        if song.requester:
-            embed.add_field(name="👤 Dodane przez", value=song.requester.mention, inline=True)
-        if song.duration:
-            mins, secs = divmod(song.duration, 60)
-            embed.add_field(name="⏱️ Długość", value=f"{int(mins)}:{int(secs):02d}", inline=True)
-        embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
-        
-        if queue.loop_mode != 'off':
-            loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
-            embed.add_field(name="🔄 Tryb pętli", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
-        
-        if not queue.is_empty():
-            embed.add_field(name="📝 W kolejce", value=f"{len(queue.queue)} utworów", inline=True)
-        
-        embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+        embed = create_now_playing_embed(song, queue, bot.user, show_progress=True)
         
         # Create control buttons
         view = MusicControlView(interaction.guild.id)
