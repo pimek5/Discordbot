@@ -480,7 +480,7 @@ class MusicQueue:
     def __init__(self):
         self.queue = deque()
         self.current = None
-        self.volume = 0.5
+        self.volume = 0.3  # Default volume (30%)
         self.loop_mode = 'off'  # off, track, queue
         self.history = deque(maxlen=20)
         self.skip_votes = set()
