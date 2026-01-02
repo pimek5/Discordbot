@@ -697,39 +697,55 @@ def create_now_playing_embed(song, queue, bot_user, show_progress=False):
     """Create Now Playing embed with optional progress bar"""
     embed = discord.Embed(
         title="🎵 Now Playing",
-        description=f"**[{song.title}]({song.url})**",
-        color=discord.Color.green(),
+        color=discord.Color.from_rgb(88, 101, 242),  # Discord blurple
         timestamp=datetime.now()
     )
     
+    # Large image thumbnail
     if song.thumbnail:
-        embed.set_thumbnail(url=song.thumbnail)
+        embed.set_image(url=song.thumbnail)
     
-    if song.requester:
-        embed.add_field(name="👤 Dodane przez", value=song.requester.mention, inline=True)
+    # Title with link as main description
+    embed.description = f"### [{song.title}]({song.url})\n\n"
     
+    # Add visual separator
+    embed.description += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    # Duration and progress bar
     if song.duration:
         mins, secs = divmod(song.duration, 60)
         duration_str = f"{int(mins)}:{int(secs):02d}"
-        embed.add_field(name="⏱️ Długość", value=duration_str, inline=True)
         
-        # Add progress bar if playback is active
+        # Progress bar
         if show_progress:
-            bar_length = 20
-            filled = int((bar_length / song.duration) * (song.duration * 0.5))  # Approximate 50% as placeholder
-            bar = "█" * filled + "░" * (bar_length - filled)
-            embed.add_field(name="📊 Progres", value=f"`{bar}`", inline=False)
+            bar_length = 15
+            filled = int((bar_length / song.duration) * (song.duration * 0.5))
+            bar = "▰" * filled + "▱" * (bar_length - filled)
+            embed.description += f"⏱️ **Duration:** `{duration_str}`\n"
+            embed.description += f"📊 `{bar}` `50%`\n\n"
+        else:
+            embed.description += f"⏱️ **Duration:** `{duration_str}`\n\n"
     
-    embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
+    # Requester info
+    if song.requester:
+        embed.description += f"👤 **Requested by:** {song.requester.mention}\n"
+    
+    # Volume, Loop, Queue info in one line with emojis
+    status_line = f"🔊 `{int(queue.volume * 100)}%`"
     
     if queue.loop_mode != 'off':
         loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
-        embed.add_field(name="🔄 Tryb pętli", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
+        status_line += f" • {loop_emoji} `{queue.loop_mode.title()}`"
     
     if not queue.is_empty():
-        embed.add_field(name="📝 W kolejce", value=f"{len(queue.queue)} utworów", inline=True)
+        status_line += f" • 📝 `{len(queue.queue)} in queue`"
     
-    embed.set_footer(text="MBot Music", icon_url=bot_user.display_avatar.url)
+    embed.description += f"\n{status_line}"
+    
+    embed.set_footer(
+        text="MBot Music • Use buttons below to control playback",
+        icon_url=bot_user.display_avatar.url
+    )
     return embed
 
 
@@ -991,12 +1007,17 @@ async def play(interaction: discord.Interaction, url: str):
                 # Send completion embed
                 embed = discord.Embed(
                     title="✅ Spotify Playlist Added",
-                    description=f"**{playlist_name}**\nSuccessfully added to queue",
-                    color=discord.Color.green(),
+                    color=discord.Color.from_rgb(30, 215, 96),  # Spotify green
                     timestamp=datetime.now()
                 )
-                embed.add_field(name="📝 Tracks", value=f"{len(queue.queue)} in queue", inline=True)
-                embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+                embed.description = f"### 🎵 {playlist_name}\n\n"
+                embed.description += f"**{len(queries)} tracks** successfully added to queue\n"
+                embed.description += f"🎶 **Now Playing:** {queue.current.title if queue.current else 'Loading...'}\n"
+                embed.description += f"📝 **In Queue:** {len(queue.queue)} tracks remaining"
+                
+                # Add Spotify logo as thumbnail
+                embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Spotify_logo_without_text.svg/200px-Spotify_logo_without_text.svg.png")
+                embed.set_footer(text="MBot Music • Spotify Playlist", icon_url=bot.user.display_avatar.url)
                 
                 view = MusicControlView(interaction.guild.id)
                 msg = await interaction.channel.send(embed=embed, view=view)
@@ -1097,32 +1118,42 @@ async def play(interaction: discord.Interaction, url: str):
                 timestamp=datetime.now()
             )
             
-            # Add stats
-            embed.add_field(name="📊 Tracks Added", value=f"**{added_count}** songs", inline=True)
-            embed.add_field(name="👤 Added by", value=interaction.user.mention, inline=True)
-            embed.add_field(name="📈 Queue Size", value=f"{len(queue.queue)} total in queue", inline=True)
+            # Enhanced playlist completion embed
+            embed = discord.Embed(
+                title="✅ Playlist Loaded",
+                color=discord.Color.from_rgb(255, 0, 0),  # YouTube red
+                timestamp=datetime.now()
+            )
             
-            # Calculate total duration
+            embed.description = f"### 📝 {playlist_title}\n\n"
+            embed.description += f"**{added_count} tracks** successfully added\n"
+            
+            # Calculate and display total duration
             total_duration = sum(song.duration or 0 for song in queue.queue)
             if total_duration > 0:
                 hours, remainder = divmod(total_duration, 3600)
                 mins, secs = divmod(remainder, 60)
                 time_str = f"{int(hours)}h {int(mins)}m" if hours > 0 else f"{int(mins)}m {int(secs)}s"
-                embed.add_field(name="⏱️ Total Duration", value=time_str, inline=True)
+                embed.description += f"⏱️ **Total Duration:** `{time_str}`\n"
             
-            # Show first few tracks
-            first_tracks = list(queue.queue)[:3] if not interaction.guild.voice_client.is_playing() else list(queue.queue)[:3]
+            embed.description += f"👤 **Added by:** {interaction.user.mention}\n"
+            embed.description += f"📈 **Queue Size:** {len(queue.queue)} tracks\n\n"
+            
+            # Show first few tracks preview
+            first_tracks = list(queue.queue)[:3]
             if first_tracks:
-                tracks_preview = ""
+                embed.description += "**📜 Up Next:**\n"
                 for i, track in enumerate(first_tracks, 1):
-                    tracks_preview += f"{i}. {track.title[:40]}\n"
+                    duration = ""
+                    if track.duration:
+                        m, s = divmod(track.duration, 60)
+                        duration = f" `[{int(m)}:{int(s):02d}]`"
+                    embed.description += f"`{i}.` {track.title[:45]}{duration}\n"
                 
                 if len(queue.queue) > 3:
-                    tracks_preview += f"...and {len(queue.queue) - 3} more"
-                
-                embed.add_field(name="📜 Up Next", value=tracks_preview, inline=False)
+                    embed.description += f"*...and {len(queue.queue) - 3} more tracks*"
             
-            embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+            embed.set_footer(text="MBot Music • YouTube Playlist", icon_url=bot.user.display_avatar.url)
             
             view = MusicControlView(interaction.guild.id)
             msg = await interaction.channel.send(embed=embed, view=view)
