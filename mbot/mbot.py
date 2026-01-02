@@ -1,5 +1,5 @@
 ﻿"""
-MBot - Discord Music Bot
+DJSona - Discord Music Bot
 Odtwarzanie muzyki z YouTube, Spotify, SoundCloud i innych źródeł
 """
 
@@ -27,7 +27,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger('MBot')
+logger = logging.getLogger('DJSona')
 
 # Load environment variables
 load_dotenv()
@@ -38,7 +38,7 @@ YTDL_FORMAT_OPTIONS = {
     'format': 'bestaudio[ext=m4a]/bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
-    'noplaylist': False,  # Allow playlists
+    'noplaylist': True,  # Default: single video only (will be changed dynamically for playlists)
     'nocheckcertificate': True,
     'ignoreerrors': False,
     'logtostderr': False,
@@ -50,7 +50,7 @@ YTDL_FORMAT_OPTIONS = {
     'prefer_ffmpeg': True,
     'keepvideo': False,
     'cachedir': False,
-    'extract_flat': 'in_playlist',  # Fast playlist extraction
+    'extract_flat': False,  # Full extraction by default
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -97,6 +97,67 @@ guild_settings = {}
 
 # Track main control messages (guild_id -> message_id)
 main_control_messages = {}
+
+# Cache message objects to avoid repeated fetch_message calls (guild_id -> message_object)
+message_cache = {}
+
+def is_playlist_url(url):
+    """Detect if URL is intended to be a playlist or single video"""
+    url_lower = url.lower()
+    
+    # Explicit playlist URLs
+    if 'youtube.com/playlist' in url_lower or 'youtu.be/playlist' in url_lower:
+        return True
+    
+    # YouTube Mix/Radio (list=RD... or start_radio=1)
+    if 'list=rd' in url_lower or 'start_radio=1' in url_lower:
+        return True
+    
+    # If URL has both v= (video) and list= (playlist), check which one is intended
+    if 'v=' in url_lower and 'list=' in url_lower:
+        # User sent a video FROM a playlist, but wants only the video
+        return False
+    
+    # If ONLY list= parameter (no specific video)
+    if 'list=' in url_lower and 'v=' not in url_lower:
+        return True
+    
+    # Spotify playlists
+    if 'spotify.com/playlist' in url_lower:
+        return True
+    
+    # SoundCloud sets/playlists
+    if 'soundcloud.com' in url_lower and '/sets/' in url_lower:
+        return True
+    
+    return False
+
+def get_playlist_type(url, data=None):
+    """Determine the type of playlist from URL and extracted data"""
+    url_lower = url.lower()
+    
+    # YouTube Mix (algorithmic radio)
+    if 'list=rd' in url_lower or (data and data.get('id', '').startswith('RD')):
+        return {'type': 'mix', 'icon': '🎲', 'name': 'YouTube Mix'}
+    
+    # YouTube Radio (start_radio=1)
+    if 'start_radio=1' in url_lower:
+        return {'type': 'radio', 'icon': '📻', 'name': 'YouTube Radio'}
+    
+    # Standard YouTube Playlist
+    if 'youtube.com/playlist' in url_lower or 'list=' in url_lower:
+        return {'type': 'playlist', 'icon': '📝', 'name': 'YouTube Playlist'}
+    
+    # Spotify Playlist
+    if 'spotify.com/playlist' in url_lower:
+        return {'type': 'spotify_playlist', 'icon': '🎵', 'name': 'Spotify Playlist'}
+    
+    # SoundCloud Set
+    if 'soundcloud.com' in url_lower and '/sets/' in url_lower:
+        return {'type': 'soundcloud_set', 'icon': '☁️', 'name': 'SoundCloud Set'}
+    
+    # Generic fallback
+    return {'type': 'playlist', 'icon': '📝', 'name': 'Playlist'}
 
 # Allowed channel ID
 ALLOWED_CHANNEL_ID = 1456530879118839980
@@ -588,7 +649,7 @@ class MusicBot(commands.Bot):
         
     async def on_ready(self):
         """Event called when bot is ready"""
-        logger.info(f'🎵 MBot logged in as {self.user}')
+        logger.info(f'🎵 DJSona logged in as {self.user}')
         logger.info(f'Bot is on {len(self.guilds)} servers')
         
         # Set bot avatar
@@ -712,7 +773,7 @@ def create_now_playing_embed(song, queue, bot_user, show_progress=False):
     embed.description += f"\n{status_line}"
     
     embed.set_footer(
-        text="MBot Music • Use buttons below to control playback",
+        text="DJSona Music • Use buttons below to control playback",
         icon_url=bot_user.display_avatar.url
     )
     return embed
@@ -1020,7 +1081,7 @@ async def play(interaction: discord.Interaction, url: str):
                 
                 # Add Spotify logo as thumbnail
                 embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Spotify_logo_without_text.svg/200px-Spotify_logo_without_text.svg.png")
-                embed.set_footer(text="MBot Music • Spotify Playlist", icon_url=bot.user.display_avatar.url)
+                embed.set_footer(text="DJSona Music • Spotify Playlist", icon_url=bot.user.display_avatar.url)
                 
                 view = MusicControlView(interaction.guild.id)
                 
@@ -1033,24 +1094,55 @@ async def play(interaction: discord.Interaction, url: str):
             elif spotify_result and isinstance(spotify_result, dict) and spotify_result.get('type') == 'track':
                 url = spotify_result['query']
         
+        # Detect if URL is a playlist and prepare yt-dlp options accordingly
+        is_playlist = is_playlist_url(url)
+        playlist_type_info = get_playlist_type(url) if is_playlist else None
+        
+        # Clean URL if it's a single video with list parameter
+        if not is_playlist and 'youtube.com/watch' in url.lower() and 'list=' in url.lower():
+            # Remove list parameter to get only the single video
+            import re
+            url = re.sub(r'[&?]list=[^&]*', '', url)
+            logger.info(f"🔧 Cleaned URL (removed playlist parameter): {url}")
+        
+        # Create custom ytdl options based on intent
+        ytdl_opts = YTDL_FORMAT_OPTIONS.copy()
+        if is_playlist:
+            ytdl_opts['noplaylist'] = False
+            ytdl_opts['yes_playlist'] = True
+            ytdl_opts['extract_flat'] = 'in_playlist'  # Fast extraction for playlists
+            logger.info(f"{playlist_type_info['icon']} {playlist_type_info['name']} mode enabled | URL: {url[:100]}...")
+        else:
+            ytdl_opts['noplaylist'] = True
+            ytdl_opts['extract_flat'] = False
+            logger.info(f"🎵 Single video mode | URL: {url[:100]}...")
+        
+        # Create temporary ytdl instance with appropriate options
+        temp_ytdl = yt_dlp.YoutubeDL(ytdl_opts)
+        
         # Extract info to check if it's a playlist
         loop = bot.loop or asyncio.get_event_loop()
         try:
-            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+            data = await loop.run_in_executor(None, lambda: temp_ytdl.extract_info(url, download=False))
         except Exception as e:
             # If DRM error, try YouTube search
             if 'DRM' in str(e):
                 logger.warning(f"⚠️ DRM protection detected, searching on YouTube instead")
                 url = f"ytsearch:{url.replace('spotify.com', '').split('/')[-1]}"
-                data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+                data = await loop.run_in_executor(None, lambda: temp_ytdl.extract_info(url, download=False))
             else:
                 raise
         
         # Check if it's a playlist
-        if 'entries' in data:
+        if is_playlist and 'entries' in data:
             # It's a playlist!
             playlist_title = data.get('title', 'Playlist')
+            playlist_id = data.get('id', 'unknown')
+            playlist_uploader = data.get('uploader', data.get('channel', 'Unknown'))
             entries = [entry for entry in data['entries'] if entry]  # Filter out None entries
+            
+            # Update playlist type info with extracted data
+            playlist_type_info = get_playlist_type(url, data)
             
             if not entries:
                 await interaction.followup.send("❌ Playlist is empty or unavailable!")
@@ -1058,20 +1150,29 @@ async def play(interaction: discord.Interaction, url: str):
             
             # Limit to 50 tracks to prevent abuse
             MAX_PLAYLIST = 50
+            original_count = len(entries)
             if len(entries) > MAX_PLAYLIST:
                 entries = entries[:MAX_PLAYLIST]
                 limited_msg = f" (limited to {MAX_PLAYLIST} tracks)"
             else:
                 limited_msg = ""
             
-            # Send initial message
+            # Log detailed playlist info
+            logger.info(f"{playlist_type_info['icon']} Loading {playlist_type_info['name']}: '{playlist_title}' | ID: {playlist_id} | Tracks: {len(entries)}/{original_count} | Uploader: {playlist_uploader} | Requested by: {interaction.user.name}")
+            
+            # Send initial message with Mix warning if applicable
             embed = discord.Embed(
-                title="📝 Loading Playlist...",
-                description=f"**{playlist_title}**\nAdding {len(entries)} tracks to queue{limited_msg}",
+                title=f"{playlist_type_info['icon']} Loading {playlist_type_info['name']}...",
+                description=f"**{playlist_title}**\n{f'👤 By: {playlist_uploader}\n' if playlist_uploader != 'Unknown' else ''}Adding {len(entries)} tracks to queue{limited_msg}",
                 color=discord.Color.blue(),
                 timestamp=datetime.now()
             )
-            embed.set_footer(text="This may take a moment...")
+            
+            # Special warning for YouTube Mix (personalized/dynamic content)
+            if playlist_type_info['type'] == 'mix':
+                embed.description += "\n\n⚠️ **Note:** YouTube Mixes are personalized and dynamic. The tracks loaded may differ from what you see on YouTube, as Mixes are generated individually per user/session."
+            
+            embed.set_footer(text=f"{playlist_type_info['name']} • This may take a moment...")
             await interaction.followup.send(embed=embed)
             
             # Add tracks to queue
@@ -1115,23 +1216,29 @@ async def play(interaction: discord.Interaction, url: str):
                     logger.error(f"Error loading track from playlist: {e}")
                     continue
             
-            # Send completion message
-            embed = discord.Embed(
-                title="✅ Playlist Added!",
-                description=f"**{playlist_title}**",
-                color=discord.Color.green(),
-                timestamp=datetime.now()
-            )
-            
             # Enhanced playlist completion embed
             embed = discord.Embed(
-                title="✅ Playlist Loaded",
-                color=discord.Color.from_rgb(255, 0, 0),  # YouTube red
+                title=f"✅ {playlist_type_info['name']} Loaded",
+                color=discord.Color.from_rgb(255, 0, 0) if 'youtube' in playlist_type_info['type'] else discord.Color.green(),
                 timestamp=datetime.now()
             )
             
-            embed.description = f"### 📝 {playlist_title}\n\n"
-            embed.description += f"**{added_count} tracks** successfully added\n"
+            embed.description = f"### {playlist_type_info['icon']} {playlist_title}\n\n"
+            
+            # Show uploader if available
+            if playlist_uploader != 'Unknown':
+                embed.description += f"👤 **Creator:** {playlist_uploader}\n"
+            
+            # Success stats
+            success_rate = (added_count / len(entries) * 100) if entries else 0
+            embed.description += f"✅ **Loaded:** {added_count}/{len(entries)} tracks ({success_rate:.0f}%)\n"
+            
+            if added_count < len(entries):
+                failed = len(entries) - added_count
+                embed.description += f"⚠️ **Failed:** {failed} track{'s' if failed != 1 else ''} (unavailable/restricted)\n"
+            
+            if original_count > MAX_PLAYLIST:
+                embed.description += f"ℹ️ **Note:** Playlist truncated from {original_count} tracks\n"
             
             # Calculate and display total duration
             total_duration = sum(song.duration or 0 for song in queue.queue)
@@ -1141,24 +1248,36 @@ async def play(interaction: discord.Interaction, url: str):
                 time_str = f"{int(hours)}h {int(mins)}m" if hours > 0 else f"{int(mins)}m {int(secs)}s"
                 embed.description += f"⏱️ **Total Duration:** `{time_str}`\n"
             
-            embed.description += f"👤 **Added by:** {interaction.user.mention}\n"
-            embed.description += f"📈 **Queue Size:** {len(queue.queue)} tracks\n\n"
+            embed.description += f"🎧 **Requested by:** {interaction.user.mention}\n"
+            embed.description += f"📈 **Queue Size:** {len(queue.queue)} track{'s' if len(queue.queue) != 1 else ''}\n\n"
             
             # Show first few tracks preview
             first_tracks = list(queue.queue)[:3]
             if first_tracks:
-                embed.description += "**📜 Up Next:**\n"
+                embed.description += "**🎵 Up Next:**\n"
                 for i, track in enumerate(first_tracks, 1):
                     duration = ""
                     if track.duration:
                         m, s = divmod(track.duration, 60)
                         duration = f" `[{int(m)}:{int(s):02d}]`"
-                    embed.description += f"`{i}.` {track.title[:45]}{duration}\n"
+                    track_title = track.title[:45] + "..." if len(track.title) > 45 else track.title
+                    embed.description += f"`{i}.` {track_title}{duration}\n"
                 
                 if len(queue.queue) > 3:
-                    embed.description += f"*...and {len(queue.queue) - 3} more tracks*"
+                    embed.description += f"*...and {len(queue.queue) - 3} more track{'s' if len(queue.queue) - 3 != 1 else ''}*\n"
             
-            embed.set_footer(text="MBot Music • YouTube Playlist", icon_url=bot.user.display_avatar.url)
+            # Add Mix personalization note
+            if playlist_type_info['type'] == 'mix':
+                embed.description += "\n💡 **Mix Info:** YouTube Mixes are generated dynamically based on the song/video and YouTube's algorithm. The exact tracks may vary from the original Mix you saw."
+            
+            # Detailed footer with playlist type
+            embed.set_footer(
+                text=f"DJSona Music • {playlist_type_info['name']} • ID: {playlist_id[:15]}",
+                icon_url=bot.user.display_avatar.url
+            )
+            
+            # Log successful completion
+            logger.info(f"✅ {playlist_type_info['name']} '{playlist_title}' loaded: {added_count}/{len(entries)} tracks successfully added to queue")
             
             view = MusicControlView(interaction.guild.id)
             
@@ -1206,23 +1325,39 @@ async def play(interaction: discord.Interaction, url: str):
                     mins, secs = divmod(player.duration, 60)
                     embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
                 embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
-                embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+                embed.set_footer(text="DJSona Music", icon_url=bot.user.display_avatar.url)
                 
                 view = MusicControlView(interaction.guild.id)
                 
                 # Usuń starą wiadomość now playing jeśli istnieje
                 if interaction.guild.id in main_control_messages:
                     try:
-                        old_msg_id = main_control_messages[interaction.guild.id]
-                        old_msg = await interaction.channel.fetch_message(old_msg_id)
-                        await old_msg.delete()
-                    except:
-                        pass
+                        # Try cached message first to avoid fetch_message
+                        if interaction.guild.id in message_cache:
+                            old_msg = message_cache[interaction.guild.id]
+                            try:
+                                await old_msg.delete()
+                            except (discord.NotFound, discord.HTTPException):
+                                pass
+                        else:
+                            # Only fetch if not cached
+                            old_msg_id = main_control_messages[interaction.guild.id]
+                            try:
+                                old_msg = await interaction.channel.fetch_message(old_msg_id)
+                                await old_msg.delete()
+                            except (discord.NotFound, discord.HTTPException):
+                                pass
+                    except Exception as e:
+                        logger.warning(f"Failed to delete old message: {e}")
+                    finally:
+                        main_control_messages.pop(interaction.guild.id, None)
+                        message_cache.pop(interaction.guild.id, None)
                 
                 msg = await interaction.followup.send(embed=embed, view=view)
                 
-                # Track this message as main control message
+                # Track this message as main control message and cache it
                 main_control_messages[interaction.guild.id] = msg.id
+                message_cache[interaction.guild.id] = msg
             else:
                 # Add to queue
                 queue.add(song)
@@ -1240,7 +1375,7 @@ async def play(interaction: discord.Interaction, url: str):
                 if player.duration:
                     mins, secs = divmod(player.duration, 60)
                     embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
-                embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+                embed.set_footer(text="DJSona Music", icon_url=bot.user.display_avatar.url)
                 
                 view = MusicControlView(interaction.guild.id)
                 await interaction.followup.send(embed=embed, view=view)
@@ -1331,14 +1466,32 @@ async def play_next(interaction: discord.Interaction):
             # Usuń starą wiadomość now playing jeśli istnieje
             if interaction.guild.id in main_control_messages:
                 try:
-                    old_msg_id = main_control_messages[interaction.guild.id]
-                    old_msg = await channel.fetch_message(old_msg_id)
-                    await old_msg.delete()
-                except:
-                    pass  # Wiadomość już została usunięta lub nie istnieje
+                    # Try to use cached message first
+                    if interaction.guild.id in message_cache:
+                        old_msg = message_cache[interaction.guild.id]
+                        try:
+                            await old_msg.delete()
+                        except (discord.NotFound, discord.HTTPException):
+                            # Message already deleted or no longer exists
+                            pass
+                    # Only fetch if not in cache
+                    else:
+                        old_msg_id = main_control_messages[interaction.guild.id]
+                        try:
+                            old_msg = await channel.fetch_message(old_msg_id)
+                            await old_msg.delete()
+                        except (discord.NotFound, discord.HTTPException):
+                            pass
+                except Exception as e:
+                    logger.warning(f"Failed to delete old message: {e}")
+                finally:
+                    # Clean up references
+                    main_control_messages.pop(interaction.guild.id, None)
+                    message_cache.pop(interaction.guild.id, None)
             
             msg = await channel.send(embed=embed, view=view)
             main_control_messages[interaction.guild.id] = msg.id
+            message_cache[interaction.guild.id] = msg
 
 
 @bot.tree.command(name="pause", description="Pause music playback")
@@ -1595,7 +1748,7 @@ async def nowplaying(interaction: discord.Interaction):
     time_added = queue.current.added_at.strftime("%H:%M:%S")
     embed.add_field(name="🕒 Dodano o", value=time_added, inline=True)
     
-    embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+    embed.set_footer(text="DJSona Music", icon_url=bot.user.display_avatar.url)
     
     view = MusicControlView(interaction.guild.id)
     
@@ -1605,14 +1758,30 @@ async def nowplaying(interaction: discord.Interaction):
     # Usuń starą wiadomość now playing jeśli istnieje
     if interaction.guild.id in main_control_messages:
         try:
-            old_msg_id = main_control_messages[interaction.guild.id]
-            old_msg = await interaction.channel.fetch_message(old_msg_id)
-            await old_msg.delete()
-        except:
-            pass
+            # Try cached message first to avoid fetch_message
+            if interaction.guild.id in message_cache:
+                old_msg = message_cache[interaction.guild.id]
+                try:
+                    await old_msg.delete()
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+            else:
+                # Only fetch if not cached
+                old_msg_id = main_control_messages[interaction.guild.id]
+                try:
+                    old_msg = await interaction.channel.fetch_message(old_msg_id)
+                    await old_msg.delete()
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+        except Exception as e:
+            logger.warning(f"Failed to delete old message in nowplaying: {e}")
+        finally:
+            main_control_messages.pop(interaction.guild.id, None)
+            message_cache.pop(interaction.guild.id, None)
     
     msg = await interaction.channel.send(embed=embed, view=view)
     main_control_messages[interaction.guild.id] = msg.id
+    message_cache[interaction.guild.id] = msg
 
 
 @bot.tree.command(name="np", description="Przywróć panel kontrolny (alias dla nowplaying)")
@@ -2037,7 +2206,7 @@ async def history_command(interaction: discord.Interaction):
         history_text += f"`{i}.` **{song.title[:50]}**{duration_str}\n"
     
     embed.description = history_text
-    embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+    embed.set_footer(text="DJSona Music", icon_url=bot.user.display_avatar.url)
     
     await interaction.response.send_message(embed=embed)
 
@@ -2057,7 +2226,7 @@ async def stats(interaction: discord.Interaction):
     time_str = f"{int(hours)}h {int(mins)}m {int(secs)}s" if hours > 0 else f"{int(mins)}m {int(secs)}s"
     
     embed = discord.Embed(
-        title="📊 MBot Statistics",
+        title="📊 DJSona Statistics",
         color=discord.Color.blue(),
         timestamp=datetime.now()
     )
@@ -2078,7 +2247,7 @@ async def stats(interaction: discord.Interaction):
         members = len([m for m in voice_channel.members if not m.bot])
         embed.add_field(name="👥 Listening now", value=f"{members} people", inline=True)
     
-    embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+    embed.set_footer(text="DJSona Music", icon_url=bot.user.display_avatar.url)
     embed.set_thumbnail(url=bot.user.display_avatar.url)
     
     await interaction.response.send_message(embed=embed)
