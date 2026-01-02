@@ -13,9 +13,11 @@ import os
 from dotenv import load_dotenv
 from typing import Optional, Dict, List
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 from collections import deque
+import sqlite3
+import json
 
 # Logging configuration
 logging.basicConfig(
@@ -58,6 +60,137 @@ FFMPEG_OPTIONS = {
 }
 
 ytdl = yt_dlp.YoutubeDL(YTDL_FORMAT_OPTIONS)
+
+
+# Database for statistics
+class MusicDatabase:
+    def __init__(self, db_path='music_stats.db'):
+        self.db_path = db_path
+        self.init_db()
+    
+    def init_db(self):
+        """Initialize database tables"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS play_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                username TEXT NOT NULL,
+                song_title TEXT NOT NULL,
+                song_url TEXT NOT NULL,
+                song_duration INTEGER,
+                played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                year INTEGER,
+                month INTEGER
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+    
+    def log_play(self, guild_id, user_id, username, song_title, song_url, song_duration):
+        """Log a played song"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        now = datetime.now()
+        cursor.execute('''
+            INSERT INTO play_history 
+            (guild_id, user_id, username, song_title, song_url, song_duration, year, month)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (guild_id, user_id, username, song_title, song_url, song_duration, now.year, now.month))
+        
+        conn.commit()
+        conn.close()
+    
+    def get_user_stats(self, guild_id, user_id, year=None):
+        """Get user statistics for wrapped"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        if year:
+            cursor.execute('''
+                SELECT 
+                    COUNT(*) as total_plays,
+                    SUM(song_duration) as total_duration,
+                    song_title,
+                    song_url,
+                    COUNT(*) as play_count
+                FROM play_history
+                WHERE guild_id = ? AND user_id = ? AND year = ?
+                GROUP BY song_title, song_url
+                ORDER BY play_count DESC
+                LIMIT 10
+            ''', (guild_id, user_id, year))
+        else:
+            cursor.execute('''
+                SELECT 
+                    COUNT(*) as total_plays,
+                    SUM(song_duration) as total_duration,
+                    song_title,
+                    song_url,
+                    COUNT(*) as play_count
+                FROM play_history
+                WHERE guild_id = ? AND user_id = ?
+                GROUP BY song_title, song_url
+                ORDER BY play_count DESC
+                LIMIT 10
+            ''', (guild_id, user_id))
+        
+        results = cursor.fetchall()
+        conn.close()
+        return results
+    
+    def get_guild_stats(self, guild_id, year=None):
+        """Get server statistics"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        year_filter = f"AND year = {year}" if year else ""
+        
+        # Top users
+        cursor.execute(f'''
+            SELECT user_id, username, COUNT(*) as play_count
+            FROM play_history
+            WHERE guild_id = ? {year_filter}
+            GROUP BY user_id
+            ORDER BY play_count DESC
+            LIMIT 5
+        ''', (guild_id,))
+        top_users = cursor.fetchall()
+        
+        # Top songs
+        cursor.execute(f'''
+            SELECT song_title, song_url, COUNT(*) as play_count
+            FROM play_history
+            WHERE guild_id = ? {year_filter}
+            GROUP BY song_title, song_url
+            ORDER BY play_count DESC
+            LIMIT 5
+        ''', (guild_id,))
+        top_songs = cursor.fetchall()
+        
+        # Total stats
+        cursor.execute(f'''
+            SELECT COUNT(*), SUM(song_duration)
+            FROM play_history
+            WHERE guild_id = ? {year_filter}
+        ''', (guild_id,))
+        total_stats = cursor.fetchone()
+        
+        conn.close()
+        return {
+            'top_users': top_users,
+            'top_songs': top_songs,
+            'total_plays': total_stats[0] or 0,
+            'total_duration': total_stats[1] or 0
+        }
+
+
+db = MusicDatabase()
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -405,6 +538,17 @@ async def play(interaction: discord.Interaction, url: str):
         # If nothing is playing, start playback
         if not interaction.guild.voice_client.is_playing():
             queue.current = song
+            
+            # Log to database
+            db.log_play(
+                guild_id=str(interaction.guild.id),
+                user_id=str(interaction.user.id),
+                username=interaction.user.name,
+                song_title=player.title,
+                song_url=url,
+                song_duration=player.duration or 0
+            )
+            
             interaction.guild.voice_client.play(
                 player,
                 after=lambda e: asyncio.run_coroutine_threadsafe(
@@ -480,6 +624,16 @@ async def play_next(interaction: discord.Interaction):
     song = queue.next()
     
     if song and interaction.guild.voice_client:
+        # Log to database
+        db.log_play(
+            guild_id=str(interaction.guild.id),
+            user_id=str(song.requester.id),
+            username=song.requester.name,
+            song_title=song.title,
+            song_url=song.url,
+            song_duration=song.duration or 0
+        )
+        
         interaction.guild.voice_client.play(
             song.source,
             after=lambda e: asyncio.run_coroutine_threadsafe(
@@ -925,6 +1079,7 @@ async def help_command(interaction: discord.Interaction):
             "`/leave` - Rozłącz z kanału",
             "`/volume <0-100>` - Ustaw Volume",
             "`/stats` - Statystyki bota",
+            "`/wrapped` - Your music Wrapped!",
         ]),
     ]
     
@@ -939,6 +1094,144 @@ async def help_command(interaction: discord.Interaction):
     embed.set_thumbnail(url=bot.user.display_avatar.url)
     
     await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="wrapped", description="Your personalized music Wrapped!")
+@app_commands.describe(
+    year="Year for stats (leave empty for all time)",
+    scope="Show server or personal stats"
+)
+@app_commands.choices(scope=[
+    app_commands.Choice(name="My Stats", value="user"),
+    app_commands.Choice(name="Server Stats", value="server")
+])
+async def wrapped(interaction: discord.Interaction, scope: str = "user", year: int = None):
+    """Generate Wrapped-style statistics"""
+    await interaction.response.defer()
+    
+    if scope == "user":
+        # User Wrapped
+        stats = db.get_user_stats(str(interaction.guild.id), str(interaction.user.id), year)
+        
+        if not stats or stats[0][0] == 0:
+            await interaction.followup.send("❌ No listening history found! Play some music first.", ephemeral=True)
+            return
+        
+        total_plays = stats[0][0]
+        total_duration = stats[0][1] or 0
+        
+        # Convert duration to readable format
+        hours = total_duration // 3600
+        minutes = (total_duration % 3600) // 60
+        
+        year_text = f" {year}" if year else " (All Time)"
+        
+        embed = discord.Embed(
+            title=f"🎵 {interaction.user.display_name}'s Wrapped{year_text}",
+            description=f"Your personal music journey on **{interaction.guild.name}**",
+            color=discord.Color.purple(),
+            timestamp=datetime.now()
+        )
+        
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        
+        # Total stats
+        embed.add_field(
+            name="📊 Your Stats",
+            value=f"🎵 **{total_plays}** tracks played\n⏱️ **{hours}h {minutes}m** listening time",
+            inline=False
+        )
+        
+        # Top tracks
+        top_tracks_text = ""
+        for idx, row in enumerate(stats[:5], 1):
+            song_title = row[2][:40]
+            play_count = row[4]
+            
+            medal = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][idx-1]
+            top_tracks_text += f"{medal} **{song_title}** - {play_count} plays\n"
+        
+        if top_tracks_text:
+            embed.add_field(
+                name="🔥 Your Top Tracks",
+                value=top_tracks_text,
+                inline=False
+            )
+        
+        # Fun facts
+        avg_per_day = total_plays / 365 if not year else total_plays / 365
+        embed.add_field(
+            name="🎉 Fun Facts",
+            value=f"📈 Average: **{avg_per_day:.1f}** tracks/day\n🎵 Most played: **{stats[0][2][:30]}**",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Keep listening! 🎧 • Generated on", icon_url=bot.user.display_avatar.url)
+        
+        await interaction.followup.send(embed=embed)
+        
+    else:
+        # Server Wrapped
+        stats = db.get_guild_stats(str(interaction.guild.id), year)
+        
+        if stats['total_plays'] == 0:
+            await interaction.followup.send("❌ No server listening history found!", ephemeral=True)
+            return
+        
+        total_plays = stats['total_plays']
+        total_duration = stats['total_duration']
+        hours = total_duration // 3600
+        minutes = (total_duration % 3600) // 60
+        
+        year_text = f" {year}" if year else " (All Time)"
+        
+        embed = discord.Embed(
+            title=f"🏆 {interaction.guild.name} Wrapped{year_text}",
+            description="Server's music statistics and top contributors",
+            color=discord.Color.gold(),
+            timestamp=datetime.now()
+        )
+        
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        
+        # Total stats
+        embed.add_field(
+            name="📊 Server Stats",
+            value=f"🎵 **{total_plays}** total tracks\n⏱️ **{hours}h {minutes}m** total listening",
+            inline=False
+        )
+        
+        # Top users
+        if stats['top_users']:
+            top_users_text = ""
+            for idx, (user_id, username, play_count) in enumerate(stats['top_users'][:5], 1):
+                medal = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][idx-1]
+                top_users_text += f"{medal} **{username}** - {play_count} plays\n"
+            
+            embed.add_field(
+                name="👥 Top DJs",
+                value=top_users_text,
+                inline=False
+            )
+        
+        # Top songs
+        if stats['top_songs']:
+            top_songs_text = ""
+            for idx, (song_title, song_url, play_count) in enumerate(stats['top_songs'][:5], 1):
+                medal = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][idx-1]
+                short_title = song_title[:35]
+                top_songs_text += f"{medal} **{short_title}** - {play_count} plays\n"
+            
+            embed.add_field(
+                name="🔥 Server's Top Tracks",
+                value=top_songs_text,
+                inline=False
+            )
+        
+        embed.set_footer(text=f"Thanks for listening together! 🎧 • Generated on", icon_url=bot.user.display_avatar.url)
+        
+        await interaction.followup.send(embed=embed)
 
 
 if __name__ == "__main__":
