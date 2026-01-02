@@ -74,6 +74,9 @@ AUDIO_FILTERS = {
 # Guild settings storage
 guild_settings = {}
 
+# Track main control messages (guild_id -> message_id)
+main_control_messages = {}
+
 ytdl = yt_dlp.YoutubeDL(YTDL_FORMAT_OPTIONS)
 
 
@@ -458,6 +461,39 @@ class MusicBot(commands.Bot):
         if guild_id not in self.queues:
             self.queues[guild_id] = MusicQueue()
         return self.queues[guild_id]
+    
+    async def on_raw_message_delete(self, payload):
+        """Handle message deletion - stop playback if main control message is deleted"""
+        guild_id = payload.guild_id
+        message_id = payload.message_id
+        
+        # Check if deleted message is the main control message
+        if guild_id in main_control_messages and main_control_messages[guild_id] == message_id:
+            guild = self.get_guild(guild_id)
+            if guild and guild.voice_client and guild.voice_client.is_playing():
+                logger.info(f"Main control message deleted in {guild.name} - stopping playback")
+                guild.voice_client.stop()
+                queue = self.get_queue(guild_id)
+                queue.clear()
+                
+                # Try to send notification
+                try:
+                    # Get the text channel where it was deleted from (if available)
+                    if payload.channel_id:
+                        channel = self.get_channel(payload.channel_id)
+                        if channel:
+                            embed = discord.Embed(
+                                title="⏹️ Playback Stopped",
+                                description="The main control message was deleted. Music has been stopped.",
+                                color=discord.Color.red(),
+                                timestamp=datetime.now()
+                            )
+                            await channel.send(embed=embed)
+                except:
+                    pass
+            
+            # Remove tracking
+            del main_control_messages[guild_id]
 
 
 # Volume Modal
@@ -754,7 +790,10 @@ async def play(interaction: discord.Interaction, url: str):
             embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
             
             view = MusicControlView(interaction.guild.id)
-            await interaction.channel.send(embed=embed, view=view)
+            msg = await interaction.channel.send(embed=embed, view=view)
+            
+            # Track this message as main control message
+            main_control_messages[interaction.guild.id] = msg.id
             
         else:
             # Single track
@@ -799,7 +838,10 @@ async def play(interaction: discord.Interaction, url: str):
                 embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
                 
                 view = MusicControlView(interaction.guild.id)
-                await interaction.followup.send(embed=embed, view=view)
+                msg = await interaction.followup.send(embed=embed, view=view)
+                
+                # Track this message as main control message
+                main_control_messages[interaction.guild.id] = msg.id
             else:
                 # Add to queue
                 queue.add(song)
@@ -898,7 +940,8 @@ async def play_next(interaction: discord.Interaction):
         # Wyślij wiadomość na kanale tekstowym
         channel = interaction.channel
         if channel:
-            await channel.send(embed=embed, view=view)
+            msg = await channel.send(embed=embed, view=view)
+            main_control_messages[interaction.guild.id] = msg.id
 
 
 @bot.tree.command(name="pause", description="Pause music playback")
