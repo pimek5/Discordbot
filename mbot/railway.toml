@@ -1,10 +1,6 @@
-providers = ["nixpacks"]
-
 [build]
-builder = "nixpacks"
-
-[build.nixpacksPlan.phases.setup]
-nixPkgs = ["python310", "ffmpeg"]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "python mbot.py"
