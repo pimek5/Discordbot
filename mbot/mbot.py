@@ -98,6 +98,15 @@ guild_settings = {}
 # Track main control messages (guild_id -> message_id)
 main_control_messages = {}
 
+# Allowed channel ID
+ALLOWED_CHANNEL_ID = 1456530879118839980
+
+def check_channel(interaction: discord.Interaction) -> bool:
+    """Check if command is used in allowed channel"""
+    if interaction.channel_id != ALLOWED_CHANNEL_ID:
+        return False
+    return True
+
 ytdl = yt_dlp.YoutubeDL(YTDL_FORMAT_OPTIONS)
 
 
@@ -886,6 +895,9 @@ bot = MusicBot()
 @bot.tree.command(name="join", description="Join the bot to your voice channel")
 async def join(interaction: discord.Interaction):
     """Join user's voice channel"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if not interaction.user.voice:
         await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
         return
@@ -903,6 +915,9 @@ async def join(interaction: discord.Interaction):
 @bot.tree.command(name="leave", description="Disconnect the bot from voice channel")
 async def leave(interaction: discord.Interaction):
     """Disconnect from voice channel"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if not interaction.guild.voice_client:
         await interaction.response.send_message("❌ Bot is not in a voice channel!", ephemeral=True)
         return
@@ -921,6 +936,9 @@ async def leave(interaction: discord.Interaction):
 @app_commands.describe(url="Link to track/playlist (YouTube, Spotify, SoundCloud, etc.) or track name")
 async def play(interaction: discord.Interaction, url: str):
     """Play music from URL or search by name"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     await interaction.response.defer()
     
     # Check if user is in voice channel
@@ -1326,6 +1344,9 @@ async def play_next(interaction: discord.Interaction):
 @bot.tree.command(name="pause", description="Pause music playback")
 async def pause(interaction: discord.Interaction):
     """Pause playback"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if interaction.guild.voice_client and interaction.guild.voice_client.is_playing():
         interaction.guild.voice_client.pause()
         await interaction.response.send_message("⏸️ Paused playback")
@@ -1336,6 +1357,9 @@ async def pause(interaction: discord.Interaction):
 @bot.tree.command(name="resume", description="Resume music playback")
 async def resume(interaction: discord.Interaction):
     """Resume playback"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if interaction.guild.voice_client and interaction.guild.voice_client.is_paused():
         interaction.guild.voice_client.resume()
         await interaction.response.send_message("▶️ Resumed playback")
@@ -1346,6 +1370,9 @@ async def resume(interaction: discord.Interaction):
 @bot.tree.command(name="stop", description="Stop music and clear queue")
 async def stop(interaction: discord.Interaction):
     """Stop playback and clear queue"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if interaction.guild.voice_client:
         queue = bot.get_queue(interaction.guild.id)
         queue.clear()
@@ -1358,6 +1385,9 @@ async def stop(interaction: discord.Interaction):
 @bot.tree.command(name="skip", description="Skip current track")
 async def skip(interaction: discord.Interaction):
     """Skip current track"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
         await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
         return
@@ -1401,6 +1431,9 @@ async def skip(interaction: discord.Interaction):
 @bot.tree.command(name="queue", description="Pokaż kolejkę utworów")
 async def queue_command(interaction: discord.Interaction):
     """Wyświetl kolejkę utworów"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     if queue.current is None and queue.is_empty():
@@ -1500,6 +1533,9 @@ async def queue_command(interaction: discord.Interaction):
 @app_commands.describe(volume="Głośność (0-100)")
 async def volume(interaction: discord.Interaction, volume: int):
     """Ustaw Volume odtwarzania"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if not 0 <= volume <= 100:
         await interaction.response.send_message("❌ Volume musi być między 0 a 100!", ephemeral=True)
         return
@@ -1520,6 +1556,9 @@ async def volume(interaction: discord.Interaction, volume: int):
 @bot.tree.command(name="nowplaying", description="Pokaż aktualnie odtwarzany utwór")
 async def nowplaying(interaction: discord.Interaction):
     """Wyświetl aktualnie odtwarzany utwór"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     if not queue.current or not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
@@ -1579,12 +1618,18 @@ async def nowplaying(interaction: discord.Interaction):
 @bot.tree.command(name="np", description="Przywróć panel kontrolny (alias dla nowplaying)")
 async def np(interaction: discord.Interaction):
     """Alias dla nowplaying - przywraca panel kontrolny"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     await nowplaying.__wrapped__(interaction)
 
 
 @bot.tree.command(name="clear", description="Wyczyść kolejkę muzyki")
 async def clear(interaction: discord.Interaction):
     """Wyczyść kolejkę"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     if queue.is_empty():
@@ -1611,6 +1656,9 @@ async def clear(interaction: discord.Interaction):
 ])
 async def loop(interaction: discord.Interaction, mode: app_commands.Choice[str]):
     """Ustaw tryb powtarzania"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     queue.loop_mode = mode.value
     
@@ -1626,6 +1674,9 @@ async def loop(interaction: discord.Interaction, mode: app_commands.Choice[str])
 @bot.tree.command(name="shuffle", description="Shuffle tracks in queue")
 async def shuffle(interaction: discord.Interaction):
     """Wymieszaj kolejkę"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     if queue.is_empty():
@@ -1645,6 +1696,9 @@ async def shuffle(interaction: discord.Interaction):
 @app_commands.describe(position="Numer utworu do usunięcia (1, 2, 3...)")
 async def remove(interaction: discord.Interaction, position: int):
     """Usuń utwór z kolejki"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     if position < 1 or position > len(queue.queue):
@@ -1669,6 +1723,9 @@ async def remove(interaction: discord.Interaction, position: int):
 )
 async def move(interaction: discord.Interaction, from_pos: int, to_pos: int):
     """Move track in queue"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     if from_pos < 1 or from_pos > len(queue.queue) or to_pos < 1 or to_pos > len(queue.queue):
@@ -1695,6 +1752,9 @@ async def move(interaction: discord.Interaction, from_pos: int, to_pos: int):
 )
 async def swap(interaction: discord.Interaction, pos1: int, pos2: int):
     """Swap two tracks in queue"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     if pos1 < 1 or pos1 > len(queue.queue) or pos2 < 1 or pos2 > len(queue.queue):
@@ -1726,6 +1786,9 @@ async def swap(interaction: discord.Interaction, pos1: int, pos2: int):
 ])
 async def audio_filter(interaction: discord.Interaction, preset: str):
     """Apply audio filter"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
         await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
         return
@@ -1760,6 +1823,9 @@ async def audio_filter(interaction: discord.Interaction, preset: str):
 @bot.tree.command(name="favorite", description="Add current song to your favorites")
 async def favorite(interaction: discord.Interaction):
     """Add song to favorites"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     if not queue.current:
@@ -1787,6 +1853,9 @@ async def favorite(interaction: discord.Interaction):
 @bot.tree.command(name="favorites", description="Show your favorite songs")
 async def show_favorites(interaction: discord.Interaction):
     """Show user's favorites"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     favorites = db.get_favorites(str(interaction.guild.id), str(interaction.user.id))
     
     if not favorites:
@@ -1813,6 +1882,9 @@ async def show_favorites(interaction: discord.Interaction):
 @app_commands.describe(number="Favorite song number (from /favorites list)")
 async def play_favorite(interaction: discord.Interaction, number: int):
     """Play from favorites"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     favorites = db.get_favorites(str(interaction.guild.id), str(interaction.user.id))
     
     if not favorites or number < 1 or number > len(favorites):
@@ -1829,6 +1901,9 @@ async def play_favorite(interaction: discord.Interaction, number: int):
 @app_commands.describe(query="Search query or Spotify URL")
 async def search(interaction: discord.Interaction, query: str):
     """Search for music"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     await interaction.response.defer()
     
     try:
@@ -1887,6 +1962,9 @@ async def search(interaction: discord.Interaction, query: str):
 @app_commands.describe(role="Role that will have DJ permissions")
 async def set_dj_role(interaction: discord.Interaction, role: discord.Role):
     """Set DJ role"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Only administrators can set DJ role!", ephemeral=True)
         return
@@ -1904,6 +1982,9 @@ async def set_dj_role(interaction: discord.Interaction, role: discord.Role):
 @bot.tree.command(name="247", description="Toggle 24/7 mode (bot won't auto-disconnect)")
 async def mode_247(interaction: discord.Interaction):
     """Toggle 24/7 mode"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Only administrators can toggle 24/7 mode!", ephemeral=True)
         return
@@ -1926,6 +2007,9 @@ async def mode_247(interaction: discord.Interaction):
 @bot.tree.command(name="history", description="Pokaż ostatnio odtwarzane utwory")
 async def history_command(interaction: discord.Interaction):
     """Wyświetl historię odtwarzania"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     if not queue.history:
@@ -1961,6 +2045,9 @@ async def history_command(interaction: discord.Interaction):
 @bot.tree.command(name="stats", description="Pokaż statystyki bota")
 async def stats(interaction: discord.Interaction):
     """Wyświetl statystyki bota"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     queue = bot.get_queue(interaction.guild.id)
     
     # Oblicz Total Time kolejki
@@ -2000,6 +2087,9 @@ async def stats(interaction: discord.Interaction):
 @bot.tree.command(name="help", description="Pokaż dostępne komendy")
 async def help_command(interaction: discord.Interaction):
     """Wyświetl pomoc"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     embed = discord.Embed(
         title="🎵 MBot - Help",
         description="Bot for playing music from YouTube, Spotify, SoundCloud and other sources",
@@ -2074,6 +2164,9 @@ async def help_command(interaction: discord.Interaction):
 ])
 async def wrapped(interaction: discord.Interaction, scope: str = "user", year: int = None):
     """Generate Wrapped-style statistics"""
+    if not check_channel(interaction):
+        await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
+        return
     await interaction.response.defer()
     
     if scope == "user":
