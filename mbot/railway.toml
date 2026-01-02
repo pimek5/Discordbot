@@ -4,7 +4,7 @@ providers = ["nixpacks"]
 builder = "nixpacks"
 
 [build.nixpacksPlan.phases.setup]
-nixPkgs = ["...", "ffmpeg"]
+nixPkgs = ["python310", "ffmpeg"]
 
 [deploy]
 startCommand = "python mbot.py"
