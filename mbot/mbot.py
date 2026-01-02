@@ -1009,11 +1009,8 @@ async def play(interaction: discord.Interaction, url: str):
                 embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Spotify_logo_without_text.svg/200px-Spotify_logo_without_text.svg.png")
                 embed.set_footer(text="MBot Music • Spotify Playlist", icon_url=bot.user.display_avatar.url)
                 
-                view = MusicControlView(interaction.guild.id)
-                
-                # Nie zapisuj playlist embed jako main_control_messages
-                # Pozwól by zostało obok now playing od play_next
-                await interaction.channel.send(embed=embed, view=view)
+                # Playlist embed bez przycisków kontrolnych - tylko informacyjny
+                await interaction.channel.send(embed=embed)
                 return
             
             # Handle Spotify track
@@ -1147,11 +1144,8 @@ async def play(interaction: discord.Interaction, url: str):
             
             embed.set_footer(text="MBot Music • YouTube Playlist", icon_url=bot.user.display_avatar.url)
             
-            view = MusicControlView(interaction.guild.id)
-            
-            # Nie zapisuj playlist embed jako main_control_messages
-            # Pozwól by zostało obok now playing od play_next
-            await interaction.channel.send(embed=embed, view=view)
+            # Playlist embed bez przycisków kontrolnych - tylko informacyjny
+            await interaction.channel.send(embed=embed)
             
         else:
             # Single track
