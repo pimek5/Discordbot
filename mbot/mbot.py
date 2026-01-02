@@ -318,6 +318,16 @@ class MusicDatabase:
 db = MusicDatabase()
 
 
+async def send_temp_embed(channel, embed, delay=10):
+    """Send embed and auto-delete after delay"""
+    try:
+        msg = await channel.send(embed=embed)
+        await asyncio.sleep(delay)
+        await msg.delete()
+    except:
+        pass
+
+
 async def get_spotify_track_info(url):
     """Fetch Spotify track info using Spotify API"""
     if not spotify_client:
@@ -480,7 +490,7 @@ class MusicQueue:
     def __init__(self):
         self.queue = deque()
         self.current = None
-        self.volume = 0.3  # Default volume (30%)
+        self.volume = 0.5
         self.loop_mode = 'off'  # off, track, queue
         self.history = deque(maxlen=20)
         self.skip_votes = set()
@@ -642,7 +652,7 @@ class MusicBot(commands.Bot):
                                 color=discord.Color.red(),
                                 timestamp=datetime.now()
                             )
-                            await channel.send(embed=embed)
+                            asyncio.create_task(send_temp_embed(channel, embed))
                 except:
                     pass
             
@@ -1224,7 +1234,7 @@ async def play_next(interaction: discord.Interaction):
                     description="Bot disconnected due to inactivity",
                     color=discord.Color.orange()
                 )
-                await interaction.channel.send(embed=embed)
+                asyncio.create_task(send_temp_embed(interaction.channel, embed))
             except:
                 pass
         return
