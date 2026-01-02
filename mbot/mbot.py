@@ -421,7 +421,7 @@ class MusicBot(commands.Bot):
         # Set bot avatar
         try:
             import aiohttp
-            avatar_url = "https://cdn.7tv.app/emote/01H80R5J8R00043Q6P4BN62X9A/4x.avif"
+            avatar_url = "https://i.imgur.com/vSgpUdS.gif"
             async with aiohttp.ClientSession() as session:
                 async with session.get(avatar_url) as resp:
                     if resp.status == 200:
