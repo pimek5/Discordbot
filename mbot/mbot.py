@@ -1,4 +1,4 @@
-"""
+﻿"""
 MBot - Discord Music Bot
 Odtwarzanie muzyki z YouTube, Spotify, SoundCloud i innych źródeł
 """
@@ -350,7 +350,7 @@ async def play_next(interaction: discord.Interaction):
         )
         
         embed = discord.Embed(
-            title="🎵 Teraz gra",
+            title="🎵 Now Playing",
             description=f"**[{song.title}]({song.url})**",
             color=discord.Color.green(),
             timestamp=datetime.now()
@@ -362,7 +362,7 @@ async def play_next(interaction: discord.Interaction):
         if song.duration:
             mins, secs = divmod(song.duration, 60)
             embed.add_field(name="⏱️ Długość", value=f"{int(mins)}:{int(secs):02d}", inline=True)
-        embed.add_field(name="🔊 Głośność", value=f"{int(queue.volume * 100)}%", inline=True)
+        embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
         
         if queue.loop_mode != 'off':
             loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
@@ -461,15 +461,15 @@ async def queue_command(interaction: discord.Interaction):
     
     if queue.current is None and queue.is_empty():
         embed = discord.Embed(
-            title="📭 Kolejka jest pusta",
-            description="Użyj `/play` aby dodać muzykę!",
+            title="📭 Queue is empty",
+            description="Use `/play` to add music!",
             color=discord.Color.orange()
         )
         await interaction.response.send_message(embed=embed)
         return
     
     embed = discord.Embed(
-        title="🎵 Kolejka muzyki",
+        title="🎵 Music Queue",
         color=discord.Color.blue(),
         timestamp=datetime.now()
     )
@@ -483,7 +483,7 @@ async def queue_command(interaction: discord.Interaction):
             mins, secs = divmod(queue.current.duration, 60)
             current_desc += f" | ⏱️ {int(mins)}:{int(secs):02d}"
         embed.add_field(
-            name="▶️ Teraz gra",
+            name="▶️ Now Playing",
             value=current_desc,
             inline=False
         )
@@ -514,7 +514,7 @@ async def queue_command(interaction: discord.Interaction):
             mins, secs = divmod(remainder, 60)
             time_str = f"{int(hours)}:{int(mins):02d}:{int(secs):02d}" if hours > 0 else f"{int(mins)}:{int(secs):02d}"
             embed.add_field(
-                name="⏱️ Całkowity czas",
+                name="⏱️ Total Time",
                 value=time_str,
                 inline=True
             )
@@ -522,23 +522,23 @@ async def queue_command(interaction: discord.Interaction):
     # Dodatkowe informacje
     if queue.loop_mode != 'off':
         loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
-        embed.add_field(name="🔄 Pętla", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
+        embed.add_field(name="🔄 Loop", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
     
-    embed.add_field(name="🔊 Głośność", value=f"{int(queue.volume * 100)}%", inline=True)
+    embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
     
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="volume", description="Ustaw głośność odtwarzania (0-100)")
+@bot.tree.command(name="volume", description="Ustaw Volume odtwarzania (0-100)")
 @app_commands.describe(volume="Głośność (0-100)")
 async def volume(interaction: discord.Interaction, volume: int):
-    """Ustaw głośność odtwarzania"""
+    """Ustaw Volume odtwarzania"""
     if not 0 <= volume <= 100:
-        await interaction.response.send_message("❌ Głośność musi być między 0 a 100!", ephemeral=True)
+        await interaction.response.send_message("❌ Volume musi być między 0 a 100!", ephemeral=True)
         return
     
     if not interaction.guild.voice_client:
-        await interaction.response.send_message("❌ Bot nie jest na kanale głosowym!", ephemeral=True)
+        await interaction.response.send_message("❌ Bot is not in a voice channel!", ephemeral=True)
         return
     
     queue = bot.get_queue(interaction.guild.id)
@@ -547,7 +547,7 @@ async def volume(interaction: discord.Interaction, volume: int):
     if interaction.guild.voice_client.source:
         interaction.guild.voice_client.source.volume = volume / 100
     
-    await interaction.response.send_message(f"🔊 Ustawiono głośność na {volume}%")
+    await interaction.response.send_message(f"🔊 Ustawiono Volume na {volume}%")
 
 
 @bot.tree.command(name="nowplaying", description="Pokaż aktualnie odtwarzany utwór")
@@ -556,11 +556,11 @@ async def nowplaying(interaction: discord.Interaction):
     queue = bot.get_queue(interaction.guild.id)
     
     if not queue.current or not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
-        await interaction.response.send_message("❌ Nic nie jest odtwarzane!", ephemeral=True)
+        await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
         return
     
     embed = discord.Embed(
-        title="🎵 Teraz gra",
+        title="🎵 Now Playing",
         description=f"**[{queue.current.title}]({queue.current.url})**",
         color=discord.Color.green(),
         timestamp=datetime.now()
@@ -576,11 +576,11 @@ async def nowplaying(interaction: discord.Interaction):
         mins, secs = divmod(queue.current.duration, 60)
         embed.add_field(name="⏱️ Długość", value=f"{int(mins)}:{int(secs):02d}", inline=True)
     
-    embed.add_field(name="🔊 Głośność", value=f"{int(queue.volume * 100)}%", inline=True)
+    embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
     
     if queue.loop_mode != 'off':
         loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
-        embed.add_field(name="🔄 Pętla", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
+        embed.add_field(name="🔄 Loop", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
     
     if not queue.is_empty():
         embed.add_field(name="📝 W kolejce", value=f"{len(queue.queue)} utworów", inline=True)
@@ -600,14 +600,14 @@ async def clear(interaction: discord.Interaction):
     queue = bot.get_queue(interaction.guild.id)
     
     if queue.is_empty():
-        await interaction.response.send_message("❌ Kolejka jest już pusta!", ephemeral=True)
+        await interaction.response.send_message("❌ Queue is already empty!", ephemeral=True)
         return
     
     cleared_count = len(queue.queue)
     queue.clear()
     
     embed = discord.Embed(
-        title="🗑️ Wyczyszczono kolejkę",
+        title="🗑️ Cleared Queue",
         description=f"Usunięto **{cleared_count}** utworów z kolejki",
         color=discord.Color.red()
     )
@@ -617,9 +617,9 @@ async def clear(interaction: discord.Interaction):
 @bot.tree.command(name="loop", description="Set loop mode (off/track/queue)")
 @app_commands.describe(mode="Tryb pętli: off (wyłącz), track (utwór), queue (kolejka)")
 @app_commands.choices(mode=[
-    app_commands.Choice(name="🔘 Wyłącz pętlę", value="off"),
-    app_commands.Choice(name="🔂 Powtarzaj utwór", value="track"),
-    app_commands.Choice(name="🔁 Powtarzaj kolejkę", value="queue")
+    app_commands.Choice(name="🔘 Disable loop", value="off"),
+    app_commands.Choice(name="🔂 Repeat track", value="track"),
+    app_commands.Choice(name="🔁 Repeat queue", value="queue")
 ])
 async def loop(interaction: discord.Interaction, mode: app_commands.Choice[str]):
     """Ustaw tryb powtarzania"""
@@ -641,12 +641,12 @@ async def shuffle(interaction: discord.Interaction):
     queue = bot.get_queue(interaction.guild.id)
     
     if queue.is_empty():
-        await interaction.response.send_message("❌ Kolejka jest pusta!", ephemeral=True)
+        await interaction.response.send_message("❌ Queue is empty!", ephemeral=True)
         return
     
     queue.shuffle()
     embed = discord.Embed(
-        title="🔀 Wymieszano kolejkę",
+        title="🔀 Shuffled Queue",
         description=f"Losowo ustawiono **{len(queue.queue)}** utworów",
         color=discord.Color.purple()
     )
@@ -667,7 +667,7 @@ async def remove(interaction: discord.Interaction, position: int):
     queue.remove(position - 1)
     
     embed = discord.Embed(
-        title="🗑️ Usunięto z kolejki",
+        title="🗑️ Removed from Queue",
         description=f"**{removed_song.title}**",
         color=discord.Color.red()
     )
@@ -681,15 +681,15 @@ async def history_command(interaction: discord.Interaction):
     
     if not queue.history:
         embed = discord.Embed(
-            title="📜 Historia jest pusta",
-            description="Brak ostatnio odtwarzanych utworów",
+            title="📜� History is empty",
+            description="No recently played tracks",
             color=discord.Color.orange()
         )
         await interaction.response.send_message(embed=embed)
         return
     
     embed = discord.Embed(
-        title="📜 Historia odtwarzania",
+        title="📜 Playback History",
         description=f"Ostatnio odtwarzane utwory (max {len(queue.history)})",
         color=discord.Color.blue(),
         timestamp=datetime.now()
@@ -714,33 +714,33 @@ async def stats(interaction: discord.Interaction):
     """Wyświetl statystyki bota"""
     queue = bot.get_queue(interaction.guild.id)
     
-    # Oblicz całkowity czas kolejki
+    # Oblicz Total Time kolejki
     total_duration = sum(song.duration or 0 for song in queue.queue)
     hours, remainder = divmod(total_duration, 3600)
     mins, secs = divmod(remainder, 60)
     time_str = f"{int(hours)}h {int(mins)}m {int(secs)}s" if hours > 0 else f"{int(mins)}m {int(secs)}s"
     
     embed = discord.Embed(
-        title="📊 Statystyki MBot",
+        title="📊 MBot Statistics",
         color=discord.Color.blue(),
         timestamp=datetime.now()
     )
     
-    embed.add_field(name="🎵 Utworów w kolejce", value=str(len(queue.queue)), inline=True)
-    embed.add_field(name="⏱️ Całkowity czas", value=time_str, inline=True)
-    embed.add_field(name="🔊 Głośność", value=f"{int(queue.volume * 100)}%", inline=True)
+    embed.add_field(name="🎵 Tracks in queue", value=str(len(queue.queue)), inline=True)
+    embed.add_field(name="⏱️ Total Time", value=time_str, inline=True)
+    embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
     
     if queue.loop_mode != 'off':
         loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
-        embed.add_field(name="🔄 Pętla", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
+        embed.add_field(name="🔄 Loop", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
     
-    embed.add_field(name="📜 Historia", value=f"{len(queue.history)} utworów", inline=True)
-    embed.add_field(name="🌐 Serwerów", value=str(len(bot.guilds)), inline=True)
+    embed.add_field(name="📜 History", value=f"{len(queue.history)} utworów", inline=True)
+    embed.add_field(name="🌐 Servers", value=str(len(bot.guilds)), inline=True)
     
     if interaction.guild.voice_client:
         voice_channel = interaction.guild.voice_client.channel
         members = len([m for m in voice_channel.members if not m.bot])
-        embed.add_field(name="👥 Słucha teraz", value=f"{members} osób", inline=True)
+        embed.add_field(name="👥 Listening now", value=f"{members} people", inline=True)
     
     embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
     embed.set_thumbnail(url=bot.user.display_avatar.url)
@@ -752,35 +752,35 @@ async def stats(interaction: discord.Interaction):
 async def help_command(interaction: discord.Interaction):
     """Wyświetl pomoc"""
     embed = discord.Embed(
-        title="🎵 MBot - Pomoc",
-        description="Bot do odtwarzania muzyki z YouTube, Spotify, SoundCloud i innych źródeł",
+        title="🎵 MBot - Help",
+        description="Bot for playing music from YouTube, Spotify, SoundCloud and other sources",
         color=discord.Color.blue(),
         timestamp=datetime.now()
     )
     
     commands_list = [
-        ("🎵 Odtwarzanie", [
+        ("🎵 Playback", [
             "`/play <url/nazwa>` - Odtwórz muzykę lub dodaj do kolejki",
-            "`/pause` - Zatrzymaj odtwarzanie",
-            "`/resume` - Wznów odtwarzanie",
+            "`/pause` - Zatrzymaj Playback",
+            "`/resume` - Wznów Playback",
             "`/stop` - Zatrzymaj i wyczyść kolejkę",
             "`/skip` - Pomiń aktualny utwór (głosowanie)",
         ]),
-        ("📝 Kolejka", [
+        ("📝 Queue", [
             "`/queue` - Pokaż kolejkę utworów",
             "`/nowplaying` - Pokaż aktualny utwór",
             "`/clear` - Wyczyść kolejkę",
             "`/shuffle` - Wymieszaj kolejkę",
             "`/remove <pozycja>` - Usuń utwór z kolejki",
         ]),
-        ("🔄 Pętla i Historia", [
-            "`/loop <tryb>` - Powtarzaj utwór/kolejkę",
+        ("🔄 Loop i History", [
+            "`/loop <tryb>` - Repeat track/kolejkę",
             "`/history` - Pokaż ostatnio odtwarzane",
         ]),
-        ("🔧 Zarządzanie", [
+        ("🔧 Management", [
             "`/join` - Dołącz do kanału głosowego",
             "`/leave` - Rozłącz z kanału",
-            "`/volume <0-100>` - Ustaw głośność",
+            "`/volume <0-100>` - Ustaw Volume",
             "`/stats` - Statystyki bota",
         ]),
     ]
@@ -792,7 +792,7 @@ async def help_command(interaction: discord.Interaction):
             inline=False
         )
     
-    embed.set_footer(text="💡 Bot obsługuje YouTube, Spotify, SoundCloud i wiele innych!", icon_url=bot.user.display_avatar.url)
+    embed.set_footer(text="💡 Bot supports YouTube, Spotify, SoundCloud and many more!", icon_url=bot.user.display_avatar.url)
     embed.set_thumbnail(url=bot.user.display_avatar.url)
     
     await interaction.response.send_message(embed=embed)
