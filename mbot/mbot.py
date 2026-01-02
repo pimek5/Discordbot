@@ -812,12 +812,9 @@ class MusicControlView(View):
         
         # Admin skip without vote
         if interaction.user.guild_permissions.administrator:
-            song = queue.next() if not queue.is_empty() else None
-            if song:
+            if not queue.is_empty():
                 interaction.guild.voice_client.stop()
-                embed = create_now_playing_embed(song, queue, bot.user, show_progress=True)
-                await interaction.response.edit_message(embed=embed, view=self)
-                await interaction.followup.send("⏭️ Skipped (admin)", ephemeral=True)
+                await interaction.response.send_message("⏭️ Skipped (admin)", ephemeral=True)
             else:
                 interaction.guild.voice_client.stop()
                 await interaction.response.send_message("⏭️ Queue ended", ephemeral=True)
@@ -830,12 +827,9 @@ class MusicControlView(View):
         votes_needed = members_count // 2 + 1
         
         if len(queue.skip_votes) >= votes_needed:
-            song = queue.next() if not queue.is_empty() else None
-            if song:
+            if not queue.is_empty():
                 interaction.guild.voice_client.stop()
-                embed = create_now_playing_embed(song, queue, bot.user, show_progress=True)
-                await interaction.response.edit_message(embed=embed, view=self)
-                await interaction.followup.send(f"⏭️ Skipped! ({len(queue.skip_votes)}/{votes_needed})", ephemeral=True)
+                await interaction.response.send_message(f"⏭️ Skipped! ({len(queue.skip_votes)}/{votes_needed})", ephemeral=True)
             else:
                 interaction.guild.voice_client.stop()
                 await interaction.response.send_message("⏭️ Queue ended", ephemeral=True)
@@ -1020,6 +1014,16 @@ async def play(interaction: discord.Interaction, url: str):
                 embed.set_footer(text="MBot Music • Spotify Playlist", icon_url=bot.user.display_avatar.url)
                 
                 view = MusicControlView(interaction.guild.id)
+                
+                # Usuń starą wiadomość now playing jeśli istnieje
+                if interaction.guild.id in main_control_messages:
+                    try:
+                        old_msg_id = main_control_messages[interaction.guild.id]
+                        old_msg = await interaction.channel.fetch_message(old_msg_id)
+                        await old_msg.delete()
+                    except:
+                        pass
+                
                 msg = await interaction.channel.send(embed=embed, view=view)
                 main_control_messages[interaction.guild.id] = msg.id
                 return
@@ -1156,6 +1160,16 @@ async def play(interaction: discord.Interaction, url: str):
             embed.set_footer(text="MBot Music • YouTube Playlist", icon_url=bot.user.display_avatar.url)
             
             view = MusicControlView(interaction.guild.id)
+            
+            # Usuń starą wiadomość now playing jeśli istnieje
+            if interaction.guild.id in main_control_messages:
+                try:
+                    old_msg_id = main_control_messages[interaction.guild.id]
+                    old_msg = await interaction.channel.fetch_message(old_msg_id)
+                    await old_msg.delete()
+                except:
+                    pass
+            
             msg = await interaction.channel.send(embed=embed, view=view)
             
             # Track this message as main control message
@@ -1204,6 +1218,16 @@ async def play(interaction: discord.Interaction, url: str):
                 embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
                 
                 view = MusicControlView(interaction.guild.id)
+                
+                # Usuń starą wiadomość now playing jeśli istnieje
+                if interaction.guild.id in main_control_messages:
+                    try:
+                        old_msg_id = main_control_messages[interaction.guild.id]
+                        old_msg = await interaction.channel.fetch_message(old_msg_id)
+                        await old_msg.delete()
+                    except:
+                        pass
+                
                 msg = await interaction.followup.send(embed=embed, view=view)
                 
                 # Track this message as main control message
@@ -1313,6 +1337,15 @@ async def play_next(interaction: discord.Interaction):
         # Wyślij wiadomość na kanale tekstowym
         channel = interaction.channel
         if channel:
+            # Usuń starą wiadomość now playing jeśli istnieje
+            if interaction.guild.id in main_control_messages:
+                try:
+                    old_msg_id = main_control_messages[interaction.guild.id]
+                    old_msg = await channel.fetch_message(old_msg_id)
+                    await old_msg.delete()
+                except:
+                    pass  # Wiadomość już została usunięta lub nie istnieje
+            
             msg = await channel.send(embed=embed, view=view)
             main_control_messages[interaction.guild.id] = msg.id
 
@@ -1534,6 +1567,16 @@ async def nowplaying(interaction: discord.Interaction):
     
     # Wyślij embed na kanale i zapisz ID (przywrócenie embeda)
     await interaction.response.defer()
+    
+    # Usuń starą wiadomość now playing jeśli istnieje
+    if interaction.guild.id in main_control_messages:
+        try:
+            old_msg_id = main_control_messages[interaction.guild.id]
+            old_msg = await interaction.channel.fetch_message(old_msg_id)
+            await old_msg.delete()
+        except:
+            pass
+    
     msg = await interaction.channel.send(embed=embed, view=view)
     main_control_messages[interaction.guild.id] = msg.id
 
@@ -1581,6 +1624,16 @@ async def restore(interaction: discord.Interaction):
     view = MusicControlView(interaction.guild.id)
     
     await interaction.response.defer()
+    
+    # Usuń starą wiadomość now playing jeśli istnieje
+    if interaction.guild.id in main_control_messages:
+        try:
+            old_msg_id = main_control_messages[interaction.guild.id]
+            old_msg = await interaction.channel.fetch_message(old_msg_id)
+            await old_msg.delete()
+        except:
+            pass
+    
     msg = await interaction.channel.send(embed=embed, view=view)
     main_control_messages[interaction.guild.id] = msg.id
     await interaction.followup.send("✅ Embed przywrócony!", ephemeral=True)
