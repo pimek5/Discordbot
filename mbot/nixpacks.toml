@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["python39", "ffmpeg"]
-
-[phases.install]
-cmds = ["pip install --upgrade pip", "pip install -r requirements.txt"]
-
-[start]
-cmd = "python mbot.py"
