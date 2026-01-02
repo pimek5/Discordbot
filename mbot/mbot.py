@@ -711,18 +711,14 @@ def create_now_playing_embed(song, queue, bot_user, show_progress=False):
     # Add visual separator
     embed.description += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    # Duration and progress bar
+    # Duration
     if song.duration:
         mins, secs = divmod(song.duration, 60)
         duration_str = f"{int(mins)}:{int(secs):02d}"
         
-        # Progress bar
+        # Visual indicator
         if show_progress:
-            bar_length = 15
-            filled = int((bar_length / song.duration) * (song.duration * 0.5))
-            bar = "▰" * filled + "▱" * (bar_length - filled)
-            embed.description += f"⏱️ **Duration:** `{duration_str}`\n"
-            embed.description += f"📊 `{bar}` `50%`\n\n"
+            embed.description += f"⏱️ **Duration:** `{duration_str}` ━━━━━━ `0:00`\n\n"
         else:
             embed.description += f"⏱️ **Duration:** `{duration_str}`\n\n"
     
