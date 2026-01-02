@@ -18,6 +18,7 @@ import random
 from collections import deque
 import sqlite3
 import json
+import glob
 
 # Logging configuration
 logging.basicConfig(
@@ -300,7 +301,7 @@ db = MusicDatabase()
 class YTDLSource(discord.PCMVolumeTransformer):
     """Audio source for discord.py using yt-dlp"""
     
-    def __init__(self, source, *, data, volume=0.5):
+    def __init__(self, source, *, data, volume=0.5, filename=None):
         super().__init__(source, volume)
         self.data = data
         self.title = data.get('title')
@@ -308,6 +309,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.duration = data.get('duration')
         self.thumbnail = data.get('thumbnail')
         self.requester = None
+        self.filename = filename  # Track downloaded file for cleanup
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
@@ -320,7 +322,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = data['entries'][0]
 
         filename = data['url'] if stream else ytdl.prepare_filename(data)
-        return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data)
+        return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data, filename=filename if not stream else None)
 
 
 class Song:
@@ -484,8 +486,11 @@ class MusicBot(commands.Bot):
             guild = self.get_guild(guild_id)
             if guild and guild.voice_client and guild.voice_client.is_playing():
                 logger.info(f"Main control message deleted in {guild.name} - stopping playback")
-                guild.voice_client.stop()
                 queue = self.get_queue(guild_id)
+                # Cleanup current song file
+                if queue.current and hasattr(queue.current.source, 'filename') and queue.current.source.filename:
+                    cleanup_audio_file(queue.current.source.filename)
+                guild.voice_client.stop()
                 queue.clear()
                 
                 # Try to send notification
@@ -682,6 +687,9 @@ class MusicControlView(View):
         
         if interaction.guild.voice_client:
             queue = bot.get_queue(interaction.guild.id)
+            # Cleanup current song file
+            if queue.current and hasattr(queue.current.source, 'filename') and queue.current.source.filename:
+                cleanup_audio_file(queue.current.source.filename)
             queue.clear()
             interaction.guild.voice_client.stop()
             await interaction.response.send_message("⏹️ Stopped and cleared queue", ephemeral=True)
@@ -752,6 +760,9 @@ async def leave(interaction: discord.Interaction):
         return
         
     queue = bot.get_queue(interaction.guild.id)
+    # Cleanup current song file
+    if queue.current and hasattr(queue.current.source, 'filename') and queue.current.source.filename:
+        cleanup_audio_file(queue.current.source.filename)
     queue.clear()
     
     await interaction.guild.voice_client.disconnect()
@@ -968,10 +979,24 @@ async def play(interaction: discord.Interaction, url: str):
         await interaction.followup.send(f"❌ An error occurred during playback: {str(e)}")
 
 
+def cleanup_audio_file(filename):
+    """Remove audio file if it exists"""
+    if filename and os.path.exists(filename):
+        try:
+            os.remove(filename)
+            logger.info(f"🧹 Cleaned up audio file: {filename}")
+        except Exception as e:
+            logger.error(f"❌ Failed to cleanup {filename}: {e}")
+
+
 async def play_next(interaction: discord.Interaction):
     """Play next track from queue"""
     queue = bot.get_queue(interaction.guild.id)
     queue.skip_votes.clear()
+    
+    # Clean up previous song file
+    if queue.current and hasattr(queue.current.source, 'filename') and queue.current.source.filename:
+        cleanup_audio_file(queue.current.source.filename)
     
     if queue.is_empty() and queue.loop_mode == 'off':
         # Disconnect after 3 minutes of inactivity
