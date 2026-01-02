@@ -324,32 +324,64 @@ async def get_spotify_track_info(url):
         return None
     
     try:
-        # Extract track ID from URL
-        # Format: https://open.spotify.com/track/TRACK_ID or spotify:track:TRACK_ID
-        if 'spotify.com' in url:
+        # Extract track/playlist ID from URL
+        if 'spotify.com/track/' in url:
             track_id = url.split('/track/')[-1].split('?')[0]
+            track = spotify_client.track(track_id)
+            
+            artist_name = track['artists'][0]['name'] if track['artists'] else 'Unknown'
+            track_name = track['name']
+            album_art = track['album']['images'][0]['url'] if track['album']['images'] else None
+            
+            logger.info(f"🎵 Spotify API: {artist_name} - {track_name}")
+            
+            return {
+                'type': 'track',
+                'artist': artist_name,
+                'track': track_name,
+                'album_art': album_art,
+                'search_query': f"{artist_name} {track_name}"
+            }
+            
+        elif 'spotify.com/playlist/' in url:
+            playlist_id = url.split('/playlist/')[-1].split('?')[0]
+            playlist = spotify_client.playlist(playlist_id)
+            
+            tracks = []
+            for item in playlist['tracks']['items'][:50]:  # Limit to 50
+                if item['track']:
+                    track = item['track']
+                    artist = track['artists'][0]['name'] if track['artists'] else 'Unknown'
+                    name = track['name']
+                    tracks.append(f"{artist} {name}")
+            
+            logger.info(f"🎵 Spotify Playlist: {playlist['name']} ({len(tracks)} tracks)")
+            
+            return {
+                'type': 'playlist',
+                'name': playlist['name'],
+                'tracks': tracks
+            }
+            
         elif 'spotify:track:' in url:
             track_id = url.split('spotify:track:')[-1]
-        else:
-            return None
+            track = spotify_client.track(track_id)
+            
+            artist_name = track['artists'][0]['name'] if track['artists'] else 'Unknown'
+            track_name = track['name']
+            
+            logger.info(f"🎵 Spotify API: {artist_name} - {track_name}")
+            
+            return {
+                'type': 'track',
+                'artist': artist_name,
+                'track': track_name,
+                'search_query': f"{artist_name} {track_name}"
+            }
         
-        # Fetch track info via Spotify API
-        track = spotify_client.track(track_id)
-        
-        artist_name = track['artists'][0]['name'] if track['artists'] else 'Unknown'
-        track_name = track['name']
-        album_art = track['album']['images'][0]['url'] if track['album']['images'] else None
-        
-        logger.info(f"🎵 Spotify API: {artist_name} - {track_name}")
-        
-        return {
-            'artist': artist_name,
-            'track': track_name,
-            'album_art': album_art,
-            'search_query': f"{artist_name} {track_name}"
-        }
+        return None
     except Exception as e:
-        logger.warning(f"⚠️ Failed to fetch Spotify track info: {e}")
+        logger.warning(f"⚠️ Failed to fetch Spotify info: {e}")
         return None
 
 
@@ -361,10 +393,16 @@ async def handle_spotify_to_youtube(url):
             if spotify_client:
                 spotify_info = await get_spotify_track_info(url)
                 if spotify_info:
-                    return f"ytsearch:{spotify_info['search_query']}"
+                    if spotify_info['type'] == 'track':
+                        return {'type': 'track', 'query': f"ytsearch:{spotify_info['search_query']}"}
+                    elif spotify_info['type'] == 'playlist':
+                        return {
+                            'type': 'playlist',
+                            'name': spotify_info['name'],
+                            'queries': [f"ytsearch:{track}" for track in spotify_info['tracks']]
+                        }
             
             # Fallback to yt-dlp extraction
-
             loop = asyncio.get_event_loop()
             data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
             
@@ -883,8 +921,69 @@ async def play(interaction: discord.Interaction, url: str):
         queue = bot.get_queue(interaction.guild.id)
         
         # Handle Spotify DRM protection
+        spotify_result = None
         if 'spotify' in url.lower():
-            url = await handle_spotify_to_youtube(url)
+            spotify_result = await handle_spotify_to_youtube(url)
+            
+            # Handle Spotify playlist
+            if spotify_result and isinstance(spotify_result, dict) and spotify_result.get('type') == 'playlist':
+                playlist_name = spotify_result['name']
+                queries = spotify_result['queries']
+                
+                embed = discord.Embed(
+                    title="📝 Loading Spotify Playlist...",
+                    description=f"**{playlist_name}**\nAdding {len(queries)} tracks to queue",
+                    color=discord.Color.green(),
+                    timestamp=datetime.now()
+                )
+                embed.set_footer(text="This may take a moment...")
+                await interaction.followup.send(embed=embed)
+                
+                # Add tracks to queue
+                is_first_track = not interaction.guild.voice_client.is_playing()
+                for idx, query in enumerate(queries, 1):
+                    try:
+                        player = await YTDLSource.from_url(query, loop=bot.loop, stream=False)
+                        song = Song(player, interaction.user)
+                        song.title = player.title
+                        song.url = player.url
+                        song.duration = player.duration
+                        song.thumbnail = player.thumbnail
+                        
+                        if is_first_track:
+                            queue.current = song
+                            song.source.volume = queue.volume
+                            interaction.guild.voice_client.play(
+                                song.source,
+                                after=lambda e: asyncio.run_coroutine_threadsafe(
+                                    play_next(interaction), bot.loop
+                                )
+                            )
+                            is_first_track = False
+                        else:
+                            queue.add(song)
+                    except Exception as e:
+                        logger.error(f"Failed to load track {idx}: {e}")
+                        continue
+                
+                # Send completion embed
+                embed = discord.Embed(
+                    title="✅ Spotify Playlist Added",
+                    description=f"**{playlist_name}**\nSuccessfully added to queue",
+                    color=discord.Color.green(),
+                    timestamp=datetime.now()
+                )
+                embed.add_field(name="📝 Tracks", value=f"{len(queue.queue)} in queue", inline=True)
+                embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
+                
+                view = MusicControlView(interaction.guild.id)
+                msg = await interaction.channel.send(embed=embed, view=view)
+                main_control_messages[interaction.guild.id] = msg.id
+                return
+            
+            # Handle Spotify track
+            elif spotify_result and isinstance(spotify_result, dict) and spotify_result.get('type') == 'track':
+                url = spotify_result['query']
         
         # Extract info to check if it's a playlist
         loop = bot.loop or asyncio.get_event_loop()
