@@ -1161,9 +1161,10 @@ async def play(interaction: discord.Interaction, url: str):
             logger.info(f"{playlist_type_info['icon']} Loading {playlist_type_info['name']}: '{playlist_title}' | ID: {playlist_id} | Tracks: {len(entries)}/{original_count} | Uploader: {playlist_uploader} | Requested by: {interaction.user.name}")
             
             # Send initial message with Mix warning if applicable
+            uploader_line = f"👤 By: {playlist_uploader}\n" if playlist_uploader != 'Unknown' else ''
             embed = discord.Embed(
                 title=f"{playlist_type_info['icon']} Loading {playlist_type_info['name']}...",
-                description=f"**{playlist_title}**\n{f'👤 By: {playlist_uploader}\n' if playlist_uploader != 'Unknown' else ''}Adding {len(entries)} tracks to queue{limited_msg}",
+                description=f"**{playlist_title}**\n{uploader_line}Adding {len(entries)} tracks to queue{limited_msg}",
                 color=discord.Color.blue(),
                 timestamp=datetime.now()
             )
