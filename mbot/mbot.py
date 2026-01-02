@@ -128,13 +128,8 @@ def is_playlist_url(url):
     if 'list=rd' in url_lower or 'start_radio=1' in url_lower:
         return True
     
-    # If URL has both v= (video) and list= (playlist), check which one is intended
-    if 'v=' in url_lower and 'list=' in url_lower:
-        # User sent a video FROM a playlist, but wants only the video
-        return False
-    
-    # If ONLY list= parameter (no specific video)
-    if 'list=' in url_lower and 'v=' not in url_lower:
+    # Any URL with list= parameter should be treated as playlist
+    if 'list=' in url_lower:
         return True
     
     # Spotify playlists
@@ -1532,6 +1527,10 @@ async def play_next(interaction: discord.Interaction):
             song_url=song.url or "unknown",
             song_duration=song.duration or 0
         )
+        
+        # Apply saved volume to new track
+        if hasattr(song.source, 'volume'):
+            song.source.volume = queue.volume
         
         interaction.guild.voice_client.play(
             song.source,
