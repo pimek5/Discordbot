@@ -456,13 +456,21 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
 class Song:
     """Music track representation"""
-    def __init__(self, source, requester):
+    def __init__(self, source, requester, query=None):
         self.source = source
         self.requester = requester
-        self.title = source.title
-        self.url = source.url
-        self.thumbnail = source.thumbnail
-        self.duration = source.duration
+        self.query = query  # For lazy loading (Spotify)
+        if source:
+            self.title = source.title
+            self.url = source.url
+            self.thumbnail = source.thumbnail
+            self.duration = source.duration
+        else:
+            # Placeholder for lazy-loaded songs
+            self.title = query or "Loading..."
+            self.url = None
+            self.thumbnail = None
+            self.duration = None
         self.added_at = datetime.now()
 
 
@@ -939,18 +947,21 @@ async def play(interaction: discord.Interaction, url: str):
                 embed.set_footer(text="This may take a moment...")
                 await interaction.followup.send(embed=embed)
                 
-                # Add tracks to queue
+                # Add query strings to queue for lazy loading
                 is_first_track = not interaction.guild.voice_client.is_playing()
                 for idx, query in enumerate(queries, 1):
-                    try:
-                        player = await YTDLSource.from_url(query, loop=bot.loop, stream=True)
-                        song = Song(player, interaction.user)
-                        song.title = player.title
-                        song.url = player.url
-                        song.duration = player.duration
-                        song.thumbnail = player.thumbnail
-                        
-                        if is_first_track:
+                    song = Song(None, interaction.user, query=query)
+                    
+                    if is_first_track:
+                        # Load first track immediately
+                        try:
+                            player = await YTDLSource.from_url(query, loop=bot.loop, stream=False)
+                            song.source = player
+                            song.title = player.title
+                            song.url = player.url
+                            song.duration = player.duration
+                            song.thumbnail = player.thumbnail
+                            
                             queue.current = song
                             song.source.volume = queue.volume
                             interaction.guild.voice_client.play(
@@ -960,11 +971,12 @@ async def play(interaction: discord.Interaction, url: str):
                                 )
                             )
                             is_first_track = False
-                        else:
-                            queue.add(song)
-                    except Exception as e:
-                        logger.error(f"Failed to load track {idx}: {e}")
-                        continue
+                        except Exception as e:
+                            logger.error(f"Failed to load first track: {e}")
+                            continue
+                    else:
+                        # Add rest as lazy-load
+                        queue.add(song)
                 
                 # Send completion embed
                 embed = discord.Embed(
@@ -1220,13 +1232,28 @@ async def play_next(interaction: discord.Interaction):
     song = queue.next()
     
     if song and interaction.guild.voice_client:
+        # Load lazy-loaded song if needed
+        if song.query and not song.source:
+            try:
+                player = await YTDLSource.from_url(song.query, loop=bot.loop, stream=False)
+                song.source = player
+                song.title = player.title
+                song.url = player.url
+                song.duration = player.duration
+                song.thumbnail = player.thumbnail
+            except Exception as e:
+                logger.error(f"Failed to load lazy song: {e}")
+                # Skip to next
+                await play_next(interaction)
+                return
+        
         # Log to database
         db.log_play(
             guild_id=str(interaction.guild.id),
             user_id=str(song.requester.id),
             username=song.requester.name,
             song_title=song.title,
-            song_url=song.url,
+            song_url=song.url or "unknown",
             song_duration=song.duration or 0
         )
         
