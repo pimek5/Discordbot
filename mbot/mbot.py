@@ -710,6 +710,37 @@ def create_now_playing_embed(song, queue, bot_user, show_progress=False):
 
 
 # Music Control Buttons View
+class QueuePaginationView(View):
+    def __init__(self, guild_id, pages, current_page=0):
+        super().__init__(timeout=180)
+        self.guild_id = guild_id
+        self.pages = pages
+        self.current_page = current_page
+        self.update_buttons()
+    
+    def update_buttons(self):
+        self.previous_page_btn.disabled = self.current_page == 0
+        self.next_page_btn.disabled = self.current_page >= len(self.pages) - 1
+    
+    @discord.ui.button(emoji="⬅️", style=discord.ButtonStyle.primary, custom_id="prev_page")
+    async def previous_page_btn(self, interaction: discord.Interaction, button: Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.pages[self.current_page], view=self)
+        else:
+            await interaction.response.defer()
+    
+    @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.primary, custom_id="next_page")
+    async def next_page_btn(self, interaction: discord.Interaction, button: Button):
+        if self.current_page < len(self.pages) - 1:
+            self.current_page += 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.pages[self.current_page], view=self)
+        else:
+            await interaction.response.defer()
+
+
 class MusicControlView(View):
     def __init__(self, guild_id):
         super().__init__(timeout=None)
@@ -1381,66 +1412,88 @@ async def queue_command(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed)
         return
     
-    embed = discord.Embed(
-        title="🎵 Music Queue",
-        color=discord.Color.blue(),
-        timestamp=datetime.now()
-    )
+    # Pagination - 8 tracks per page to avoid 1024 char limit
+    TRACKS_PER_PAGE = 8
+    queue_list = list(queue.queue)
+    total_pages = (len(queue_list) + TRACKS_PER_PAGE - 1) // TRACKS_PER_PAGE if queue_list else 1
     
-    # Aktualnie odtwarzany utwór
-    if queue.current:
-        current_desc = f"**[{queue.current.title}]({queue.current.url})**\n"
-        if queue.current.requester:
-            current_desc += f"👤 {queue.current.requester.mention}"
-        if queue.current.duration:
-            mins, secs = divmod(queue.current.duration, 60)
-            current_desc += f" | ⏱️ {int(mins)}:{int(secs):02d}"
-        embed.add_field(
-            name="▶️ Now Playing",
-            value=current_desc,
-            inline=False
-        )
-    
-    # Następne utwory
-    if not queue.is_empty():
-        queue_text = ""
-        total_duration = 0
-        for i, song in enumerate(list(queue.queue)[:10], 1):
-            duration_str = ""
-            if song.duration:
-                total_duration += song.duration
-                mins, secs = divmod(song.duration, 60)
-                duration_str = f" `[{int(mins)}:{int(secs):02d}]`"
-            queue_text += f"`{i}.` **{song.title[:50]}**{duration_str}\n"
-        
-        embed.add_field(
-            name=f"📝 Następne ({len(queue.queue)} utworów)",
-            value=queue_text,
-            inline=False
+    pages = []
+    for page_num in range(max(1, total_pages)):
+        embed = discord.Embed(
+            title="🎵 Music Queue",
+            color=discord.Color.blue(),
+            timestamp=datetime.now()
         )
         
-        if len(queue.queue) > 10:
-            embed.set_footer(text=f"...i {len(queue.queue) - 10} więcej")
-        
-        if total_duration > 0:
-            hours, remainder = divmod(total_duration, 3600)
-            mins, secs = divmod(remainder, 60)
-            time_str = f"{int(hours)}:{int(mins):02d}:{int(secs):02d}" if hours > 0 else f"{int(mins)}:{int(secs):02d}"
+        # Aktualnie odtwarzany utwór (tylko na pierwszej stronie)
+        if page_num == 0 and queue.current:
+            current_desc = f"**[{queue.current.title}]({queue.current.url})**\n"
+            if queue.current.requester:
+                current_desc += f"👤 {queue.current.requester.mention}"
+            if queue.current.duration:
+                mins, secs = divmod(queue.current.duration, 60)
+                current_desc += f" | ⏱️ {int(mins)}:{int(secs):02d}"
             embed.add_field(
-                name="⏱️ Total Time",
-                value=time_str,
-                inline=True
+                name="▶️ Now Playing",
+                value=current_desc,
+                inline=False
             )
+        
+        # Następne utwory dla tej strony
+        if queue_list:
+            start_idx = page_num * TRACKS_PER_PAGE
+            end_idx = start_idx + TRACKS_PER_PAGE
+            page_songs = queue_list[start_idx:end_idx]
+            
+            queue_text = ""
+            for i, song in enumerate(page_songs, start_idx + 1):
+                duration_str = ""
+                if song.duration:
+                    mins, secs = divmod(song.duration, 60)
+                    duration_str = f" `[{int(mins)}:{int(secs):02d}]`"
+                # Truncate title to 40 chars to ensure we stay under limit
+                title = song.title[:40] + "..." if len(song.title) > 40 else song.title
+                queue_text += f"`{i}.` **{title}**{duration_str}\n"
+            
+            embed.add_field(
+                name=f"📝 Upcoming Tracks ({len(queue_list)} total)",
+                value=queue_text if queue_text else "No tracks in queue",
+                inline=False
+            )
+        
+        # Dodatkowe informacje (tylko na pierwszej stronie)
+        if page_num == 0:
+            # Total time
+            if queue_list:
+                total_duration = sum(s.duration for s in queue_list if s.duration)
+                if total_duration > 0:
+                    hours, remainder = divmod(total_duration, 3600)
+                    mins, secs = divmod(remainder, 60)
+                    time_str = f"{int(hours)}:{int(mins):02d}:{int(secs):02d}" if hours > 0 else f"{int(mins)}:{int(secs):02d}"
+                    embed.add_field(
+                        name="⏱️ Total Time",
+                        value=time_str,
+                        inline=True
+                    )
+            
+            if queue.loop_mode != 'off':
+                loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
+                embed.add_field(name="🔄 Loop", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
+            
+            embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
+        
+        # Footer with page number
+        if total_pages > 1:
+            embed.set_footer(text=f"Page {page_num + 1}/{total_pages}")
+        
+        pages.append(embed)
     
-    # Dodatkowe informacje
-    if queue.loop_mode != 'off':
-        loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
-        embed.add_field(name="🔄 Loop", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
-    
-    embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
-    
-    view = MusicControlView(interaction.guild.id)
-    await interaction.response.send_message(embed=embed, view=view)
+    # Send with pagination view if multiple pages
+    if len(pages) > 1:
+        view = QueuePaginationView(interaction.guild.id, pages)
+        await interaction.response.send_message(embed=pages[0], view=view)
+    else:
+        await interaction.response.send_message(embed=pages[0])
 
 
 @bot.tree.command(name="volume", description="Ustaw Volume odtwarzania (0-100)")
