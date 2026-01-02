@@ -42,9 +42,14 @@ YTDL_FORMAT_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    # YouTube anti-bot bypass
-    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'extractor_args': 'youtube:player_client=android,web',
+    'cookiefile': None,
+    'age_limit': None,
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-us,en;q=0.5',
+        'Sec-Fetch-Mode': 'navigate',
+    },
 }
 
 FFMPEG_OPTIONS = {
@@ -68,7 +73,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.requester = None
 
     @classmethod
-    async def from_url(cls, url, *, loop=None, stream=True):
+    async def from_url(cls, url, *, loop=None, stream=False):
         """Fetches track information from URL"""
         loop = loop or asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
