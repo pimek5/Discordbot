@@ -1,6 +1,7 @@
 ﻿"""
-DJSona - Discord Music Bot
+DJSona - Discord Music Bot v2.1
 Odtwarzanie muzyki z YouTube, Spotify, SoundCloud i innych źródeł
++ SongQuiz Deluxe: Genre selection, Audio clips, Rankings & Stats
 """
 
 import discord
