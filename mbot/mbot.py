@@ -721,12 +721,36 @@ async def play(interaction: discord.Interaction, url: str):
             # Send completion message
             embed = discord.Embed(
                 title="✅ Playlist Added!",
-                description=f"**{playlist_title}**\n{added_count} tracks added to queue",
+                description=f"**{playlist_title}**",
                 color=discord.Color.green(),
                 timestamp=datetime.now()
             )
+            
+            # Add stats
+            embed.add_field(name="📊 Tracks Added", value=f"**{added_count}** songs", inline=True)
             embed.add_field(name="👤 Added by", value=interaction.user.mention, inline=True)
-            embed.add_field(name="📊 Queue size", value=f"{len(queue.queue)} tracks", inline=True)
+            embed.add_field(name="📈 Queue Size", value=f"{len(queue.queue)} total in queue", inline=True)
+            
+            # Calculate total duration
+            total_duration = sum(song.duration or 0 for song in queue.queue)
+            if total_duration > 0:
+                hours, remainder = divmod(total_duration, 3600)
+                mins, secs = divmod(remainder, 60)
+                time_str = f"{int(hours)}h {int(mins)}m" if hours > 0 else f"{int(mins)}m {int(secs)}s"
+                embed.add_field(name="⏱️ Total Duration", value=time_str, inline=True)
+            
+            # Show first few tracks
+            first_tracks = list(queue.queue)[:3] if not interaction.guild.voice_client.is_playing() else list(queue.queue)[:3]
+            if first_tracks:
+                tracks_preview = ""
+                for i, track in enumerate(first_tracks, 1):
+                    tracks_preview += f"{i}. {track.title[:40]}\n"
+                
+                if len(queue.queue) > 3:
+                    tracks_preview += f"...and {len(queue.queue) - 3} more"
+                
+                embed.add_field(name="📜 Up Next", value=tracks_preview, inline=False)
+            
             embed.set_footer(text="MBot Music", icon_url=bot.user.display_avatar.url)
             
             view = MusicControlView(interaction.guild.id)
@@ -1046,7 +1070,7 @@ async def volume(interaction: discord.Interaction, volume: int):
     if interaction.guild.voice_client.source:
         interaction.guild.voice_client.source.volume = volume / 100
     
-    await interaction.response.send_message(f"🔊 Ustawiono Volume na {volume}%")
+    await interaction.response.send_message(f"🔊 Ustawiono Volume na {volume}%", ephemeral=True)
 
 
 @bot.tree.command(name="nowplaying", description="Pokaż aktualnie odtwarzany utwór")
@@ -1111,7 +1135,7 @@ async def clear(interaction: discord.Interaction):
         description=f"Usunięto **{cleared_count}** utworów z kolejki",
         color=discord.Color.red()
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="loop", description="Set loop mode (off/track/queue)")
@@ -1132,7 +1156,7 @@ async def loop(interaction: discord.Interaction, mode: app_commands.Choice[str])
         description=f"Ustawiono: **{mode.name}**",
         color=discord.Color.purple()
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="shuffle", description="Shuffle tracks in queue")
@@ -1150,7 +1174,7 @@ async def shuffle(interaction: discord.Interaction):
         description=f"Losowo ustawiono **{len(queue.queue)}** utworów",
         color=discord.Color.purple()
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="remove", description="Usuń utwór z kolejki")
@@ -1171,7 +1195,7 @@ async def remove(interaction: discord.Interaction, position: int):
         description=f"**{removed_song.title}**",
         color=discord.Color.red()
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="move", description="Move track to different position in queue")
@@ -1197,7 +1221,7 @@ async def move(interaction: discord.Interaction, from_pos: int, to_pos: int):
         description=f"**{song.title}**\nMoved from position {from_pos} to {to_pos}",
         color=discord.Color.blue()
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="swap", description="Swap two tracks in queue")
@@ -1222,7 +1246,7 @@ async def swap(interaction: discord.Interaction, pos1: int, pos2: int):
         description=f"Position {pos1} ↔️ Position {pos2}",
         color=discord.Color.blue()
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="filter", description="Apply audio filter (bass boost, nightcore, etc.)")
@@ -1266,7 +1290,7 @@ async def audio_filter(interaction: discord.Interaction, preset: str):
             description=f"**{preset.title()}** filter activated!\nSkip to next track to apply.",
             color=discord.Color.purple()
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="favorite", description="Add current song to your favorites")
@@ -1375,11 +1399,11 @@ async def search(interaction: discord.Interaction, query: str):
                 inline=False
             )
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, ephemeral=True)
         
     except Exception as e:
         logger.error(f"Search error: {e}")
-        await interaction.followup.send(f"❌ Search failed: {str(e)}")
+        await interaction.followup.send(f"❌ Search failed: {str(e)}", ephemeral=True)
 
 
 @bot.tree.command(name="setdj", description="Set DJ role (Admin only)")
@@ -1397,7 +1421,7 @@ async def set_dj_role(interaction: discord.Interaction, role: discord.Role):
         description=f"DJ role is now: {role.mention}\nMembers with this role can control music without voting.",
         color=discord.Color.green()
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="247", description="Toggle 24/7 mode (bot won't auto-disconnect)")
@@ -1419,7 +1443,7 @@ async def mode_247(interaction: discord.Interaction):
         description=f"Bot will {'NOT' if new_mode else ''} automatically disconnect from voice channel.",
         color=discord.Color.green() if new_mode else discord.Color.red()
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="history", description="Pokaż ostatnio odtwarzane utwory")
