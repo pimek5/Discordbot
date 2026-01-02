@@ -212,6 +212,39 @@ class MusicBot(commands.Bot):
         return self.queues[guild_id]
 
 
+# Volume Modal
+class VolumeModal(discord.ui.Modal, title="Set Volume"):
+    volume_input = discord.ui.TextInput(
+        label="Volume (0-100)",
+        placeholder="Enter volume between 0 and 100",
+        default="50",
+        min_length=1,
+        max_length=3,
+        required=True
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            volume_value = int(self.volume_input.value)
+            if not 0 <= volume_value <= 100:
+                await interaction.response.send_message("❌ Volume must be between 0 and 100!", ephemeral=True)
+                return
+            
+            if not interaction.guild.voice_client:
+                await interaction.response.send_message("❌ Bot is not in a voice channel!", ephemeral=True)
+                return
+            
+            queue = bot.get_queue(interaction.guild.id)
+            queue.volume = volume_value / 100
+            
+            if interaction.guild.voice_client.source:
+                interaction.guild.voice_client.source.volume = volume_value / 100
+            
+            await interaction.response.send_message(f"🔊 Volume set to {volume_value}%", ephemeral=True)
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
+
+
 # Music Control Buttons View
 class MusicControlView(View):
     def __init__(self, guild_id):
@@ -292,6 +325,19 @@ class MusicControlView(View):
         button.emoji = emoji_map[queue.loop_mode]
         await interaction.response.edit_message(view=self)
         await interaction.followup.send(f"{button.emoji} Loop: {queue.loop_mode.title()}", ephemeral=True)
+    
+    @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.secondary, custom_id="volume_btn")
+    async def volume_button(self, interaction: discord.Interaction, button: Button):
+        if not interaction.guild.voice_client:
+            await interaction.response.send_message("❌ Bot is not in a voice channel!", ephemeral=True)
+            return
+        
+        queue = bot.get_queue(interaction.guild.id)
+        current_volume = int(queue.volume * 100)
+        
+        modal = VolumeModal()
+        modal.volume_input.default = str(current_volume)
+        await interaction.response.send_modal(modal)
 
 
 # Bot initialization
