@@ -1015,17 +1015,9 @@ async def play(interaction: discord.Interaction, url: str):
                 
                 view = MusicControlView(interaction.guild.id)
                 
-                # Usuń starą wiadomość now playing jeśli istnieje
-                if interaction.guild.id in main_control_messages:
-                    try:
-                        old_msg_id = main_control_messages[interaction.guild.id]
-                        old_msg = await interaction.channel.fetch_message(old_msg_id)
-                        await old_msg.delete()
-                    except:
-                        pass
-                
-                msg = await interaction.channel.send(embed=embed, view=view)
-                main_control_messages[interaction.guild.id] = msg.id
+                # Nie zapisuj playlist embed jako main_control_messages
+                # Pozwól by zostało obok now playing od play_next
+                await interaction.channel.send(embed=embed, view=view)
                 return
             
             # Handle Spotify track
@@ -1161,19 +1153,9 @@ async def play(interaction: discord.Interaction, url: str):
             
             view = MusicControlView(interaction.guild.id)
             
-            # Usuń starą wiadomość now playing jeśli istnieje
-            if interaction.guild.id in main_control_messages:
-                try:
-                    old_msg_id = main_control_messages[interaction.guild.id]
-                    old_msg = await interaction.channel.fetch_message(old_msg_id)
-                    await old_msg.delete()
-                except:
-                    pass
-            
-            msg = await interaction.channel.send(embed=embed, view=view)
-            
-            # Track this message as main control message
-            main_control_messages[interaction.guild.id] = msg.id
+            # Nie zapisuj playlist embed jako main_control_messages
+            # Pozwól by zostało obok now playing od play_next
+            await interaction.channel.send(embed=embed, view=view)
             
         else:
             # Single track
