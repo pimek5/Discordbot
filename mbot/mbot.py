@@ -135,32 +135,14 @@ class MusicQueue:
         """Wymieszaj kolejkę"""
         queue_list = list(self.queue)
         random.shuffle(queue_list)
-        self.update_status.start()
+        self.queue = deque(queue_list)
         
-    @tasks.loop(minutes=5)
-    async def update_status(self):
-        """Aktualizuj status bota"""
-        statuses = [
-            ("listening", "muzyki | /play"),
-            ("listening", f"na {len(self.guilds)} serwerach"),
-            ("listening", "Spotify, YouTube, SoundCloud"),
-            ("playing", "🎵 /help aby zobaczyć komendy"),
-        ]
-        activity_type, name = random.choice(statuses)
-        activity = discord.Activity(
-            type=discord.ActivityType.listening if activity_type == "listening" else discord.ActivityType.playing,
-            name=name
-        )
-        await self.change_presence(activity=activity)
-    
-    @update_status.before_loop
-    async def before_update_status(self):
-        await self.wait_until_ready(    del self.queue[index]
+    def remove(self, index):
+        """Usuń utwór z kolejki"""
+        if 0 <= index < len(self.queue):
+            del self.queue[index]
             return True
-        return Fals
-        """Wyczyść kolejkę"""
-        self.queue.clear()
-        self.current = None
+        return False
         
     def is_empty(self):
         """Sprawdź czy kolejka jest pusta"""
@@ -193,12 +175,27 @@ class MusicBot(commands.Bot):
         """Event wywoływany gdy bot jest gotowy"""
         logger.info(f'🎵 MBot zalogowany jako {self.user}')
         logger.info(f'Bot jest na {len(self.guilds)} serwerach')
-        await self.change_presence(
-            activity=discord.Activity(
-                type=discord.ActivityType.listening,
-                name="muzyki | /play"
-            )
+        self.update_status.start()
+        
+    @tasks.loop(minutes=5)
+    async def update_status(self):
+        """Aktualizuj status bota"""
+        statuses = [
+            ("listening", "muzyki | /play"),
+            ("listening", f"na {len(self.guilds)} serwerach"),
+            ("listening", "Spotify, YouTube, SoundCloud"),
+            ("playing", "🎵 /help aby zobaczyć komendy"),
+        ]
+        activity_type, name = random.choice(statuses)
+        activity = discord.Activity(
+            type=discord.ActivityType.listening if activity_type == "listening" else discord.ActivityType.playing,
+            name=name
         )
+        await self.change_presence(activity=activity)
+    
+    @update_status.before_loop
+    async def before_update_status(self):
+        await self.wait_until_ready()
     
     def get_queue(self, guild_id):
         """Pobierz kolejkę dla danego serwera"""
