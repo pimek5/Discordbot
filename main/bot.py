@@ -1132,27 +1132,30 @@ async def before_auto_update_ranks():
 async def update_rank_stats_embed():
     """Update rank statistics embed every 10 minutes"""
     try:
-        from help_commands import HelpCommands
-        
         guild = bot.get_guild(GUILD_ID)
         if not guild:
+            logger.warning("❌ Guild not found for rank stats update")
             return
         
         channel_id = 1169498094308704286  # Rank stats channel
         
         # Get help commands cog to use the method
         help_cog = bot.get_cog('HelpCommands')
-        if help_cog:
-            await help_cog.update_rank_stats_embed(bot, GUILD_ID, channel_id)
+        if not help_cog:
+            logger.warning("❌ HelpCommands cog not found")
+            return
+        
+        await help_cog.update_rank_stats_embed(bot, GUILD_ID, channel_id)
+        logger.debug("✅ Rank stats embed updated")
     
     except Exception as e:
-        logger.error(f"⚠️ Error updating rank stats embed: {e}")
+        logger.error(f"❌ Error updating rank stats embed: {e}", exc_info=True)
 
 @update_rank_stats_embed.before_loop
 async def before_update_rank_stats_embed():
     """Wait for bot to be ready before starting the task"""
     await bot.wait_until_ready()
-    print("✅ Rank stats embed update task started (updates every 10 minutes)")
+    logger.info("✅ Rank stats embed update task started (updates every 10 minutes)")
 
 # ================================
 #        CHANNEL COUNTER

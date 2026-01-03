@@ -959,6 +959,7 @@ class HelpCommands(commands.Cog):
             message_id = db.get_rank_embed(guild_id, channel_id)
             
             if not message_id:
+                logger.debug(f"No rank embed message ID found for channel {channel_id}")
                 return
             
             channel = guild.get_channel(channel_id)
@@ -969,12 +970,13 @@ class HelpCommands(commands.Cog):
             try:
                 message = await channel.fetch_message(message_id)
                 embed = await self.create_rank_stats_embed(guild)
-                await message.edit(embed=embed)
+                view = RankStatsView(self)
+                await message.edit(embed=embed, view=view)
                 logger.info(f"✅ Rank stats embed updated for guild {guild_id}")
             except discord.NotFound:
                 logger.warning(f"Rank stats message {message_id} not found")
         except Exception as e:
-            logger.error(f"❌ Error updating rank stats embed: {e}")
+            logger.error(f"❌ Error updating rank stats embed: {e}", exc_info=True)
 
 
 async def setup(bot: commands.Bot, guild_id: int):
