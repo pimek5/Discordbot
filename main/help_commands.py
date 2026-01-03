@@ -806,7 +806,7 @@ class HelpCommands(commands.Cog):
             inline=False
         )
         
-        embed.set_footer(text="Last updated")
+        embed.set_footer(text="Use `/profilehelp` for setting up your League of Legends Role")
         embed.timestamp = discord.utils.utcnow()
         
         return embed
