@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import logging
+from typing import Optional
 
 from database import get_db
 from permissions import has_admin_permissions
@@ -655,6 +656,197 @@ class HelpCommands(commands.Cog):
         embed.set_footer(text="Use /help for other command categories • /commands for interactive list")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="rankstats", description="Setup rank statistics embed (Admin only)")
+    async def rankstats(self, interaction: discord.Interaction):
+        """Setup rank statistics embed showing member count per rank"""
+        # Check if user has admin permissions
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission or Admin role to use this command!",
+                ephemeral=True
+            )
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Check if we're in the correct channel
+        if interaction.channel_id != 1169498094308704286:
+            await interaction.followup.send(
+                "❌ This command can only be used in the designated rank stats channel!",
+                ephemeral=True
+            )
+            return
+        
+        channel = interaction.channel
+        
+        # Create rank statistics embed
+        embed = await self.create_rank_stats_embed(interaction.guild)
+        
+        # Check if embed already exists
+        db = get_db()
+        existing_message_id = db.get_rank_embed(interaction.guild.id, channel.id)
+        
+        if existing_message_id:
+            try:
+                existing_message = await channel.fetch_message(existing_message_id)
+                await existing_message.edit(embed=embed)
+                await interaction.followup.send(
+                    f"✅ Rank stats embed updated!\n[Jump to message]({existing_message.jump_url})",
+                    ephemeral=True
+                )
+                return
+            except discord.NotFound:
+                pass  # Message was deleted, create new one
+        
+        # Create new rank embed
+        message = await channel.send(embed=embed)
+        
+        # Save to database
+        db.save_rank_embed(interaction.guild.id, channel.id, message.id)
+        
+        await interaction.followup.send(
+            f"✅ Rank stats embed created!\n[Jump to message]({message.jump_url})",
+            ephemeral=True
+        )
+    
+    async def create_rank_stats_embed(self, guild: discord.Guild) -> Optional[discord.Embed]:
+        """Create rank statistics embed"""
+        # Import here to avoid circular imports
+        try:
+            from bot import RANK_ROLES
+        except ImportError:
+            logger.error("❌ Failed to import RANK_ROLES from bot")
+            # Return error embed if import fails
+            embed = discord.Embed(
+                title="❌ Error",
+                description="Failed to load rank statistics",
+                color=0xFF0000
+            )
+            return embed
+        
+        # Rank order from Challenger to Unranked
+        rank_order = [
+            'CHALLENGER',
+            'GRANDMASTER',
+            'MASTER',
+            'DIAMOND',
+            'EMERALD',
+            'PLATINUM',
+            'GOLD',
+            'SILVER',
+            'BRONZE',
+            'IRON',
+            'UNRANKED'
+        ]
+        
+        embed = discord.Embed(
+            title="📊 Rank Statistics",
+            description="Current member distribution by rank",
+            color=0xFFD700
+        )
+        
+        rank_emojis = {
+            'CHALLENGER': '👑',
+            'GRANDMASTER': '💎',
+            'MASTER': '⭐',
+            'DIAMOND': '💠',
+            'EMERALD': '🟢',
+            'PLATINUM': '🔵',
+            'GOLD': '🟡',
+            'SILVER': '⚪',
+            'BRONZE': '🟤',
+            'IRON': '🩶',
+            'UNRANKED': '❓'
+        }
+        
+        total_members = 0
+        rank_data = []
+        
+        # Count members for each rank
+        for rank in rank_order:
+            role_id = RANK_ROLES.get(rank)
+            if not role_id:
+                continue
+            
+            role = guild.get_role(role_id)
+            if not role:
+                continue
+            
+            member_count = len(role.members)
+            total_members += member_count
+            
+            emoji = rank_emojis.get(rank, '')
+            rank_data.append({
+                'rank': rank,
+                'emoji': emoji,
+                'count': member_count,
+                'percentage': 0  # Will be calculated after
+            })
+        
+        # Calculate percentages
+        for item in rank_data:
+            if total_members > 0:
+                item['percentage'] = round((item['count'] / total_members) * 100, 1)
+        
+        # Add fields to embed
+        for item in rank_data:
+            rank_name = item['rank'].replace('_', ' ')
+            emoji = item['emoji']
+            count = item['count']
+            percentage = item['percentage']
+            
+            # Create bar visualization
+            bar_length = int(count / 2) if count > 0 else 0
+            bar = '█' * bar_length
+            
+            value = f"{emoji} **{count}** members ({percentage}%)\n{bar}"
+            
+            embed.add_field(
+                name=rank_name,
+                value=value,
+                inline=False
+            )
+        
+        embed.add_field(
+            name="📈 Total Members",
+            value=f"**{total_members}** members across all ranks",
+            inline=False
+        )
+        
+        embed.set_footer(text="Last updated")
+        embed.timestamp = discord.utils.utcnow()
+        
+        return embed
+    
+    async def update_rank_stats_embed(self, bot: commands.Bot, guild_id: int, channel_id: int):
+        """Update rank statistics embed"""
+        try:
+            guild = bot.get_guild(guild_id)
+            if not guild:
+                logger.warning(f"Guild {guild_id} not found")
+                return
+            
+            db = get_db()
+            message_id = db.get_rank_embed(guild_id, channel_id)
+            
+            if not message_id:
+                return
+            
+            channel = guild.get_channel(channel_id)
+            if not channel:
+                logger.warning(f"Channel {channel_id} not found in guild {guild_id}")
+                return
+            
+            try:
+                message = await channel.fetch_message(message_id)
+                embed = await self.create_rank_stats_embed(guild)
+                await message.edit(embed=embed)
+                logger.info(f"✅ Rank stats embed updated for guild {guild_id}")
+            except discord.NotFound:
+                logger.warning(f"Rank stats message {message_id} not found")
+        except Exception as e:
+            logger.error(f"❌ Error updating rank stats embed: {e}")
 
 
 async def setup(bot: commands.Bot, guild_id: int):

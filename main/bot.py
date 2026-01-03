@@ -664,6 +664,11 @@ class MyBot(commands.Bot):
         if not auto_update_ranks.is_running():
             auto_update_ranks.start()
             print("🔄 Started automatic rank/region update task (runs every 2 hours)")
+        
+        # Start rank stats embed update task
+        if not update_rank_stats_embed.is_running():
+            update_rank_stats_embed.start()
+            print("📊 Started rank stats embed update task (updates every 10 minutes)")
     
     async def on_member_join(self, member: discord.Member):
         """Automatically assign UNRANKED role to new members"""
@@ -1119,6 +1124,35 @@ async def before_auto_update_ranks():
     """Wait for bot to be ready before starting the task"""
     await bot.wait_until_ready()
     print("✅ Auto rank update task will start in 2 hours")
+
+# ================================
+#   AUTOMATIC RANK STATS EMBED UPDATE
+# ================================
+@tasks.loop(minutes=10)
+async def update_rank_stats_embed():
+    """Update rank statistics embed every 10 minutes"""
+    try:
+        from help_commands import HelpCommands
+        
+        guild = bot.get_guild(GUILD_ID)
+        if not guild:
+            return
+        
+        channel_id = 1169498094308704286  # Rank stats channel
+        
+        # Get help commands cog to use the method
+        help_cog = bot.get_cog('HelpCommands')
+        if help_cog:
+            await help_cog.update_rank_stats_embed(bot, GUILD_ID, channel_id)
+    
+    except Exception as e:
+        logger.error(f"⚠️ Error updating rank stats embed: {e}")
+
+@update_rank_stats_embed.before_loop
+async def before_update_rank_stats_embed():
+    """Wait for bot to be ready before starting the task"""
+    await bot.wait_until_ready()
+    print("✅ Rank stats embed update task started (updates every 10 minutes)")
 
 # ================================
 #        CHANNEL COUNTER

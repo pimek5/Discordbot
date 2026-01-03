@@ -139,6 +139,17 @@ CREATE TABLE IF NOT EXISTS help_embed (
     UNIQUE(guild_id, channel_id)
 );
 
+-- Rank statistics embed (displays member count per rank)
+CREATE TABLE IF NOT EXISTS rank_embed (
+    id SERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    message_id BIGINT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    last_updated TIMESTAMP DEFAULT NOW(),
+    UNIQUE(guild_id, channel_id)
+);
+
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_snowflake ON users(snowflake);
 CREATE INDEX IF NOT EXISTS idx_league_accounts_user ON league_accounts(user_id);
@@ -154,6 +165,7 @@ CREATE INDEX IF NOT EXISTS idx_voting_sessions_status ON voting_sessions(status)
 CREATE INDEX IF NOT EXISTS idx_voting_votes_session ON voting_votes(session_id);
 CREATE INDEX IF NOT EXISTS idx_voting_votes_user ON voting_votes(user_id);
 CREATE INDEX IF NOT EXISTS idx_help_embed_guild ON help_embed(guild_id);
+CREATE INDEX IF NOT EXISTS idx_rank_embed_guild ON rank_embed(guild_id);
 
 -- ================================
 --    BAN SYSTEM TABLES

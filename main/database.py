@@ -914,6 +914,37 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    # ==================== RANK EMBED OPERATIONS ====================
+    
+    def save_rank_embed(self, guild_id: int, channel_id: int, message_id: int):
+        """Save rank embed message ID"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO rank_embed (guild_id, channel_id, message_id)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (guild_id, channel_id) 
+                    DO UPDATE SET message_id = EXCLUDED.message_id, last_updated = NOW()
+                """, (guild_id, channel_id, message_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def get_rank_embed(self, guild_id: int, channel_id: int) -> Optional[int]:
+        """Get rank embed message ID"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT message_id FROM rank_embed
+                    WHERE guild_id = %s AND channel_id = %s
+                """, (guild_id, channel_id))
+                result = cur.fetchone()
+                return result[0] if result else None
+        finally:
+            self.return_connection(conn)
+    
     # ==================== BAN SYSTEM ====================
     
     def add_ban(self, user_id: int, guild_id: int, moderator_id: int, reason: str, 
