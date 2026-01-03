@@ -11,6 +11,7 @@ from typing import Optional
 
 from database import get_db
 from permissions import has_admin_permissions
+from emoji_dict import get_rank_emoji
 
 logger = logging.getLogger('help_commands')
 
@@ -746,20 +747,6 @@ class HelpCommands(commands.Cog):
             color=0xFFD700
         )
         
-        rank_emojis = {
-            'CHALLENGER': '👑',
-            'GRANDMASTER': '💎',
-            'MASTER': '⭐',
-            'DIAMOND': '💠',
-            'EMERALD': '🟢',
-            'PLATINUM': '🔵',
-            'GOLD': '🟡',
-            'SILVER': '⚪',
-            'BRONZE': '🟤',
-            'IRON': '🩶',
-            'UNRANKED': '❓'
-        }
-        
         total_members = 0
         rank_data = []
         
@@ -776,7 +763,11 @@ class HelpCommands(commands.Cog):
             member_count = len(role.members)
             total_members += member_count
             
-            emoji = rank_emojis.get(rank, '')
+            # Get rank emoji from emoji_dict
+            emoji = get_rank_emoji(rank)
+            if not emoji:
+                emoji = '❓'  # Fallback if emoji not found
+            
             rank_data.append({
                 'rank': rank,
                 'emoji': emoji,
