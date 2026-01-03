@@ -1239,37 +1239,39 @@ async def play(interaction: discord.Interaction, url: str):
             # Log detailed playlist info
             logger.info(f"{playlist_type_info['icon']} Loading {playlist_type_info['name']}: '{playlist_title}' | ID: {playlist_id} | Tracks: {len(entries)}/{original_count} | Uploader: {playlist_uploader} | Requested by: {interaction.user.name}")
             
-            # Send initial message with Mix warning if applicable
+            # Send initial message
             uploader_line = f"👤 By: {playlist_uploader}\n" if playlist_uploader != 'Unknown' else ''
             embed = discord.Embed(
                 title=f"{playlist_type_info['icon']} Loading {playlist_type_info['name']}...",
-                description=f"**{playlist_title}**\n{uploader_line}Adding {len(entries)} tracks to queue{limited_msg}",
+                description=f"**{playlist_title}**\n{uploader_line}Preparing {len(entries)} tracks{limited_msg}",
                 color=discord.Color.blue(),
                 timestamp=datetime.now()
             )
             
-            # Special warning for YouTube Mix (personalized/dynamic content)
+            # Special warning for YouTube Mix
             if playlist_type_info['type'] == 'mix':
-                embed.description += "\n\n⚠️ **Note:** YouTube Mixes are personalized and dynamic. The tracks loaded may differ from what you see on YouTube, as Mixes are generated individually per user/session."
+                embed.description += "\n\n⚠️ **Note:** YouTube Mixes are personalized and dynamic."
             
-            embed.set_footer(text=f"{playlist_type_info['name']} • This may take a moment...")
+            embed.set_footer(text=f"{playlist_type_info['name']} • Loading first 2 tracks...")
             await interaction.followup.send(embed=embed)
             
-            # Add tracks to queue
+            # NEW APPROACH: Load only first 2 tracks immediately, rest as lazy-loaded placeholders
             added_count = 0
-            for entry in entries:
+            
+            # Load first 2 tracks fully
+            for i, entry in enumerate(entries[:2]):
                 try:
-                    # Get the video URL
                     video_url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
-                    
-                    # Create player
                     player = await YTDLSource.from_url(video_url, loop=bot.loop, stream=False)
                     player.requester = interaction.user
                     song = Song(player, interaction.user)
                     
-                    # If nothing is playing and this is the first track, start playing
                     if not interaction.guild.voice_client.is_playing() and added_count == 0:
                         queue.current = song
+                        
+                        # Apply volume
+                        if hasattr(player, 'volume'):
+                            player.volume = queue.volume
                         
                         # Log to database
                         db.log_play(
@@ -1288,17 +1290,35 @@ async def play(interaction: discord.Interaction, url: str):
                             )
                         )
                     else:
-                        # Add to queue
                         queue.add(song)
                     
                     added_count += 1
                 except Exception as e:
-                    logger.error(f"Error loading track from playlist: {e}")
+                    logger.error(f"Error loading track {i+1}: {e}")
+                    continue
+            
+            # Add remaining tracks as lazy-loaded placeholders (will be loaded when needed)
+            for i, entry in enumerate(entries[2:], start=2):
+                try:
+                    video_url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
+                    title = entry.get('title', f'Track {i+1}')
+                    
+                    # Create lazy-loaded song (no source yet, just metadata)
+                    song = Song(None, interaction.user, query=video_url)
+                    song.title = title
+                    song.url = video_url
+                    song.duration = entry.get('duration', 0)
+                    song.thumbnail = entry.get('thumbnail', None)
+                    
+                    queue.add(song)
+                    added_count += 1
+                except Exception as e:
+                    logger.error(f"Error adding lazy track {i+1}: {e}")
                     continue
             
             # Enhanced playlist completion embed
             embed = discord.Embed(
-                title=f"✅ {playlist_type_info['name']} Loaded",
+                title=f"✅ {playlist_type_info['name']} Added",
                 color=discord.Color.from_rgb(255, 0, 0) if 'youtube' in playlist_type_info['type'] else discord.Color.green(),
                 timestamp=datetime.now()
             )
@@ -1309,9 +1329,9 @@ async def play(interaction: discord.Interaction, url: str):
             if playlist_uploader != 'Unknown':
                 embed.description += f"👤 **Creator:** {playlist_uploader}\n"
             
-            # Success stats
-            success_rate = (added_count / len(entries) * 100) if entries else 0
-            embed.description += f"✅ **Loaded:** {added_count}/{len(entries)} tracks ({success_rate:.0f}%)\n"
+            # Success stats with lookahead info
+            embed.description += f"✅ **Added:** {added_count}/{len(entries)} tracks\n"
+            embed.description += f"🎵 **Loaded Now:** First 2 tracks (rest load automatically)\n"
             
             if added_count < len(entries):
                 failed = len(entries) - added_count
@@ -1320,13 +1340,13 @@ async def play(interaction: discord.Interaction, url: str):
             if original_count > MAX_PLAYLIST:
                 embed.description += f"ℹ️ **Note:** Playlist truncated from {original_count} tracks\n"
             
-            # Calculate and display total duration
-            total_duration = sum(song.duration or 0 for song in queue.queue)
+            # Calculate and display total duration (estimated)
+            total_duration = sum(entry.get('duration', 0) for entry in entries)
             if total_duration > 0:
                 hours, remainder = divmod(total_duration, 3600)
                 mins, secs = divmod(remainder, 60)
                 time_str = f"{int(hours)}h {int(mins)}m" if hours > 0 else f"{int(mins)}m {int(secs)}s"
-                embed.description += f"⏱️ **Total Duration:** `{time_str}`\n"
+                embed.description += f"⏱️ **Est. Duration:** `{time_str}`\n"
             
             embed.description += f"🎧 **Requested by:** {interaction.user.mention}\n"
             embed.description += f"📈 **Queue Size:** {len(queue.queue)} track{'s' if len(queue.queue) != 1 else ''}\n\n"
@@ -1517,6 +1537,29 @@ async def play_next(interaction: discord.Interaction):
                 # Skip to next
                 await play_next(interaction)
                 return
+        
+        # LOOKAHEAD BUFFERING: Load next 2 tracks in background if they're lazy-loaded
+        # This happens when queue has 2+ items left
+        if len(queue.queue) >= 2:
+            # Check next 2 items in queue
+            for i in range(min(2, len(queue.queue))):
+                next_song = list(queue.queue)[i]
+                if next_song.query and not next_song.source:
+                    # Load in background (fire and forget)
+                    async def load_track_background(track):
+                        try:
+                            player = await YTDLSource.from_url(track.query, loop=bot.loop, stream=False)
+                            track.source = player
+                            track.title = player.title
+                            track.url = player.url
+                            track.duration = player.duration
+                            track.thumbnail = player.thumbnail
+                            logger.info(f"✅ Pre-loaded: {track.title}")
+                        except Exception as e:
+                            logger.error(f"❌ Failed to pre-load track: {e}")
+                    
+                    # Start background loading
+                    asyncio.create_task(load_track_background(next_song))
         
         # Log to database
         db.log_play(

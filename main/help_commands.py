@@ -534,6 +534,127 @@ class HelpCommands(commands.Cog):
             f"✅ Help embed created!\n[Jump to message]({message.jump_url})",
             ephemeral=True
         )
+    
+    @app_commands.command(name="profilehelp", description="Show all profile-related commands")
+    async def profilehelp(self, interaction: discord.Interaction):
+        """Show all profile-related commands"""
+        embed = discord.Embed(
+            title="👤 Profile Commands Help",
+            description="All commands related to managing your League of Legends profile",
+            color=0x1F8EFA
+        )
+        
+        embed.add_field(
+            name="🔗 Account Linking",
+            value="Link and manage your Riot accounts:",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/link",
+            value="Link your Riot account to Discord\n`/link riot_id:Name#TAG region:eune`\n• Requires account name and region\n• Verify with code sent to account",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/verifyacc",
+            value="Complete account verification and get roles\n`/verifyacc`\n• Verify pending accounts\n• Assign rank roles automatically",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/setmain",
+            value="Set your main Riot account\n`/setmain`\n• Choose which account to display in profile\n• Default account for commands",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/unlink",
+            value="Unlink your Riot account from Discord\n`/unlink`\n• Remove all linked accounts\n• Delete related data",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/accounts",
+            value="Manage visibility of linked accounts\n`/accounts`\n• Show/hide individual accounts\n• Choose which count towards stats",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="👁️ Profile Viewing",
+            value="View and analyze player profiles:",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/profile",
+            value="View comprehensive player profile\n`/profile` or `/profile user:@someone`\n• Top champions and mastery\n• Ranked stats and progress\n• Match history analysis\n• Playstyle breakdown",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/matches",
+            value="View recent match history\n`/matches` or `/matches user:@someone`\n• Recent games\n• KDA and performance\n• Items built and champions played",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📊 Stats & Analytics",
+            value="Analyze performance metrics:",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/lp",
+            value="LP gains/losses with analytics\n`/lp` or `/lp user:@someone timeframe:today queue:all`\n• Timeframes: today, yesterday, 3days, week, 7days, month\n• Queue: all, solo, flex\n• LP progression graph\n• Champion pool analysis\n• Performance metrics",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/decay",
+            value="Check LP decay status (Diamond+)\n`/decay` or `/decay user:@someone`\n• Shows days until decay\n• Accurate banking calculation\n• Updates account names automatically",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔒 Admin Only",
+            value="Administrator commands for account management:",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/forcelink",
+            value="Force link account without verification\n`/forcelink user:@someone riot_id:Name#TAG region:eune`\n• Owner only\n• Bypass verification",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/forceunlink",
+            value="Force unlink account from user\n`/forceunlink user:@someone`\n• Owner only",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/batchforcelink",
+            value="Link multiple accounts at once\n`/batchforcelink`\n• Staff only\n• Bulk account linking",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="💡 Quick Tips",
+            value=(
+                "• Use `/profile` without arguments to view your own profile\n"
+                "• `/lp timeframe:week` shows weekly LP trends\n"
+                "• Hidden accounts in `/accounts` don't affect stats\n"
+                "• `/matches` shows last 20 games by default\n"
+                "• Use `/rankupdate` to refresh Discord rank roles"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Use /help for other command categories • /commands for interactive list")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot, guild_id: int):
