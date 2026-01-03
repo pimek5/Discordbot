@@ -796,11 +796,12 @@ class HelpCommands(commands.Cog):
             count = item['count']
             percentage = item['percentage']
             
-            # Create bar visualization
-            bar_length = int(count / 2) if count > 0 else 0
-            bar = '█' * bar_length
+            # Create bar visualization (max 20 characters to avoid field length limit)
+            max_bar_length = 20
+            bar_length = min(int(count / max(1, total_members / max_bar_length)), max_bar_length) if count > 0 else 0
+            bar = '█' * bar_length if bar_length > 0 else '░'
             
-            value = f"{emoji} **{count}** members ({percentage}%)\n{bar}"
+            value = f"{emoji} **{count}** members\n{percentage}% {bar}"
             
             embed.add_field(
                 name=rank_name,
