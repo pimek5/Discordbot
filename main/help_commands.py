@@ -436,6 +436,136 @@ def create_main_help_embed() -> discord.Embed:
     return embed
 
 
+class RankStatsView(discord.ui.View):
+    """View for rank stats embed with Setup button"""
+    
+    def __init__(self, help_commands_cog: 'HelpCommands'):
+        super().__init__(timeout=None)
+        self.help_commands_cog = help_commands_cog
+    
+    @discord.ui.button(label="Setup", style=discord.ButtonStyle.primary, emoji="🔧", custom_id="rank_stats_setup", row=0)
+    async def setup_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Show profile help when setup button is clicked"""
+        # Use the same profilehelp function logic
+        embed = discord.Embed(
+            title="👤 Profile Commands Help",
+            description="All commands related to managing your League of Legends profile",
+            color=0x1F8EFA
+        )
+        
+        embed.add_field(
+            name="🔗 Account Linking",
+            value="Link and manage your Riot accounts:",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/link",
+            value="Link your Riot account to Discord\n`/link riot_id:Name#TAG region:eune`\n• Requires account name and region\n• Verify with code sent to account",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/verifyacc",
+            value="Complete account verification and get roles\n`/verifyacc`\n• Verify pending accounts\n• Assign rank roles automatically",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/setmain",
+            value="Set your main Riot account\n`/setmain`\n• Choose which account to display in profile\n• Default account for commands",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/unlink",
+            value="Unlink your Riot account from Discord\n`/unlink`\n• Remove all linked accounts\n• Delete related data",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/accounts",
+            value="Manage visibility of linked accounts\n`/accounts`\n• Show/hide individual accounts\n• Choose which count towards stats",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="👁️ Profile Viewing",
+            value="View and analyze player profiles:",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/profile",
+            value="View comprehensive player profile\n`/profile` or `/profile user:@someone`\n• Top champions and mastery\n• Ranked stats and progress\n• Match history analysis\n• Playstyle breakdown",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/matches",
+            value="View recent match history\n`/matches` or `/matches user:@someone`\n• Recent games\n• KDA and performance\n• Items built and champions played",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📊 Stats & Analytics",
+            value="Analyze performance metrics:",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/lp",
+            value="LP gains/losses with analytics\n`/lp` or `/lp user:@someone timeframe:today queue:all`\n• Timeframes: today, yesterday, 3days, week, 7days, month\n• Queue: all, solo, flex\n• LP progression graph\n• Champion pool analysis\n• Performance metrics",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/decay",
+            value="Check LP decay status (Diamond+)\n`/decay` or `/decay user:@someone`\n• Shows days until decay\n• Accurate banking calculation\n• Updates account names automatically",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔒 Admin Only",
+            value="Administrator commands for account management:",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/forcelink",
+            value="Force link account without verification\n`/forcelink user:@someone riot_id:Name#TAG region:eune`\n• Owner only\n• Bypass verification",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/forceunlink",
+            value="Force unlink account from user\n`/forceunlink user:@someone`\n• Owner only",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="/batchforcelink",
+            value="Link multiple accounts at once\n`/batchforcelink`\n• Staff only\n• Bulk account linking",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="💡 Quick Tips",
+            value=(
+                "• Use `/profile` without arguments to view your own profile\n"
+                "• `/lp timeframe:week` shows weekly LP trends\n"
+                "• Hidden accounts in `/accounts` don't affect stats\n"
+                "• `/matches` shows last 20 games by default\n"
+                "• Use `/rankupdate` to refresh Discord rank roles"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Use /help for other command categories • /commands for interactive list")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 class HelpCommands(commands.Cog):
     def __init__(self, bot: commands.Bot, guild_id: int):
         self.bot = bot
@@ -443,9 +573,13 @@ class HelpCommands(commands.Cog):
     
     async def cog_load(self):
         """Called when the cog is loaded"""
-        # Register persistent view
+        # Register persistent views
         self.bot.add_view(HelpView())
         logger.info("✅ Help persistent view registered")
+        
+        # Register rank stats view
+        self.bot.add_view(RankStatsView(self))
+        logger.info("✅ Rank stats persistent view registered")
         
         # Try to restore help embed
         await self.restore_help_embed()
@@ -691,7 +825,8 @@ class HelpCommands(commands.Cog):
         if existing_message_id:
             try:
                 existing_message = await channel.fetch_message(existing_message_id)
-                await existing_message.edit(embed=embed)
+                view = RankStatsView(self)
+                await existing_message.edit(embed=embed, view=view)
                 await interaction.followup.send(
                     f"✅ Rank stats embed updated!\n[Jump to message]({existing_message.jump_url})",
                     ephemeral=True
@@ -700,8 +835,9 @@ class HelpCommands(commands.Cog):
             except discord.NotFound:
                 pass  # Message was deleted, create new one
         
-        # Create new rank embed
-        message = await channel.send(embed=embed)
+        # Create new rank embed with view
+        view = RankStatsView(self)
+        message = await channel.send(embed=embed, view=view)
         
         # Save to database
         db.save_rank_embed(interaction.guild.id, channel.id, message.id)
