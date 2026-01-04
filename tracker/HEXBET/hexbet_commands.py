@@ -741,9 +741,13 @@ class Hexbet(commands.Cog):
         blue_tier_name = tier_from_score(blue_avg_tier)
         red_tier_name = tier_from_score(red_avg_tier)
         
-        desc = f"**Region:** {platform.upper()}"
+        # Build description
         if featured_player:
-            desc += f" • **Featured:** {featured_player}"
+            # Priority game - featured player label only
+            desc = f"🎯 **FEATURED GAME: {featured_player}**"
+        else:
+            # Regular game
+            desc = f"**Region:** {platform.upper()}"
         
         # Calculate actual game duration from PostgreSQL timestamp
         if game_start_at:
@@ -777,9 +781,9 @@ class Hexbet(commands.Cog):
             desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
         
         embed = discord.Embed(
-            title=f"⚔️ HEXBET Match #{game_id}",
+            title=f"⚔️ HEXBET Match #{game_id}" + (f" - {featured_player}" if featured_player else ""),
             description=desc,
-            color=0x3498DB
+            color=0xFF6B6B if featured_player else 0x3498DB
         )
         
         # Team composition fields
