@@ -106,6 +106,10 @@ class RiotAPI:
         self.headers = {
             'X-Riot-Token': api_key
         }
+        if api_key:
+            logger.info(f"🔑 API Key loaded: {api_key[:10]}...{api_key[-4:]} (len={len(api_key)})")
+        else:
+            logger.error("❌ No API key provided!")
 
     async def get_featured_games(self, platform: str = 'euw1', retries: int = 3) -> Optional[Dict]:
         """Get featured games (public matches) from spectator/v5 featured-games"""
