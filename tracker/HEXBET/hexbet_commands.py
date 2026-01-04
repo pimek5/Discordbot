@@ -675,8 +675,8 @@ class Hexbet(commands.Cog):
         # Champion diversity score
         comp_score = len({p.get('champ_name') for p in players}) / 10
         
-        # Weighted sum: rank (most important), LP (significant), WR (moderate), comp (minor)
-        return (rank_score * 5.0) + (lp_score * 2.0) + (wr_score * 1.0) + (comp_score * 0.5)
+        # Weighted sum: rank (most important), WR (moderate), LP (minor), comp (minor)
+        return (rank_score * 5.0) + (wr_score * 1.0) + (lp_score * 0.5) + (comp_score * 0.5)
 
     def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None, game_start_at: Optional[str] = None) -> discord.Embed:
         # Calculate team statistics (only from ranked players, not streamer mode)
