@@ -768,9 +768,8 @@ class RiotAPI:
                             logger.warning(f"⚠️ Rate limit hit, retrying...")
                             await asyncio.sleep(1)
                             continue
-                        elif response.status in [400, 403, 403]:
-                            # 400/403 = Normal errors (bad request, invalid token, timeout) - log at debug level
-                            logger.debug(f"⏭️ Spectator API {response.status} (expected for inactive players)")
+                        elif response.status in [400, 403]:
+                            # 400/403 = Normal errors (bad request, invalid token, timeout) - silent return
                             return None
                         else:
                             text = await response.text()
