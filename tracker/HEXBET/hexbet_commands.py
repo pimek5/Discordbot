@@ -706,8 +706,8 @@ class Hexbet(commands.Cog):
                             inline=False
                         )
                     
-                    await notif_channel.send(embed=notif_embed)
-                    logger.info(f"📬 Sent bet notifications for match {game_id}")
+                    await notif_channel.send(embed=notif_embed, delete_after=180)  # Auto-delete after 3 minutes
+                    logger.info(f"📬 Sent bet notifications for match {game_id} (auto-delete in 3min)")
         
         except discord.NotFound:
             logger.warning(f"Match message {message_id} not found (deleted)")
