@@ -1076,14 +1076,14 @@ class BetView(discord.ui.View):
             }
             region = region_map.get(self.platform.lower(), 'euw')
             
-            # Collect all player names (use gameName from riotId or summonerName)
+            # Collect all player names with taglines (gameName-tagLine format)
             all_players = self.blue_players + self.red_players
             names = []
             for p in all_players:
                 riot_id = p.get('riotId', '')
                 if riot_id and '#' in riot_id:
-                    # Extract gameName from riotId (before #)
-                    name = riot_id.split('#')[0]
+                    # Use full riotId but replace # with - for OP.GG format
+                    name = riot_id.replace('#', '-')
                 else:
                     name = p.get('summonerName', '')
                 if name:
@@ -1093,9 +1093,11 @@ class BetView(discord.ui.View):
                 await interaction.response.send_message("❌ No player names found", ephemeral=True)
                 return
             
-            # Create multisearch URL
+            # Create multisearch URL with URL encoding
+            import urllib.parse
             summoners_param = ','.join(names)
-            url = f"https://www.op.gg/multisearch/{region}?summoners={summoners_param}"
+            summoners_encoded = urllib.parse.quote(summoners_param)
+            url = f"https://www.op.gg/multisearch/{region}?summoners={summoners_encoded}"
             
             embed = discord.Embed(
                 title="🔗 OP.GG Multisearch",
