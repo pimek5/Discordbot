@@ -552,11 +552,104 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-# Global database instance
-_tracker_db = None
+    def get_user_betting_stats(self, user_id: int) -> Optional[Dict]:
+        """Get comprehensive betting stats for a user"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Get total bets and wagered amount
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total_bets,
+                        COALESCE(SUM(amount), 0) as total_wagered
+                    FROM hexbet_bets
+                    WHERE user_id = %s AND settled = TRUE
+                """, (user_id,))
+                row = cur.fetchone()
+                total_bets = row[0] if row else 0
+                total_wagered = row[1] if row else 0
+                
+                # Get wins and payouts
+                cur.execute("""
+                    SELECT
+                        COUNT(*) as wins,
+                        COALESCE(SUM(payout), 0) as total_payout
+                    FROM hexbet_bets
+                    WHERE user_id = %s AND settled = TRUE AND won = TRUE
+                """, (user_id,))
+                row = cur.fetchone()
+                wins = row[0] if row else 0
+                total_payout = row[1] if row else 0
+                
+                losses = total_bets - wins
+                win_rate = (wins / total_bets * 100) if total_bets > 0 else 0
+                roi = ((total_payout - total_wagered) / total_wagered * 100) if total_wagered > 0 else 0
+                
+                # Get blue side stats
+                cur.execute("""
+                    SELECT
+                        COUNT(*) as blue_bets,
+                        COUNT(*) FILTER (WHERE won = TRUE) as blue_wins
+                    FROM hexbet_bets
+                    WHERE user_id = %s AND side = 'blue' AND settled = TRUE
+                """, (user_id,))
+                row = cur.fetchone()
+                blue_total = row[0] if row else 0
+                blue_wins = row[1] if row else 0
+                blue_wr = (blue_wins / blue_total * 100) if blue_total > 0 else 0
+                
+                # Get red side stats
+                cur.execute("""
+                    SELECT
+                        COUNT(*) as red_bets,
+                        COUNT(*) FILTER (WHERE won = TRUE) as red_wins
+                    FROM hexbet_bets
+                    WHERE user_id = %s AND side = 'red' AND settled = TRUE
+                """, (user_id,))
+                row = cur.fetchone()
+                red_total = row[0] if row else 0
+                red_wins = row[1] if row else 0
+                red_wr = (red_wins / red_total * 100) if red_total > 0 else 0
+                
+                # Get current streak (wins or losses)
+                cur.execute("""
+                    SELECT won FROM hexbet_bets
+                    WHERE user_id = %s AND settled = TRUE
+                    ORDER BY updated_at DESC
+                    LIMIT 20
+                """, (user_id,))
+                recent_bets = [row[0] for row in cur.fetchall()]
+                
+                streak = 0
+                streak_type = "none"
+                if recent_bets:
+                    streak_type = "W" if recent_bets[0] else "L"
+                    for bet_result in recent_bets:
+                        if (bet_result and streak_type == "W") or (not bet_result and streak_type == "L"):
+                            streak += 1
+                        else:
+                            break
+                
+                return {
+                    'total_bets': total_bets,
+                    'total_wagered': total_wagered,
+                    'wins': wins,
+                    'losses': losses,
+                    'win_rate': win_rate,
+                    'total_payout': total_payout,
+                    'roi': roi,
+                    'blue_total': blue_total,
+                    'blue_wins': blue_wins,
+                    'blue_wr': blue_wr,
+                    'red_total': red_total,
+                    'red_wins': red_wins,
+                    'red_wr': red_wr,
+                    'streak': streak,
+                    'streak_type': streak_type
+                }
+        finally:
+            self.return_connection(conn)
 
-def get_tracker_db():
-    """Get or create the global tracker database instance"""
     global _tracker_db
     if _tracker_db is None:
         _tracker_db = TrackerDatabase()

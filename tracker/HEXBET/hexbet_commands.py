@@ -1472,6 +1472,95 @@ class BetView(discord.ui.View):
             logger.error(f"Error checking status: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxstats", description="View your betting statistics")
+    async def betting_stats(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
+        """View betting statistics for you or another user"""
+        target_user = user or interaction.user
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            stats = self.db.get_user_betting_stats(target_user.id)
+            
+            if not stats or stats['total_bets'] == 0:
+                embed = discord.Embed(
+                    title=f"📊 {target_user.name}'s Betting Stats",
+                    description="No betting history yet",
+                    color=0x95A5A6
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            # Determine best side
+            best_side = "🔵 BLUE" if stats['blue_wr'] >= stats['red_wr'] else "🔴 RED"
+            
+            # Streak emoji
+            streak_emoji = "🔥" if stats['streak_type'] == "W" else "❄️" if stats['streak_type'] == "L" else "⏸️"
+            streak_text = f"{streak_emoji} {stats['streak_type']}{stats['streak']}" if stats['streak'] > 0 else f"{streak_emoji} No streak"
+            
+            # Color based on ROI
+            if stats['roi'] > 0:
+                color = 0x2ECC71  # Green
+                roi_emoji = "📈"
+            elif stats['roi'] < 0:
+                color = 0xE74C3C  # Red
+                roi_emoji = "📉"
+            else:
+                color = 0x95A5A6  # Gray
+                roi_emoji = "➡️"
+            
+            embed = discord.Embed(
+                title=f"📊 {target_user.name}'s Betting Stats",
+                color=color,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Overall stats
+            embed.add_field(
+                name="📈 Overall",
+                value=(
+                    f"**Total Bets:** {stats['total_bets']}\n"
+                    f"**Record:** {stats['wins']}W - {stats['losses']}L\n"
+                    f"**Win Rate:** {stats['win_rate']:.1f}%"
+                ),
+                inline=True
+            )
+            
+            # Financial stats
+            embed.add_field(
+                name="💰 Financial",
+                value=(
+                    f"**Wagered:** {stats['total_wagered']}\n"
+                    f"**Won:** {stats['total_payout']}\n"
+                    f"{roi_emoji} **ROI:** {stats['roi']:+.1f}%"
+                ),
+                inline=True
+            )
+            
+            # Side statistics
+            embed.add_field(
+                name="🎯 By Side",
+                value=(
+                    f"🔵 **BLUE:** {stats['blue_wins']}/{stats['blue_total']} ({stats['blue_wr']:.1f}%)\n"
+                    f"🔴 **RED:** {stats['red_wins']}/{stats['red_total']} ({stats['red_wr']:.1f}%)\n"
+                    f"**Best:** {best_side}"
+                ),
+                inline=False
+            )
+            
+            # Streak
+            embed.add_field(
+                name="🔥 Current Streak",
+                value=streak_text,
+                inline=False
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error getting betting stats: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="hxforce", description="Force close all open matches (ADMIN)")
     async def force_close_matches(self, interaction: discord.Interaction):
         """Force close all open matches and settled bets"""
