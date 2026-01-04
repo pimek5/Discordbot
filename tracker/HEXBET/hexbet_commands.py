@@ -203,14 +203,24 @@ class Hexbet(commands.Cog):
             open_count = self.db.count_open_matches()
             logger.info(f"📋 Featured task: {open_count}/3 matches active")
             
-            # Post games until we have 3
-            while open_count < 3:
+            # Post games until we have 3, but max 2 per task to avoid rate limiting
+            posts_this_run = 0
+            max_posts = 2
+            
+            while open_count < 3 and posts_this_run < max_posts:
+                logger.info(f"📝 Posting new game ({posts_this_run + 1}/{max_posts})...")
                 await self.post_random_featured_game()
                 open_count = self.db.count_open_matches()
+                posts_this_run += 1
+                
                 if open_count >= 3:
+                    logger.info("✅ Reached 3 active matches")
                     break
-                # Small delay between posts
-                await asyncio.sleep(2)
+                
+                # Delay between posts to avoid rate limit
+                if posts_this_run < max_posts and open_count < 3:
+                    logger.info("⏳ Rate limit protection: waiting 3 seconds...")
+                    await asyncio.sleep(3)
         except Exception as e:
             logger.error(f"❌ Error in featured_task: {e}", exc_info=True)
 
@@ -308,7 +318,7 @@ class Hexbet(commands.Cog):
             region = region_map.get(platform, 'euw')
             
             # Get random PUUIDs from high-elo pool
-            puuids = self.db.get_random_high_elo_puuids(region, limit=100)
+            puuids = self.db.get_random_high_elo_puuids(region, limit=50)
             if not puuids:
                 logger.warning(f"⚠️ No PUUIDs in pool for {region}")
                 return
@@ -321,6 +331,9 @@ class Hexbet(commands.Cog):
                 games_checked += 1
                 self.db.update_high_elo_last_checked(puuid)
                 game_data = await self.riot_api.get_active_game(puuid, region)
+                
+                # Anti rate-limit: delay between API calls
+                await asyncio.sleep(0.2)
                 
                 if game_data:
                     game_id = game_data.get('gameId')
