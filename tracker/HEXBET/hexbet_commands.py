@@ -111,7 +111,6 @@ class Hexbet(commands.Cog):
         self.settle_task.start()
         self.cleanup_task.start()
         self.check_embed_task.start()
-        self.auto_refresh_task.start()  # Auto-refresh embeds every 1 minute
         self.live_score_update_task.start()  # Update live odds every 5 minutes
         self.bot.loop.create_task(self._ensure_champions())
         self.bot.loop.create_task(self._restore_persistent_views())
@@ -227,7 +226,6 @@ class Hexbet(commands.Cog):
         self.settle_task.cancel()
         self.cleanup_task.cancel()
         self.check_embed_task.cancel()
-        self.auto_refresh_task.cancel()
         self.live_score_update_task.cancel()
 
     @tasks.loop(minutes=FEATURED_INTERVAL)
@@ -354,8 +352,8 @@ class Hexbet(commands.Cog):
     async def before_cleanup(self):
         await self.bot.wait_until_ready()
 
-    @auto_refresh_task.before_loop
-    async def before_auto_refresh(self):
+    @live_score_update_task.before_loop
+    async def before_live_score_update(self):
         await self.bot.wait_until_ready()
 
     async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None):
