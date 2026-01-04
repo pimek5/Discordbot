@@ -398,6 +398,95 @@ class Hexbet(commands.Cog):
         new_balance = self.db.update_balance(interaction.user.id, -amount)
         await interaction.response.send_message(f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}", ephemeral=True)
 
+    @app_commands.command(name="find_game", description="Search for active featured games and post bet")
+    @app_commands.describe(platform="Optional platform route (euw1, na1, kr, eun1)")
+    async def find_game(self, interaction: discord.Interaction, platform: Optional[str] = None):
+        """Find and post active featured game for betting"""
+        await interaction.response.defer()
+        
+        try:
+            # Check if already have open match
+            existing = self.db.get_open_match()
+            if existing:
+                await interaction.followup.send("⏳ Already posting bets for active match. Wait for settlement.", ephemeral=True)
+                return
+            
+            # Pick platform
+            platform = platform or random.choice(['euw1', 'na1', 'kr', 'eun1'])
+            
+            # Fetch featured games
+            await interaction.followup.send(f"🔍 Searching for games on **{platform.upper()}**...", ephemeral=False)
+            
+            data = await self.riot_api.get_featured_games(platform=platform)
+            if not data or not data.get('gameList'):
+                await interaction.followup.send(f"❌ No featured games found on {platform.upper()}", ephemeral=True)
+                return
+            
+            games = data['gameList']
+            await interaction.followup.send(f"✅ Found {len(games)} featured game(s). Picking one...", ephemeral=False)
+            
+            game = random.choice(games)
+            game_id = game.get('gameId')
+            if not game_id:
+                await interaction.followup.send("❌ Invalid game data", ephemeral=True)
+                return
+            
+            # Get channel
+            channel = self.bot.get_channel(BET_CHANNEL_ID)
+            if not channel:
+                await interaction.followup.send(f"❌ Bet channel not found (ID: {BET_CHANNEL_ID})", ephemeral=True)
+                return
+            
+            # Process teams
+            blue_team = [p for p in game['participants'] if p['teamId'] == 100]
+            red_team = [p for p in game['participants'] if p['teamId'] == 200]
+            
+            blue_ordered = self._assign_roles(blue_team)
+            red_ordered = self._assign_roles(red_team)
+            
+            # Enrich with stats
+            region = platform_to_region(platform)
+            await interaction.followup.send(f"📊 Fetching player stats...", ephemeral=False)
+            
+            await self._enrich_players(blue_ordered, region)
+            await self._enrich_players(red_ordered, region)
+            
+            # Calculate odds and chances
+            score_blue = self._team_score(blue_ordered)
+            score_red = self._team_score(red_ordered)
+            odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+            chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+            chance_red = round(100 - chance_blue, 1)
+            
+            # Build embed
+            embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red)
+            
+            # Create match in DB
+            match_id = self.db.create_hexbet_match(
+                game_id,
+                platform,
+                BET_CHANNEL_ID,
+                {'players': blue_ordered, 'odds': odds_blue},
+                {'players': red_ordered, 'odds': odds_red},
+                game.get('gameStartTime', 0)
+            )
+            
+            if not match_id:
+                await interaction.followup.send("❌ Failed to create match in database", ephemeral=True)
+                return
+            
+            # Post to channel
+            view = BetView(match_id, odds_blue, odds_red, self)
+            msg = await channel.send(embed=embed, view=view)
+            self.db.set_match_message(match_id, msg.id)
+            
+            await interaction.followup.send(f"✅ Game posted! **Blue** {chance_blue}% vs **Red** {chance_red}%\n💰 Odds: Blue x{odds_blue} • Red x{odds_red}", ephemeral=False)
+            logger.info(f"✅ Posted featured game {game_id} on {platform}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error in find_game: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+
     @app_commands.command(name="hexbet_post", description="(Admin) Post a featured game bet now")
     @app_commands.describe(platform="Optional platform route (euw1, na1, kr, eun1)")
     @app_commands.checks.has_permissions(manage_guild=True)
