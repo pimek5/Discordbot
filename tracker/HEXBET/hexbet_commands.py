@@ -897,12 +897,88 @@ class Hexbet(commands.Cog):
         await interaction.followup.send(summary, ephemeral=False)
 
     @app_commands.command(name="hxfind", description="Find and post a high-elo game")
-    @app_commands.describe(platform="Platform: euw1, na1, kr, eun1")
-    async def hxfind(self, interaction: discord.Interaction, platform: Optional[str] = None):
+    @app_commands.describe(
+        platform="Platform: euw1, na1, kr, eun1",
+        nickname="(Optional) Specific player nickname - their game will be prioritized"
+    )
+    async def hxfind(self, interaction: discord.Interaction, platform: Optional[str] = None, nickname: Optional[str] = None):
         """Find and post active high-elo game for betting"""
         await interaction.response.defer()
         
         try:
+            # If nickname provided, handle priority game
+            if nickname:
+                await interaction.followup.send(f"🔍 Searching for game with **{nickname}**...")
+                
+                # Try to find the player
+                platform = platform or 'euw1'
+                region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
+                region = region_map.get(platform, 'euw')
+                
+                # Get summoner by name
+                summoner = await self.riot_api.get_summoner_by_name(nickname, region)
+                if not summoner:
+                    await interaction.followup.send(f"❌ Player **{nickname}** not found on {platform.upper()}", ephemeral=True)
+                    return
+                
+                puuid = summoner.get('puuid')
+                if not puuid:
+                    await interaction.followup.send(f"❌ Could not get PUUID for **{nickname}**", ephemeral=True)
+                    return
+                
+                # Check if player is in game
+                game_data = await self.riot_api.get_active_game(puuid, region)
+                if not game_data:
+                    await interaction.followup.send(f"❌ **{nickname}** is not currently in a game", ephemeral=True)
+                    return
+                
+                queue_id = game_data.get('gameQueueConfigId')
+                if queue_id != 420:
+                    await interaction.followup.send(f"❌ **{nickname}** is not in a Ranked Solo/Duo game (queue: {queue_id})", ephemeral=True)
+                    return
+                
+                # Cancel existing match from same region
+                open_matches = self.db.get_open_matches()
+                for match in open_matches:
+                    match_platform = match.get('platform', '')
+                    if match_platform == platform:
+                        logger.info(f"🔄 Canceling existing match {match['id']} from {platform} to prioritize {nickname}")
+                        
+                        # Refund bets
+                        bets = self.db.get_bets_for_match(match['id'])
+                        for bet in bets:
+                            self.db.update_balance(bet['user_id'], bet['amount'])
+                        
+                        # Cancel match
+                        self.db.settle_match(match['id'], winner='cancel')
+                        
+                        # Delete message
+                        channel_id = match.get('channel_id')
+                        message_id = match.get('message_id')
+                        if channel_id and message_id:
+                            try:
+                                channel = self.bot.get_channel(channel_id)
+                                if channel:
+                                    message = await channel.fetch_message(message_id)
+                                    await message.delete()
+                            except:
+                                pass
+                        
+                        await interaction.followup.send(f"🔄 Canceled existing {platform.upper()} match to prioritize **{nickname}**")
+                        break
+                
+                # Post the priority game
+                await interaction.followup.send(f"✅ Found **{nickname}**'s game! Creating bet...")
+                await self.post_random_featured_game(force=True, platform_choice=platform)
+                
+                new_match = self.db.get_open_match()
+                if new_match:
+                    await interaction.channel.send(f"🎯 Priority game posted with **{nickname}**!")
+                else:
+                    await interaction.followup.send(f"❌ Failed to create match", ephemeral=True)
+                return
+            
+            # Regular hxfind logic (no nickname)
             # Check if already have open match
             existing = self.db.get_open_match()
             if existing:
