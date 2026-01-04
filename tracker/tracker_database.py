@@ -137,6 +137,16 @@ class TrackerDatabase:
                         logger.warning(f"Migration note: {e}")
                     cur = conn.cursor()
                 
+                # Migration: add last_daily_claim for daily rewards
+                try:
+                    cur.execute("ALTER TABLE user_balances ADD COLUMN IF NOT EXISTS last_daily_claim TIMESTAMP")
+                    logger.info("✅ Migrated: last_daily_claim column")
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    if "already exists" not in str(e):
+                        logger.warning(f"Migration note: {e}")
+                    cur = conn.cursor()
+                
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS hexbet_leaderboard_cache (
                         id SERIAL PRIMARY KEY,
@@ -233,6 +243,48 @@ class TrackerDatabase:
                     (payout if won else 0, amount if not won else 0, won, discord_id)
                 )
                 conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def claim_daily_reward(self, discord_id: int, amount: int = 100) -> tuple[bool, str]:
+        """
+        Claim daily reward if 24 hours have passed
+        Returns (success, message)
+        """
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Get user's last claim time
+                cur.execute("SELECT last_daily_claim FROM user_balances WHERE discord_id = %s", (discord_id,))
+                row = cur.fetchone()
+                
+                from datetime import datetime, timezone, timedelta
+                now = datetime.now(timezone.utc)
+                
+                if row and row[0]:
+                    last_claim = row[0]
+                    # Make timezone-aware if needed
+                    if last_claim.tzinfo is None:
+                        last_claim = last_claim.replace(tzinfo=timezone.utc)
+                    
+                    time_since_claim = now - last_claim
+                    if time_since_claim < timedelta(hours=24):
+                        hours_left = 24 - (time_since_claim.total_seconds() / 3600)
+                        return (False, f"⏰ You can claim your next daily reward in {hours_left:.1f} hours")
+                
+                # Grant reward
+                cur.execute("""
+                    INSERT INTO user_balances (discord_id, balance, last_daily_claim)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (discord_id) DO UPDATE SET
+                        balance = user_balances.balance + EXCLUDED.balance,
+                        last_daily_claim = EXCLUDED.last_daily_claim,
+                        updated_at = NOW()
+                    RETURNING balance
+                """, (discord_id, amount, now))
+                new_balance = cur.fetchone()[0]
+                conn.commit()
+                return (True, f"✅ Daily reward claimed! +{amount} tokens (New balance: {new_balance})")
         finally:
             self.return_connection(conn)
 

@@ -1864,6 +1864,33 @@ class BetView(discord.ui.View):
             logger.error(f"Error in debug_settle: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxdaily", description="Claim your daily reward")
+    async def daily_reward(self, interaction: discord.Interaction):
+        """Claim daily reward of 100 tokens (once per 24 hours)"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            success, message = self.db.claim_daily_reward(interaction.user.id, amount=100)
+            
+            if success:
+                embed = discord.Embed(
+                    title="🎁 Daily Reward",
+                    description=message,
+                    color=0x2ECC71
+                )
+                embed.set_footer(text="Come back in 24 hours for your next reward!")
+            else:
+                embed = discord.Embed(
+                    title="🎁 Daily Reward",
+                    description=message,
+                    color=0xE74C3C
+                )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error claiming daily reward: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="hxstats", description="View your betting statistics")
     async def betting_stats(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
         """View betting statistics for you or another user"""
