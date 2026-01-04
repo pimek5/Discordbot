@@ -365,7 +365,8 @@ class Hexbet(commands.Cog):
             champ_id = p.get('championId')
             champ_name = CHAMPION_ID_TO_NAME.get(champ_id, 'Unknown')
             p['champ_name'] = champ_name
-            p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id, '')
+            # Use emoji if available, fallback to champion name
+            p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id) or f'**{champ_name}**'
 
     def _team_score(self, players: List[dict]) -> float:
         if not players:
