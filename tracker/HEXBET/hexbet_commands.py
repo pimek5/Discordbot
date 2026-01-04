@@ -2137,7 +2137,7 @@ class Hexbet(commands.Cog):
             conn = self.db.get_connection()
             with conn.cursor() as cur:
                 # Get all open matches
-                cur.execute("SELECT match_id FROM hexbet_matches WHERE status = 'open';")
+                cur.execute("SELECT id FROM hexbet_matches WHERE status = 'open';")
                 matches = cur.fetchall()
                 
                 if matches:
