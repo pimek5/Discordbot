@@ -22,9 +22,14 @@ logger = logging.getLogger('hexbet')
 BET_CHANNEL_ID = 1398977064261910580
 LEADERBOARD_CHANNEL_ID = 1398985421014306856
 BET_LOGS_CHANNEL_ID = 1398986567988674704
+
+# Task intervals
+FEATURED_INTERVAL = 5  # minutes - how often to check for and post new matches
+LEADERBOARD_INTERVAL = 10  # minutes - how often to refresh leaderboard
+SETTLE_CHECK_SECONDS = 120  # 2 minutes - how often to check if matches are ready to settle
+CLEANUP_INTERVAL = 1  # minute - how often to delete old settled bets
+MIN_MINUTES_BEFORE_SETTLE = 12  # 12 minutes - minimum game duration before settlement check
 POLL_INTERVAL_SECONDS = 300  # 5 minutes - avoid rate limits
-SETTLE_CHECK_SECONDS = 120  # 2 minutes
-MIN_MINUTES_BEFORE_SETTLE = 12  # 12 minutes
 
 ROLE_LABELS = [
     ("Top", CFG_ROLE_EMOJIS.get('TOP', '🗻')),
@@ -140,10 +145,11 @@ class Hexbet(commands.Cog):
         """Delete settled matches and their bets older than 1 minute"""
         try:
             deleted_matches, deleted_bets = self.db.cleanup_old_bets(minutes=1)
-            if deleted_matches > 0 or deleted_bets > 0:
-                logger.info(f"🗑️ Cleaned up {deleted_matches} matches and {deleted_bets} bets")
+            logger.info(f"🗑️ Cleanup result: {deleted_matches} matches, {deleted_bets} bets deleted")
+            if deleted_matches == 0 and deleted_bets == 0:
+                logger.info("ℹ️ No old bets to cleanup")
         except Exception as e:
-            logger.error(f"❌ Failed to cleanup old bets: {e}")
+            logger.error(f"❌ Failed to cleanup old bets: {e}", exc_info=True)
 
     def cog_unload(self):
         self.featured_task.cancel()
@@ -151,7 +157,7 @@ class Hexbet(commands.Cog):
         self.settle_task.cancel()
         self.cleanup_task.cancel()
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=FEATURED_INTERVAL)
     async def featured_task(self):
         try:
             logger.info("🔄 Featured task running...")
@@ -159,18 +165,30 @@ class Hexbet(commands.Cog):
         except Exception as e:
             logger.error(f"❌ Error in featured_task: {e}", exc_info=True)
 
-    @tasks.loop(minutes=10)
+    @tasks.loop(minutes=LEADERBOARD_INTERVAL)
     async def leaderboard_task(self):
-        await self.refresh_leaderboard_embed()
+        try:
+            logger.info("📊 Leaderboard task running...")
+            await self.refresh_leaderboard_embed()
+        except Exception as e:
+            logger.error(f"❌ Error in leaderboard_task: {e}", exc_info=True)
 
     @tasks.loop(seconds=SETTLE_CHECK_SECONDS)
     async def settle_task(self):
-        await self.try_settle_match()
+        try:
+            logger.info("⚖️ Settle task running...")
+            await self.try_settle_match()
+        except Exception as e:
+            logger.error(f"❌ Error in settle_task: {e}", exc_info=True)
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(minutes=CLEANUP_INTERVAL)
     async def cleanup_task(self):
         """Delete settled bets older than 1 minute"""
-        await self.cleanup_old_bets()
+        try:
+            logger.info("🗑️ Cleanup task running...")
+            await self.cleanup_old_bets()
+        except Exception as e:
+            logger.error(f"❌ Error in cleanup_task: {e}", exc_info=True)
 
     @featured_task.before_loop
     async def before_featured(self):
