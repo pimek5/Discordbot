@@ -61,10 +61,10 @@ class TrackerBot(commands.Bot):
         self.riot_api = RiotAPI(RIOT_API_KEY)
         self.db = get_tracker_db()
         
-        # Add tracker cog V3
-        tracking_channel_id = 1440713433887805470  # Your tracking channel
-        await self.add_cog(TrackerCommandsV3(self, self.riot_api, GUILD_ID, tracking_channel_id))
-        logger.info("✅ Tracker V3 commands loaded")
+        # Tracker V3 disabled - bot is now used for HEXBET only
+        # tracking_channel_id = 1440713433887805470
+        # await self.add_cog(TrackerCommandsV3(self, self.riot_api, GUILD_ID, tracking_channel_id))
+        # logger.info("✅ Tracker V3 commands loaded")
         
         # Add config commands
         await config_commands.setup(self)
