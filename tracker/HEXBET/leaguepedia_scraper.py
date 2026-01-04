@@ -70,15 +70,22 @@ PRO_ACCOUNTS = {
 
 # Streamer accounts
 STREAMER_ACCOUNTS = {
+    # Agurin
     'agurin': {'name': 'Agurin', 'platform': 'Twitch'},
-    'thebausffs': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    
+    # Thebausffs (Simon Hofverberg) - Source: lolpros.gg
+    'thebausffs#cool': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'dangerous dork#lick': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'streaming badboy#int': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'thebausffs#3710': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'bosch drill#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'mollusca slime#yummy': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'silly snail#öga': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'demon simon#0000': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'thebausffs#56243': {'name': 'Thebausffs', 'platform': 'Twitch'},
     'thebausffs#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
-    'bausffs': {'name': 'Thebausffs', 'platform': 'Twitch'},
-    'bausffs#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
-    'sololanesion': {'name': 'Thebausffs', 'platform': 'Twitch'},
-    'sololanesion#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
-    'solorenektononly': {'name': 'Thebausffs', 'platform': 'Twitch'},
-    'solorenektononly#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    
+    # Other streamers
     'drututt': {'name': 'Drututt', 'platform': 'Twitch'},
     'nemesis': {'name': 'Nemesis', 'platform': 'Twitch'},
 }
