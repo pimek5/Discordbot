@@ -534,7 +534,7 @@ class TrackerDatabase:
                     WHERE match_id IN (
                         SELECT id FROM hexbet_matches
                         WHERE status = 'settled'
-                        AND updated_at < NOW() - INTERVAL '%s minutes'
+                        AND updated_at < NOW() - make_interval(mins => %s)
                     )
                 """, (minutes,))
                 deleted_bets = cur.rowcount
@@ -543,7 +543,7 @@ class TrackerDatabase:
                 cur.execute("""
                     DELETE FROM hexbet_matches
                     WHERE status = 'settled'
-                    AND updated_at < NOW() - INTERVAL '%s minutes'
+                    AND updated_at < NOW() - make_interval(mins => %s)
                 """, (minutes,))
                 deleted_matches = cur.rowcount
                 
