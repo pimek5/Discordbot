@@ -588,7 +588,18 @@ class Hexbet(commands.Cog):
                 red_bets = sum(b['amount'] for b in bets if b['side'] == 'red')
                 blue_max_win = sum(b['potential_win'] for b in bets if b['side'] == 'blue')
                 red_max_win = sum(b['potential_win'] for b in bets if b['side'] == 'red')
-                bet_info = f"\n\n💰 **Blue Bets:** {blue_bets} (Max Win: {blue_max_win})\n💰 **Red Bets:** {red_bets} (Max Win: {red_max_win})"
+                
+                # Build list of bettors
+                blue_bettors = [f"<@{b['user_id']}> ({b['amount']})" for b in bets if b['side'] == 'blue']
+                red_bettors = [f"<@{b['user_id']}> ({b['amount']})" for b in bets if b['side'] == 'red']
+                
+                bet_info = f"\n\n💰 **Blue Bets:** {blue_bets} (Max Win: {blue_max_win})"
+                if blue_bettors:
+                    bet_info += f"\n└ {', '.join(blue_bettors)}"
+                
+                bet_info += f"\n💰 **Red Bets:** {red_bets} (Max Win: {red_max_win})"
+                if red_bettors:
+                    bet_info += f"\n└ {', '.join(red_bettors)}"
             except Exception as e:
                 logger.warning(f"Failed to fetch bet info: {e}")
         
