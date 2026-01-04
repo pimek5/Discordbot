@@ -747,18 +747,35 @@ class Hexbet(commands.Cog):
     
     @app_commands.command(name="hxsettle", description="(Admin) Settle or cancel match")
     @app_commands.describe(
+        match_id="Match ID (game ID from embed title), leave empty for first active match",
         winner="Winner: blue or red",
         cancel="Cancel and refund all bets"
     )
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hxsettle(self, interaction: discord.Interaction, winner: Optional[str] = None, cancel: bool = False):
-        """Force settle the current match or cancel it"""
+    async def hxsettle(self, interaction: discord.Interaction, match_id: Optional[int] = None, winner: Optional[str] = None, cancel: bool = False):
+        """Force settle a specific match or cancel it"""
         await interaction.response.defer(ephemeral=True)
         
-        match = self.db.get_open_match()
-        if not match:
-            await interaction.followup.send("❌ No active match to settle", ephemeral=True)
-            return
+        # Get match - either by ID or first open
+        if match_id:
+            # Find match by game_id
+            conn = self.db.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM hexbet_matches WHERE game_id = %s AND status = 'open'", (match_id,))
+                    row = cur.fetchone()
+                    if not row:
+                        await interaction.followup.send(f"❌ No active match found with Game ID {match_id}", ephemeral=True)
+                        return
+                    cols = [desc[0] for desc in cur.description]
+                    match = dict(zip(cols, row))
+            finally:
+                self.db.return_connection(conn)
+        else:
+            match = self.db.get_open_match()
+            if not match:
+                await interaction.followup.send("❌ No active match to settle", ephemeral=True)
+                return
         
         try:
             if cancel:
