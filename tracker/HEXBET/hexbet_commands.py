@@ -186,8 +186,8 @@ class Hexbet(commands.Cog):
                     chance_red = round(100 - chance_blue, 1)
 
                     featured_player = f"{tier} {lp} LP"
-                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player)
-
+                    
+                    # Create match first to get match_id for bet tracking
                     match_id = self.db.create_hexbet_match(
                         game_id,
                         platform,
@@ -203,6 +203,9 @@ class Hexbet(commands.Cog):
                         if not existing:
                             return
                         match_id = existing['id']
+                    
+                    # Build embed with match_id for bet tracking
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player, match_id)
 
                     self.db.increment_high_elo_featured(puuid)
                     view = BetView(match_id, odds_blue, odds_red, self)
@@ -345,12 +348,15 @@ class Hexbet(commands.Cog):
             else:
                 tasks_rank.append(asyncio.sleep(0))  # Dummy task if no PUUID
         ranks = await asyncio.gather(*tasks_rank, return_exceptions=True)
+        
+        # First pass: get basic stats and mark streamer mode
         for p, r in zip(players, ranks):
             stats = r if isinstance(r, list) else []
             tier, division, wr = pick_rank_entry(stats)
             p['tier'] = tier
             p['division'] = division
             p['wr'] = wr
+            p['streamer_mode'] = (tier == 'UNRANKED')
             lp = 0
             wins = 0
             losses = 0
@@ -367,6 +373,19 @@ class Hexbet(commands.Cog):
             p['champ_name'] = champ_name
             # Use emoji if available, fallback to champion name
             p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id) or f'**{champ_name}**'
+        
+        # Second pass: calculate team average for streamer mode players
+        ranked_players = [p for p in players if not p['streamer_mode']]
+        if ranked_players:
+            avg_tier_score = sum(TIER_SCORE.get(p['tier'], 1) + DIVISION_SCORE.get(p['division'], 0) for p in ranked_players) / len(ranked_players)
+            avg_wr = sum(p['wr'] for p in ranked_players) / len(ranked_players)
+            avg_lp = sum(p['lp'] for p in ranked_players) / len(ranked_players)
+            
+            for p in players:
+                if p['streamer_mode']:
+                    # Estimate tier from average
+                    p['wr'] = avg_wr
+                    p['lp'] = int(avg_lp)
 
     def _team_score(self, players: List[dict]) -> float:
         if not players:
@@ -376,14 +395,28 @@ class Hexbet(commands.Cog):
         comp_score = len({p.get('champ_name') for p in players}) / 10
         return rank_score + wr_score + comp_score
 
-    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "") -> discord.Embed:
+    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None) -> discord.Embed:
         desc = f"Platform: {platform.upper()}"
         if featured_player:
             desc += f" • Featured: {featured_player}"
         embed = discord.Embed(title=f"HEXBET Match #{game_id}", description=desc, color=0x3498DB)
         embed.add_field(name=f"🔵 BLUE • Win Chance {chance_blue}%", value=self._team_block(blue), inline=True)
         embed.add_field(name=f"🔴 RED • Win Chance {chance_red}%", value=self._team_block(red), inline=True)
-        embed.add_field(name="📈 Odds", value=f"Blue: **{odds_blue}x**\nRed: **{odds_red}x**", inline=False)
+        
+        # Get current bets if match exists
+        bet_info = ""
+        if match_id:
+            try:
+                bets = self.db.get_bets_for_match(match_id)
+                blue_bets = sum(b['amount'] for b in bets if b['side'] == 'blue')
+                red_bets = sum(b['amount'] for b in bets if b['side'] == 'red')
+                blue_max_win = sum(b['potential_win'] for b in bets if b['side'] == 'blue')
+                red_max_win = sum(b['potential_win'] for b in bets if b['side'] == 'red')
+                bet_info = f"\n\n💰 **Blue Bets:** {blue_bets} (Max Win: {blue_max_win})\n💰 **Red Bets:** {red_bets} (Max Win: {red_max_win})"
+            except Exception as e:
+                logger.warning(f"Failed to fetch bet info: {e}")
+        
+        embed.add_field(name="📈 Odds", value=f"Blue: **{odds_blue}x**\nRed: **{odds_red}x**{bet_info}", inline=False)
         embed.set_footer(text="Use /bet side:<blue/red> amount:<value> or buttons below.")
         return embed
 
@@ -393,15 +426,22 @@ class Hexbet(commands.Cog):
             role = p.get('role_emoji', '')
             tier = p.get('tier', 'UNRANKED')
             division = p.get('division', '')
+            streamer_mode = p.get('streamer_mode', False)
             tier_emoji = rank_emoji(tier) or tier
             champ = p.get('champ_emoji') or p.get('champ_name', '')
             # Use riotId (gameName#tagLine) if available, fallback to summonerName
             name = p.get('riotId', p.get('summonerName', 'Player'))
             wr = p.get('wr', 50)
             lp = p.get('lp', 0)
-            rank_str = f"{tier}{' ' + division if division else ''}"
-            lines.append(f"{role} {champ} **{name}**")
-            lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
+            
+            if streamer_mode:
+                rank_str = "🤖STREAMER MODE"
+                lines.append(f"{role} {champ} **{name}**")
+                lines.append(f"   └ {rank_str} • {wr:.1f}% WR")
+            else:
+                rank_str = f"{tier}{' ' + division if division else ''}"
+                lines.append(f"{role} {champ} **{name}**")
+                lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
 
     @app_commands.command(name="bet", description="Place a bet on current match")
