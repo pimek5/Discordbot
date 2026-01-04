@@ -117,8 +117,12 @@ class TrackerDatabase:
                 try:
                     cur.execute("ALTER TABLE hexbet_matches ADD COLUMN game_start_at TIMESTAMP")
                 except psycopg2.Error as e:
+                    # Rollback failed migration to restore transaction state
+                    conn.rollback()
                     if "already exists" not in str(e):
                         logger.warning(f"Migration note: {e}")
+                    # Reconnect cursor after rollback
+                    cur = conn.cursor()
                 
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS hexbet_leaderboard_cache (
