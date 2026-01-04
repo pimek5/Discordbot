@@ -17,8 +17,9 @@ import sys
 import logging
 from dotenv import load_dotenv
 
-# Ensure parent directory (repo root) is on path so `HEXBET` package works after move
+# Ensure repo root and tracker dir are on path so `HEXBET` package works after move
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 # Load environment variables
 load_dotenv()
