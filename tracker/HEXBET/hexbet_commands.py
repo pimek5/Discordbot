@@ -1041,6 +1041,94 @@ class Hexbet(commands.Cog):
             logger.error(f"Error managing balance: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxplayer", description="Check player profile and pro status")
+    @app_commands.describe(name="Player name (gameName#tagLine)", region="Region (euw, na, kr, etc.)")
+    async def hxplayer(self, interaction: discord.Interaction, name: str, region: str = "euw"):
+        """Check if a player is a pro and show their profile"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            region = region.lower()
+            platform_map = {
+                'euw': 'euw1', 'eune': 'eun1', 'na': 'na1', 'kr': 'kr',
+                'br': 'br1', 'jp': 'jp1', 'lan': 'la1', 'las': 'la2',
+                'oce': 'oc1', 'tr': 'tr1', 'ru': 'ru'
+            }
+            platform = platform_map.get(region, 'euw1')
+            
+            # Get account info
+            if '#' in name:
+                game_name, tag_line = name.split('#', 1)
+            else:
+                game_name = name
+                tag_line = region.upper()
+            
+            # Get PUUID from Riot ID
+            riot_region_map = {
+                'br': 'americas', 'eune': 'europe', 'euw': 'europe',
+                'jp': 'asia', 'kr': 'asia', 'lan': 'americas', 'las': 'americas',
+                'na': 'americas', 'oce': 'sea', 'tr': 'europe', 'ru': 'europe'
+            }
+            riot_region = riot_region_map.get(region, 'europe')
+            
+            account_url = f"https://{riot_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+            headers = {'X-Riot-Token': self.riot_api.api_key}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(account_url, headers=headers) as response:
+                    if response.status != 200:
+                        await interaction.followup.send(f"❌ Player not found: {name}", ephemeral=True)
+                        return
+                    
+                    account_data = await response.json()
+                    puuid = account_data.get('puuid')
+                    riot_id = f"{account_data.get('gameName')}#{account_data.get('tagLine')}"
+                
+                # Get ranked stats
+                stats = await self.riot_api.get_ranked_stats_by_puuid(puuid, region)
+                
+                if not stats:
+                    await interaction.followup.send(f"❌ No ranked data found for {riot_id}", ephemeral=True)
+                    return
+                
+                # Pick best rank
+                tier, division, wr = pick_rank_entry(stats)
+                
+                entry = stats[0] if stats else {}
+                lp = entry.get('leaguePoints', 0)
+                wins = entry.get('wins', 0)
+                losses = entry.get('losses', 0)
+                
+                # Check if pro
+                is_pro = is_pro_player(riot_id)
+                
+                # Build embed
+                embed = discord.Embed(
+                    title=f"{get_pro_emoji() + ' ' if is_pro else ''}{riot_id}",
+                    color=0x00ff00 if is_pro else 0x3498DB
+                )
+                
+                rank_emoji = rank_emoji(tier) if tier != 'UNRANKED' else ''
+                rank_str = f"{rank_emoji} {tier}{' ' + division if division else ''} {lp} LP" if tier != 'UNRANKED' else "UNRANKED"
+                
+                embed.add_field(name="Rank", value=rank_str, inline=True)
+                embed.add_field(name="Region", value=region.upper(), inline=True)
+                embed.add_field(name="Win Rate", value=f"{wr:.1f}%", inline=True)
+                embed.add_field(name="W/L", value=f"{wins}W / {losses}L", inline=True)
+                embed.add_field(name="Pro Player", value="✅ Yes" if is_pro else "❌ No", inline=True)
+                
+                # OP.GG link
+                import urllib.parse
+                encoded_name = urllib.parse.quote(riot_id)
+                opgg_url = f"https://www.op.gg/summoners/{region}/{encoded_name}"
+                embed.add_field(name="OP.GG", value=f"[View Profile]({opgg_url})", inline=False)
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        except Exception as e:
+            logger.error(f"Error in hxplayer: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @hxpost.error
     async def hxpost_error(self, interaction: discord.Interaction, error):
         if isinstance(error, app_commands.errors.MissingPermissions):

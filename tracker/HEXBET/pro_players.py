@@ -123,4 +123,4 @@ def is_pro_player(riot_id: str) -> bool:
 
 def get_pro_emoji() -> str:
     """Return pro player emoji"""
-    return "🅿️"
+    return "<:PRO:1457231609458851961>"
