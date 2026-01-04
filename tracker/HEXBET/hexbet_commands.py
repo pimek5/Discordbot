@@ -15,6 +15,7 @@ from HEXBET.config import (
     RANK_EMOJIS as CFG_RANK_EMOJIS,
     CHAMPION_EMOJIS as CFG_CHAMPION_EMOJIS,
 )
+from HEXBET.pro_players import load_pro_players_from_api, is_pro_player, get_pro_emoji
 
 logger = logging.getLogger('hexbet')
 
@@ -94,6 +95,7 @@ class Hexbet(commands.Cog):
         self.cleanup_task.start()
         self.bot.loop.create_task(self._ensure_champions())
         self.bot.loop.create_task(self._restore_persistent_views())
+        self.bot.loop.create_task(self._load_pro_players())
     
     async def _restore_persistent_views(self):
         """Restore persistent views for open matches after bot restart"""
@@ -123,6 +125,15 @@ class Hexbet(commands.Cog):
                 await load_champion_data()
         except Exception as e:
             logger.warning(f"⚠️ Could not pre-load champion data: {e}")
+    
+    async def _load_pro_players(self):
+        """Load pro players database on startup"""
+        await self.bot.wait_until_ready()
+        try:
+            await load_pro_players_from_api()
+            logger.info("✅ Loaded pro players database")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load pro players: {e}")
 
     async def cleanup_old_bets(self):
         """Delete settled matches and their bets older than 1 minute"""
@@ -495,6 +506,9 @@ class Hexbet(commands.Cog):
             p['champ_name'] = champ_name
             # Use emoji if available, fallback to champion name
             p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id) or f'**{champ_name}**'
+            # Check if player is a pro
+            riot_id = p.get('riotId', '')
+            p['is_pro'] = is_pro_player(riot_id)
     
     def _apply_lobby_average(self, all_players: List[dict]):
         """Apply lobby-wide average to streamer mode players"""
@@ -618,6 +632,9 @@ class Hexbet(commands.Cog):
             champ = p.get('champ_emoji') or p.get('champ_name', '')
             # Use riotId (gameName#tagLine) if available, fallback to summonerName
             name = p.get('riotId', p.get('summonerName', 'Player'))
+            # Add pro emoji if player is professional
+            if p.get('is_pro', False):
+                name = f"{get_pro_emoji()} {name}"
             wr = p.get('wr', 50)
             lp = p.get('lp', 0)
             
