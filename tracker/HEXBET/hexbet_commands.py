@@ -757,6 +757,11 @@ class Hexbet(commands.Cog):
             if isinstance(blue_team, dict) and isinstance(red_team, dict):
                 blue_players = blue_team.get('players', [])
                 red_players = red_team.get('players', [])
+                
+                # Re-assign roles to ensure proper role detection (Smite, support champs, etc.)
+                blue_players = self._assign_roles(blue_players)
+                red_players = self._assign_roles(red_players)
+                
                 odds_blue = blue_team.get('odds', 1.5)
                 odds_red = red_team.get('odds', 1.5)
                 
@@ -2158,7 +2163,13 @@ class Hexbet(commands.Cog):
                 cur.execute("SELECT COUNT(*) FROM hexbet_high_elo_pool;")
                 pool_size = cur.fetchone()[0]
                 
-                cur.execute("SELECT COUNT(*) FROM hexbet_bets WHERE status = 'open';")
+                # Count bets for open matches (JOIN with hexbet_matches)
+                cur.execute("""
+                    SELECT COUNT(*) 
+                    FROM hexbet_bets b 
+                    INNER JOIN hexbet_matches m ON b.match_id = m.id 
+                    WHERE m.status = 'open';
+                """)
                 open_bets = cur.fetchone()[0]
                 
                 cur.execute("SELECT COUNT(*) FROM hexbet_matches;")
