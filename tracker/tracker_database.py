@@ -306,8 +306,8 @@ class TrackerDatabase:
         payouts = []
         try:
             with conn.cursor() as cur:
-                # Update match
-                cur.execute("UPDATE hexbet_matches SET status='settled', winner=%s WHERE id=%s", (winner, match_id))
+                # Update match with settlement and timestamp
+                cur.execute("UPDATE hexbet_matches SET status='settled', winner=%s, updated_at=NOW() WHERE id=%s", (winner, match_id))
                 # Bets snapshot
                 cur.execute("SELECT user_id, side, amount, odds FROM hexbet_bets WHERE match_id=%s", (match_id,))
                 for user_id, side, amount, odds in cur.fetchall():
@@ -315,7 +315,7 @@ class TrackerDatabase:
                     payout = int(amount * float(odds)) if won else 0
                     payouts.append((user_id, amount, payout, won))
                 # Mark settled
-                cur.execute("UPDATE hexbet_bets SET settled=TRUE, won=(side=%s), payout = CASE WHEN side=%s THEN (amount * odds)::int ELSE 0 END WHERE match_id=%s", (winner, winner, match_id))
+                cur.execute("UPDATE hexbet_bets SET settled=TRUE, won=(side=%s), payout = CASE WHEN side=%s THEN (amount * odds)::int ELSE 0 END, updated_at=NOW() WHERE match_id=%s", (winner, winner, match_id))
                 conn.commit()
                 return payouts
         finally:
