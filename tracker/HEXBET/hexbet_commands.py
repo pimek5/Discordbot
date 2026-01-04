@@ -243,9 +243,9 @@ class Hexbet(commands.Cog):
                     
                     logger.info(f"🎯 Found game {game_id} with queue {queue_id} (player: {tier} {lp} LP)")
                     
-                    # Accept Ranked Solo/Duo (420) and Flex (440)
-                    if queue_id not in [420, 440]:
-                        logger.info(f"⏭️ Skipping game {game_id} - not ranked queue")
+                    # Accept only Ranked Solo/Duo (420)
+                    if queue_id != 420:
+                        logger.info(f"⏭️ Skipping game {game_id} - not Ranked Solo/Duo (queue {queue_id})")
                         continue
                     
                     logger.info(f"✅ Found active game: {game_id} ({tier} {lp} LP player)")
@@ -784,7 +784,7 @@ class Hexbet(commands.Cog):
                     game_data = await self.riot_api.get_active_game(puuid, region)
                     if game_data:
                         queue_id = game_data.get('gameQueueConfigId')
-                        if queue_id in [420, 440]:  # Ranked Solo/Duo or Flex
+                        if queue_id == 420:  # Ranked Solo/Duo only
                             active_count += 1
                     await asyncio.sleep(0.1)
                 
