@@ -185,7 +185,8 @@ class Hexbet(commands.Cog):
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                     chance_red = round(100 - chance_blue, 1)
 
-                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red)
+                    featured_player = f"{tier} {lp} LP"
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player)
 
                     match_id = self.db.create_hexbet_match(
                         game_id,
@@ -375,8 +376,11 @@ class Hexbet(commands.Cog):
         comp_score = len({p.get('champ_name') for p in players}) / 10
         return rank_score + wr_score + comp_score
 
-    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float) -> discord.Embed:
-        embed = discord.Embed(title=f"HEXBET Match #{game_id}", description=f"Platform: {platform.upper()}", color=0x3498DB)
+    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "") -> discord.Embed:
+        desc = f"Platform: {platform.upper()}"
+        if featured_player:
+            desc += f" • Featured: {featured_player}"
+        embed = discord.Embed(title=f"HEXBET Match #{game_id}", description=desc, color=0x3498DB)
         embed.add_field(name=f"🔵 BLUE • Win Chance {chance_blue}%", value=self._team_block(blue), inline=True)
         embed.add_field(name=f"🔴 RED • Win Chance {chance_red}%", value=self._team_block(red), inline=True)
         embed.add_field(name="📈 Odds", value=f"Blue: **{odds_blue}x**\nRed: **{odds_red}x**", inline=False)
@@ -391,7 +395,8 @@ class Hexbet(commands.Cog):
             division = p.get('division', '')
             tier_emoji = rank_emoji(tier) or tier
             champ = p.get('champ_emoji') or p.get('champ_name', '')
-            name = p.get('summonerName', 'Player')
+            # Use riotId (gameName#tagLine) if available, fallback to summonerName
+            name = p.get('riotId', p.get('summonerName', 'Player'))
             wr = p.get('wr', 50)
             lp = p.get('lp', 0)
             rank_str = f"{tier}{' ' + division if division else ''}"
