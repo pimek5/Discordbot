@@ -1008,6 +1008,75 @@ class Hexbet(commands.Cog):
         new_balance = self.db.update_balance(interaction.user.id, -amount)
         await interaction.response.send_message(f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}", ephemeral=True)
 
+    @app_commands.command(name="hxhelp", description="Show all HEXBET commands")
+    async def hxhelp(self, interaction: discord.Interaction):
+        """Display help for all HEXBET commands"""
+        embed = discord.Embed(
+            title="🎮 HEXBET Commands",
+            description="High-elo League of Legends betting system",
+            color=0x3498DB,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # User Commands
+        user_cmds = (
+            "**👤 User Commands**\n"
+            "`/hxhelp` - Show this help menu\n"
+            "`/hxdaily` - Claim daily reward (100 tokens every 24h)\n"
+            "`/hxstats [@user]` - View betting statistics\n"
+            "`/hxplayer <name> [region]` - Check player profile and pro status\n"
+        )
+        embed.add_field(name="", value=user_cmds, inline=False)
+        
+        # Game Commands
+        game_cmds = (
+            "**🎯 Game Commands**\n"
+            "`/hxfind [platform] [nickname]` - Find and post high-elo game\n"
+            "  • Platform: euw1, na1, kr, eun1\n"
+            "  • Nickname: Priority search for specific player\n"
+        )
+        embed.add_field(name="", value=game_cmds, inline=False)
+        
+        # Staff/Admin Commands
+        admin_cmds = (
+            "**🛠️ Staff/Admin Commands**\n"
+            "`/hxbalance <action> <user> [amount]` - Manage user balances\n"
+            "`/hxpost [platform]` - Force post a bet\n"
+            "`/hxrefresh` - Refresh all open bet embeds\n"
+            "`/hxsettle [match_id] [winner] [cancel]` - Settle or cancel match\n"
+            "`/hxpool` - Populate high-elo player pool\n"
+            "`/hxdebug` - Debug high-elo pool and active games\n"
+            "`/hxstatus` - Check database status\n"
+            "`/hxforce` - Force close all open matches\n"
+        )
+        embed.add_field(name="", value=admin_cmds, inline=False)
+        
+        # How to Bet
+        how_to = (
+            "**💰 How to Bet**\n"
+            "1. Click 🔵 **Bet Blue** or 🔴 **Bet Red** button\n"
+            "2. Enter your bet amount\n"
+            "3. Win = bet × odds | Lose = -bet\n"
+            "4. Remake (<3 min) = automatic refund\n"
+        )
+        embed.add_field(name="", value=how_to, inline=False)
+        
+        # Features
+        features = (
+            "**✨ Features**\n"
+            "• Daily rewards (100 tokens)\n"
+            "• Live leaderboard with auto-refresh\n"
+            "• SPECIAL BET for high LP lobbies (>1000 avg)\n"
+            "• Remake protection (<180 seconds)\n"
+            "• Notifications after settlement\n"
+            "• Betting statistics tracking\n"
+        )
+        embed.add_field(name="", value=features, inline=False)
+        
+        embed.set_footer(text="💎 HEXBET • Betting at HEXRTBRXENCHROMAS")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @app_commands.command(name="hxdebug", description="(Admin) Debug high-elo pool and active games")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def hxdebug(self, interaction: discord.Interaction):
