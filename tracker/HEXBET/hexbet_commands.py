@@ -1001,15 +1001,57 @@ class Hexbet(commands.Cog):
                         await interaction.followup.send(f"🔄 Canceled existing {platform.upper()} match to prioritize **{nickname}**")
                         break
                 
-                # Post the priority game
+                # Post the priority game directly with the found player's game data
                 await interaction.followup.send(f"✅ Found **{nickname}**'s game! Creating bet...")
-                await self.post_random_featured_game(force=True, platform_choice=platform)
                 
-                new_match = self.db.get_open_match()
-                if new_match:
-                    await interaction.channel.send(f"🎯 Priority game posted with **{nickname}**!")
-                else:
-                    await interaction.followup.send(f"❌ Failed to create match", ephemeral=True)
+                channel = self.bot.get_channel(BET_CHANNEL_ID)
+                if not channel:
+                    await interaction.followup.send("❌ Bet channel not found!", ephemeral=True)
+                    return
+                
+                # Build match from the player's game directly
+                try:
+                    blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+                    red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+                    
+                    logger.info(f"👥 Teams: {len(blue_team)} vs {len(red_team)} players")
+                    
+                    blue_ordered = self._assign_roles(blue_team)
+                    red_ordered = self._assign_roles(red_team)
+                    
+                    # Enrich player data
+                    logger.info("🔍 Enriching player data...")
+                    await self._enrich_players(blue_ordered, region)
+                    await self._enrich_players(red_ordered, region)
+                    self._apply_lobby_average(blue_ordered + red_ordered)
+                    
+                    score_blue = self._team_score(blue_ordered)
+                    score_red = self._team_score(red_ordered)
+                    logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
+                    
+                    odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+                    chance_blue = score_blue / (score_blue + score_red) * 100
+                    chance_red = 100 - chance_blue
+                    
+                    game_id = game_data.get('gameId')
+                    match_id = self.db.create_hexbet_match(game_id, platform, BET_CHANNEL_ID, blue_ordered, red_ordered, game_data.get('gameStartTime', 0))
+                    
+                    if not match_id:
+                        logger.error(f"❌ Failed to create match for game {game_id}")
+                        await interaction.followup.send("❌ Failed to create match", ephemeral=True)
+                        return
+                    
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player=f"🎯 **{nickname}**", match_id=match_id, game_start_at=game_data.get('gameStartTime'))
+                    
+                    msg = await channel.send(embed=embed, view=BetView(self.db, match_id, odds_blue, odds_red))
+                    self.db.update_match_message(match_id, BET_CHANNEL_ID, msg.id)
+                    
+                    logger.info(f"✅ Posted priority match {match_id} with {nickname}")
+                    await interaction.followup.send(f"🎯 Priority game posted with **{nickname}**!")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error creating priority match: {e}", exc_info=True)
+                    await interaction.followup.send(f"❌ Error creating match: {e}", ephemeral=True)
                 return
             
             # Regular hxfind logic (no nickname)
