@@ -543,57 +543,78 @@ class TrackerDatabase:
             self.return_connection(conn)
 
     def cleanup_old_bets(self, minutes: int = 1):
-        """Delete settled matches and their bets older than specified minutes"""
+        """Delete settled matches and their bets older than specified minutes (0 = all settled)"""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
+                # Build query based on minutes
+                if minutes == 0:
+                    # Delete ALL settled matches immediately
+                    time_filter = ""
+                else:
+                    time_filter = f"AND updated_at < NOW() - make_interval(mins => {minutes})"
+                
                 # First check what we're about to delete
-                cur.execute("""
+                query = f"""
                     SELECT id, status, winner, updated_at 
                     FROM hexbet_matches
                     WHERE status = 'settled'
-                    AND updated_at < NOW() - make_interval(mins => %s)
-                """, (minutes,))
+                    {time_filter}
+                """
+                cur.execute(query)
                 to_delete = cur.fetchall()
                 if to_delete:
                     logger.info(f"🗑️ About to delete {len(to_delete)} matches: {to_delete}")
+                else:
+                    logger.info("🗑️ No settled matches found to delete")
                 
-                # Delete bets for settled matches older than N minutes
-                cur.execute("""
+                # Delete bets for settled matches
+                query = f"""
                     DELETE FROM hexbet_bets
                     WHERE match_id IN (
                         SELECT id FROM hexbet_matches
                         WHERE status = 'settled'
-                        AND updated_at < NOW() - make_interval(mins => %s)
+                        {time_filter}
                     )
-                """, (minutes,))
+                """
+                cur.execute(query)
                 deleted_bets = cur.rowcount
+                logger.info(f"🗑️ Deleted {deleted_bets} bets")
                 
-                # Delete settled matches older than N minutes
-                cur.execute("""
+                # Delete settled matches
+                query = f"""
                     DELETE FROM hexbet_matches
                     WHERE status = 'settled'
-                    AND updated_at < NOW() - make_interval(mins => %s)
-                """, (minutes,))
+                    {time_filter}
+                """
+                cur.execute(query)
                 deleted_matches = cur.rowcount
+                logger.info(f"🗑️ Deleted {deleted_matches} matches")
                 
                 conn.commit()
-                logger.info(f"🗑️ Deleted {deleted_matches} matches and {deleted_bets} bets")
                 return deleted_matches, deleted_bets
         finally:
             self.return_connection(conn)
 
     def get_old_settled_matches(self, minutes: int = 1):
-        """Get settled matches older than specified minutes (for Discord message cleanup)"""
+        """Get settled matches older than specified minutes (0 = all settled matches)"""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT id, game_id, platform, channel_id, message_id, status, winner, updated_at
-                    FROM hexbet_matches
-                    WHERE status = 'settled'
-                    AND updated_at < NOW() - make_interval(mins => %s)
-                """, (minutes,))
+                if minutes == 0:
+                    # Get ALL settled matches
+                    cur.execute("""
+                        SELECT id, game_id, platform, channel_id, message_id, status, winner, updated_at
+                        FROM hexbet_matches
+                        WHERE status = 'settled'
+                    """)
+                else:
+                    cur.execute("""
+                        SELECT id, game_id, platform, channel_id, message_id, status, winner, updated_at
+                        FROM hexbet_matches
+                        WHERE status = 'settled'
+                        AND updated_at < NOW() - make_interval(mins => %s)
+                    """, (minutes,))
                 rows = cur.fetchall()
                 if rows:
                     cols = [desc[0] for desc in cur.description]

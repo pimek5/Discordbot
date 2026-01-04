@@ -143,18 +143,25 @@ class Hexbet(commands.Cog):
             logger.warning(f"⚠️ Could not load pro players: {e}")
 
     async def cleanup_old_bets(self):
-        """Delete settled matches and their bets older than 1 minute"""
+        """Delete settled matches and their bets immediately"""
         try:
-            # Get matches to cleanup (with channel_id, message_id)
-            old_matches = self.db.get_old_settled_matches(minutes=1)
+            # Get ALL settled matches (no time filter - delete immediately)
+            old_matches = self.db.get_old_settled_matches(minutes=0)
+            
+            logger.info(f"🔍 Cleanup check: found {len(old_matches)} settled matches")
             
             if old_matches:
-                logger.info(f"🗑️ Found {len(old_matches)} old settled matches to cleanup")
+                logger.info(f"🗑️ Found {len(old_matches)} settled matches to cleanup")
                 
                 # Delete Discord messages first
                 for match in old_matches:
+                    match_id = match.get('id')
                     channel_id = match.get('channel_id')
                     message_id = match.get('message_id')
+                    winner = match.get('winner')
+                    updated_at = match.get('updated_at')
+                    
+                    logger.info(f"🗑️ Processing match {match_id}: winner={winner}, updated_at={updated_at}")
                     
                     if channel_id and message_id:
                         try:
@@ -162,18 +169,22 @@ class Hexbet(commands.Cog):
                             if channel:
                                 message = await channel.fetch_message(message_id)
                                 await message.delete()
-                                logger.info(f"🗑️ Deleted message {message_id} in channel {channel_id}")
+                                logger.info(f"✅ Deleted message {message_id} in channel {channel_id}")
+                            else:
+                                logger.warning(f"⚠️ Channel {channel_id} not found")
                         except discord.NotFound:
-                            logger.info(f"Message {message_id} already deleted")
+                            logger.info(f"ℹ️ Message {message_id} already deleted")
                         except Exception as e:
-                            logger.error(f"Failed to delete message {message_id}: {e}")
+                            logger.error(f"❌ Failed to delete message {message_id}: {e}")
+                    else:
+                        logger.warning(f"⚠️ Match {match_id} has no channel_id or message_id")
             
-            # Now delete from database
-            deleted_matches, deleted_bets = self.db.cleanup_old_bets(minutes=1)
+            # Now delete from database (no time filter)
+            deleted_matches, deleted_bets = self.db.cleanup_old_bets(minutes=0)
             logger.info(f"🗑️ Cleanup result: {deleted_matches} matches, {deleted_bets} bets deleted from DB")
             
             if deleted_matches == 0 and deleted_bets == 0:
-                logger.info("ℹ️ No old bets to cleanup")
+                logger.info("ℹ️ No settled matches to cleanup")
         except Exception as e:
             logger.error(f"❌ Failed to cleanup old bets: {e}", exc_info=True)
 
