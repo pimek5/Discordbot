@@ -352,8 +352,8 @@ class Hexbet(commands.Cog):
                 self.db.update_high_elo_last_checked(puuid)
                 game_data = await self.riot_api.get_active_game(puuid, region)
                 
-                # Anti rate-limit: delay between API calls
-                await asyncio.sleep(0.2)
+                # Anti rate-limit: delay between API calls (increased to avoid 429 errors)
+                await asyncio.sleep(0.5)
                 
                 if game_data:
                     game_id = game_data.get('gameId')

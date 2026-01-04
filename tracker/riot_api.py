@@ -384,7 +384,8 @@ class RiotAPI:
                         elif response.status == 404:
                             return False
                         elif response.status == 429:
-                            await asyncio.sleep(1)
+                            retry_after = int(response.headers.get('Retry-After', 2))
+                            await asyncio.sleep(retry_after)
                             continue
             except Exception as e:
                 logger.warning(f"Error verifying code (attempt {attempt + 1}/{retries}): {e}")
@@ -817,8 +818,10 @@ class RiotAPI:
                             logger.info(f"❌ 404 - Player not in game")
                             return None
                         elif response.status == 429:
-                            logger.warning(f"⚠️ Rate limit hit, retrying...")
-                            await asyncio.sleep(1)
+                            # Rate limit hit - wait longer before retry
+                            retry_after = int(response.headers.get('Retry-After', 2))
+                            logger.warning(f"⚠️ Rate limit hit, waiting {retry_after}s before retry...")
+                            await asyncio.sleep(retry_after)
                             continue
                         else:
                             logger.warning(f"⚠️ Unexpected status code: {response.status}")
