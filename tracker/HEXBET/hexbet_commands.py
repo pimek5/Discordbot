@@ -747,7 +747,6 @@ class Hexbet(commands.Cog):
                 embed.add_field(
                     name="📋 Useful Commands",
                     value=(
-                        "`/bet` - Place a bet on active match\n"
                         "`/hxbalance` - Check your balance\n"
                         "`/hxdaily` - Claim 100 daily tokens\n"
                         "`/hxstats` - View your betting stats\n"
@@ -1054,49 +1053,6 @@ class Hexbet(commands.Cog):
                 lines.append(f"{role} {champ} **{name}**")
                 lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
-
-    @app_commands.command(name="bet", description="Place a bet on current match")
-    @app_commands.describe(side="blue or red", amount="amount to bet")
-    async def bet(self, interaction: discord.Interaction, side: str, amount: int):
-        side = side.lower()
-        if side not in ['blue', 'red']:
-            await interaction.response.send_message("❌ side must be blue or red", ephemeral=True)
-            return
-        if amount <= 0:
-            await interaction.response.send_message("❌ amount must be > 0", ephemeral=True)
-            return
-        
-        # Check daily betting limit (1000 tokens/day)
-        can_bet, limit_msg, remaining = self.db.check_daily_bet_limit(interaction.user.id, amount, daily_limit=1000)
-        if not can_bet:
-            await interaction.response.send_message(limit_msg, ephemeral=True)
-            return
-        
-        match = self.db.get_open_match()
-        if not match:
-            await interaction.response.send_message("❌ No open match", ephemeral=True)
-            return
-        balance = self.db.get_balance(interaction.user.id)
-        if amount > balance:
-            await interaction.response.send_message(f"❌ Not enough balance. You have {balance}", ephemeral=True)
-            return
-        odds_blue = match['blue_team']['odds'] if isinstance(match['blue_team'], dict) else 1.5
-        odds_red = match['red_team']['odds'] if isinstance(match['red_team'], dict) else 1.5
-        odds = odds_blue if side == 'blue' else odds_red
-        potential = int(amount * odds)
-        if not self.db.add_bet(match['id'], interaction.user.id, side, amount, odds, potential):
-            await interaction.response.send_message("⚠️ You already placed a bet for this match", ephemeral=True)
-            return
-        self.db.record_wager(interaction.user.id, amount)
-        self.db.update_daily_wager(interaction.user.id, amount)  # Track daily limit
-        new_balance = self.db.update_balance(interaction.user.id, -amount)
-        
-        # Show remaining daily limit in response
-        limit_info = f"\n💳 Daily limit remaining: {remaining}" if remaining < 500 else ""
-        await interaction.response.send_message(
-            f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}{limit_info}", 
-            ephemeral=True
-        )
 
     @app_commands.command(name="hxhelp", description="Show all HEXBET commands")
     async def hxhelp(self, interaction: discord.Interaction):
