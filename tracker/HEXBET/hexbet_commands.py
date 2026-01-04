@@ -444,6 +444,17 @@ class Hexbet(commands.Cog):
 
                     blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
                     red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+                    
+                    # Add riotId field (gameName#tagLine) to each player for OP.GG compatibility
+                    for p in blue_team + red_team:
+                        game_name = p.get('riotIdGameName', '')
+                        tag_line = p.get('riotIdTagline', '')
+                        if game_name and tag_line:
+                            p['riotId'] = f"{game_name}#{tag_line}"
+                        elif game_name:
+                            p['riotId'] = game_name
+                        else:
+                            p['riotId'] = p.get('summonerName', 'Player')
 
                     logger.info(f"👥 Teams: {len(blue_team)} vs {len(red_team)} players")
 
@@ -2749,10 +2760,15 @@ class BetView(discord.ui.View):
                     continue
                     
                 riot_id = p.get('riotId', '')
-                if riot_id:
-                    # Keep the # format for OP.GG
+                if riot_id and '#' in riot_id:
+                    # OP.GG expects gameName-tagLine format (dash, not hash)
+                    game_name, tag_line = riot_id.split('#', 1)
+                    names.append(f"{game_name}-{tag_line}")
+                elif riot_id:
+                    # No tagline, use game name only
                     names.append(riot_id)
                 else:
+                    # Fallback to summonerName
                     name = p.get('summonerName', '')
                     if name:
                         names.append(name)
