@@ -421,9 +421,10 @@ class Hexbet(commands.Cog):
                     logger.info("🔍 Enriching player data...")
                     await self._enrich_players(blue_ordered, region)
                     await self._enrich_players(red_ordered, region)
-                    # Apply team-specific averages instead of lobby-wide
-                    self._apply_team_average(blue_ordered)
-                    self._apply_team_average(red_ordered)
+                    
+                    # Apply lobby-wide average for streamer mode (fairer when teams have uneven ranked players)
+                    all_players = blue_ordered + red_ordered
+                    self._apply_lobby_average(all_players)
 
                     score_blue = self._team_score(blue_ordered)
                     score_red = self._team_score(red_ordered)
@@ -880,10 +881,10 @@ class Hexbet(commands.Cog):
             riot_id = p.get('riotId', '')
             p['is_pro'] = is_pro_player(riot_id)
     
-    def _apply_team_average(self, team_players: List[dict]):
-        """Apply team-specific average to streamer mode players (instead of lobby-wide)"""
-        # Calculate average from ranked players in THIS team only
-        ranked_players = [p for p in team_players if not p.get('streamer_mode', False)]
+    def _apply_lobby_average(self, all_players: List[dict]):
+        """Apply lobby-wide average to streamer mode players (fairer distribution)"""
+        # Calculate average from ALL ranked players in lobby
+        ranked_players = [p for p in all_players if not p.get('streamer_mode', False)]
         if not ranked_players:
             return
         
@@ -891,11 +892,12 @@ class Hexbet(commands.Cog):
         avg_wr = sum(p['wr'] for p in ranked_players) / len(ranked_players)
         avg_lp = sum(p['lp'] for p in ranked_players) / len(ranked_players)
         
-        # Apply to streamer mode players in THIS team
-        for p in team_players:
+        # Apply to ALL streamer mode players in lobby
+        for p in all_players:
             if p.get('streamer_mode', False):
                 p['wr'] = avg_wr
                 p['lp'] = int(avg_lp)
+                p['tier'] = 'MASTER'  # Use tier from average for consistency
 
     def _team_score(self, players: List[dict]) -> float:
         if not players:
@@ -2295,8 +2297,10 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
             # Enrich player data
             await self.cog._enrich_players(blue_ordered, region)
             await self.cog._enrich_players(red_ordered, region)
-            self.cog._apply_team_average(blue_ordered)
-            self.cog._apply_team_average(red_ordered)
+            
+            # Apply lobby-wide average for streamer mode
+            all_players = blue_ordered + red_ordered
+            self.cog._apply_lobby_average(all_players)
             
             score_blue = self.cog._team_score(blue_ordered)
             score_red = self.cog._team_score(red_ordered)
