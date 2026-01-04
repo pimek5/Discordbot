@@ -91,6 +91,10 @@ bot = TrackerBot()
 async def on_ready():
     logger.info(f'✅ Tracker Bot logged in as {bot.user.name} (ID: {bot.user.id})')
     
+    # Set bot status
+    await bot.change_presence(activity=discord.Game(name="Betting at HEXRTBRXENCHROMAS"))
+    logger.info("✅ Bot status set")
+    
     # Initialize database
     db = get_tracker_db()
     logger.info("✅ Database connection established")
