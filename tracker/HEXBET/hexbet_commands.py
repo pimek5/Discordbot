@@ -21,6 +21,7 @@ logger = logging.getLogger('hexbet')
 
 BET_CHANNEL_ID = 1398977064261910580
 LEADERBOARD_CHANNEL_ID = 1398985421014306856
+BET_LOGS_CHANNEL_ID = 1398986567988674704
 POLL_INTERVAL_SECONDS = 300  # 5 minutes - avoid rate limits
 SETTLE_CHECK_SECONDS = 120  # 2 minutes
 MIN_MINUTES_BEFORE_SETTLE = 12  # 12 minutes
@@ -316,6 +317,33 @@ class Hexbet(commands.Cog):
                 self.db.record_result(user_id, amount, payout, won)
             await self._update_match_message(match, winner, payouts)
             logger.info(f"✅ Settled match {match['game_id']} - Winner: {winner.upper()}")
+            
+            # Log settlement to bet logs channel
+            try:
+                log_channel = self.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                if log_channel:
+                    log_embed = discord.Embed(
+                        title="🏁 Match Settled",
+                        color=0x2ECC71 if winner == 'blue' else 0xE74C3C,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    log_embed.add_field(name="Match ID", value=str(match['id']), inline=True)
+                    log_embed.add_field(name="Game ID", value=str(match['game_id']), inline=True)
+                    log_embed.add_field(name="Winner", value=winner.upper(), inline=True)
+                    
+                    total_paid = sum(payout for _, _, payout, _ in payouts)
+                    winners_count = sum(1 for _, _, _, won in payouts if won)
+                    
+                    log_embed.add_field(name="Winners", value=str(winners_count), inline=True)
+                    log_embed.add_field(name="Total Payout", value=str(total_paid), inline=True)
+                    
+                    if winners_count > 0:
+                        winner_list = [f"<@{uid}>: +{payout}" for uid, _, payout, won in payouts if won]
+                        log_embed.add_field(name="Payouts", value="\n".join(winner_list[:10]), inline=False)
+                    
+                    await log_channel.send(embed=log_embed)
+            except Exception as e:
+                logger.warning(f"Failed to log settlement: {e}")
 
     async def _update_match_message(self, match: dict, winner: str, payouts: List[tuple]):
         channel = self.bot.get_channel(match.get('channel_id'))
@@ -874,6 +902,27 @@ class Hexbet(commands.Cog):
                 
                 await interaction.followup.send(f"✅ Match cancelled. {len(bets)} bets refunded.", ephemeral=True)
                 
+                # Log cancellation to bet logs channel
+                try:
+                    log_channel = self.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                    if log_channel:
+                        log_embed = discord.Embed(
+                            title="❌ Match Cancelled",
+                            color=0x95A5A6,
+                            timestamp=discord.utils.utcnow()
+                        )
+                        log_embed.add_field(name="Match ID", value=str(match['id']), inline=True)
+                        log_embed.add_field(name="Game ID", value=str(match['game_id']), inline=True)
+                        log_embed.add_field(name="Bets Refunded", value=str(len(bets)), inline=True)
+                        
+                        total_refunded = sum(bet['amount'] for bet in bets)
+                        log_embed.add_field(name="Total Refunded", value=str(total_refunded), inline=True)
+                        log_embed.add_field(name="Cancelled By", value=interaction.user.mention, inline=True)
+                        
+                        await log_channel.send(embed=log_embed)
+                except Exception as e:
+                    logger.warning(f"Failed to log cancellation: {e}")
+                
                 # Auto-post new match after cancellation
                 try:
                     await self.post_random_featured_game(force=True)
@@ -1189,6 +1238,25 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
                 description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            # Log to bet logs channel
+            try:
+                log_channel = self.cog.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                if log_channel:
+                    log_embed = discord.Embed(
+                        title="📊 New Bet",
+                        color=0x3498DB if self.side == 'blue' else 0xE74C3C,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    log_embed.add_field(name="User", value=interaction.user.mention, inline=True)
+                    log_embed.add_field(name="Side", value=self.side.upper(), inline=True)
+                    log_embed.add_field(name="Amount", value=str(bet_amount), inline=True)
+                    log_embed.add_field(name="Odds", value=f"{self.odds}x", inline=True)
+                    log_embed.add_field(name="Potential Win", value=str(potential), inline=True)
+                    log_embed.add_field(name="Match ID", value=str(self.match_id), inline=True)
+                    await log_channel.send(embed=log_embed)
+            except Exception as e:
+                logger.warning(f"Failed to log bet: {e}")
             
             # Auto-refresh the match embed with updated bet totals
             try:
