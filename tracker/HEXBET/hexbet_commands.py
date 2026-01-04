@@ -2740,35 +2740,178 @@ class LeaderboardView(discord.ui.View):
     
     @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary, custom_id="hexbet_leaderboard_prev")
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
         try:
             new_page = max(1, self.page - 1)
-            await self.cog.refresh_leaderboard_embed(page=new_page)
-            await interaction.followup.send(f"📄 Page {new_page}/{self.total_pages}", ephemeral=True)
+            
+            # Get leaderboard data for new page
+            all_players = self.cog._compute_leaderboard(limit=None)
+            total_players = len(all_players)
+            per_page = 10
+            total_pages = max(1, (total_players + per_page - 1) // per_page)
+            new_page = max(1, min(new_page, total_pages))
+            
+            start_idx = (new_page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_players = all_players[start_idx:end_idx]
+            
+            # Build embed
+            embed = discord.Embed(
+                title=f"🏆 HEXBET Leaderboard (Page {new_page}/{total_pages})",
+                color=0xF1C40F
+            )
+            
+            lines = []
+            for i, row in enumerate(page_players, start=start_idx + 1):
+                medal = ""
+                if i == 1:
+                    medal = "🥇 "
+                elif i == 2:
+                    medal = "🥈 "
+                elif i == 3:
+                    medal = "🥉 "
+                
+                lines.append(
+                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
+                )
+            embed.description = "\n".join(lines)
+            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
+            embed.add_field(
+                name="📋 Useful Commands",
+                value=(
+                    "`/hxbalance` - Check your balance\n"
+                    "`/hxdaily` - Claim 100 daily tokens\n"
+                    "`/hxstats` - View your betting stats\n"
+                    "`/hxspecial` - Create special bet (1000 tokens)\n"
+                    "`/hxplayer` - Search for a player\n"
+                    "`/hxfind` - Find high-elo games"
+                ),
+                inline=False
+            )
+            
+            # Create new view with updated page
+            new_view = LeaderboardView(self.cog, page=new_page, total_pages=total_pages)
+            
+            # Edit the message instead of sending new one
+            await interaction.response.edit_message(embed=embed, view=new_view)
         except Exception as e:
             logger.error(f"Failed to go to previous page: {e}")
-            await interaction.followup.send("❌ Failed to change page", ephemeral=True)
+            await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
     
     @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.primary, custom_id="hexbet_leaderboard_refresh")
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
         try:
-            await self.cog.refresh_leaderboard_embed(page=self.page)
-            await interaction.followup.send("✅ Leaderboard refreshed!", ephemeral=True)
+            # Get leaderboard data for current page
+            all_players = self.cog._compute_leaderboard(limit=None)
+            total_players = len(all_players)
+            per_page = 10
+            total_pages = max(1, (total_players + per_page - 1) // per_page)
+            current_page = max(1, min(self.page, total_pages))
+            
+            start_idx = (current_page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_players = all_players[start_idx:end_idx]
+            
+            # Build embed
+            embed = discord.Embed(
+                title=f"🏆 HEXBET Leaderboard (Page {current_page}/{total_pages})",
+                color=0xF1C40F
+            )
+            
+            lines = []
+            for i, row in enumerate(page_players, start=start_idx + 1):
+                medal = ""
+                if i == 1:
+                    medal = "🥇 "
+                elif i == 2:
+                    medal = "🥈 "
+                elif i == 3:
+                    medal = "🥉 "
+                
+                lines.append(
+                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
+                )
+            embed.description = "\n".join(lines)
+            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
+            embed.add_field(
+                name="📋 Useful Commands",
+                value=(
+                    "`/hxbalance` - Check your balance\n"
+                    "`/hxdaily` - Claim 100 daily tokens\n"
+                    "`/hxstats` - View your betting stats\n"
+                    "`/hxspecial` - Create special bet (1000 tokens)\n"
+                    "`/hxplayer` - Search for a player\n"
+                    "`/hxfind` - Find high-elo games"
+                ),
+                inline=False
+            )
+            
+            # Create new view with updated page
+            new_view = LeaderboardView(self.cog, page=current_page, total_pages=total_pages)
+            
+            # Edit the message instead of sending new one
+            await interaction.response.edit_message(embed=embed, view=new_view)
         except Exception as e:
             logger.error(f"Failed to refresh leaderboard: {e}")
-            await interaction.followup.send("❌ Failed to refresh leaderboard", ephemeral=True)
+            await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
     
     @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary, custom_id="hexbet_leaderboard_next")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
         try:
             new_page = min(self.total_pages, self.page + 1)
-            await self.cog.refresh_leaderboard_embed(page=new_page)
-            await interaction.followup.send(f"📄 Page {new_page}/{self.total_pages}", ephemeral=True)
+            
+            # Get leaderboard data for new page
+            all_players = self.cog._compute_leaderboard(limit=None)
+            total_players = len(all_players)
+            per_page = 10
+            total_pages = max(1, (total_players + per_page - 1) // per_page)
+            new_page = max(1, min(new_page, total_pages))
+            
+            start_idx = (new_page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_players = all_players[start_idx:end_idx]
+            
+            # Build embed
+            embed = discord.Embed(
+                title=f"🏆 HEXBET Leaderboard (Page {new_page}/{total_pages})",
+                color=0xF1C40F
+            )
+            
+            lines = []
+            for i, row in enumerate(page_players, start=start_idx + 1):
+                medal = ""
+                if i == 1:
+                    medal = "🥇 "
+                elif i == 2:
+                    medal = "🥈 "
+                elif i == 3:
+                    medal = "🥉 "
+                
+                lines.append(
+                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
+                )
+            embed.description = "\n".join(lines)
+            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
+            embed.add_field(
+                name="📋 Useful Commands",
+                value=(
+                    "`/hxbalance` - Check your balance\n"
+                    "`/hxdaily` - Claim 100 daily tokens\n"
+                    "`/hxstats` - View your betting stats\n"
+                    "`/hxspecial` - Create special bet (1000 tokens)\n"
+                    "`/hxplayer` - Search for a player\n"
+                    "`/hxfind` - Find high-elo games"
+                ),
+                inline=False
+            )
+            
+            # Create new view with updated page
+            new_view = LeaderboardView(self.cog, page=new_page, total_pages=total_pages)
+            
+            # Edit the message instead of sending new one
+            await interaction.response.edit_message(embed=embed, view=new_view)
         except Exception as e:
             logger.error(f"Failed to go to next page: {e}")
-            await interaction.followup.send("❌ Failed to change page", ephemeral=True)
+            await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
 
 
 class BetView(discord.ui.View):
