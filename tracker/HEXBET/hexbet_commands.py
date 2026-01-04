@@ -2760,12 +2760,8 @@ class BetView(discord.ui.View):
                     continue
                     
                 riot_id = p.get('riotId', '')
-                if riot_id and '#' in riot_id:
-                    # OP.GG expects gameName-tagLine format (dash, not hash)
-                    game_name, tag_line = riot_id.split('#', 1)
-                    names.append(f"{game_name}-{tag_line}")
-                elif riot_id:
-                    # No tagline, use game name only
+                if riot_id:
+                    # Keep gameName#tagLine format - OP.GG multisearch uses # (will be URL-encoded)
                     names.append(riot_id)
                 else:
                     # Fallback to summonerName
