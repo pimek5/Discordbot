@@ -438,6 +438,52 @@ class TrackerDatabase:
             conn.rollback()
         finally:
             self.return_connection(conn)
+    
+    def get_random_high_elo_puuids(self, region: str, limit: int = 50) -> List[tuple]:
+        """Get random PUUIDs from high-elo pool for a specific region
+        Returns list of (puuid, tier, lp) tuples
+        """
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT puuid, tier, lp 
+                    FROM hexbet_high_elo_pool 
+                    WHERE region = %s 
+                    ORDER BY RANDOM() 
+                    LIMIT %s
+                """, (region, limit))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+    
+    def update_high_elo_last_checked(self, puuid: str):
+        """Update last_checked timestamp for a PUUID"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE hexbet_high_elo_pool 
+                    SET last_checked = CURRENT_TIMESTAMP 
+                    WHERE puuid = %s
+                """, (puuid,))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def increment_high_elo_featured(self, puuid: str):
+        """Increment times_featured counter for a PUUID"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE hexbet_high_elo_pool 
+                    SET times_featured = times_featured + 1 
+                    WHERE puuid = %s
+                """, (puuid,))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
 
 # Global database instance
 _tracker_db = None

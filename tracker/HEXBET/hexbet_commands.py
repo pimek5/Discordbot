@@ -19,9 +19,9 @@ logger = logging.getLogger('hexbet')
 
 BET_CHANNEL_ID = 1398977064261910580
 LEADERBOARD_CHANNEL_ID = 1398985421014306856
-POLL_INTERVAL_SECONDS = 30  # 30 seconds for testing
-SETTLE_CHECK_SECONDS = 60
-MIN_MINUTES_BEFORE_SETTLE = 1
+POLL_INTERVAL_SECONDS = 300  # 5 minutes - avoid rate limits
+SETTLE_CHECK_SECONDS = 120  # 2 minutes
+MIN_MINUTES_BEFORE_SETTLE = 12  # 12 minutes
 DEFAULT_BUTTON_BET = 50
 
 ROLE_LABELS = [
@@ -131,62 +131,88 @@ class Hexbet(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None):
+        """Find and post a high-elo game by scanning active players from pool"""
         try:
             existing = self.db.get_open_match()
             if existing and not force:
                 return
 
+            # Map platform to region for database lookup
+            region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
             platform = platform_choice or random.choice(['euw1', 'na1', 'kr', 'eun1'])
-            data = await self.riot_api.get_featured_games(platform=platform)
-            if not data or not data.get('gameList'):
+            region = region_map.get(platform, 'euw')
+            
+            # Get random PUUIDs from high-elo pool
+            puuids = self.db.get_random_high_elo_puuids(region, limit=50)
+            if not puuids:
+                logger.warning(f"⚠️ No PUUIDs in pool for {region}")
                 return
-            game = random.choice(data['gameList'])
-            game_id = game.get('gameId')
-            if not game_id:
-                return
-            channel = self.bot.get_channel(BET_CHANNEL_ID)
-            if not channel:
-                logger.warning("Bet channel not found")
-                return
+            
+            logger.info(f"🔍 Scanning {len(puuids)} high-elo players on {platform}...")
+            
+            # Check each PUUID for active game
+            for puuid, tier, lp in puuids:
+                self.db.update_high_elo_last_checked(puuid)
+                game_data = await self.riot_api.get_active_game(puuid, region)
+                
+                if game_data:
+                    game_id = game_data.get('gameId')
+                    queue_id = game_data.get('gameQueueConfigId')
+                    
+                    # Only post ranked solo/duo games
+                    if queue_id != 420:
+                        continue
+                    
+                    logger.info(f"✅ Found active game: {game_id} ({tier} {lp} LP player)")
+                    
+                    channel = self.bot.get_channel(BET_CHANNEL_ID)
+                    if not channel:
+                        logger.warning("Bet channel not found")
+                        return
 
-            blue_team = [p for p in game['participants'] if p['teamId'] == 100]
-            red_team = [p for p in game['participants'] if p['teamId'] == 200]
+                    blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+                    red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
 
-            blue_ordered = self._assign_roles(blue_team)
-            red_ordered = self._assign_roles(red_team)
+                    blue_ordered = self._assign_roles(blue_team)
+                    red_ordered = self._assign_roles(red_team)
 
-            region = platform_to_region(platform)
-            await self._enrich_players(blue_ordered, region)
-            await self._enrich_players(red_ordered, region)
+                    await self._enrich_players(blue_ordered, region)
+                    await self._enrich_players(red_ordered, region)
 
-            score_blue = self._team_score(blue_ordered)
-            score_red = self._team_score(red_ordered)
-            odds_blue, odds_red = odds_from_scores(score_blue, score_red)
-            chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
-            chance_red = round(100 - chance_blue, 1)
+                    score_blue = self._team_score(blue_ordered)
+                    score_red = self._team_score(red_ordered)
+                    odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+                    chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                    chance_red = round(100 - chance_blue, 1)
 
-            embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red)
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red)
 
-            match_id = self.db.create_hexbet_match(
-                game_id,
-                platform,
-                BET_CHANNEL_ID,
-                {'players': blue_ordered, 'odds': odds_blue},
-                {'players': red_ordered, 'odds': odds_red},
-                game.get('gameStartTime', 0)
-            )
-            if not match_id and not force:
-                return
-            if not match_id and force:
-                # If conflict, fetch existing and use its id/view
-                existing = self.db.get_open_match()
-                if not existing:
+                    match_id = self.db.create_hexbet_match(
+                        game_id,
+                        platform,
+                        BET_CHANNEL_ID,
+                        {'players': blue_ordered, 'odds': odds_blue},
+                        {'players': red_ordered, 'odds': odds_red},
+                        game_data.get('gameStartTime', 0)
+                    )
+                    if not match_id and not force:
+                        continue
+                    if not match_id and force:
+                        existing = self.db.get_open_match()
+                        if not existing:
+                            return
+                        match_id = existing['id']
+
+                    self.db.increment_high_elo_featured(puuid)
+                    view = BetView(match_id, odds_blue, odds_red, self)
+                    msg = await channel.send(embed=embed, view=view)
+                    self.db.set_match_message(match_id, msg.id)
+                    logger.info(f"✅ Posted bet for game {game_id}")
                     return
-                match_id = existing['id']
-
-            view = BetView(match_id, odds_blue, odds_red, self)
-            msg = await channel.send(embed=embed, view=view)
-            self.db.set_match_message(match_id, msg.id)
+                
+                await asyncio.sleep(0.1)  # Small delay between checks
+            
+            logger.info(f"ℹ️ No active ranked games found among {len(puuids)} players")
         except Exception as e:
             logger.error(f"Error posting featured game: {e}", exc_info=True)
 
@@ -398,126 +424,76 @@ class Hexbet(commands.Cog):
         new_balance = self.db.update_balance(interaction.user.id, -amount)
         await interaction.response.send_message(f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}", ephemeral=True)
 
-    @app_commands.command(name="hexbet_debug", description="(Admin) Debug featured games across all regions")
+    @app_commands.command(name="hexbet_debug", description="(Admin) Debug high-elo pool and active games")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def hexbet_debug(self, interaction: discord.Interaction):
-        """Check featured games availability on all regions"""
+        """Check high-elo pool and scan for active games"""
         await interaction.response.defer()
         
-        regions = ['euw1', 'eun1', 'na1', 'kr']
+        region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
         results = []
         
-        for region in regions:
+        for platform, region in region_map.items():
             try:
-                data = await self.riot_api.get_featured_games(platform=region)
+                puuids = self.db.get_random_high_elo_puuids(region, limit=10)
                 
-                if not data:
-                    results.append(f"❌ {region.upper()}: **API Error** (check logs)")
+                if not puuids:
+                    results.append(f"❌ {platform.upper()}: **No players in pool**")
                     continue
                 
-                game_list = data.get('gameList', [])
-                count = len(game_list) if game_list else 0
+                # Check first 10 for active games
+                active_count = 0
+                for puuid, tier, lp in puuids:
+                    game_data = await self.riot_api.get_active_game(puuid, region)
+                    if game_data:
+                        queue_id = game_data.get('gameQueueConfigId')
+                        if queue_id == 420:  # Ranked Solo/Duo
+                            active_count += 1
+                    await asyncio.sleep(0.1)
                 
-                if count > 0:
-                    results.append(f"✅ {region.upper()}: **{count} games**")
-                else:
-                    results.append(f"⚠️ {region.upper()}: **0 games**")
+                results.append(f"✅ {platform.upper()}: **{len(puuids)} in pool, {active_count}/10 in ranked games**")
                 
             except Exception as e:
-                results.append(f"❌ {region.upper()}: **{str(e)[:50]}**")
+                results.append(f"❌ {platform.upper()}: **{str(e)[:50]}**")
         
-        summary = "**Featured Games Debug**\n\n" + "\n".join(results)
+        summary = "**HEXBET Debug - High-Elo Pool**\n\n" + "\n".join(results)
         await interaction.followup.send(summary, ephemeral=False)
 
-    @app_commands.command(name="find_game", description="Search for active featured games and post bet")
+    @app_commands.command(name="find_game", description="Search for active high-elo games and post bet")
     @app_commands.describe(platform="Optional platform route (euw1, na1, kr, eun1)")
     async def find_game(self, interaction: discord.Interaction, platform: Optional[str] = None):
-        """Find and post active featured game for betting"""
+        """Find and post active high-elo game for betting"""
         await interaction.response.defer()
         
         try:
             # Check if already have open match
             existing = self.db.get_open_match()
             if existing:
-                await interaction.followup.send("⏳ Already posting bets for active match. Wait for settlement.", ephemeral=True)
+                await interaction.followup.send("⏳ Already have an active match. Wait for settlement.", ephemeral=True)
                 return
             
             # Pick platform
             platform = platform or random.choice(['euw1', 'na1', 'kr', 'eun1'])
+            region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
+            region = region_map.get(platform, 'euw')
             
-            # Fetch featured games
-            data = await self.riot_api.get_featured_games(platform=platform)
+            await interaction.followup.send(f"🔍 Scanning high-elo players on {platform.upper()}...")
             
-            if not data or not data.get('gameList'):
-                await interaction.followup.send(f"❌ No games on {platform.upper()}\n\n💡 Try: `/find_game platform:euw1` or `/find_game platform:kr`", ephemeral=False)
-                return
+            # Use the same logic as auto-post
+            await self.post_random_featured_game(force=True, platform_choice=platform)
             
-            games = data['gameList']
-            await interaction.followup.send(f"✅ Found {len(games)} featured game(s). Picking one...", ephemeral=False)
-            
-            game = random.choice(games)
-            game_id = game.get('gameId')
-            if not game_id:
-                await interaction.followup.send("❌ Invalid game data", ephemeral=True)
-                return
-            
-            # Get channel
-            channel = self.bot.get_channel(BET_CHANNEL_ID)
-            if not channel:
-                await interaction.followup.send(f"❌ Bet channel not found (ID: {BET_CHANNEL_ID})", ephemeral=True)
-                return
-            
-            # Process teams
-            blue_team = [p for p in game['participants'] if p['teamId'] == 100]
-            red_team = [p for p in game['participants'] if p['teamId'] == 200]
-            
-            blue_ordered = self._assign_roles(blue_team)
-            red_ordered = self._assign_roles(red_team)
-            
-            # Enrich with stats
-            region = platform_to_region(platform)
-            await interaction.followup.send(f"📊 Fetching player stats...", ephemeral=False)
-            
-            await self._enrich_players(blue_ordered, region)
-            await self._enrich_players(red_ordered, region)
-            
-            # Calculate odds and chances
-            score_blue = self._team_score(blue_ordered)
-            score_red = self._team_score(red_ordered)
-            odds_blue, odds_red = odds_from_scores(score_blue, score_red)
-            chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
-            chance_red = round(100 - chance_blue, 1)
-            
-            # Build embed
-            embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red)
-            
-            # Create match in DB
-            match_id = self.db.create_hexbet_match(
-                game_id,
-                platform,
-                BET_CHANNEL_ID,
-                {'players': blue_ordered, 'odds': odds_blue},
-                {'players': red_ordered, 'odds': odds_red},
-                game.get('gameStartTime', 0)
-            )
-            
-            if not match_id:
-                await interaction.followup.send("❌ Failed to create match in database", ephemeral=True)
-                return
-            
-            # Post to channel
-            view = BetView(match_id, odds_blue, odds_red, self)
-            msg = await channel.send(embed=embed, view=view)
-            self.db.set_match_message(match_id, msg.id)
-            
-            await interaction.followup.send(f"✅ Game posted! **Blue** {chance_blue}% vs **Red** {chance_red}%\n💰 Odds: Blue x{odds_blue} • Red x{odds_red}", ephemeral=False)
-            logger.info(f"✅ Posted featured game {game_id} on {platform}")
-            
+            # Check if match was created
+            new_match = self.db.get_open_match()
+            if new_match:
+                await interaction.channel.send(f"✅ Found and posted game from {platform.upper()}!")
+            else:
+                await interaction.followup.send(f"❌ No active ranked games found on {platform.upper()}", ephemeral=True)
+                
         except Exception as e:
-            logger.error(f"❌ Error in find_game: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            logger.error(f"Error in find_game: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:100]}", ephemeral=True)
 
-    @app_commands.command(name="hexbet_post", description="(Admin) Post a featured game bet now")
+    @app_commands.command(name="hexbet_post", description="(Admin) Post a high-elo game bet now")
     @app_commands.describe(platform="Optional platform route (euw1, na1, kr, eun1)")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def hexbet_post(self, interaction: discord.Interaction, platform: Optional[str] = None):
