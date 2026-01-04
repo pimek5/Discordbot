@@ -1139,6 +1139,15 @@ class Hexbet(commands.Cog):
     )
     async def hxfind(self, interaction: discord.Interaction, platform: Optional[str] = None, nickname: Optional[str] = None):
         """Find and post active high-elo game for betting"""
+        # Check if user has required roles
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
         await interaction.response.defer()
         
         try:
