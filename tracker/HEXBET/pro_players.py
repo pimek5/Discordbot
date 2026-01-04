@@ -30,6 +30,7 @@ KNOWN_PRO_PLAYERS = {
     'Tactical', 'Ssumday', 'River', 'Tenacity', 'Busio', 'Dhokla', 'Massu',
     # Other notable
     'Rekkles', 'Perkz', 'Alphari', 'Jensen', 'PowerOfEvil', 'Svenskeren',
+    'Agurin',  # EUW jungler/content creator
 }
 
 async def load_pro_players_from_api():
