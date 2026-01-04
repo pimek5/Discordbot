@@ -1051,13 +1051,13 @@ class BetView(discord.ui.View):
         self.blue_players = blue_players
         self.red_players = red_players
 
-    @discord.ui.button(emoji="<:BlueSide:1457209225976484014>", label="Bet Blue", style=discord.ButtonStyle.primary, custom_id="hexbet_blue")
+    @discord.ui.button(emoji="<:BlueSide:1457209225976484014>", label="Bet Blue", style=discord.ButtonStyle.secondary, custom_id="hexbet_blue")
     async def bet_blue(self, interaction: discord.Interaction, button: discord.ui.Button):
         balance = self.cog.db.get_balance(interaction.user.id)
         modal = BetModal('blue', self.odds_blue, balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(emoji="<:RedSide:1457209221031395472>", label="Bet Red", style=discord.ButtonStyle.danger, custom_id="hexbet_red")
+    @discord.ui.button(emoji="<:RedSide:1457209221031395472>", label="Bet Red", style=discord.ButtonStyle.secondary, custom_id="hexbet_red")
     async def bet_red(self, interaction: discord.Interaction, button: discord.ui.Button):
         balance = self.cog.db.get_balance(interaction.user.id)
         modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
