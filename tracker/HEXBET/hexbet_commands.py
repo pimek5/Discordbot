@@ -1479,6 +1479,89 @@ class BetView(discord.ui.View):
             logger.error(f"Error checking status: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxdbug_settle", description="Debug settlement and cleanup (ADMIN)")
+    async def debug_settle(self, interaction: discord.Interaction):
+        """Debug settlement status and cleanup"""
+        if interaction.user.id != 303838639658229760:
+            await interaction.response.send_message("❌ Admin only", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            conn = self.db.get_connection()
+            with conn.cursor() as cur:
+                # Check open matches
+                cur.execute("SELECT COUNT(*) FROM hexbet_matches WHERE status = 'open'")
+                open_matches = cur.fetchone()[0]
+                
+                # Check settled matches
+                cur.execute("SELECT COUNT(*) FROM hexbet_matches WHERE status = 'settled'")
+                settled_matches = cur.fetchone()[0]
+                
+                # Check open bets
+                cur.execute("SELECT COUNT(*) FROM hexbet_bets WHERE settled = FALSE")
+                open_bets = cur.fetchone()[0]
+                
+                # Check settled bets
+                cur.execute("SELECT COUNT(*) FROM hexbet_bets WHERE settled = TRUE")
+                settled_bets = cur.fetchone()[0]
+                
+                # Check bets older than 1 minute
+                cur.execute("""
+                    SELECT COUNT(*) FROM hexbet_bets
+                    WHERE settled = TRUE
+                    AND updated_at < NOW() - interval '1 minute'
+                """)
+                old_settled_bets = cur.fetchone()[0]
+                
+                # Check matches with settlement data
+                cur.execute("""
+                    SELECT id, game_id, status, winner, updated_at
+                    FROM hexbet_matches
+                    ORDER BY updated_at DESC
+                    LIMIT 5
+                """)
+                recent_matches = cur.fetchall()
+                
+                # Check bets in settled matches
+                cur.execute("""
+                    SELECT hb.id, hb.match_id, hb.settled, hb.won, hb.updated_at
+                    FROM hexbet_bets hb
+                    JOIN hexbet_matches hm ON hb.match_id = hm.id
+                    WHERE hm.status = 'settled'
+                    ORDER BY hb.updated_at DESC
+                    LIMIT 5
+                """)
+                settled_match_bets = cur.fetchall()
+            
+            self.db.return_connection(conn)
+            
+            debug_text = f"""
+🔍 **Settlement & Cleanup Debug**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 **Matches:**
+  • Open: {open_matches}
+  • Settled: {settled_matches}
+
+💰 **Bets:**
+  • Open (settled=FALSE): {open_bets}
+  • Settled (settled=TRUE): {settled_bets}
+  • **To delete (>1min):** {old_settled_bets}
+
+📈 **Recent Matches:**
+{chr(10).join([f"  • M{m[0]}: Game {m[1]} - {m[2]} - Winner: {m[3]} - Updated: {m[4]}" for m in recent_matches]) if recent_matches else "  None"}
+
+🎯 **Bets in Settled Matches:**
+{chr(10).join([f"  • Bet {b[0]}: Match {b[1]} - settled={b[2]} won={b[3]} - {b[4]}" for b in settled_match_bets]) if settled_match_bets else "  None"}
+"""
+            
+            await interaction.followup.send(debug_text, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error in debug_settle: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="hxstats", description="View your betting statistics")
     async def betting_stats(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
         """View betting statistics for you or another user"""
