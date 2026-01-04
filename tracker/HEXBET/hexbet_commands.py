@@ -1047,7 +1047,7 @@ class Hexbet(commands.Cog):
                     
                     embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player=f"🎯 **{nickname}**", match_id=match_id, game_start_at=game_data.get('gameStartTime'))
                     
-                    msg = await channel.send(embed=embed, view=BetView(self.db, match_id, odds_blue, odds_red))
+                    msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
                     self.db.update_match_message(match_id, BET_CHANNEL_ID, msg.id)
                     
                     logger.info(f"✅ Posted priority match {match_id} with {nickname}")
