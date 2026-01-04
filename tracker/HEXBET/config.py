@@ -283,7 +283,7 @@ CHAMPION_EMOJIS = {
     910: '<:champ_Hwei:1441318482980376576>',
     950: '<:champ_Mel:1441318562504642650>',
     999: '<:champ_Zaahen:1442809688042508420>',
-    799: '<:champ_Ambessa:1441318418795069440>',  # Placeholder - update with actual emoji ID
+    799: '<:champ_Ambessa:1441318425283792937>',
 }
 
 
