@@ -385,7 +385,8 @@ class Hexbet(commands.Cog):
                         BET_CHANNEL_ID,
                         {'players': blue_ordered, 'odds': odds_blue},
                         {'players': red_ordered, 'odds': odds_red},
-                        game_data.get('gameStartTime', 0)
+                        game_data.get('gameStartTime', 0),
+                        special_bet=False  # Regular featured bets, not special
                     )
                     if not match_id and not force:
                         logger.warning(f"⚠️ Match already exists for game {game_id}, skipping...")
@@ -546,10 +547,10 @@ class Hexbet(commands.Cog):
                 
                 # Get featured player from description
                 featured = ""
-                if old_embed.description and 'Featured:' in old_embed.description:
-                    parts = old_embed.description.split('Featured: ')
+                if old_embed.description and '**Featured:**' in old_embed.description:
+                    parts = old_embed.description.split('**Featured:**')
                     if len(parts) > 1:
-                        featured = parts[1]
+                        featured = parts[1].strip()
                 
                 game_start_at = match.get('game_start_at')
                 new_embed = self._build_embed(
@@ -579,11 +580,15 @@ class Hexbet(commands.Cog):
                         f"**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
                     )
                 embed.description = "\n".join(lines)
+            
+            # Create view with refresh button
+            view = LeaderboardView(self)
+            
             existing = await self._find_leaderboard_message(channel)
             if existing:
-                await existing.edit(embed=embed)
+                await existing.edit(embed=embed, view=view)
             else:
-                await channel.send(embed=embed)
+                await channel.send(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Error refreshing leaderboard: {e}", exc_info=True)
 
@@ -741,13 +746,23 @@ class Hexbet(commands.Cog):
         blue_tier_name = tier_from_score(blue_avg_tier)
         red_tier_name = tier_from_score(red_avg_tier)
         
+        # Map platform codes to readable region names
+        region_names = {
+            'euw1': 'EUW', 'eun1': 'EUNE', 'na1': 'NA',
+            'kr': 'KR', 'br1': 'BR', 'jp1': 'JP',
+            'la1': 'LAN', 'la2': 'LAS', 'oc1': 'OCE',
+            'tr1': 'TR', 'ru': 'RU', 'ph2': 'PH',
+            'sg2': 'SG', 'th2': 'TH', 'tw2': 'TW',
+            'vn2': 'VN'
+        }
+        region_display = region_names.get(platform.lower(), platform.upper())
+        
         # Build description
+        desc = f"**Region:** {region_display}"
         if featured_player:
-            # Priority game - featured player label only
-            desc = f"🎯 **FEATURED GAME: {featured_player}**"
-        else:
-            # Regular game
-            desc = f"**Region:** {platform.upper()}"
+            # Priority game - SOLO/DUO QUEUE special bet
+            desc += f"\n🎯 **SOLO/DUO QUEUE**"
+            desc += f"\n⭐ **SPECIAL BET** - 1.5x bonus on winnings!"
         
         # Calculate actual game duration from PostgreSQL timestamp
         if game_start_at:
@@ -781,9 +796,9 @@ class Hexbet(commands.Cog):
             desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
         
         embed = discord.Embed(
-            title=f"⚔️ HEXBET Match #{game_id}" + (f" - {featured_player}" if featured_player else ""),
+            title=f"⚔️ HEXBET Match #{game_id}" + (" - 🎯 SOLO/DUO QUEUE" if featured_player else ""),
             description=desc,
-            color=0xFF6B6B if featured_player else 0x3498DB
+            color=0xF1C40F if featured_player else 0x3498DB
         )
         
         # Team composition fields
@@ -810,6 +825,7 @@ class Hexbet(commands.Cog):
         if match_id:
             try:
                 bets = self.db.get_bets_for_match(match_id)
+                logger.info(f"🔍 Got {len(bets)} bets for match {match_id}")
                 blue_bets = sum(b['amount'] for b in bets if b['side'] == 'blue')
                 red_bets = sum(b['amount'] for b in bets if b['side'] == 'red')
                 blue_max_win = sum(b['potential_win'] for b in bets if b['side'] == 'blue')
@@ -818,6 +834,7 @@ class Hexbet(commands.Cog):
                 # Build list of bettors
                 blue_bettors = [f"<@{b['user_id']}> ({b['amount']})" for b in bets if b['side'] == 'blue']
                 red_bettors = [f"<@{b['user_id']}> ({b['amount']})" for b in bets if b['side'] == 'red']
+                logger.info(f"👥 Blue bettors: {len(blue_bettors)}, Red bettors: {len(red_bettors)}")
                 
                 bet_info = f"\n\n💰 **Blue Bets:** {blue_bets} (Max Win: {blue_max_win})"
                 if blue_bettors:
@@ -826,6 +843,7 @@ class Hexbet(commands.Cog):
                 bet_info += f"\n💰 **Red Bets:** {red_bets} (Max Win: {red_max_win})"
                 if red_bettors:
                     bet_info += f"\n└ {', '.join(red_bettors)}"
+                logger.info(f"📊 Bet info length: {len(bet_info)} chars")
             except Exception as e:
                 logger.warning(f"Failed to fetch bet info: {e}")
         
@@ -1038,14 +1056,14 @@ class Hexbet(commands.Cog):
                     chance_red = 100 - chance_blue
                     
                     game_id = game_data.get('gameId')
-                    match_id = self.db.create_hexbet_match(game_id, platform, BET_CHANNEL_ID, blue_ordered, red_ordered, game_data.get('gameStartTime', 0))
+                    match_id = self.db.create_hexbet_match(game_id, platform, BET_CHANNEL_ID, blue_ordered, red_ordered, game_data.get('gameStartTime', 0), special_bet=True)
                     
                     if not match_id:
                         logger.error(f"❌ Failed to create match for game {game_id}")
                         await interaction.followup.send("❌ Failed to create match", ephemeral=True)
                         return
                     
-                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player=f"🎯 **{nickname}**", match_id=match_id, game_start_at=game_data.get('gameStartTime'))
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player="special", match_id=match_id, game_start_at=game_data.get('gameStartTime'))
                     
                     msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
                     self.db.update_match_message(match_id, BET_CHANNEL_ID, msg.id)
@@ -1136,10 +1154,10 @@ class Hexbet(commands.Cog):
                 
                 # Get featured player from description
                 featured = ""
-                if old_embed.description and 'Featured:' in old_embed.description:
-                    parts = old_embed.description.split('Featured: ')
+                if old_embed.description and '**Featured:**' in old_embed.description:
+                    parts = old_embed.description.split('**Featured:**')
                     if len(parts) > 1:
-                        featured = parts[1]
+                        featured = parts[1].strip()
                 
                 # Rebuild embed with current bet data
                 game_start_at = match.get('game_start_at')
@@ -1580,6 +1598,22 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
             
         except ValueError:
             await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
+
+
+class LeaderboardView(discord.ui.View):
+    def __init__(self, cog: 'Hexbet'):
+        super().__init__(timeout=None)
+        self.cog = cog
+    
+    @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.primary, custom_id="hexbet_leaderboard_refresh")
+    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        try:
+            await self.cog.refresh_leaderboard_embed()
+            await interaction.followup.send("✅ Leaderboard refreshed!", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Failed to refresh leaderboard: {e}")
+            await interaction.followup.send("❌ Failed to refresh leaderboard", ephemeral=True)
 
 
 class BetView(discord.ui.View):

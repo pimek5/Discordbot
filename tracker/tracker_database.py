@@ -91,6 +91,8 @@ class TrackerDatabase:
                         status VARCHAR(20) DEFAULT 'open',
                         winner VARCHAR(10),
                         start_time BIGINT,
+                        game_start_at TIMESTAMP,
+                        special_bet BOOLEAN DEFAULT FALSE,
                         created_at TIMESTAMP DEFAULT NOW(),
                         updated_at TIMESTAMP DEFAULT NOW()
                     );
@@ -223,7 +225,7 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int) -> int:
+    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False) -> int:
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
@@ -236,11 +238,11 @@ class TrackerDatabase:
                 
                 # Try to insert, if exists do nothing
                 cur.execute("""
-                    INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s))
+                    INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at, special_bet)
+                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s), %s)
                     ON CONFLICT (game_id) DO NOTHING
                     RETURNING id
-                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at))
+                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at, special_bet))
                 row = cur.fetchone()
                 conn.commit()
                 
@@ -334,16 +336,23 @@ class TrackerDatabase:
         payouts = []
         try:
             with conn.cursor() as cur:
+                # Check if this is a special bet (1.5x bonus)
+                cur.execute("SELECT special_bet FROM hexbet_matches WHERE id=%s", (match_id,))
+                row = cur.fetchone()
+                is_special = row[0] if row else False
+                bonus_multiplier = 1.5 if is_special else 1.0
+                
                 # Update match with settlement and timestamp
                 cur.execute("UPDATE hexbet_matches SET status='settled', winner=%s, updated_at=NOW() WHERE id=%s", (winner, match_id))
                 # Bets snapshot
                 cur.execute("SELECT user_id, side, amount, odds FROM hexbet_bets WHERE match_id=%s", (match_id,))
                 for user_id, side, amount, odds in cur.fetchall():
                     won = side == winner
-                    payout = int(amount * float(odds)) if won else 0
+                    base_payout = int(amount * float(odds)) if won else 0
+                    payout = int(base_payout * bonus_multiplier) if won else 0
                     payouts.append((user_id, amount, payout, won))
-                # Mark settled
-                cur.execute("UPDATE hexbet_bets SET settled=TRUE, won=(side=%s), payout = CASE WHEN side=%s THEN (amount * odds)::int ELSE 0 END, updated_at=NOW() WHERE match_id=%s", (winner, winner, match_id))
+                # Mark settled with bonus multiplier
+                cur.execute("UPDATE hexbet_bets SET settled=TRUE, won=(side=%s), payout = CASE WHEN side=%s THEN ((amount * odds)::int * %s)::int ELSE 0 END, updated_at=NOW() WHERE match_id=%s", (winner, winner, bonus_multiplier, match_id))
                 conn.commit()
                 return payouts
         finally:
