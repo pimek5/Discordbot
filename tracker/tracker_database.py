@@ -650,6 +650,11 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
+# Global database instance
+_tracker_db = None
+
+def get_tracker_db():
+    """Get or create the global tracker database instance"""
     global _tracker_db
     if _tracker_db is None:
         _tracker_db = TrackerDatabase()
