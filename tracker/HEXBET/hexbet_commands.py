@@ -277,7 +277,7 @@ class Hexbet(commands.Cog):
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                     chance_red = round(100 - chance_blue, 1)
 
-                    featured_player = f"{tier} {lp} LP"
+                    featured_player = "🎯 RANKED SOLO/DUO"
                     
                     logger.info(f"💾 Creating match in database...")
                     # Create match first to get match_id for bet tracking
