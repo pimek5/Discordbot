@@ -112,6 +112,14 @@ class TrackerDatabase:
                         UNIQUE(match_id, user_id)
                     );
                 """)
+                
+                # Migration: add game_start_at timestamp column if it doesn't exist
+                try:
+                    cur.execute("ALTER TABLE hexbet_matches ADD COLUMN game_start_at TIMESTAMP")
+                except psycopg2.Error as e:
+                    if "already exists" not in str(e):
+                        logger.warning(f"Migration note: {e}")
+                
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS hexbet_leaderboard_cache (
                         id SERIAL PRIMARY KEY,
@@ -215,12 +223,19 @@ class TrackerDatabase:
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
+                # Convert milliseconds to PostgreSQL TIMESTAMP
+                # gameStartTime from Riot API is in milliseconds
+                game_start_at = None
+                if start_time and start_time > 0:
+                    # TO_TIMESTAMP expects seconds, so divide milliseconds by 1000
+                    game_start_at = start_time / 1000.0
+                
                 cur.execute("""
-                    INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s))
                     ON CONFLICT (game_id) DO NOTHING
                     RETURNING id
-                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time))
+                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at))
                 row = cur.fetchone()
                 conn.commit()
                 return row[0] if row else None
