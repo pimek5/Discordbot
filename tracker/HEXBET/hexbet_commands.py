@@ -1131,10 +1131,14 @@ class BetView(discord.ui.View):
             }
             region = region_map.get(self.platform.lower(), 'euw')
             
-            # Collect all player names with taglines (gameName#tagLine format)
+            # Collect all player names with taglines (gameName#tagLine format), excluding streamer mode
             all_players = self.blue_players + self.red_players
             names = []
             for p in all_players:
+                # Skip players with streamer mode
+                if p.get('streamer_mode', False):
+                    continue
+                    
                 riot_id = p.get('riotId', '')
                 if riot_id:
                     # Keep the # format for OP.GG
