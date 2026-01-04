@@ -417,9 +417,13 @@ class Hexbet(commands.Cog):
             # Fetch featured games
             await interaction.followup.send(f"🔍 Searching for games on **{platform.upper()}**...", ephemeral=False)
             
+            logger.info(f"🔍 Fetching featured games from {platform}")
             data = await self.riot_api.get_featured_games(platform=platform)
+            logger.info(f"📊 Featured games response: {data}")
+            
             if not data or not data.get('gameList'):
-                await interaction.followup.send(f"❌ No featured games found on {platform.upper()}", ephemeral=True)
+                logger.warning(f"⚠️ No games on {platform}: data={data}")
+                await interaction.followup.send(f"❌ No featured games found on {platform.upper()}\n\n💡 **Try other regions:**\n• `/find_game platform:euw1` (Europe)\n• `/find_game platform:kr` (Korea)\n• `/find_game` (random)", ephemeral=False)
                 return
             
             games = data['gameList']
