@@ -1916,6 +1916,44 @@ class BetView(discord.ui.View):
             logger.error(f"Error generating OP.GG link: {e}", exc_info=True)
             await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxsync", description="(Admin) Force sync slash commands")
+    async def force_sync(self, interaction: discord.Interaction):
+        """Force synchronize slash commands with Discord"""
+        # Check if user has required roles
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # List current commands before sync
+            current_cmds = [cmd.name for cmd in self.bot.tree.get_commands()]
+            
+            # Force sync to guild
+            guild = interaction.guild
+            if guild:
+                synced = await self.bot.tree.sync(guild=guild)
+                synced_names = [cmd.name for cmd in synced]
+                
+                await interaction.followup.send(
+                    f"✅ **Force synced {len(synced)} commands to {guild.name}**\n\n"
+                    f"**Before sync:** {len(current_cmds)} commands\n"
+                    f"**After sync:** {len(synced)} commands\n\n"
+                    f"**Synced commands:**\n{', '.join(synced_names)}",
+                    ephemeral=True
+                )
+                logger.info(f"🔄 Force synced {len(synced)} commands: {synced_names}")
+            else:
+                await interaction.followup.send("❌ Could not determine guild", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error force syncing commands: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="hxtest", description="Test featured game posting (ADMIN)")
     async def test_featured(self, interaction: discord.Interaction):
         """Test featured game posting manually"""
