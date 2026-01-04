@@ -1,5 +1,6 @@
 """
 Tracker Bot - Live Game Tracking with Betting System
+Version: 2.0 (Updated 2026-01-04)
 """
 
 import os
