@@ -495,17 +495,65 @@ class Hexbet(commands.Cog):
                 logger.warning(f"Failed to log settlement: {e}")
 
     async def _update_match_message(self, match: dict, winner: str, payouts: List[tuple]):
-        """Delete match message after settlement"""
+        """Update match message to show final result and send notifications"""
         channel = self.bot.get_channel(match.get('channel_id'))
         message_id = match.get('message_id')
         if not channel or not message_id:
             return
+        
         try:
             msg = await channel.fetch_message(message_id)
-            await msg.delete()
-            logger.info(f"🗑️ Deleted settled match message {message_id}")
+            
+            # Get existing embed and add winner badge
+            if msg.embeds:
+                embed = msg.embeds[0]
+                winner_emoji = "🔵" if winner == 'blue' else "🔴"
+                embed.title = f"{winner_emoji} {embed.title} - {winner.upper()} WON!"
+                embed.color = 0x3498DB if winner == 'blue' else 0xE74C3C
+                
+                # Remove betting view
+                await msg.edit(embed=embed, view=None)
+                logger.info(f"✅ Updated match message {message_id} with winner: {winner.upper()}")
+                
+                # Send notifications to betting notifications channel
+                notif_channel = self.bot.get_channel(1398985421014306856)
+                if notif_channel and payouts:
+                    game_id = match.get('game_id', 'Unknown')
+                    
+                    # Build notification embed
+                    notif_embed = discord.Embed(
+                        title=f"{winner_emoji} Match Settled - {winner.upper()} Won!",
+                        description=f"Game ID: {game_id}",
+                        color=0x2ECC71,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    
+                    winners = [(uid, payout) for uid, _, payout, won in payouts if won]
+                    losers = [(uid, amount) for uid, amount, _, won in payouts if not won]
+                    
+                    if winners:
+                        winner_lines = [f"<@{uid}>: **+{payout}** 🎉" for uid, payout in winners[:15]]
+                        notif_embed.add_field(
+                            name=f"🏆 Winners ({len(winners)})",
+                            value="\n".join(winner_lines),
+                            inline=False
+                        )
+                    
+                    if losers:
+                        loser_lines = [f"<@{uid}>: -{amount}" for uid, amount in losers[:15]]
+                        notif_embed.add_field(
+                            name=f"❌ Lost ({len(losers)})",
+                            value="\n".join(loser_lines),
+                            inline=False
+                        )
+                    
+                    await notif_channel.send(embed=notif_embed)
+                    logger.info(f"📬 Sent bet notifications for match {game_id}")
+        
+        except discord.NotFound:
+            logger.warning(f"Match message {message_id} not found (deleted)")
         except Exception as e:
-            logger.warning(f"Failed to delete match message: {e}")
+            logger.warning(f"Failed to update match message: {e}")
     
     async def _refresh_match_embed(self, match_id: int):
         """Refresh a match embed with current bet totals"""
