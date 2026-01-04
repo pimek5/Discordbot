@@ -2148,16 +2148,16 @@ class Hexbet(commands.Cog):
                             "UPDATE hexbet_matches SET status = 'settled', winner = 'draw', updated_at = NOW() WHERE id = %s;",
                             (match_id,)
                         )
-                        # Refund all bets
+                        # Refund all bets (set settled=TRUE, won=NULL for refund status)
                         cur.execute(
-                            "UPDATE hexbet_bets SET status = 'refunded', updated_at = NOW() WHERE match_id = %s AND status = 'open';",
+                            "UPDATE hexbet_bets SET settled = TRUE, won = NULL, updated_at = NOW() WHERE match_id = %s AND settled = FALSE;",
                             (match_id,)
                         )
                         # Return balance to users
                         cur.execute("""
                             UPDATE user_balances 
-                            SET balance = balance + (SELECT COALESCE(SUM(amount), 0) FROM hexbet_bets WHERE match_id = %s AND status = 'refunded')
-                            WHERE user_id IN (SELECT user_id FROM hexbet_bets WHERE match_id = %s);
+                            SET balance = balance + (SELECT COALESCE(SUM(amount), 0) FROM hexbet_bets WHERE match_id = %s AND settled = TRUE AND won IS NULL)
+                            WHERE discord_id IN (SELECT user_id FROM hexbet_bets WHERE match_id = %s);
                         """, (match_id, match_id))
                     
                     conn.commit()
