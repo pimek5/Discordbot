@@ -283,7 +283,8 @@ class Hexbet(commands.Cog):
                     
                     logger.info(f"📝 Building embed for match {match_id}...")
                     # Build embed with match_id for bet tracking
-                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player, match_id)
+                    game_start_time = game_data.get('gameStartTime', 0)
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player, match_id, game_start_time)
 
                     self.db.increment_high_elo_featured(puuid)
                     view = BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered)
@@ -435,10 +436,11 @@ class Hexbet(commands.Cog):
                     if len(parts) > 1:
                         featured = parts[1]
                 
+                game_start_time = match.get('start_time', 0)
                 new_embed = self._build_embed(
                     game_id, platform, blue_players, red_players,
                     odds_blue, odds_red, chance_blue, chance_red,
-                    featured, match['id']
+                    featured, match['id'], game_start_time
                 )
                 
                 await msg.edit(embed=new_embed)
@@ -585,7 +587,7 @@ class Hexbet(commands.Cog):
         comp_score = len({p.get('champ_name') for p in players}) / 10
         return rank_score + wr_score + comp_score
 
-    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None) -> discord.Embed:
+    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None, game_start_time: int = 0) -> discord.Embed:
         # Calculate team statistics (only from ranked players, not streamer mode)
         blue_ranked = [p for p in blue if not p.get('streamer_mode', False)]
         red_ranked = [p for p in red if not p.get('streamer_mode', False)]
@@ -616,7 +618,14 @@ class Hexbet(commands.Cog):
         desc = f"**Region:** {platform.upper()}"
         if featured_player:
             desc += f" • **Featured:** {featured_player}"
-        desc += f"\n\n**Game Duration:** ~25-35 minutes"
+        
+        # Calculate actual game duration
+        if game_start_time > 0:
+            game_duration_ms = int(time.time() * 1000) - game_start_time
+            game_duration_min = max(0, game_duration_ms // 60000)
+            desc += f"\n\n⏱️ **Game Duration:** {game_duration_min} min"
+        else:
+            desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
         
         embed = discord.Embed(
             title=f"⚔️ HEXBET Match #{game_id}",
@@ -852,10 +861,11 @@ class Hexbet(commands.Cog):
                         featured = parts[1]
                 
                 # Rebuild embed with current bet data
+                game_start_time = match.get('start_time', 0)
                 new_embed = self._build_embed(
                     game_id, platform, blue_players, red_players,
                     odds_blue, odds_red, chance_blue, chance_red,
-                    featured, match['id']
+                    featured, match['id'], game_start_time
                 )
                 
                 await msg.edit(embed=new_embed)
