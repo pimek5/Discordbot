@@ -912,10 +912,12 @@ class Hexbet(commands.Cog):
             logger.error(f"Error refreshing leaderboard: {e}", exc_info=True)
 
     async def _find_leaderboard_message(self, channel: discord.TextChannel) -> Optional[discord.Message]:
-        async for msg in channel.history(limit=10):
+        """Find the permanent leaderboard embed in the channel"""
+        async for msg in channel.history(limit=50):  # Increased limit
             if msg.author.id == self.bot.user.id and msg.embeds:
                 first = msg.embeds[0]
-                if first.title == "🏆 HEXBET Leaderboard":
+                # Match leaderboard by title pattern
+                if first.title and "HEXBET Leaderboard" in first.title:
                     return msg
         return None
 
