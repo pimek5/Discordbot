@@ -743,15 +743,17 @@ class Hexbet(commands.Cog):
                     )
                 embed.description = "\n".join(lines)
                 
-                # Add useful commands section
+                # Add useful commands at the bottom
                 embed.add_field(
                     name="📋 Useful Commands",
                     value=(
+                        "`/bet` - Place a bet on active match\n"
                         "`/hxbalance` - Check your balance\n"
+                        "`/hxdaily` - Claim 100 daily tokens\n"
                         "`/hxstats` - View your betting stats\n"
                         "`/hxspecial` - Create special bet (1000 tokens)\n"
-                        "`/hxdaily` - Claim daily tokens (500)\n"
-                        "`/hxhelp` - View all commands"
+                        "`/hxplayer` - Search for a player\n"
+                        "`/hxfind` - Find high-elo games"
                     ),
                     inline=False
                 )
