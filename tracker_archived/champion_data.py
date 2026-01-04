@@ -33,7 +33,8 @@ CHAMPION_NAMES = {
     518: "Neeko", 523: "Aphelios", 526: "Rell", 555: "Pyke", 875: "Sett",
     711: "Vex", 777: "Yone", 887: "Gwen", 888: "Renata Glasc", 876: "Lillia",
     895: "Nilah", 897: "K'Sante", 902: "Milio", 910: "Hwei", 950: "Naafiri",
-    233: "Briar", 910: "Hwei", 200: "Bel'Veth", 893: "Aurora", 950: "Naafiri"
+    233: "Briar", 910: "Hwei", 200: "Bel'Veth", 893: "Aurora", 950: "Naafiri",
+    999: "Zaahen"
 }
 
 def get_champion_name(champion_id: int) -> str:
