@@ -1,0 +1,2 @@
+2026-01-04 12:21:34,443 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-01-04 12:21:34,445 - discord.client - INFO - logging in using static token

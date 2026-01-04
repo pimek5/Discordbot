@@ -182,6 +182,23 @@ class TrackerDatabase:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS hexbet_verified_players (
+                        id SERIAL PRIMARY KEY,
+                        riot_id TEXT UNIQUE NOT NULL,
+                        player_name TEXT,
+                        player_type TEXT CHECK (player_type IN ('pro', 'streamer')),
+                        team TEXT,
+                        platform TEXT,
+                        lolpros_url TEXT,
+                        leaguepedia_url TEXT,
+                        verified_at TIMESTAMP DEFAULT NOW(),
+                        last_seen TIMESTAMP DEFAULT NOW(),
+                        last_checked TIMESTAMP DEFAULT NOW()
+                    );
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_verified_riot_id ON hexbet_verified_players(riot_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_verified_type ON hexbet_verified_players(player_type)")
                 conn.commit()
         finally:
             self.return_connection(conn)
@@ -892,6 +909,115 @@ class TrackerDatabase:
                     WHERE discord_id = %s
                 """, (today, amount, amount, today, user_id))
                 conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    # ===== VERIFIED PLAYERS (PRO/STRM) =====
+    
+    def add_verified_player(self, riot_id: str, player_name: str, player_type: str, 
+                          team: Optional[str] = None, platform: Optional[str] = None,
+                          lolpros_url: Optional[str] = None, leaguepedia_url: Optional[str] = None) -> bool:
+        """Add or update a verified player (pro or streamer)"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO hexbet_verified_players 
+                    (riot_id, player_name, player_type, team, platform, lolpros_url, leaguepedia_url, last_seen)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (riot_id) DO UPDATE SET
+                        player_name = EXCLUDED.player_name,
+                        team = EXCLUDED.team,
+                        platform = EXCLUDED.platform,
+                        lolpros_url = EXCLUDED.lolpros_url,
+                        leaguepedia_url = EXCLUDED.leaguepedia_url,
+                        last_seen = NOW()
+                """, (riot_id, player_name, player_type, team, platform, lolpros_url, leaguepedia_url))
+                conn.commit()
+                logger.info(f"✅ Added/updated verified player: {riot_id} ({player_type})")
+                return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Error adding verified player: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+    
+    def get_verified_player(self, riot_id: str) -> Optional[Dict]:
+        """Get verified player info by riot_id"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT riot_id, player_name, player_type, team, platform, 
+                           lolpros_url, leaguepedia_url, verified_at, last_seen, last_checked
+                    FROM hexbet_verified_players
+                    WHERE LOWER(riot_id) = LOWER(%s)
+                """, (riot_id,))
+                row = cur.fetchone()
+                if row:
+                    return {
+                        'riot_id': row[0],
+                        'player_name': row[1],
+                        'player_type': row[2],
+                        'team': row[3],
+                        'platform': row[4],
+                        'lolpros_url': row[5],
+                        'leaguepedia_url': row[6],
+                        'verified_at': row[7],
+                        'last_seen': row[8],
+                        'last_checked': row[9]
+                    }
+                return None
+        finally:
+            self.return_connection(conn)
+    
+    def update_player_last_checked(self, riot_id: str):
+        """Update last_checked timestamp for a player"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE hexbet_verified_players
+                    SET last_checked = NOW()
+                    WHERE LOWER(riot_id) = LOWER(%s)
+                """, (riot_id,))
+                conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error updating last_checked: {e}")
+        finally:
+            self.return_connection(conn)
+    
+    def get_all_verified_players(self, player_type: Optional[str] = None) -> List[Dict]:
+        """Get all verified players, optionally filtered by type"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                if player_type:
+                    cur.execute("""
+                        SELECT riot_id, player_name, player_type, team, platform
+                        FROM hexbet_verified_players
+                        WHERE player_type = %s
+                        ORDER BY player_name
+                    """, (player_type,))
+                else:
+                    cur.execute("""
+                        SELECT riot_id, player_name, player_type, team, platform
+                        FROM hexbet_verified_players
+                        ORDER BY player_type, player_name
+                    """)
+                rows = cur.fetchall()
+                return [
+                    {
+                        'riot_id': r[0],
+                        'player_name': r[1],
+                        'player_type': r[2],
+                        'team': r[3],
+                        'platform': r[4]
+                    }
+                    for r in rows
+                ]
         finally:
             self.return_connection(conn)
 

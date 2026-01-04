@@ -23,6 +23,7 @@ from HEXBET.pro_players import (
     get_streamer_emoji,
     get_player_badge_emoji
 )
+from HEXBET.lolpros_scraper import check_and_verify_player
 
 logger = logging.getLogger('hexbet')
 
@@ -1067,11 +1068,19 @@ class Hexbet(commands.Cog):
             p['champ_name'] = champ_name
             # Use emoji if available, fallback to champion name
             p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id) or f'**{champ_name}**'
-            # Check if player is a pro or streamer
+            # Check if player is a pro or streamer (database + lolpros.gg)
             riot_id = p.get('riotId', '')
-            p['is_pro'] = is_pro_player(riot_id)
-            p['is_streamer'] = is_streamer_player(riot_id)
-            p['badge_emoji'] = get_player_badge_emoji(riot_id)
+            
+            # First check static database (instant)
+            badge = get_player_badge_emoji(riot_id)
+            
+            # If not in static database, check lolpros.gg and database (async)
+            if not badge and riot_id:
+                badge = await check_and_verify_player(riot_id, self.db)
+            
+            p['is_pro'] = badge == get_pro_emoji() if badge else is_pro_player(riot_id)
+            p['is_streamer'] = badge == get_streamer_emoji() if badge else is_streamer_player(riot_id)
+            p['badge_emoji'] = badge
     
     def _apply_lobby_average(self, all_players: List[dict]):
         """Apply lobby-wide average to streamer mode players (fairer distribution)"""
