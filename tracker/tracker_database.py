@@ -273,6 +273,17 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
+    def get_bets_for_match(self, match_id: int) -> list:
+        """Get all bets for a match as list of dicts."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT user_id, side, amount, odds, potential_win FROM hexbet_bets WHERE match_id = %s", (match_id,))
+                rows = cur.fetchall()
+                return [{'user_id': r[0], 'side': r[1], 'amount': r[2], 'odds': r[3], 'potential_win': r[4]} for r in rows]
+        finally:
+            self.return_connection(conn)
+
     def settle_match(self, match_id: int, winner: str) -> list:
         """Settle bets and return list of (user_id, amount, payout, won)."""
         conn = self.get_connection()

@@ -505,6 +505,74 @@ class Hexbet(commands.Cog):
         await self.post_random_featured_game(force=True, platform_choice=platform)
         await interaction.followup.send("✅ Triggered high-elo game scan", ephemeral=True)
     
+    @app_commands.command(name="hexbet_settle", description="(Admin) Force settle current match")
+    @app_commands.describe(
+        winner="Winner team (blue or red)",
+        cancel="Set to True to cancel match and refund all bets"
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hexbet_settle(self, interaction: discord.Interaction, winner: Optional[str] = None, cancel: bool = False):
+        """Force settle the current match or cancel it"""
+        await interaction.response.defer(ephemeral=True)
+        
+        match = self.db.get_open_match()
+        if not match:
+            await interaction.followup.send("❌ No active match to settle", ephemeral=True)
+            return
+        
+        try:
+            if cancel:
+                # Refund all bets
+                bets = self.db.get_bets_for_match(match['id'])
+                for bet in bets:
+                    self.db.update_balance(bet['user_id'], bet['amount'])
+                    logger.info(f"Refunded {bet['amount']} to user {bet['user_id']}")
+                
+                self.db.settle_match(match['id'], winner='cancel')
+                
+                # Update message
+                channel = self.bot.get_channel(match.get('channel_id'))
+                message_id = match.get('message_id')
+                if channel and message_id:
+                    try:
+                        msg = await channel.fetch_message(message_id)
+                        embed = msg.embeds[0] if msg.embeds else discord.Embed()
+                        embed.color = 0x95A5A6  # Gray
+                        embed.add_field(name="Result", value="**CANCELLED - All bets refunded**", inline=False)
+                        await msg.edit(embed=embed, view=ClosedBetView())
+                    except Exception as e:
+                        logger.error(f"Failed to update message: {e}")
+                
+                await interaction.followup.send(f"✅ Match cancelled. {len(bets)} bets refunded.", ephemeral=True)
+                return
+            
+            if not winner or winner.lower() not in ['blue', 'red']:
+                await interaction.followup.send("❌ Please specify winner: 'blue' or 'red'", ephemeral=True)
+                return
+            
+            winner = winner.lower()
+            payouts = self.db.settle_match(match['id'], winner)
+            
+            for user_id, amount, payout, won in payouts:
+                if payout:
+                    self.db.update_balance(user_id, payout)
+                self.db.record_result(user_id, amount, payout, won)
+            
+            await self._update_match_message(match, winner, payouts)
+            
+            winners_count = sum(1 for _, _, _, won in payouts if won)
+            losers_count = len(payouts) - winners_count
+            
+            await interaction.followup.send(
+                f"✅ Match settled! Winner: **{winner.upper()}**\n"
+                f"Winners: {winners_count} | Losers: {losers_count}",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in force settle: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+    
     @app_commands.command(name="populate_pool", description="(Admin) Populate high-elo player pool from Riot API")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def populate_pool(self, interaction: discord.Interaction):
