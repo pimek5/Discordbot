@@ -117,13 +117,24 @@ class TrackerDatabase:
                 
                 # Migration: add game_start_at timestamp column if it doesn't exist
                 try:
-                    cur.execute("ALTER TABLE hexbet_matches ADD COLUMN game_start_at TIMESTAMP")
+                    cur.execute("ALTER TABLE hexbet_matches ADD COLUMN IF NOT EXISTS game_start_at TIMESTAMP")
+                    logger.info("✅ Migrated: game_start_at column")
                 except psycopg2.Error as e:
                     # Rollback failed migration to restore transaction state
                     conn.rollback()
                     if "already exists" not in str(e):
                         logger.warning(f"Migration note: {e}")
                     # Reconnect cursor after rollback
+                    cur = conn.cursor()
+                
+                # Migration: add special_bet column if it doesn't exist
+                try:
+                    cur.execute("ALTER TABLE hexbet_matches ADD COLUMN IF NOT EXISTS special_bet BOOLEAN DEFAULT FALSE")
+                    logger.info("✅ Migrated: special_bet column")
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    if "already exists" not in str(e):
+                        logger.warning(f"Migration note: {e}")
                     cur = conn.cursor()
                 
                 cur.execute("""
