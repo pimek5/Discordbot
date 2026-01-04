@@ -895,6 +895,9 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
+# Global singleton instance
+_tracker_db = None
+
 def get_tracker_db():
     """Get or create the global tracker database instance"""
     global _tracker_db
