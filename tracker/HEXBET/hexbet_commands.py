@@ -1507,7 +1507,15 @@ class Hexbet(commands.Cog):
                     chance_red = 100 - chance_blue
                     
                     game_id = game_data.get('gameId')
-                    match_id = self.db.create_hexbet_match(game_id, platform, BET_CHANNEL_ID, blue_ordered, red_ordered, game_data.get('gameStartTime', 0), special_bet=True)
+                    match_id = self.db.create_hexbet_match(
+                        game_id,
+                        platform,
+                        BET_CHANNEL_ID,
+                        {'players': blue_ordered, 'odds': odds_blue},
+                        {'players': red_ordered, 'odds': odds_red},
+                        game_data.get('gameStartTime', 0),
+                        special_bet=True
+                    )
                     
                     if not match_id:
                         logger.error(f"❌ Failed to create match for game {game_id}")
@@ -2551,7 +2559,8 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
             embed = self.cog._build_embed(
                 game_id, platform, blue_ordered, red_ordered,
                 odds_blue, odds_red, chance_blue, chance_red,
-                featured_label, match_id
+                featured_label, match_id,
+                game_start_at=game_data.get('gameStartTime')
             )
             
             view = BetView(match_id, odds_blue, odds_red, self.cog, platform, blue_ordered, red_ordered)
