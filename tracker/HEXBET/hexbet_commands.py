@@ -918,13 +918,56 @@ class Hexbet(commands.Cog):
             self.db.return_connection(conn)
 
     def _assign_roles(self, players: List[dict]) -> List[dict]:
+        """
+        Assign roles to players using spell IDs and champion roles
+        Smite (11) = Jungle, Others sorted by typical role patterns
+        """
         ordered = []
-        for idx, p in enumerate(players[:5]):
-            role_name, role_emoji = ROLE_LABELS[idx] if idx < len(ROLE_LABELS) else ("Player", "🎮")
-            p_copy = dict(p)
-            p_copy['role_name'] = role_name
-            p_copy['role_emoji'] = role_emoji
-            ordered.append(p_copy)
+        
+        # First find jungler (has Smite = spell1Id or spell2Id == 11)
+        jungler = None
+        non_jungle = []
+        
+        for p in players:
+            spell1 = p.get('spell1Id', 0)
+            spell2 = p.get('spell2Id', 0)
+            if spell1 == 11 or spell2 == 11:  # Smite
+                jungler = p
+            else:
+                non_jungle.append(p)
+        
+        # If no jungler found by smite, take first player as jungle
+        if not jungler and players:
+            jungler = players[0]
+            non_jungle = players[1:]
+        
+        # Assign roles in order: TOP, JUNGLE, MID, ADC, SUPPORT
+        role_assignments = []
+        
+        if len(non_jungle) >= 4:
+            # Standard case: TOP, JGL, MID, ADC, SUP
+            role_assignments = [
+                (non_jungle[0], "Top", CFG_ROLE_EMOJIS.get('TOP', '🗻')),
+                (jungler, "Jungle", CFG_ROLE_EMOJIS.get('JUNGLE', '🌿')),
+                (non_jungle[1], "Mid", CFG_ROLE_EMOJIS.get('MIDDLE', '🌀')),
+                (non_jungle[2], "ADC", CFG_ROLE_EMOJIS.get('BOTTOM', '🎯')),
+                (non_jungle[3], "Support", CFG_ROLE_EMOJIS.get('UTILITY', '🛡️')),
+            ]
+        else:
+            # Fallback: assign by index
+            all_players = non_jungle + ([jungler] if jungler else [])
+            for idx, p in enumerate(all_players[:5]):
+                role_name, role_emoji = ROLE_LABELS[idx] if idx < len(ROLE_LABELS) else ("Player", "🎮")
+                role_assignments.append((p, role_name, role_emoji))
+        
+        # Build ordered list with role info
+        for player, role_name, role_emoji in role_assignments:
+            if player:
+                p_copy = dict(player)
+                p_copy['role_name'] = role_name
+                p_copy['role_emoji'] = role_emoji
+                ordered.append(p_copy)
+        
         return ordered
 
     async def _enrich_players(self, players: List[dict], region: str):
