@@ -583,6 +583,25 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
+    def get_old_settled_matches(self, minutes: int = 1):
+        """Get settled matches older than specified minutes (for Discord message cleanup)"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, game_id, platform, channel_id, message_id, status, winner, updated_at
+                    FROM hexbet_matches
+                    WHERE status = 'settled'
+                    AND updated_at < NOW() - make_interval(mins => %s)
+                """, (minutes,))
+                rows = cur.fetchall()
+                if rows:
+                    cols = [desc[0] for desc in cur.description]
+                    return [dict(zip(cols, row)) for row in rows]
+                return []
+        finally:
+            self.return_connection(conn)
+
     def get_user_betting_stats(self, user_id: int) -> Optional[Dict]:
         """Get comprehensive betting stats for a user"""
         conn = self.get_connection()

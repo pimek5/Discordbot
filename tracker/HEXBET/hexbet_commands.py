@@ -144,8 +144,33 @@ class Hexbet(commands.Cog):
     async def cleanup_old_bets(self):
         """Delete settled matches and their bets older than 1 minute"""
         try:
+            # Get matches to cleanup (with channel_id, message_id)
+            old_matches = self.db.get_old_settled_matches(minutes=1)
+            
+            if old_matches:
+                logger.info(f"🗑️ Found {len(old_matches)} old settled matches to cleanup")
+                
+                # Delete Discord messages first
+                for match in old_matches:
+                    channel_id = match.get('channel_id')
+                    message_id = match.get('message_id')
+                    
+                    if channel_id and message_id:
+                        try:
+                            channel = self.bot.get_channel(channel_id)
+                            if channel:
+                                message = await channel.fetch_message(message_id)
+                                await message.delete()
+                                logger.info(f"🗑️ Deleted message {message_id} in channel {channel_id}")
+                        except discord.NotFound:
+                            logger.info(f"Message {message_id} already deleted")
+                        except Exception as e:
+                            logger.error(f"Failed to delete message {message_id}: {e}")
+            
+            # Now delete from database
             deleted_matches, deleted_bets = self.db.cleanup_old_bets(minutes=1)
-            logger.info(f"🗑️ Cleanup result: {deleted_matches} matches, {deleted_bets} bets deleted")
+            logger.info(f"🗑️ Cleanup result: {deleted_matches} matches, {deleted_bets} bets deleted from DB")
+            
             if deleted_matches == 0 and deleted_bets == 0:
                 logger.info("ℹ️ No old bets to cleanup")
         except Exception as e:
