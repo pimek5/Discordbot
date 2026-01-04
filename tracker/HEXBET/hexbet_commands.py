@@ -1085,18 +1085,18 @@ class BetView(discord.ui.View):
             }
             region = region_map.get(self.platform.lower(), 'euw')
             
-            # Collect all player names with taglines (gameName-tagLine format)
+            # Collect all player names with taglines (gameName#tagLine format)
             all_players = self.blue_players + self.red_players
             names = []
             for p in all_players:
                 riot_id = p.get('riotId', '')
-                if riot_id and '#' in riot_id:
-                    # Use full riotId but replace # with - for OP.GG format
-                    name = riot_id.replace('#', '-')
+                if riot_id:
+                    # Keep the # format for OP.GG
+                    names.append(riot_id)
                 else:
                     name = p.get('summonerName', '')
-                if name:
-                    names.append(name)
+                    if name:
+                        names.append(name)
             
             if not names:
                 await interaction.response.send_message("❌ No player names found", ephemeral=True)
