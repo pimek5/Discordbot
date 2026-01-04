@@ -742,6 +742,19 @@ class Hexbet(commands.Cog):
                         f"**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
                     )
                 embed.description = "\n".join(lines)
+                
+                # Add useful commands section
+                embed.add_field(
+                    name="📋 Useful Commands",
+                    value=(
+                        "`/hxbalance` - Check your balance\n"
+                        "`/hxstats` - View your betting stats\n"
+                        "`/hxspecial` - Create special bet (1000 tokens)\n"
+                        "`/hxdaily` - Claim daily tokens (500)\n"
+                        "`/hxhelp` - View all commands"
+                    ),
+                    inline=False
+                )
             
             # Create view with refresh button
             view = LeaderboardView(self)
