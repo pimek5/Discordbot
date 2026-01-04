@@ -1358,6 +1358,21 @@ class Hexbet(commands.Cog):
             logger.error(f"Error in find_game: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:100]}", ephemeral=True)
 
+    @app_commands.command(name="hxspecial", description="Create a special bet for 1000 tokens by choosing a player")
+    async def hxspecial(self, interaction: discord.Interaction):
+        """Allow regular members to create a special bet for 1000 tokens"""
+        balance = self.db.get_balance(interaction.user.id)
+        if balance < 1000:
+            await interaction.response.send_message(
+                f"❌ You need 1000 tokens to create a special bet. Your balance: {balance}",
+                ephemeral=True
+            )
+            return
+        
+        # Show modal to enter player name and platform
+        modal = SpecialBetModal(self)
+        await interaction.response.send_modal(modal)
+
     @app_commands.command(name="hxpost", description="(Admin) Force post a bet")
     @app_commands.describe(platform="Platform: euw1, na1, kr, eun1")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -2161,6 +2176,192 @@ class Hexbet(commands.Cog):
         except Exception as e:
             logger.error(f"Error force closing matches: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+
+class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'):
+    player_name = discord.ui.TextInput(
+        label='Player Name (Summoner Name)',
+        placeholder='Enter player summoner name (e.g., Faker)',
+        required=True,
+        max_length=50
+    )
+    
+    platform = discord.ui.TextInput(
+        label='Platform',
+        placeholder='euw1, na1, kr, or eun1',
+        required=True,
+        max_length=10,
+        default='euw1'
+    )
+    
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        player_name = self.player_name.value.strip()
+        platform = self.platform.value.strip().lower()
+        
+        # Validate platform
+        valid_platforms = ['euw1', 'na1', 'kr', 'eun1']
+        if platform not in valid_platforms:
+            await interaction.followup.send(
+                f"❌ Invalid platform. Use: {', '.join(valid_platforms)}",
+                ephemeral=True
+            )
+            return
+        
+        # Check balance again
+        balance = self.cog.db.get_balance(interaction.user.id)
+        if balance < 1000:
+            await interaction.followup.send(
+                f"❌ Insufficient balance. Required: 1000, Your balance: {balance}",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            # Get player info from Riot API
+            region = platform_to_region(platform)
+            account_data = await self.cog.riot_api.get_account_by_name(player_name, platform)
+            
+            if not account_data or 'puuid' not in account_data:
+                await interaction.followup.send(
+                    f"❌ Player '{player_name}' not found on {platform.upper()}. Please check the name and try again.",
+                    ephemeral=True
+                )
+                return
+            
+            puuid = account_data['puuid']
+            logger.info(f"🎮 User {interaction.user.name} requesting special bet for {player_name} ({puuid}) on {platform}")
+            
+            # Check if player is in active game
+            game_data = await self.cog.riot_api.get_active_game(puuid, region)
+            
+            if not game_data:
+                await interaction.followup.send(
+                    f"❌ Player '{player_name}' is not currently in an active game. Please choose another player.",
+                    ephemeral=True
+                )
+                return
+            
+            game_id = game_data.get('gameId')
+            queue_id = game_data.get('gameQueueConfigId')
+            
+            # Only accept Ranked Solo/Duo
+            if queue_id != 420:
+                await interaction.followup.send(
+                    f"❌ Player is in a non-ranked game (Queue: {queue_id}). Only Ranked Solo/Duo games are supported. Please choose another player.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if match already exists
+            open_count = self.cog.db.count_open_matches()
+            if open_count >= 3:
+                await interaction.followup.send(
+                    "❌ There are already 3 active matches. Wait for one to finish before creating a special bet.",
+                    ephemeral=True
+                )
+                return
+            
+            logger.info(f"✅ Found valid ranked game {game_id} for {player_name}")
+            
+            # Build match embed
+            channel = self.cog.bot.get_channel(BET_CHANNEL_ID)
+            if not channel:
+                await interaction.followup.send(
+                    "❌ Bet channel not found. Contact an admin.",
+                    ephemeral=True
+                )
+                return
+            
+            blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+            red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+            
+            blue_ordered = self.cog._assign_roles(blue_team)
+            red_ordered = self.cog._assign_roles(red_team)
+            
+            # Enrich player data
+            await self.cog._enrich_players(blue_ordered, region)
+            await self.cog._enrich_players(red_ordered, region)
+            self.cog._apply_team_average(blue_ordered)
+            self.cog._apply_team_average(red_ordered)
+            
+            score_blue = self.cog._team_score(blue_ordered)
+            score_red = self.cog._team_score(red_ordered)
+            
+            odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+            chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+            chance_red = round(100 - chance_blue, 1)
+            
+            # Create match in database first
+            match_id = self.cog.db.create_hexbet_match(
+                game_id,
+                platform,
+                BET_CHANNEL_ID,
+                {'players': blue_ordered, 'odds': odds_blue},
+                {'players': red_ordered, 'odds': odds_red},
+                game_data.get('gameStartTime', 0),
+                special_bet=True  # Always special for /hxspecial
+            )
+            
+            if not match_id:
+                await interaction.followup.send(
+                    f"❌ This match already exists or couldn't be created. Choose another player.",
+                    ephemeral=True
+                )
+                return
+            
+            # Build embed with player name as featured
+            featured_label = f"{player_name}#{account_data.get('tagLine', '')}"
+            embed = self.cog._build_embed(
+                game_id, platform, blue_ordered, red_ordered,
+                odds_blue, odds_red, chance_blue, chance_red,
+                featured_label, match_id
+            )
+            
+            view = BetView(match_id, odds_blue, odds_red, self.cog, platform, blue_ordered, red_ordered)
+            
+            # Try to send message
+            try:
+                msg = await channel.send(embed=embed, view=view)
+                self.cog.db.set_match_message(match_id, msg.id)
+                logger.info(f"✅ Special bet embed created with message ID {msg.id}")
+                
+                # ONLY NOW deduct the 1000 tokens (embed successfully created)
+                self.cog.db.update_balance(interaction.user.id, -1000)
+                new_balance = self.cog.db.get_balance(interaction.user.id)
+                
+                await interaction.followup.send(
+                    f"✅ **Special bet created!**\n"
+                    f"Player: **{player_name}**\n"
+                    f"Cost: **1000 tokens**\n"
+                    f"New balance: **{new_balance}**\n\n"
+                    f"Match posted in <#{BET_CHANNEL_ID}>",
+                    ephemeral=True
+                )
+                
+                logger.info(f"💰 Deducted 1000 tokens from {interaction.user.name} (ID: {interaction.user.id}). New balance: {new_balance}")
+                
+            except Exception as e:
+                # If message sending fails, delete the match from database
+                logger.error(f"❌ Failed to send embed: {e}")
+                self.cog.db.settle_match(match_id, winner='cancel')  # Remove match
+                await interaction.followup.send(
+                    f"❌ Failed to create bet embed. No tokens deducted. Try another player.\nError: {str(e)[:100]}",
+                    ephemeral=True
+                )
+                return
+                
+        except Exception as e:
+            logger.error(f"Error creating special bet: {e}", exc_info=True)
+            await interaction.followup.send(
+                f"❌ Error creating special bet. Please try another player.\nDetails: {str(e)[:100]}",
+                ephemeral=True
+            )
 
 
 class BetModal(discord.ui.Modal, title='Place Your Bet'):
