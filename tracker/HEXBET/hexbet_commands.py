@@ -1108,8 +1108,8 @@ class Hexbet(commands.Cog):
                     color=0x00ff00 if is_pro else 0x3498DB
                 )
                 
-                rank_emoji = rank_emoji(tier) if tier != 'UNRANKED' else ''
-                rank_str = f"{rank_emoji} {tier}{' ' + division if division else ''} {lp} LP" if tier != 'UNRANKED' else "UNRANKED"
+                tier_emoji = rank_emoji(tier) if tier != 'UNRANKED' else ''
+                rank_str = f"{tier_emoji} {tier}{' ' + division if division else ''} {lp} LP" if tier != 'UNRANKED' else "UNRANKED"
                 
                 embed.add_field(name="Rank", value=rank_str, inline=True)
                 embed.add_field(name="Region", value=region.upper(), inline=True)
