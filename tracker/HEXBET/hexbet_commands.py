@@ -208,9 +208,9 @@ class Hexbet(commands.Cog):
             open_count = self.db.count_open_matches()
             logger.info(f"📋 Featured task: {open_count}/3 matches active")
             
-            # Post games until we have 3, but max 2 per task to avoid rate limiting
+            # Post games until we have 3, but max 3 per task to fill all slots quickly
             posts_this_run = 0
-            max_posts = 2
+            max_posts = 3
             
             while open_count < 3 and posts_this_run < max_posts:
                 logger.info(f"📝 Posting new game ({posts_this_run + 1}/{max_posts})...")
