@@ -147,6 +147,17 @@ class TrackerDatabase:
                         logger.warning(f"Migration note: {e}")
                     cur = conn.cursor()
                 
+                # Migration: add daily betting limit tracking
+                try:
+                    cur.execute("ALTER TABLE user_balances ADD COLUMN IF NOT EXISTS daily_wagered INTEGER DEFAULT 0")
+                    cur.execute("ALTER TABLE user_balances ADD COLUMN IF NOT EXISTS last_wager_date DATE")
+                    logger.info("✅ Migrated: daily_wagered and last_wager_date columns")
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    if "already exists" not in str(e):
+                        logger.warning(f"Migration note: {e}")
+                    cur = conn.cursor()
+                
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS hexbet_leaderboard_cache (
                         id SERIAL PRIMARY KEY,
@@ -824,9 +835,65 @@ class TrackerDatabase:
                 }
         finally:
             self.return_connection(conn)
-
-# Global database instance
-_tracker_db = None
+    
+    def check_daily_bet_limit(self, user_id: int, bet_amount: int, daily_limit: int = 1000) -> Tuple[bool, str, int]:
+        """Check if user can place bet within daily limit. Returns (can_bet, message, remaining)"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                from datetime import date
+                today = date.today()
+                
+                # Get current daily wagered and last wager date
+                cur.execute("""
+                    SELECT daily_wagered, last_wager_date
+                    FROM user_balances
+                    WHERE discord_id = %s
+                """, (user_id,))
+                row = cur.fetchone()
+                
+                if not row:
+                    # New user - allow bet
+                    return (True, "", daily_limit - bet_amount)
+                
+                daily_wagered, last_wager_date = row
+                
+                # Reset counter if it's a new day
+                if last_wager_date != today:
+                    daily_wagered = 0
+                
+                # Check if this bet would exceed limit
+                new_total = (daily_wagered or 0) + bet_amount
+                
+                if new_total > daily_limit:
+                    remaining = daily_limit - (daily_wagered or 0)
+                    return (False, f"❌ Daily betting limit reached! You can bet up to {remaining} more today. (Limit: {daily_limit}/day)", remaining)
+                
+                return (True, "", daily_limit - new_total)
+        finally:
+            self.return_connection(conn)
+    
+    def update_daily_wager(self, user_id: int, amount: int):
+        """Update daily wagered amount"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                from datetime import date
+                today = date.today()
+                
+                # Update or reset daily counter
+                cur.execute("""
+                    UPDATE user_balances
+                    SET daily_wagered = CASE 
+                        WHEN last_wager_date = %s THEN COALESCE(daily_wagered, 0) + %s
+                        ELSE %s
+                    END,
+                    last_wager_date = %s
+                    WHERE discord_id = %s
+                """, (today, amount, amount, today, user_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
 
 def get_tracker_db():
     """Get or create the global tracker database instance"""

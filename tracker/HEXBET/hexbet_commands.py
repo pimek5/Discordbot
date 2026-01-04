@@ -100,6 +100,7 @@ class Hexbet(commands.Cog):
         self.settle_task.start()
         self.cleanup_task.start()
         self.check_embed_task.start()
+        self.auto_refresh_task.start()  # Auto-refresh embeds every 1 minute
         self.bot.loop.create_task(self._ensure_champions())
         self.bot.loop.create_task(self._restore_persistent_views())
         self.bot.loop.create_task(self._load_pro_players())
@@ -214,6 +215,7 @@ class Hexbet(commands.Cog):
         self.settle_task.cancel()
         self.cleanup_task.cancel()
         self.check_embed_task.cancel()
+        self.auto_refresh_task.cancel()
 
     @tasks.loop(minutes=FEATURED_INTERVAL)
     async def featured_task(self):
@@ -305,6 +307,24 @@ class Hexbet(commands.Cog):
         except Exception as e:
             logger.error(f"❌ Error in check_embed_task: {e}", exc_info=True)
 
+    @tasks.loop(minutes=1)
+    async def auto_refresh_task(self):
+        """Auto-refresh all open match embeds every 1 minute with updated bet totals"""
+        try:
+            matches = self.db.get_open_matches()
+            if not matches:
+                return
+            
+            logger.info(f"🔄 Auto-refreshing {len(matches)} match embed(s)...")
+            
+            for match in matches:
+                try:
+                    await self._refresh_match_embed(match['id'])
+                except Exception as e:
+                    logger.warning(f"Failed to auto-refresh match {match.get('id')}: {e}")
+        except Exception as e:
+            logger.error(f"❌ Error in auto_refresh_task: {e}", exc_info=True)
+
     @featured_task.before_loop
     async def before_featured(self):
         await self.bot.wait_until_ready()
@@ -319,6 +339,10 @@ class Hexbet(commands.Cog):
 
     @cleanup_task.before_loop
     async def before_cleanup(self):
+        await self.bot.wait_until_ready()
+
+    @auto_refresh_task.before_loop
+    async def before_auto_refresh(self):
         await self.bot.wait_until_ready()
 
     async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None):
@@ -1026,6 +1050,13 @@ class Hexbet(commands.Cog):
         if amount <= 0:
             await interaction.response.send_message("❌ amount must be > 0", ephemeral=True)
             return
+        
+        # Check daily betting limit (1000 tokens/day)
+        can_bet, limit_msg, remaining = self.db.check_daily_bet_limit(interaction.user.id, amount, daily_limit=1000)
+        if not can_bet:
+            await interaction.response.send_message(limit_msg, ephemeral=True)
+            return
+        
         match = self.db.get_open_match()
         if not match:
             await interaction.response.send_message("❌ No open match", ephemeral=True)
@@ -1042,8 +1073,15 @@ class Hexbet(commands.Cog):
             await interaction.response.send_message("⚠️ You already placed a bet for this match", ephemeral=True)
             return
         self.db.record_wager(interaction.user.id, amount)
+        self.db.update_daily_wager(interaction.user.id, amount)  # Track daily limit
         new_balance = self.db.update_balance(interaction.user.id, -amount)
-        await interaction.response.send_message(f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}", ephemeral=True)
+        
+        # Show remaining daily limit in response
+        limit_info = f"\n💳 Daily limit remaining: {remaining}" if remaining < 500 else ""
+        await interaction.response.send_message(
+            f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}{limit_info}", 
+            ephemeral=True
+        )
 
     @app_commands.command(name="hxhelp", description="Show all HEXBET commands")
     async def hxhelp(self, interaction: discord.Interaction):
@@ -2154,6 +2192,12 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
                 await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
                 return
             
+            # Check daily betting limit (1000 tokens/day)
+            can_bet, limit_msg, remaining = self.cog.db.check_daily_bet_limit(interaction.user.id, bet_amount, daily_limit=1000)
+            if not can_bet:
+                await interaction.response.send_message(limit_msg, ephemeral=True)
+                return
+            
             if bet_amount > self.balance:
                 await interaction.response.send_message(f"❌ Not enough balance! You have {self.balance}", ephemeral=True)
                 return
@@ -2170,12 +2214,16 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
                 return
             
             self.cog.db.record_wager(interaction.user.id, bet_amount)
+            self.cog.db.update_daily_wager(interaction.user.id, bet_amount)  # Track daily limit
             new_balance = self.cog.db.update_balance(interaction.user.id, -bet_amount)
+            
+            # Show remaining daily limit if below 500
+            limit_info = f"\n💳 **Daily Limit Remaining:** {remaining}" if remaining < 500 else ""
             
             embed = discord.Embed(
                 title="✅ Bet Confirmed!",
                 color=0x3498DB if self.side == 'blue' else 0xE74C3C,
-                description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
+                description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}{limit_info}"
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
