@@ -507,7 +507,7 @@ class Hexbet(commands.Cog):
             # Get existing embed and add winner badge
             if msg.embeds:
                 embed = msg.embeds[0]
-                winner_emoji = "🔵" if winner == 'blue' else "🔴"
+                winner_emoji = "<:BlueSide:1457209225976484014>" if winner == 'blue' else "<:RedSide:1457209221031395472>"
                 embed.title = f"{winner_emoji} {embed.title} - {winner.upper()} WON!"
                 embed.color = 0x3498DB if winner == 'blue' else 0xE74C3C
                 
