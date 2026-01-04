@@ -144,7 +144,7 @@ class Hexbet(commands.Cog):
             region = region_map.get(platform, 'euw')
             
             # Get random PUUIDs from high-elo pool
-            puuids = self.db.get_random_high_elo_puuids(region, limit=50)
+            puuids = self.db.get_random_high_elo_puuids(region, limit=100)
             if not puuids:
                 logger.warning(f"⚠️ No PUUIDs in pool for {region}")
                 return
@@ -160,8 +160,8 @@ class Hexbet(commands.Cog):
                     game_id = game_data.get('gameId')
                     queue_id = game_data.get('gameQueueConfigId')
                     
-                    # Only post ranked solo/duo games
-                    if queue_id != 420:
+                    # Accept Ranked Solo/Duo (420) and Flex (440)
+                    if queue_id not in [420, 440]:
                         continue
                     
                     logger.info(f"✅ Found active game: {game_id} ({tier} {lp} LP player)")
@@ -448,7 +448,7 @@ class Hexbet(commands.Cog):
                     game_data = await self.riot_api.get_active_game(puuid, region)
                     if game_data:
                         queue_id = game_data.get('gameQueueConfigId')
-                        if queue_id == 420:  # Ranked Solo/Duo
+                        if queue_id in [420, 440]:  # Ranked Solo/Duo or Flex
                             active_count += 1
                     await asyncio.sleep(0.1)
                 
