@@ -120,34 +120,49 @@ class RiotAPI:
             logger.error("❌ No API key available for featured games!")
             return None
         url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/featured-games"
+        
+        # Custom headers per request
+        headers = {
+            'X-Riot-Token': self.api_key,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Connection': 'close'
+        }
+        
         for attempt in range(retries):
             try:
-                timeout = aiohttp.ClientTimeout(total=10, connect=5)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url, headers=self.headers) as response:
+                timeout = aiohttp.ClientTimeout(total=15, connect=5)
+                connector = aiohttp.TCPConnector(force_close=True, limit=1)
+                async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                    async with session.get(url, headers=headers, ssl=False) as response:
                         if response.status == 200:
                             data = await response.json()
                             logger.info(f"✅ Found {len(data.get('gameList', []))} games on {platform}")
                             return data
                         if response.status == 429:
                             logger.warning(f"⚠️ Rate limited on {platform}")
-                            await asyncio.sleep(1 + attempt)
+                            await asyncio.sleep(2 + attempt)
                             continue
                         if response.status == 403:
                             text = await response.text()
-                            logger.error(f"❌ API key forbidden (403) - check if key is valid and has Spectator API access")
+                            logger.error(f"❌ 403 Forbidden on {platform}. Response: {text[:200]}")
+                            logger.error(f"❌ Headers sent: {headers}")
                             return None
                         # Other errors
                         text = await response.text()
                         logger.error(f"❌ Error {response.status} on {platform}: {text[:100]}")
                         return None
             except asyncio.TimeoutError:
+                logger.warning(f"⏰ Timeout on {platform} (attempt {attempt+1})")
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
                 continue
             except Exception as e:
-                logger.error(f"❌ Exception: {e}")
-                return None
+                logger.error(f"❌ Exception on {platform}: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                continue
         return None
     
     async def get_account_by_riot_id(self, game_name: str, tag_line: str, 
