@@ -104,10 +104,7 @@ class RiotAPI:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.headers = {
-            'X-Riot-Token': api_key,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9'
+            'X-Riot-Token': api_key
         }
         if api_key:
             logger.info(f"🔑 API Key loaded: {api_key[:10]}...{api_key[-4:]} (len={len(api_key)})")
@@ -121,21 +118,11 @@ class RiotAPI:
             return None
         url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/featured-games"
         
-        # Custom headers per request
-        headers = {
-            'X-Riot-Token': self.api_key,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Connection': 'close'
-        }
-        
         for attempt in range(retries):
             try:
-                timeout = aiohttp.ClientTimeout(total=15, connect=5)
-                connector = aiohttp.TCPConnector(force_close=True, limit=1)
-                async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-                    async with session.get(url, headers=headers, ssl=False) as response:
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
                         if response.status == 200:
                             data = await response.json()
                             logger.info(f"✅ Found {len(data.get('gameList', []))} games on {platform}")
@@ -147,7 +134,6 @@ class RiotAPI:
                         if response.status == 403:
                             text = await response.text()
                             logger.error(f"❌ 403 Forbidden on {platform}. Response: {text[:200]}")
-                            logger.error(f"❌ Headers sent: {headers}")
                             return None
                         # Other errors
                         text = await response.text()
