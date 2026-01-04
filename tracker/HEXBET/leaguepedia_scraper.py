@@ -72,6 +72,13 @@ PRO_ACCOUNTS = {
 STREAMER_ACCOUNTS = {
     'agurin': {'name': 'Agurin', 'platform': 'Twitch'},
     'thebausffs': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'thebausffs#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'bausffs': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'bausffs#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'sololanesion': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'sololanesion#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'solorenektononly': {'name': 'Thebausffs', 'platform': 'Twitch'},
+    'solorenektononly#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
     'drututt': {'name': 'Drututt', 'platform': 'Twitch'},
     'nemesis': {'name': 'Nemesis', 'platform': 'Twitch'},
 }
