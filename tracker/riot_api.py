@@ -739,52 +739,25 @@ class RiotAPI:
                              retries: int = 3) -> Optional[Dict]:
         """Get current active game for a player - SPECTATOR-V5
         
-        CRITICAL: Spectator V5 requires encrypted summoner_id (NOT PUUID despite parameter name)
-        
-        Args:
-            puuid: Player PUUID
-            region: Region code
-            summoner_id: Optional encrypted summoner_id from database (if provided, skips 2 API calls)
-            retries: Number of retry attempts
-        
-        If summoner_id not provided:
-        1. Gets summoner name from PUUID (via get_summoner_by_puuid)
-        2. Gets encrypted summoner_id from name (via get_summoner_by_name)
-        3. Calls Spectator API with summoner_id
+        Uses PUUID (not summoner_id) for Spectator V5 endpoint
         """
         if not self.api_key:
             return None
         
-        # If summoner_id not provided, use gameName directly from database
-        # CRITICAL: Account API /by-puuid/ also broken with 400 "Exception decrypting"
-        # We must use the gameName we have stored in database
-        if not summoner_id:
-            # We cannot fetch gameName from PUUID anymore (all /by-puuid/ endpoints broken)
-            # The calling code MUST provide gameName or summoner_id
-            logger.error(f"❌ summoner_id not in database and cannot fetch without gameName for PUUID {puuid[:10]}...")
-            return None
-        else:
-            logger.debug(f"🔑 Using summoner_id from database: {summoner_id[:20]}...")
-        
-        # Step 3: Call Spectator API with summoner_id (NOT PUUID)
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
-        url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{summoner_id}"
-        
-        logger.debug(f"🔍 Calling Spectator API: {url}")
+        url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
         
         for attempt in range(retries):
             try:
                 timeout = aiohttp.ClientTimeout(total=15, connect=5)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
-                        logger.debug(f"📡 API Response: {response.status} for summoner_id {summoner_id[:10]}...")
                         if response.status == 200:
                             data = await response.json()
                             logger.info(f"✅ Active game found: Game ID {data.get('gameId')}, Queue {data.get('gameQueueConfigId')}")
                             return data
                         elif response.status == 404:
                             # Player not in game
-                            logger.debug(f"❌ 404 - Player not in game")
                             return None
                         elif response.status == 429:
                             logger.warning(f"⚠️ Rate limit hit, retrying...")
@@ -792,7 +765,7 @@ class RiotAPI:
                             continue
                         else:
                             text = await response.text()
-                            logger.error(f"❌ Spectator API error {response.status} for summoner_id {summoner_id[:20]}: {text[:400]}")
+                            logger.error(f"❌ Spectator API error {response.status}: {text[:200]}")
                             return None
             except asyncio.TimeoutError:
                 logger.warning(f"⏱️ Timeout getting active game (attempt {attempt + 1}/{retries})")
