@@ -374,8 +374,6 @@ class Hexbet(commands.Cog):
                     odds_blue, odds_red = odds_from_scores(score_blue, score_red)
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                     chance_red = round(100 - chance_blue, 1)
-
-                    featured_player = "🎯 RANKED SOLO/DUO"
                     
                     logger.info(f"💾 Creating match in database...")
                     # Create match first to get match_id for bet tracking
@@ -399,8 +397,8 @@ class Hexbet(commands.Cog):
                         match_id = existing['id']
                     
                     logger.info(f"📝 Building embed for match {match_id}...")
-                    # Build embed with match_id for bet tracking
-                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player, match_id)
+                    # Build embed WITHOUT featured_player (regular bets, no special label)
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, "", match_id)
 
                     self.db.increment_high_elo_featured(puuid)
                     view = BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered)
@@ -485,21 +483,17 @@ class Hexbet(commands.Cog):
                 logger.warning(f"Failed to log settlement: {e}")
 
     async def _update_match_message(self, match: dict, winner: str, payouts: List[tuple]):
+        """Delete match message after settlement"""
         channel = self.bot.get_channel(match.get('channel_id'))
         message_id = match.get('message_id')
         if not channel or not message_id:
             return
         try:
             msg = await channel.fetch_message(message_id)
-        except Exception:
-            return
-        embed = msg.embeds[0] if msg.embeds else discord.Embed()
-        embed.color = 0x2ECC71 if winner == 'blue' else 0xE74C3C
-        embed.add_field(name="Result", value=f"Winner: **{winner.upper()}**", inline=False)
-        if payouts:
-            winners = [f"<@{u}> +{payout}" for u, _amt, payout, won in payouts if won]
-            embed.add_field(name="Payouts", value="\n".join(winners) if winners else "No winners", inline=False)
-        await msg.edit(embed=embed, view=ClosedBetView())
+            await msg.delete()
+            logger.info(f"🗑️ Deleted settled match message {message_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete match message: {e}")
     
     async def _refresh_match_embed(self, match_id: int):
         """Refresh a match embed with current bet totals"""
@@ -1218,18 +1212,16 @@ class Hexbet(commands.Cog):
                 
                 self.db.settle_match(match['id'], winner='cancel')
                 
-                # Update message
+                # Delete message
                 channel = self.bot.get_channel(match.get('channel_id'))
                 message_id = match.get('message_id')
                 if channel and message_id:
                     try:
                         msg = await channel.fetch_message(message_id)
-                        embed = msg.embeds[0] if msg.embeds else discord.Embed()
-                        embed.color = 0x95A5A6  # Gray
-                        embed.add_field(name="Result", value="**CANCELLED - All bets refunded**", inline=False)
-                        await msg.edit(embed=embed, view=ClosedBetView())
+                        await msg.delete()
+                        logger.info(f"🗑️ Deleted cancelled match message {message_id}")
                     except Exception as e:
-                        logger.error(f"Failed to update message: {e}")
+                        logger.error(f"Failed to delete message: {e}")
                 
                 await interaction.followup.send(f"✅ Match cancelled. {len(bets)} bets refunded.", ephemeral=True)
                 
@@ -1987,12 +1979,6 @@ class BetView(discord.ui.View):
         except Exception as e:
             logger.error(f"Error force closing matches: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
-
-
-class ClosedBetView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(discord.ui.Button(label="Betting closed", style=discord.ButtonStyle.secondary, disabled=True))
 
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
