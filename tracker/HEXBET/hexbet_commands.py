@@ -1136,20 +1136,25 @@ class Hexbet(commands.Cog):
         if not players:
             return 1.0
         
-        # Base rank score (tier + division)
-        rank_score = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in players) / len(players)
+        # Base rank score (tier + division) - exponential scaling for bigger differences
+        rank_scores = [TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in players]
+        rank_score = sum(rank_scores) / len(players)
+        # Stronger exponential: 1.25^rank makes tier gaps much more significant
+        rank_contribution = (1.25 ** rank_score) * 2.5
         
-        # LP contribution (normalized to 0-1 scale, max 1000 LP)
-        lp_score = sum(min(p.get('lp', 0), 1000) for p in players) / (len(players) * 1000)
+        # LP contribution (less impact than tier, but still matters)
+        avg_lp = sum(p.get('lp', 0) for p in players) / len(players)
+        lp_contribution = (avg_lp / 600) * 1.0  # Reduced weight so tier dominates
         
-        # Winrate score (normalized around 50%)
-        wr_score = sum(p.get('wr', 50) for p in players) / (len(players) * 50)
+        # Winrate score (very predictive of actual performance)
+        avg_wr = sum(p.get('wr', 50) for p in players) / len(players)
+        wr_contribution = ((avg_wr - 50) / 5) * 1.0  # ±5% WR = ±1.0 points
         
-        # Champion diversity score
-        comp_score = len({p.get('champ_name') for p in players}) / 10
+        # Champion diversity score (minor)
+        comp_score = len({p.get('champ_name') for p in players}) / 20
         
-        # Weighted sum: rank (most important), WR (moderate), LP (minor), comp (minor)
-        return (rank_score * 5.0) + (wr_score * 1.0) + (lp_score * 0.5) + (comp_score * 0.5)
+        # Total: exponential rank dominates, then WR, then LP
+        return rank_contribution + lp_contribution + wr_contribution + comp_score
 
     def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None, game_start_at: Optional[str] = None) -> discord.Embed:
         # Calculate team statistics (only from ranked players, not streamer mode)
@@ -2665,12 +2670,6 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
                 await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
                 return
             
-            # Check daily betting limit (1000 tokens/day)
-            can_bet, limit_msg, remaining = self.cog.db.check_daily_bet_limit(interaction.user.id, bet_amount, daily_limit=1000)
-            if not can_bet:
-                await interaction.response.send_message(limit_msg, ephemeral=True)
-                return
-            
             if bet_amount > self.balance:
                 await interaction.response.send_message(f"❌ Not enough balance! You have {self.balance}", ephemeral=True)
                 return
@@ -2687,16 +2686,12 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
                 return
             
             self.cog.db.record_wager(interaction.user.id, bet_amount)
-            self.cog.db.update_daily_wager(interaction.user.id, bet_amount)  # Track daily limit
             new_balance = self.cog.db.update_balance(interaction.user.id, -bet_amount)
-            
-            # Show remaining daily limit if below 500
-            limit_info = f"\n💳 **Daily Limit Remaining:** {remaining}" if remaining < 500 else ""
             
             embed = discord.Embed(
                 title="✅ Bet Confirmed!",
                 color=0x3498DB if self.side == 'blue' else 0xE74C3C,
-                description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}{limit_info}"
+                description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             

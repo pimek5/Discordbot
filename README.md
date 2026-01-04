@@ -1,58 +1,58 @@
 # 🎮 HEXRTBRXEN Discord Bot Project
 
-## 📦 Struktura projektu - 2 osobne boty
+## 📦 Project Structure - 2 Separate Bots
 
 ### Bot 1: HEXRTBRXEN (Main Bot)
-**Lokalizacja:** `main/`
+**Location:** `main/`
 
-**Funkcje:**
+**Features:**
 - 🏆 Kassalytics (Profile, Stats, Leaderboards)
 - 🎮 LoLdle (5 daily games)
 - 🗳️ Voting System (Thread Manager)
 - 🎨 183 Custom Champion Emojis
 - 📢 Twitter Monitoring
-- 🛡️ Moderacja
+- 🛡️ Moderation
 - 📊 Server Stats
 
 ### Bot 2: Tracker Bot (LFG System)
-**Lokalizacja:** `tracker/`
+**Location:** `tracker/`
 
-**Funkcje:**
-- 🎭 System LFG (Looking For Group)
-- 👤 Profile graczy z Riot API
-- 📝 Ogłoszenia interaktywne (GUI)
-- 🏆 Automatyczne rangi
-- 🌍 Wszystkie regiony
+**Features:**
+- 🎭 LFG System (Looking For Group)
+- 👤 Player Profiles with Riot API
+- 📝 Interactive Listings (GUI)
+- 🏆 Automatic Ranks
+- 🌍 All Regions
 
 ---
 
-## 🚀 Najnowsze zmiany (2025-12-02)
+## 🚀 Latest Changes (2025-12-02)
 
-### ✨ ROZDZIELENIE BOTÓW
+### ✨ BOT SEPARATION
 
-System LFG został przeniesiony do **osobnego bota** (Tracker Bot).
+LFG system has been moved to a **separate bot** (Tracker Bot).
 
-**Powód:** Rozdzielenie funkcjonalności - główny bot obsługuje Kassalytics i LoLdle, tracker bot obsługuje tylko LFG.
+**Reason:** Separation of concerns - main bot handles Kassalytics and LoLdle, tracker bot handles only LFG.
 
-**Migracja:**
+**Migration:**
 - `lfg/` → `tracker/lfg/`
-- Nowy plik: `tracker/tracker_bot_lfg.py`
-- `main/bot.py` - usunięto integrację LFG
+- New file: `tracker/tracker_bot_lfg.py`
+- `main/bot.py` - removed LFG integration
 
-### 📦 Tracker System (Stary) - Zarchiwizowany
+### 📦 Tracker System (Legacy) - Archived
 
-Oryginalny system monitoringu live games został zarchiwizowany w `tracker_archived/` z powodu Riot API breaking changes.
+Original live game monitoring system has been archived in `tracker_archived/` due to Riot API breaking changes.
 
-**Dokumentacja:** [`tracker_archived/ARCHIVED_README.md`](tracker_archived/ARCHIVED_README.md)
+**Documentation:** [`tracker_archived/ARCHIVED_README.md`](tracker_archived/ARCHIVED_README.md)
 
 ---
 
-## 📋 Struktura projektu
+## 📋 Project Structure
 
 ```
 Discordbot/
-├── main/                      # 🤖 BOT 1: HEXRTBRXEN (główny bot)
-│   ├── bot.py                 # Główny plik bota
+├── main/                      # 🤖 BOT 1: HEXRTBRXEN (main bot)
+│   ├── bot.py                 # Main bot file
 │   ├── database.py            # Kassalytics database
 │   ├── riot_api.py            # Riot API wrapper
 │   ├── profile_commands.py    # Profile commands
@@ -75,115 +75,115 @@ Discordbot/
 │   ├── Procfile               # Railway deployment
 │   └── requirements.txt
 │
-├── tracker_archived/          # 📦 Zarchiwizowany stary tracker
-│   ├── tracker_bot.py         # Stary bot (live game monitoring)
+├── tracker_archived/          # 📦 Archived legacy tracker
+│   ├── tracker_bot.py         # Old bot (live game monitoring)
 │   ├── tracker_commands_v3.py
 │   └── ARCHIVED_README.md
 │
-├── creator/                   # Bot do custom skin chromas
-└── emojis/                    # Pliki emoji (183 custom emojis)
+├── creator/                   # Bot for custom skin chromas
+└── emojis/                    # Emoji files (183 custom emojis)
 ```
 
 ---
 
-## 🚀 Szybki start
+## 🚀 Quick Start
 
 ### Bot 1: HEXRTBRXEN (Main Bot)
 
 ```bash
 cd main
 cp .env.example .env
-# Edytuj .env i dodaj tokeny
+# Edit .env and add tokens
 pip install -r requirements.txt
 python bot.py
 ```
 
-**Komendy:**
-- `/profile <riot_id>` - Profil gracza
-- `/loldle <champion>` - Zgadnij championa
-- `/vote` - System głosowania
+**Commands:**
+- `/profile <riot_id>` - Player profile
+- `/loldle <champion>` - Guess the champion
+- `/vote` - Voting system
 
 ### Bot 2: Tracker Bot (LFG)
 
 ```bash
 cd tracker
 cp .env.example .env
-# Edytuj .env i dodaj tokeny
-# Edytuj lfg/config.py i ustaw LFG_CHANNEL_ID
+# Edit .env and add tokens
+# Edit lfg/config.py and set LFG_CHANNEL_ID
 pip install -r requirements.txt
 python tracker_bot_lfg.py
 ```
 
-**Komendy:**
-- `/lfg_setup` - Utwórz profil
-- `/lfg_post` - Utwórz ogłoszenie
-- `/lfg_browse` - Przeglądaj ogłoszenia
+**Commands:**
+- `/lfg_setup` - Create profile
+- `/lfg_post` - Create listing
+- `/lfg_browse` - Browse listings
 
-**Dokumentacja:** [`tracker/README_LFG.md`](tracker/README_LFG.md)
+**Documentation:** [`tracker/README_LFG.md`](tracker/README_LFG.md)
 
 ---
 
-## 🎮 Funkcje - Bot 1 (HEXRTBRXEN)
+## 🎮 Features - Bot 1 (HEXRTBRXEN)
 
 ### Kassalytics (Profile & Stats)
-- `/profile <riot_id>` - Wyświetl profil gracza z Riot API
-- `/stats <riot_id>` - Statystyki gracza
-- `/leaderboard` - Ranking graczy na serwerze
-- `/compare <riot_id_1> <riot_id_2>` - Porównaj dwóch graczy
+- `/profile <riot_id>` - Display player profile with Riot API data
+- `/stats <riot_id>` - Player statistics
+- `/leaderboard` - Server player ranking
+- `/compare <riot_id_1> <riot_id_2>` - Compare two players
 
 ### LoLdle (Daily Games)
-- `/loldle <champion>` - Zgadnij dziennego championa
-- `/loldle_quote <champion>` - Zgadnij po cytacie
-- `/loldle_ability <champion>` - Zgadnij po umiejętności
-- `/loldle_emoji` - Zgadnij po emoji
+- `/loldle <champion>` - Guess daily champion
+- `/loldle_quote <champion>` - Guess by quote
+- `/loldle_ability <champion>` - Guess by ability
+- `/loldle_emoji` - Guess by emoji
 
 ### Voting System
-- `/vote` - Głosuj na posty (thread manager)
-- `/votestart` - Rozpocznij głosowanie
-- `/votestop` - Zakończ głosowanie
+- `/vote` - Vote on posts (thread manager)
+- `/votestart` - Start voting
+- `/votestop` - End voting
 
-### Moderacja
-- `/ban <user> <duration> <reason>` - Zbanuj użytkownika
-- `/unban <user>` - Odbanuj użytkownika
-- `/kick <user>` - Wyrzuć użytkownika
-- `/mute <user> <duration>` - Wycisz użytkownika
-- `/clear <amount>` - Usuń wiadomości
+### Moderation
+- `/ban <user> <duration> <reason>` - Ban user
+- `/unban <user>` - Unban user
+- `/kick <user>` - Kick user
+- `/mute <user> <duration>` - Mute user
+- `/clear <amount>` - Clear messages
 
 ### Server Info
-- `/serverstats` - Statystyki serwera
-- `/invite` - Utwórz tymczasowy kanał voice
+- `/serverstats` - Server statistics
+- `/invite` - Create temporary voice channel
 
 ---
 
-## 🎮 Funkcje - Bot 2 (Tracker Bot LFG)
+## 🎮 Features - Bot 2 (Tracker Bot LFG)
 
 ### Profile System
-- `/lfg_setup <game_name> <tagline> <region>` - Utwórz profil z weryfikacją Riot API
-- `/lfg_profile [user]` - Zobacz profil LFG
-- `/lfg_edit` - Edytuj profil (opis, voice, styl gry)
+- `/lfg_setup <game_name> <tagline> <region>` - Create profile with Riot API verification
+- `/lfg_profile [user]` - View LFG profile
+- `/lfg_edit` - Edit profile (description, voice, playstyle)
 
-### Ogłoszenia LFG
-- `/lfg_post` - Utwórz ogłoszenie (interactive GUI)
-  - Wybór typu gry (Ranked Solo/Flex/Normal/ARAM/Arena)
-  - Wybór poszukiwanych ról
-  - Toggle voice (wymagany/opcjonalny)
-- `/lfg_browse [queue_type] [region]` - Przeglądaj ogłoszenia z filtrami
+### LFG Listings
+- `/lfg_post` - Create listing (interactive GUI)
+  - Game type selection (Ranked Solo/Flex/Normal/ARAM/Arena)
+  - Desired roles selection
+  - Voice toggle (required/optional)
+- `/lfg_browse [queue_type] [region]` - Browse listings with filters
 
 ### Features
-- 🏆 Automatyczne pobieranie rang z Riot API
-- 🎭 Wybór do 3 preferowanych ról
-- ⏰ Auto-wygasanie ogłoszeń po 6h
-- 🌍 Wsparcie wszystkich regionów
+- 🏆 Automatic rank fetching from Riot API
+- 🎭 Up to 3 preferred role selection
+- ⏰ Auto-expiring listings after 6h
+- 🌍 Support for all regions
 
-**Pełna dokumentacja:** [`tracker/lfg/README.md`](tracker/lfg/README.md)
+**Full documentation:** [`tracker/lfg/README.md`](tracker/lfg/README.md)
 
 ---
 
-## ⚙️ Konfiguracja
+## ⚙️ Configuration
 
 ### Bot 1 (HEXRTBRXEN)
 
-Plik `main/.env`:
+File `main/.env`:
 
 ```env
 # Discord
@@ -195,63 +195,63 @@ DATABASE_URL=postgresql://user:password@host:5432/database
 # Riot API
 RIOT_API_KEY=RGAPI-xxxxx
 
-# Twitter (opcjonalne)
+# Twitter (optional)
 TWITTER_BEARER_TOKEN=xxxxx
 ```
 
 ### Bot 2 (Tracker LFG)
 
-Plik `tracker/.env`:
+File `tracker/.env`:
 
 ```env
 # Discord
 DISCORD_TOKEN=your_tracker_bot_token
 
-# Database (może być ta sama baza co main bot)
+# Database (can be same as main bot)
 DATABASE_URL=postgresql://user:password@host:5432/database
 
-# Riot API (może być ten sam klucz)
+# Riot API (can be same key)
 RIOT_API_KEY=RGAPI-xxxxx
 
 # Guild ID
 GUILD_ID=1153027935553454191
 ```
 
-**Dodatkowo edytuj** `tracker/lfg/config.py`:
+**Additionally edit** `tracker/lfg/config.py`:
 
 ```python
-# ID kanału dla ogłoszeń LFG
-LFG_CHANNEL_ID = 1234567890  # ZMIEŃ NA SWOJE
+# LFG listings channel ID
+LFG_CHANNEL_ID = 1234567890  # CHANGE TO YOUR ID
 ```
 
 ---
 
-## 💾 Baza danych
+## 💾 Database
 
 ### Bot 1 (HEXRTBRXEN) - Tables
 
-- `users` - Zarejestrowane konta Riot
-- `champion_stats` - Statystyki championów
-- `match_history` - Historia meczów
-- `leaderboard` - Ranking graczy
+- `users` - Registered Riot accounts
+- `champion_stats` - Champion statistics
+- `match_history` - Match history
+- `leaderboard` - Player ranking
 
 ### Bot 2 (Tracker LFG) - Tables
 
-- `lfg_profiles` - Profile graczy LFG
-- `lfg_listings` - Ogłoszenia LFG
-- `lfg_applications` - Aplikacje do grup
-- `lfg_group_history` - Historia grup
+- `lfg_profiles` - LFG player profiles
+- `lfg_listings` - LFG listings
+- `lfg_applications` - Applications to groups
+- `lfg_group_history` - Group history
 
-**Oba boty mogą używać tej samej bazy danych** - tabele nie kolidują ze sobą.
+**Both bots can use the same database** - tables don't conflict.
 
 ---
 
 ## 🔧 Development
 
-### Dodawanie nowych komend
+### Adding new commands
 
-1. Utwórz nowy plik w `main/` (np. `my_commands.py`)
-2. Stwórz `Cog` klasę:
+1. Create new file in `main/` (e.g., `my_commands.py`)
+2. Create `Cog` class:
    ```python
    from discord.ext import commands
    from discord import app_commands
@@ -267,7 +267,7 @@ LFG_CHANNEL_ID = 1234567890  # ZMIEŃ NA SWOJE
    async def setup(bot):
        await bot.add_cog(MyCommands(bot))
    ```
-3. Załaduj w `bot.py`:
+3. Load in `bot.py`:
    ```python
    import my_commands
    await my_commands.setup(self)
@@ -290,21 +290,21 @@ python -c "from riot_api import RiotAPI; api = RiotAPI('API_KEY'); print(api)"
 ## 📝 Changelog
 
 ### 2025-12-02 - Major Restructure
-- 🔀 **SPLIT:** Rozdzielono boty na 2 osobne aplikacje
+- 🔀 **SPLIT:** Split bots into 2 separate applications
   - Bot 1: HEXRTBRXEN (main/) - Kassalytics, LoLdle, Voting
-  - Bot 2: Tracker Bot (tracker/) - LFG System tylko
-- ✨ **ADDED:** Nowy `tracker_bot_lfg.py` - dedicated LFG bot
-- 🔧 **REMOVED:** Integracja LFG z main/bot.py
+  - Bot 2: Tracker Bot (tracker/) - LFG System only
+- ✨ **ADDED:** New `tracker_bot_lfg.py` - dedicated LFG bot
+- 🔧 **REMOVED:** LFG integration from main/bot.py
 - 📦 **MOVED:** `lfg/` → `tracker/lfg/`
-- 📖 **DOCS:** Zaktualizowana dokumentacja dla obu botów
+- 📖 **DOCS:** Updated documentation for both bots
 
 ### 2025-12-01 - LFG System
-- ✨ **ADDED:** Pełny system LFG
-  - Profile z Riot API verification
+- ✨ **ADDED:** Full LFG system
+  - Profiles with Riot API verification
   - Interactive listing creation (GUI)
   - Browse & filter system
   - Auto-cleanup (30 min task)
-- 📦 **ARCHIVED:** Stary tracker (live game monitoring)
+- 📦 **ARCHIVED:** Old tracker (live game monitoring)
 - 🐛 **FIXED:** PostgreSQL schema (JSONB, SERIAL)
 
 ### 2024-XX-XX - Previous updates
@@ -319,16 +319,16 @@ python -c "from riot_api import RiotAPI; api = RiotAPI('API_KEY'); print(api)"
 ## 🐛 Known Issues
 
 ### Bot 1 (HEXRTBRXEN)
-- Wszystkie funkcje działają poprawnie
+- All features working correctly
 
 ### Bot 2 (Tracker LFG)
-- [ ] LFG channel ID jest hardcoded w config.py (wymaga ręcznej konfiguracji)
-- [ ] Persistent views mogą być utracone po restarcie bota
-- [ ] Brak rate limiting dla Riot API w LFG
+- [ ] LFG channel ID is hardcoded in config.py (requires manual setup)
+- [ ] Persistent views may be lost after bot restart
+- [ ] No rate limiting for Riot API in LFG
 
 ### Archived Tracker
-- ⚠️ Wszystkie `/by-puuid/` Riot API endpointy nie działają
-- ⚠️ Wszystkie 40 PUUIDs w bazie są w starym formacie
+- ⚠️ All `/by-puuid/` Riot API endpoints don't work
+- ⚠️ All 40 PUUIDs in database are in legacy format
 
 ---
 
@@ -336,7 +336,7 @@ python -c "from riot_api import RiotAPI; api = RiotAPI('API_KEY'); print(api)"
 
 **Discord Server:** discord.gg/hexrtbrxenchromas
 
-**Issues:** Zgłoś przez Discord lub GitHub Issues
+**Issues:** Report via Discord or GitHub Issues
 
 **Developer:** pimek (@p1mek)
 
@@ -344,7 +344,7 @@ python -c "from riot_api import RiotAPI; api = RiotAPI('API_KEY'); print(api)"
 
 ## 📄 License
 
-Projekt prywatny. Unauthorized use prohibited.
+Private project. Unauthorized use prohibited.
 
 ---
 
