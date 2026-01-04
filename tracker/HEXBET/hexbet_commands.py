@@ -23,7 +23,6 @@ LEADERBOARD_CHANNEL_ID = 1398985421014306856
 POLL_INTERVAL_SECONDS = 300  # 5 minutes - avoid rate limits
 SETTLE_CHECK_SECONDS = 120  # 2 minutes
 MIN_MINUTES_BEFORE_SETTLE = 12  # 12 minutes
-DEFAULT_BUTTON_BET = 50
 
 ROLE_LABELS = [
     ("Top", CFG_ROLE_EMOJIS.get('TOP', '🗻')),
@@ -583,6 +582,63 @@ class Hexbet(commands.Cog):
             await interaction.response.send_message(f"❌ Error: {error}", ephemeral=True)
 
 
+class BetModal(discord.ui.Modal, title='Place Your Bet'):
+    amount = discord.ui.TextInput(
+        label='Amount to bet',
+        placeholder='Enter amount (e.g., 100)',
+        required=True,
+        min_length=1,
+        max_length=10,
+        style=discord.TextStyle.short
+    )
+    
+    def __init__(self, side: str, odds: float, balance: int, match_id: int, cog: 'Hexbet'):
+        super().__init__()
+        self.side = side
+        self.odds = odds
+        self.balance = balance
+        self.match_id = match_id
+        self.cog = cog
+        self.title = f'Bet on {side.upper()} Team'
+        self.amount.label = f'Amount (Balance: {balance})'
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            bet_amount = int(self.amount.value)
+            
+            if bet_amount <= 0:
+                await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+                return
+            
+            if bet_amount > self.balance:
+                await interaction.response.send_message(f"❌ Not enough balance! You have {self.balance}", ephemeral=True)
+                return
+            
+            match = self.cog.db.get_open_match()
+            if not match or match['id'] != self.match_id:
+                await interaction.response.send_message("❌ This match is no longer open for betting.", ephemeral=True)
+                return
+            
+            potential = int(bet_amount * self.odds)
+            
+            if not self.cog.db.add_bet(match['id'], interaction.user.id, self.side, bet_amount, self.odds, potential):
+                await interaction.response.send_message("⚠️ You already placed a bet on this match!", ephemeral=True)
+                return
+            
+            self.cog.db.record_wager(interaction.user.id, bet_amount)
+            new_balance = self.cog.db.update_balance(interaction.user.id, -bet_amount)
+            
+            embed = discord.Embed(
+                title="✅ Bet Confirmed!",
+                color=0x3498DB if self.side == 'blue' else 0xE74C3C,
+                description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
+
+
 class BetView(discord.ui.View):
     def __init__(self, match_id: int, odds_blue: float, odds_red: float, cog: Hexbet):
         super().__init__(timeout=None)
@@ -591,31 +647,17 @@ class BetView(discord.ui.View):
         self.odds_red = odds_red
         self.cog = cog
 
-    @discord.ui.button(label="Blue", style=discord.ButtonStyle.primary, custom_id="hexbet_blue")
+    @discord.ui.button(label=f"🔵 Bet Blue", style=discord.ButtonStyle.primary, custom_id="hexbet_blue")
     async def bet_blue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._bet(interaction, 'blue', self.odds_blue)
-
-    @discord.ui.button(label="Red", style=discord.ButtonStyle.danger, custom_id="hexbet_red")
-    async def bet_red(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._bet(interaction, 'red', self.odds_red)
-
-    async def _bet(self, interaction: discord.Interaction, side: str, odds: float):
-        match = self.cog.db.get_open_match()
-        if not match or match['id'] != self.match_id:
-            await interaction.response.send_message("❌ No active match.", ephemeral=True)
-            return
-        amount = DEFAULT_BUTTON_BET
         balance = self.cog.db.get_balance(interaction.user.id)
-        if amount > balance:
-            await interaction.response.send_message(f"❌ Not enough balance (need {amount}, you have {balance})", ephemeral=True)
-            return
-        potential = int(amount * odds)
-        if not self.cog.db.add_bet(match['id'], interaction.user.id, side, amount, odds, potential):
-            await interaction.response.send_message("⚠️ You already placed a bet for this match", ephemeral=True)
-            return
-        self.cog.db.record_wager(interaction.user.id, amount)
-        new_balance = self.cog.db.update_balance(interaction.user.id, -amount)
-        await interaction.response.send_message(f"✅ Bet placed {side.upper()} for {amount}. Potential {potential}. New balance {new_balance}", ephemeral=True)
+        modal = BetModal('blue', self.odds_blue, balance, self.match_id, self.cog)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label=f"🔴 Bet Red", style=discord.ButtonStyle.danger, custom_id="hexbet_red")
+    async def bet_red(self, interaction: discord.Interaction, button: discord.ui.Button):
+        balance = self.cog.db.get_balance(interaction.user.id)
+        modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
+        await interaction.response.send_modal(modal)
 
 
 class ClosedBetView(discord.ui.View):
