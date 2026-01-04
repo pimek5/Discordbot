@@ -104,11 +104,13 @@ class RiotAPI:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.headers = {
-            'X-Riot-Token': api_key
+            'X-Riot-Token': api_key,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9'
         }
         if api_key:
             logger.info(f"🔑 API Key loaded: {api_key[:10]}...{api_key[-4:]} (len={len(api_key)})")
-            logger.info(f"🔍 FULL KEY FOR DEBUG: {api_key}")  # TEMPORARY DEBUG
         else:
             logger.error("❌ No API key provided!")
 
