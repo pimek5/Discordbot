@@ -34,9 +34,8 @@ KNOWN_PRO_PLAYERS = {
 
 async def load_pro_players_from_api():
     """
-    Load pro players from multiple sources
-    1. Riot Esports API (esports-api.lolesports.com)
-    2. Static KNOWN_PRO_PLAYERS list as fallback
+    Load pro players from Riot Esports API
+    Uses esports-api.lolesports.com to get current pro players
     """
     global PRO_PLAYERS_CACHE
     
@@ -46,51 +45,62 @@ async def load_pro_players_from_api():
     
     try:
         async with aiohttp.ClientSession() as session:
-            # Riot Esports API - get leagues
-            leagues_url = "https://esports-api.lolesports.com/persisted/gw/getLeagues?hl=en-US"
             headers = {
                 'User-Agent': 'Mozilla/5.0',
                 'x-api-key': '0TvQnueqKa5mxJntVWt0w4LpLfEkrV1Ta8rQBb9Z'  # Public API key from Riot
             }
             
+            # Get leagues
+            leagues_url = "https://esports-api.lolesports.com/persisted/gw/getLeagues?hl=en-US"
+            
             async with session.get(leagues_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    leagues_data = await response.json()
-                    
-                    # Get major leagues (LEC, LCK, LCS, LPL, etc.)
-                    major_leagues = ['LEC', 'LCK', 'LCS', 'LPL', 'CBLOL', 'LJL', 'LLA', 'PCS', 'VCS']
-                    league_ids = []
-                    
-                    for league in leagues_data.get('data', {}).get('leagues', []):
-                        league_slug = league.get('slug', '').upper()
-                        if any(major in league_slug for major in major_leagues):
-                            league_ids.append(league.get('id'))
-                    
-                    # Get teams for each league
-                    for league_id in league_ids[:5]:  # Limit to 5 leagues to avoid rate limits
-                        try:
-                            teams_url = f"https://esports-api.lolesports.com/persisted/gw/getTeams?hl=en-US&leagueId={league_id}"
-                            async with session.get(teams_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as team_response:
-                                if team_response.status == 200:
-                                    teams_data = await team_response.json()
-                                    
-                                    for team in teams_data.get('data', {}).get('teams', []):
-                                        for player in team.get('players', []):
+                if response.status != 200:
+                    raise Exception(f"Failed to fetch leagues: {response.status}")
+                
+                leagues_data = await response.json()
+                
+                # Target major leagues
+                major_leagues = ['LEC', 'LCK', 'LCS', 'LPL', 'CBLOL', 'LJL', 'LLA', 'PCS', 'VCS']
+                league_ids = []
+                
+                for league in leagues_data.get('data', {}).get('leagues', []):
+                    slug = league.get('slug', '').upper()
+                    if any(major in slug for major in major_leagues):
+                        league_ids.append(league.get('id'))
+                
+                # Get teams for each major league
+                teams_processed = 0
+                for league_id in league_ids[:8]:  # Process up to 8 leagues
+                    try:
+                        teams_url = f"https://esports-api.lolesports.com/persisted/gw/getTeams?hl=en-US&leagueId={league_id}"
+                        async with session.get(teams_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as team_response:
+                            if team_response.status == 200:
+                                teams_data = await team_response.json()
+                                
+                                # Process all teams (API returns all historical teams)
+                                for team in teams_data.get('data', {}).get('teams', []):
+                                    players = team.get('players', [])
+                                    if players:  # Only teams with players
+                                        for player in players:
                                             summoner_name = player.get('summonerName', '')
                                             if summoner_name:
                                                 PRO_PLAYERS_CACHE.add(summoner_name.lower())
-                        except Exception as e:
-                            logger.debug(f"Could not fetch team data for league {league_id}: {e}")
-                            continue
-                        
-                        # Small delay to avoid rate limiting
-                        await asyncio.sleep(0.5)
+                                        teams_processed += 1
+                                        
+                                        # Limit to first 100 teams per league to avoid too much data
+                                        if teams_processed >= 100:
+                                            break
+                    except Exception as e:
+                        logger.debug(f"Could not fetch team data for league {league_id}: {e}")
+                        continue
+                    
+                    # Small delay to avoid rate limiting
+                    await asyncio.sleep(0.3)
         
         new_count = len(PRO_PLAYERS_CACHE)
         logger.info(f"Loaded {new_count} pro players ({new_count - initial_count} from API, {initial_count} static)")
     except Exception as e:
         logger.warning(f"Failed to load pro players from API: {e}")
-        # Fallback to static list only
         PRO_PLAYERS_CACHE = {name.lower() for name in KNOWN_PRO_PLAYERS}
         logger.info(f"Using static list: {len(PRO_PLAYERS_CACHE)} pro players")
 
