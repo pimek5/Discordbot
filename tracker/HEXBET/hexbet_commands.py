@@ -92,6 +92,28 @@ class Hexbet(commands.Cog):
         self.leaderboard_task.start()
         self.settle_task.start()
         self.bot.loop.create_task(self._ensure_champions())
+        self.bot.loop.create_task(self._restore_persistent_views())
+    
+    async def _restore_persistent_views(self):
+        """Restore persistent views for open matches after bot restart"""
+        await self.bot.wait_until_ready()
+        try:
+            matches = self.db.get_open_matches()
+            for match in matches:
+                match_id = match['id']
+                blue_team = match.get('blue_team', {})
+                red_team = match.get('red_team', {})
+                if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                    odds_blue = blue_team.get('odds', 1.5)
+                    odds_red = red_team.get('odds', 1.5)
+                    blue_players = blue_team.get('players', [])
+                    red_players = red_team.get('players', [])
+                    platform = match.get('platform', 'euw1')
+                    view = BetView(match_id, odds_blue, odds_red, self, platform, blue_players, red_players)
+                    self.bot.add_view(view)
+            logger.info(f"✅ Restored {len(matches)} persistent views")
+        except Exception as e:
+            logger.error(f"Failed to restore persistent views: {e}")
 
     async def _ensure_champions(self):
         try:
@@ -500,12 +522,12 @@ class Hexbet(commands.Cog):
         
         # Team composition fields
         embed.add_field(
-            name=f"🔵 BLUE TEAM • {chance_blue}% Win Chance",
+            name=f"<:BlueSide:1457209225976484014> BLUE TEAM • {chance_blue}% Win Chance",
             value=self._team_block(blue),
             inline=True
         )
         embed.add_field(
-            name=f"🔴 RED TEAM • {chance_red}% Win Chance",
+            name=f"<:RedSide:1457209221031395472> RED TEAM • {chance_red}% Win Chance",
             value=self._team_block(red),
             inline=True
         )
@@ -1004,13 +1026,13 @@ class BetView(discord.ui.View):
         self.blue_players = blue_players
         self.red_players = red_players
 
-    @discord.ui.button(label=f"🔵 Bet Blue", style=discord.ButtonStyle.primary, custom_id="hexbet_blue")
+    @discord.ui.button(emoji="<:BlueSide:1457209225976484014>", label="Bet Blue", style=discord.ButtonStyle.primary, custom_id="hexbet_blue")
     async def bet_blue(self, interaction: discord.Interaction, button: discord.ui.Button):
         balance = self.cog.db.get_balance(interaction.user.id)
         modal = BetModal('blue', self.odds_blue, balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label=f"🔴 Bet Red", style=discord.ButtonStyle.danger, custom_id="hexbet_red")
+    @discord.ui.button(emoji="<:RedSide:1457209221031395472>", label="Bet Red", style=discord.ButtonStyle.danger, custom_id="hexbet_red")
     async def bet_red(self, interaction: discord.Interaction, button: discord.ui.Button):
         balance = self.cog.db.get_balance(interaction.user.id)
         modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
