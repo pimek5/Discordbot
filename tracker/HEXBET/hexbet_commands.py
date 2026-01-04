@@ -473,9 +473,9 @@ class Hexbet(commands.Cog):
         new_balance = self.db.update_balance(interaction.user.id, -amount)
         await interaction.response.send_message(f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}", ephemeral=True)
 
-    @app_commands.command(name="hexbet_debug", description="(Admin) Debug high-elo pool and active games")
+    @app_commands.command(name="hx_debug", description="(Admin) Debug high-elo pool and active games")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hexbet_debug(self, interaction: discord.Interaction):
+    async def hx_debug(self, interaction: discord.Interaction):
         """Check high-elo pool and scan for active games"""
         await interaction.response.defer()
         
@@ -508,9 +508,9 @@ class Hexbet(commands.Cog):
         summary = "**HEXBET Debug - High-Elo Pool**\n\n" + "\n".join(results)
         await interaction.followup.send(summary, ephemeral=False)
 
-    @app_commands.command(name="find_game", description="Search for active high-elo games and post bet")
-    @app_commands.describe(platform="Optional platform route (euw1, na1, kr, eun1)")
-    async def find_game(self, interaction: discord.Interaction, platform: Optional[str] = None):
+    @app_commands.command(name="hx_find", description="Find and post a high-elo game")
+    @app_commands.describe(platform="Platform: euw1, na1, kr, eun1")
+    async def hx_find(self, interaction: discord.Interaction, platform: Optional[str] = None):
         """Find and post active high-elo game for betting"""
         await interaction.response.defer()
         
@@ -542,21 +542,80 @@ class Hexbet(commands.Cog):
             logger.error(f"Error in find_game: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:100]}", ephemeral=True)
 
-    @app_commands.command(name="hexbet_post", description="(Admin) Post a high-elo game bet now")
-    @app_commands.describe(platform="Optional platform route (euw1, na1, kr, eun1)")
+    @app_commands.command(name="hx_post", description="(Admin) Force post a bet")
+    @app_commands.describe(platform="Platform: euw1, na1, kr, eun1")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hexbet_post(self, interaction: discord.Interaction, platform: Optional[str] = None):
+    async def hx_post(self, interaction: discord.Interaction, platform: Optional[str] = None):
         await interaction.response.defer(ephemeral=True)
         await self.post_random_featured_game(force=True, platform_choice=platform)
         await interaction.followup.send("✅ Triggered high-elo game scan", ephemeral=True)
     
-    @app_commands.command(name="hexbet_settle", description="(Admin) Force settle current match")
+    @app_commands.command(name="hx_refresh", description="(Admin) Refresh current bet embed")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hx_refresh(self, interaction: discord.Interaction):
+        """Refresh the current match embed with updated bet totals"""
+        await interaction.response.defer(ephemeral=True)
+        
+        match = self.db.get_open_match()
+        if not match:
+            await interaction.followup.send("❌ No active match to refresh", ephemeral=True)
+            return
+        
+        try:
+            channel = self.bot.get_channel(match.get('channel_id'))
+            message_id = match.get('message_id')
+            if not channel or not message_id:
+                await interaction.followup.send("❌ Could not find match message", ephemeral=True)
+                return
+            
+            msg = await channel.fetch_message(message_id)
+            old_embed = msg.embeds[0] if msg.embeds else None
+            if not old_embed:
+                await interaction.followup.send("❌ No embed found", ephemeral=True)
+                return
+            
+            # Extract data from stored match
+            game_id = match['game_id']
+            platform = match['platform']
+            blue_team = match.get('blue_team', {})
+            red_team = match.get('red_team', {})
+            
+            if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                blue_players = blue_team.get('players', [])
+                red_players = red_team.get('players', [])
+                odds_blue = blue_team.get('odds', 1.5)
+                odds_red = red_team.get('odds', 1.5)
+                
+                # Calculate chances
+                chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                chance_red = round(100 - chance_blue, 1)
+                
+                # Get featured player from description
+                featured = old_embed.description.split('Featured: ')[1] if 'Featured:' in old_embed.description else ""
+                
+                # Rebuild embed with current bet data
+                new_embed = self._build_embed(
+                    game_id, platform, blue_players, red_players,
+                    odds_blue, odds_red, chance_blue, chance_red,
+                    featured, match['id']
+                )
+                
+                await msg.edit(embed=new_embed)
+                await interaction.followup.send("✅ Embed refreshed with current bet totals", ephemeral=True)
+            else:
+                await interaction.followup.send("⚠️ Invalid match data format", ephemeral=True)
+                
+        except Exception as e:
+            logger.error(f"Error refreshing embed: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+    
+    @app_commands.command(name="hx_settle", description="(Admin) Settle or cancel match")
     @app_commands.describe(
-        winner="Winner team (blue or red)",
-        cancel="Set to True to cancel match and refund all bets"
+        winner="Winner: blue or red",
+        cancel="Cancel and refund all bets"
     )
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hexbet_settle(self, interaction: discord.Interaction, winner: Optional[str] = None, cancel: bool = False):
+    async def hx_settle(self, interaction: discord.Interaction, winner: Optional[str] = None, cancel: bool = False):
         """Force settle the current match or cancel it"""
         await interaction.response.defer(ephemeral=True)
         
@@ -618,9 +677,9 @@ class Hexbet(commands.Cog):
             logger.error(f"Error in force settle: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
     
-    @app_commands.command(name="populate_pool", description="(Admin) Populate high-elo player pool from Riot API")
+    @app_commands.command(name="hx_pool", description="(Admin) Populate high-elo player pool")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def populate_pool(self, interaction: discord.Interaction):
+    async def hx_pool(self, interaction: discord.Interaction):
         """Fetch Challenger/Grandmaster/Master players and add to pool"""
         await interaction.response.defer(ephemeral=True)
         
