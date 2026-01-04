@@ -339,8 +339,11 @@ class Hexbet(commands.Cog):
     async def _enrich_players(self, players: List[dict], region: str):
         tasks_rank = []
         for p in players:
-            summoner_id = p.get('summonerId')
-            tasks_rank.append(self.riot_api.get_ranked_stats(summoner_id, region))
+            puuid = p.get('puuid')
+            if puuid:
+                tasks_rank.append(self.riot_api.get_ranked_stats_by_puuid(puuid, region))
+            else:
+                tasks_rank.append(asyncio.sleep(0))  # Dummy task if no PUUID
         ranks = await asyncio.gather(*tasks_rank, return_exceptions=True)
         for p, r in zip(players, ranks):
             stats = r if isinstance(r, list) else []
