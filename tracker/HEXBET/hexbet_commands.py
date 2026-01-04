@@ -153,7 +153,7 @@ class Hexbet(commands.Cog):
             if old_matches:
                 logger.info(f"🗑️ Found {len(old_matches)} settled matches to cleanup")
                 
-                # Delete Discord messages ONLY for remakes and cancelled matches
+                # Delete Discord messages based on match type and age
                 for match in old_matches:
                     match_id = match.get('id')
                     channel_id = match.get('channel_id')
@@ -163,15 +163,27 @@ class Hexbet(commands.Cog):
                     
                     logger.info(f"🗑️ Processing match {match_id}: winner={winner}, updated_at={updated_at}")
                     
-                    # Only delete messages for remakes (refunded) and cancelled matches
-                    # Normal settled matches (blue/red winners) keep their messages with black embed
-                    if winner in ['refunded', 'cancel', 'cancelled'] and channel_id and message_id:
+                    # Calculate time since settlement
+                    from datetime import datetime, timezone
+                    now = datetime.now(timezone.utc)
+                    time_since_settlement = (now - updated_at).total_seconds() / 60  # in minutes
+                    
+                    should_delete = False
+                    
+                    # Remakes and cancelled matches - delete immediately
+                    if winner in ['refunded', 'cancel', 'cancelled']:
+                        should_delete = True
+                    # Normal settled matches (blue/red) - delete after 3 minutes
+                    elif winner in ['blue', 'red'] and time_since_settlement >= 3:
+                        should_delete = True
+                    
+                    if should_delete and channel_id and message_id:
                         try:
                             channel = self.bot.get_channel(channel_id)
                             if channel:
                                 message = await channel.fetch_message(message_id)
                                 await message.delete()
-                                logger.info(f"✅ Deleted {winner} match message {message_id} in channel {channel_id}")
+                                logger.info(f"✅ Deleted {winner} match message {message_id} after {time_since_settlement:.1f} minutes")
                             else:
                                 logger.warning(f"⚠️ Channel {channel_id} not found")
                         except discord.NotFound:
@@ -179,8 +191,8 @@ class Hexbet(commands.Cog):
                         except Exception as e:
                             logger.error(f"❌ Failed to delete message {message_id}: {e}")
                     else:
-                        if winner not in ['refunded', 'cancel', 'cancelled']:
-                            logger.info(f"ℹ️ Keeping message for normal settled match {match_id} (winner: {winner})")
+                        if not should_delete:
+                            logger.info(f"ℹ️ Keeping message for match {match_id} (winner: {winner}, age: {time_since_settlement:.1f} min)")
                         else:
                             logger.warning(f"⚠️ Match {match_id} has no channel_id or message_id")
             
