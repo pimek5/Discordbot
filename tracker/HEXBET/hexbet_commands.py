@@ -1111,74 +1111,83 @@ class Hexbet(commands.Cog):
         await self.post_random_featured_game(force=True, platform_choice=platform)
         await interaction.followup.send("✅ Triggered high-elo game scan", ephemeral=True)
     
-    @app_commands.command(name="hxrefresh", description="(Admin) Refresh current bet embed")
+    @app_commands.command(name="hxrefresh", description="(Admin) Refresh all open bet embeds")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def hxrefresh(self, interaction: discord.Interaction):
-        """Refresh the current match embed with updated bet totals"""
+        """Refresh all open match embeds with updated bet totals"""
         await interaction.response.defer(ephemeral=True)
         
-        match = self.db.get_open_match()
-        if not match:
-            await interaction.followup.send("❌ No active match to refresh", ephemeral=True)
+        matches = self.db.get_open_matches()
+        if not matches:
+            await interaction.followup.send("❌ No active matches to refresh", ephemeral=True)
             return
         
-        try:
-            channel = self.bot.get_channel(match.get('channel_id'))
-            message_id = match.get('message_id')
-            if not channel or not message_id:
-                await interaction.followup.send("❌ Could not find match message", ephemeral=True)
-                return
-            
+        refreshed = 0
+        failed = 0
+        
+        for match in matches:
             try:
-                msg = await channel.fetch_message(message_id)
-            except discord.NotFound:
-                await interaction.followup.send("❌ Match message was deleted (already settled?)", ephemeral=True)
-                return
-            
-            old_embed = msg.embeds[0] if msg.embeds else None
-            if not old_embed:
-                await interaction.followup.send("❌ No embed found", ephemeral=True)
-                return
-            
-            # Extract data from stored match
-            game_id = match['game_id']
-            platform = match['platform']
-            blue_team = match.get('blue_team', {})
-            red_team = match.get('red_team', {})
-            
-            if isinstance(blue_team, dict) and isinstance(red_team, dict):
-                blue_players = blue_team.get('players', [])
-                red_players = red_team.get('players', [])
-                odds_blue = blue_team.get('odds', 1.5)
-                odds_red = red_team.get('odds', 1.5)
+                channel = self.bot.get_channel(match.get('channel_id'))
+                message_id = match.get('message_id')
+                if not channel or not message_id:
+                    failed += 1
+                    continue
                 
-                # Calculate chances
-                chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
-                chance_red = round(100 - chance_blue, 1)
+                try:
+                    msg = await channel.fetch_message(message_id)
+                except discord.NotFound:
+                    logger.info(f"Match {match['id']} message not found (deleted)")
+                    failed += 1
+                    continue
                 
-                # Get featured player from description
-                featured = ""
-                if old_embed.description and '**Featured:**' in old_embed.description:
-                    parts = old_embed.description.split('**Featured:**')
-                    if len(parts) > 1:
-                        featured = parts[1].strip()
+                old_embed = msg.embeds[0] if msg.embeds else None
+                if not old_embed:
+                    failed += 1
+                    continue
                 
-                # Rebuild embed with current bet data
-                game_start_at = match.get('game_start_at')
-                new_embed = self._build_embed(
-                    game_id, platform, blue_players, red_players,
-                    odds_blue, odds_red, chance_blue, chance_red,
-                    featured, match['id'], game_start_at
-                )
+                # Extract data from stored match
+                game_id = match['game_id']
+                platform = match['platform']
+                blue_team = match.get('blue_team', {})
+                red_team = match.get('red_team', {})
                 
-                await msg.edit(embed=new_embed)
-                await interaction.followup.send("✅ Embed refreshed with current bet totals", ephemeral=True)
-            else:
-                await interaction.followup.send("⚠️ Invalid match data format", ephemeral=True)
-                
-        except Exception as e:
-            logger.error(f"Error refreshing embed: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+                if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                    blue_players = blue_team.get('players', [])
+                    red_players = red_team.get('players', [])
+                    odds_blue = blue_team.get('odds', 1.5)
+                    odds_red = red_team.get('odds', 1.5)
+                    
+                    # Calculate chances
+                    chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                    chance_red = round(100 - chance_blue, 1)
+                    
+                    # Get featured player from description
+                    featured = ""
+                    if old_embed.description and '**Featured:**' in old_embed.description:
+                        parts = old_embed.description.split('**Featured:**')
+                        if len(parts) > 1:
+                            featured = parts[1].strip()
+                    
+                    # Rebuild embed with current bet data
+                    game_start_at = match.get('game_start_at')
+                    new_embed = self._build_embed(
+                        game_id, platform, blue_players, red_players,
+                        odds_blue, odds_red, chance_blue, chance_red,
+                        featured, match['id'], game_start_at
+                    )
+                    
+                    await msg.edit(embed=new_embed)
+                    refreshed += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.error(f"Failed to refresh match {match['id']}: {e}")
+                failed += 1
+        
+        if refreshed > 0:
+            await interaction.followup.send(f"✅ Refreshed {refreshed} embed(s)" + (f" ({failed} failed)" if failed > 0 else ""), ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ Failed to refresh embeds", ephemeral=True)
     
     @app_commands.command(name="hxsettle", description="(Admin) Settle or cancel match")
     @app_commands.describe(
