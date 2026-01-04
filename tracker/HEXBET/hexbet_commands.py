@@ -199,7 +199,18 @@ class Hexbet(commands.Cog):
     async def featured_task(self):
         try:
             logger.info("🔄 Featured task running...")
-            await self.post_random_featured_game()
+            # Try to fill all 3 slots if empty
+            open_count = self.db.count_open_matches()
+            logger.info(f"📋 Featured task: {open_count}/3 matches active")
+            
+            # Post games until we have 3
+            while open_count < 3:
+                await self.post_random_featured_game()
+                open_count = self.db.count_open_matches()
+                if open_count >= 3:
+                    break
+                # Small delay between posts
+                await asyncio.sleep(2)
         except Exception as e:
             logger.error(f"❌ Error in featured_task: {e}", exc_info=True)
 
@@ -915,13 +926,23 @@ class Hexbet(commands.Cog):
                 region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
                 region = region_map.get(platform, 'euw')
                 
-                # Get summoner by name
-                summoner = await self.riot_api.get_summoner_by_name(nickname, region)
-                if not summoner:
-                    await interaction.followup.send(f"❌ Player **{nickname}** not found on {platform.upper()}", ephemeral=True)
-                    return
+                # Parse Riot ID (gameName#tagLine)
+                if '#' in nickname:
+                    game_name, tag_line = nickname.split('#', 1)
+                    # Get account by Riot ID
+                    account = await self.riot_api.get_account_by_riot_id(game_name, tag_line, region)
+                    if not account:
+                        await interaction.followup.send(f"❌ Player **{nickname}** not found on {platform.upper()}", ephemeral=True)
+                        return
+                    puuid = account.get('puuid')
+                else:
+                    # Fallback to old method (no tagline)
+                    summoner = await self.riot_api.get_summoner_by_name(nickname, region)
+                    if not summoner:
+                        await interaction.followup.send(f"❌ Player **{nickname}** not found. Try format: Name#TAG", ephemeral=True)
+                        return
+                    puuid = summoner.get('puuid')
                 
-                puuid = summoner.get('puuid')
                 if not puuid:
                     await interaction.followup.send(f"❌ Could not get PUUID for **{nickname}**", ephemeral=True)
                     return
