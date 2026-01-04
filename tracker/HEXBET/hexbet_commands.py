@@ -24,12 +24,13 @@ LEADERBOARD_CHANNEL_ID = 1398985421014306856
 BET_LOGS_CHANNEL_ID = 1398986567988674704
 
 # Task intervals
-FEATURED_INTERVAL = 5  # minutes - how often to check for and post new matches
+FEATURED_INTERVAL = 8  # minutes - how often to check for and post new matches (increased to reduce rate limits)
 LEADERBOARD_INTERVAL = 10  # minutes - how often to refresh leaderboard
 SETTLE_CHECK_SECONDS = 120  # 2 minutes - how often to check if matches are ready to settle
 CLEANUP_INTERVAL = 1  # minute - how often to delete old settled bets
 MIN_MINUTES_BEFORE_SETTLE = 12  # 12 minutes - minimum game duration before settlement check
 POLL_INTERVAL_SECONDS = 300  # 5 minutes - avoid rate limits
+MAX_PLAYERS_TO_SCAN = 30  # Maximum players to scan per featured check (reduced to avoid rate limits)
 
 ROLE_LABELS = [
     ("Top", CFG_ROLE_EMOJIS.get('TOP', '🗻')),
@@ -361,8 +362,8 @@ class Hexbet(commands.Cog):
             platform = platform_choice or random.choice(['euw1', 'na1', 'kr', 'eun1'])
             region = region_map.get(platform, 'euw')
             
-            # Get random PUUIDs from high-elo pool
-            puuids = self.db.get_random_high_elo_puuids(region, limit=50)
+            # Get random PUUIDs from high-elo pool (reduced limit to minimize rate limits)
+            puuids = self.db.get_random_high_elo_puuids(region, limit=MAX_PLAYERS_TO_SCAN)
             if not puuids:
                 logger.warning(f"⚠️ No PUUIDs in pool for {region}")
                 return
@@ -371,13 +372,27 @@ class Hexbet(commands.Cog):
             
             # Check each PUUID for active game
             games_checked = 0
+            rate_limit_backoff = 0.5  # Start with 0.5s delay
+            
             for puuid, tier, lp in puuids:
                 games_checked += 1
                 self.db.update_high_elo_last_checked(puuid)
-                game_data = await self.riot_api.get_active_game(puuid, region)
                 
-                # Anti rate-limit: delay between API calls (increased to avoid 429 errors)
-                await asyncio.sleep(0.5)
+                try:
+                    game_data = await self.riot_api.get_active_game(puuid, region)
+                    # Success - reset backoff
+                    rate_limit_backoff = 0.5
+                except Exception as e:
+                    if '429' in str(e) or 'rate limit' in str(e).lower():
+                        # Rate limited - exponential backoff
+                        rate_limit_backoff = min(rate_limit_backoff * 2, 5.0)  # Max 5 seconds
+                        logger.warning(f"⚠️ Rate limit hit, backing off to {rate_limit_backoff}s")
+                        await asyncio.sleep(rate_limit_backoff)
+                        continue
+                    game_data = None
+                
+                # Anti rate-limit: dynamic delay based on rate limit status
+                await asyncio.sleep(rate_limit_backoff)
                 
                 if game_data:
                     game_id = game_data.get('gameId')
