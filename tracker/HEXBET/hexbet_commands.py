@@ -1517,7 +1517,8 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
         self.match_id = match_id
         self.cog = cog
         self.title = f'Bet on {side.upper()} Team'
-        self.amount.label = f'Amount (Balance: {balance})'
+        # Update placeholder to show balance instead of modifying deprecated label
+        self.amount.placeholder = f'Balance: {balance}'
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
