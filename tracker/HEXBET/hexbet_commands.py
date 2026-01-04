@@ -1742,183 +1742,6 @@ class Hexbet(commands.Cog):
         else:
             await interaction.response.send_message(f"❌ Error: {error}", ephemeral=True)
 
-
-class BetModal(discord.ui.Modal, title='Place Your Bet'):
-    amount = discord.ui.TextInput(
-        label='Amount to bet',
-        placeholder='Enter amount (e.g., 100)',
-        required=True,
-        min_length=1,
-        max_length=10,
-        style=discord.TextStyle.short
-    )
-    
-    def __init__(self, side: str, odds: float, balance: int, match_id: int, cog: 'Hexbet'):
-        super().__init__()
-        self.side = side
-        self.odds = odds
-        self.balance = balance
-        self.match_id = match_id
-        self.cog = cog
-        self.title = f'Bet on {side.upper()} Team'
-        # Update placeholder to show balance instead of modifying deprecated label
-        self.amount.placeholder = f'Balance: {balance}'
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            bet_amount = int(self.amount.value)
-            
-            if bet_amount <= 0:
-                await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
-                return
-            
-            if bet_amount > self.balance:
-                await interaction.response.send_message(f"❌ Not enough balance! You have {self.balance}", ephemeral=True)
-                return
-            
-            match = self.cog.db.get_open_match()
-            if not match or match['id'] != self.match_id:
-                await interaction.response.send_message("❌ This match is no longer open for betting.", ephemeral=True)
-                return
-            
-            potential = int(bet_amount * self.odds)
-            
-            if not self.cog.db.add_bet(match['id'], interaction.user.id, self.side, bet_amount, self.odds, potential):
-                await interaction.response.send_message("⚠️ You already placed a bet on this match!", ephemeral=True)
-                return
-            
-            self.cog.db.record_wager(interaction.user.id, bet_amount)
-            new_balance = self.cog.db.update_balance(interaction.user.id, -bet_amount)
-            
-            embed = discord.Embed(
-                title="✅ Bet Confirmed!",
-                color=0x3498DB if self.side == 'blue' else 0xE74C3C,
-                description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-            # Log to bet logs channel
-            try:
-                log_channel = self.cog.bot.get_channel(BET_LOGS_CHANNEL_ID)
-                if log_channel:
-                    log_embed = discord.Embed(
-                        title="📊 New Bet",
-                        color=0x3498DB if self.side == 'blue' else 0xE74C3C,
-                        timestamp=discord.utils.utcnow()
-                    )
-                    log_embed.add_field(name="User", value=interaction.user.mention, inline=True)
-                    log_embed.add_field(name="Side", value=self.side.upper(), inline=True)
-                    log_embed.add_field(name="Amount", value=str(bet_amount), inline=True)
-                    log_embed.add_field(name="Odds", value=f"{self.odds}x", inline=True)
-                    log_embed.add_field(name="Potential Win", value=str(potential), inline=True)
-                    log_embed.add_field(name="Match ID", value=str(self.match_id), inline=True)
-                    await log_channel.send(embed=log_embed)
-            except Exception as e:
-                logger.warning(f"Failed to log bet: {e}")
-            
-            # Auto-refresh the match embed with updated bet totals
-            try:
-                await self.cog._refresh_match_embed(self.match_id)
-            except Exception as e:
-                logger.warning(f"Failed to auto-refresh embed: {e}")
-            
-        except ValueError:
-            await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
-
-
-class LeaderboardView(discord.ui.View):
-    def __init__(self, cog: 'Hexbet'):
-        super().__init__(timeout=None)
-        self.cog = cog
-    
-    @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.primary, custom_id="hexbet_leaderboard_refresh")
-    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        try:
-            await self.cog.refresh_leaderboard_embed()
-            await interaction.followup.send("✅ Leaderboard refreshed!", ephemeral=True)
-        except Exception as e:
-            logger.error(f"Failed to refresh leaderboard: {e}")
-            await interaction.followup.send("❌ Failed to refresh leaderboard", ephemeral=True)
-
-
-class BetView(discord.ui.View):
-    def __init__(self, match_id: int, odds_blue: float, odds_red: float, cog: Hexbet, platform: str, blue_players: List[dict], red_players: List[dict]):
-        super().__init__(timeout=None)
-        self.match_id = match_id
-        self.odds_blue = odds_blue
-        self.odds_red = odds_red
-        self.cog = cog
-        self.platform = platform
-        self.blue_players = blue_players
-        self.red_players = red_players
-
-    @discord.ui.button(emoji="<:BlueSide:1457209225976484014>", label="Bet Blue", style=discord.ButtonStyle.secondary, custom_id="hexbet_blue")
-    async def bet_blue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        balance = self.cog.db.get_balance(interaction.user.id)
-        modal = BetModal('blue', self.odds_blue, balance, self.match_id, self.cog)
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(emoji="<:RedSide:1457209221031395472>", label="Bet Red", style=discord.ButtonStyle.secondary, custom_id="hexbet_red")
-    async def bet_red(self, interaction: discord.Interaction, button: discord.ui.Button):
-        balance = self.cog.db.get_balance(interaction.user.id)
-        modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="🔗 OP.GG", style=discord.ButtonStyle.secondary, custom_id="hexbet_opgg")
-    async def opgg_link(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Generate OP.GG multisearch link"""
-        try:
-            # Map platform to op.gg region
-            region_map = {
-                'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 
-                'kr': 'kr', 'br1': 'br', 'jp1': 'jp',
-                'la1': 'lan', 'la2': 'las', 'oc1': 'oce',
-                'tr1': 'tr', 'ru': 'ru'
-            }
-            region = region_map.get(self.platform.lower(), 'euw')
-            
-            # Collect all player names with taglines (gameName#tagLine format), excluding streamer mode
-            all_players = self.blue_players + self.red_players
-            names = []
-            for p in all_players:
-                # Skip players with streamer mode
-                if p.get('streamer_mode', False):
-                    continue
-                    
-                riot_id = p.get('riotId', '')
-                if riot_id:
-                    # Keep the # format for OP.GG
-                    names.append(riot_id)
-                else:
-                    name = p.get('summonerName', '')
-                    if name:
-                        names.append(name)
-            
-            if not names:
-                await interaction.response.send_message("❌ No player names found", ephemeral=True)
-                return
-            
-            # Create multisearch URL with URL encoding
-            import urllib.parse
-            summoners_param = ','.join(names)
-            summoners_encoded = urllib.parse.quote(summoners_param)
-            url = f"https://www.op.gg/multisearch/{region}?summoners={summoners_encoded}"
-            
-            embed = discord.Embed(
-                title="🔗 OP.GG Multisearch",
-                description=f"[Click here to view all players on OP.GG]({url})",
-                color=0x1F8ECD
-            )
-            embed.add_field(name="Region", value=region.upper(), inline=True)
-            embed.add_field(name="Players", value=str(len(names)), inline=True)
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-        except Exception as e:
-            logger.error(f"Error generating OP.GG link: {e}", exc_info=True)
-            await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
-
     @app_commands.command(name="hxsync", description="(Admin) Force sync slash commands")
     async def force_sync(self, interaction: discord.Interaction):
         """Force synchronize slash commands with Discord"""
@@ -2298,6 +2121,183 @@ class BetView(discord.ui.View):
         except Exception as e:
             logger.error(f"Error force closing matches: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+
+class BetModal(discord.ui.Modal, title='Place Your Bet'):
+    amount = discord.ui.TextInput(
+        label='Amount to bet',
+        placeholder='Enter amount (e.g., 100)',
+        required=True,
+        min_length=1,
+        max_length=10,
+        style=discord.TextStyle.short
+    )
+    
+    def __init__(self, side: str, odds: float, balance: int, match_id: int, cog: 'Hexbet'):
+        super().__init__()
+        self.side = side
+        self.odds = odds
+        self.balance = balance
+        self.match_id = match_id
+        self.cog = cog
+        self.title = f'Bet on {side.upper()} Team'
+        # Update placeholder to show balance instead of modifying deprecated label
+        self.amount.placeholder = f'Balance: {balance}'
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            bet_amount = int(self.amount.value)
+            
+            if bet_amount <= 0:
+                await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+                return
+            
+            if bet_amount > self.balance:
+                await interaction.response.send_message(f"❌ Not enough balance! You have {self.balance}", ephemeral=True)
+                return
+            
+            match = self.cog.db.get_open_match()
+            if not match or match['id'] != self.match_id:
+                await interaction.response.send_message("❌ This match is no longer open for betting.", ephemeral=True)
+                return
+            
+            potential = int(bet_amount * self.odds)
+            
+            if not self.cog.db.add_bet(match['id'], interaction.user.id, self.side, bet_amount, self.odds, potential):
+                await interaction.response.send_message("⚠️ You already placed a bet on this match!", ephemeral=True)
+                return
+            
+            self.cog.db.record_wager(interaction.user.id, bet_amount)
+            new_balance = self.cog.db.update_balance(interaction.user.id, -bet_amount)
+            
+            embed = discord.Embed(
+                title="✅ Bet Confirmed!",
+                color=0x3498DB if self.side == 'blue' else 0xE74C3C,
+                description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            # Log to bet logs channel
+            try:
+                log_channel = self.cog.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                if log_channel:
+                    log_embed = discord.Embed(
+                        title="📊 New Bet",
+                        color=0x3498DB if self.side == 'blue' else 0xE74C3C,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    log_embed.add_field(name="User", value=interaction.user.mention, inline=True)
+                    log_embed.add_field(name="Side", value=self.side.upper(), inline=True)
+                    log_embed.add_field(name="Amount", value=str(bet_amount), inline=True)
+                    log_embed.add_field(name="Odds", value=f"{self.odds}x", inline=True)
+                    log_embed.add_field(name="Potential Win", value=str(potential), inline=True)
+                    log_embed.add_field(name="Match ID", value=str(self.match_id), inline=True)
+                    await log_channel.send(embed=log_embed)
+            except Exception as e:
+                logger.warning(f"Failed to log bet: {e}")
+            
+            # Auto-refresh the match embed with updated bet totals
+            try:
+                await self.cog._refresh_match_embed(self.match_id)
+            except Exception as e:
+                logger.warning(f"Failed to auto-refresh embed: {e}")
+            
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
+
+
+class LeaderboardView(discord.ui.View):
+    def __init__(self, cog: 'Hexbet'):
+        super().__init__(timeout=None)
+        self.cog = cog
+    
+    @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.primary, custom_id="hexbet_leaderboard_refresh")
+    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        try:
+            await self.cog.refresh_leaderboard_embed()
+            await interaction.followup.send("✅ Leaderboard refreshed!", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Failed to refresh leaderboard: {e}")
+            await interaction.followup.send("❌ Failed to refresh leaderboard", ephemeral=True)
+
+
+class BetView(discord.ui.View):
+    def __init__(self, match_id: int, odds_blue: float, odds_red: float, cog: Hexbet, platform: str, blue_players: List[dict], red_players: List[dict]):
+        super().__init__(timeout=None)
+        self.match_id = match_id
+        self.odds_blue = odds_blue
+        self.odds_red = odds_red
+        self.cog = cog
+        self.platform = platform
+        self.blue_players = blue_players
+        self.red_players = red_players
+
+    @discord.ui.button(emoji="<:BlueSide:1457209225976484014>", label="Bet Blue", style=discord.ButtonStyle.secondary, custom_id="hexbet_blue")
+    async def bet_blue(self, interaction: discord.Interaction, button: discord.ui.Button):
+        balance = self.cog.db.get_balance(interaction.user.id)
+        modal = BetModal('blue', self.odds_blue, balance, self.match_id, self.cog)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(emoji="<:RedSide:1457209221031395472>", label="Bet Red", style=discord.ButtonStyle.secondary, custom_id="hexbet_red")
+    async def bet_red(self, interaction: discord.Interaction, button: discord.ui.Button):
+        balance = self.cog.db.get_balance(interaction.user.id)
+        modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="🔗 OP.GG", style=discord.ButtonStyle.secondary, custom_id="hexbet_opgg")
+    async def opgg_link(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Generate OP.GG multisearch link"""
+        try:
+            # Map platform to op.gg region
+            region_map = {
+                'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 
+                'kr': 'kr', 'br1': 'br', 'jp1': 'jp',
+                'la1': 'lan', 'la2': 'las', 'oc1': 'oce',
+                'tr1': 'tr', 'ru': 'ru'
+            }
+            region = region_map.get(self.platform.lower(), 'euw')
+            
+            # Collect all player names with taglines (gameName#tagLine format), excluding streamer mode
+            all_players = self.blue_players + self.red_players
+            names = []
+            for p in all_players:
+                # Skip players with streamer mode
+                if p.get('streamer_mode', False):
+                    continue
+                    
+                riot_id = p.get('riotId', '')
+                if riot_id:
+                    # Keep the # format for OP.GG
+                    names.append(riot_id)
+                else:
+                    name = p.get('summonerName', '')
+                    if name:
+                        names.append(name)
+            
+            if not names:
+                await interaction.response.send_message("❌ No player names found", ephemeral=True)
+                return
+            
+            # Create multisearch URL with URL encoding
+            import urllib.parse
+            summoners_param = ','.join(names)
+            summoners_encoded = urllib.parse.quote(summoners_param)
+            url = f"https://www.op.gg/multisearch/{region}?summoners={summoners_encoded}"
+            
+            embed = discord.Embed(
+                title="🔗 OP.GG Multisearch",
+                description=f"[Click here to view all players on OP.GG]({url})",
+                color=0x1F8ECD
+            )
+            embed.add_field(name="Region", value=region.upper(), inline=True)
+            embed.add_field(name="Players", value=str(len(names)), inline=True)
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error generating OP.GG link: {e}", exc_info=True)
+            await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
