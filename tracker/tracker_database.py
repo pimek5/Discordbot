@@ -234,6 +234,7 @@ class TrackerDatabase:
                     # TO_TIMESTAMP expects seconds, so divide milliseconds by 1000
                     game_start_at = start_time / 1000.0
                 
+                # Try to insert, if exists do nothing
                 cur.execute("""
                     INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at)
                     VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s))
@@ -242,7 +243,15 @@ class TrackerDatabase:
                 """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at))
                 row = cur.fetchone()
                 conn.commit()
-                return row[0] if row else None
+                
+                # If insert succeeded, return the ID
+                if row:
+                    return row[0]
+                
+                # If conflict happened, fetch existing match ID
+                cur.execute("SELECT id FROM hexbet_matches WHERE game_id = %s", (game_id,))
+                existing = cur.fetchone()
+                return existing[0] if existing else None
         finally:
             self.return_connection(conn)
 
