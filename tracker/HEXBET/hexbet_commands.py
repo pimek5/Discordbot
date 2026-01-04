@@ -62,6 +62,16 @@ DIVISION_SCORE = {
 }
 
 
+def region_to_riot_region(region: str) -> str:
+    """Convert region code to riot region for API calls"""
+    riot_region_map = {
+        'br': 'americas', 'eune': 'europe', 'euw': 'europe',
+        'jp': 'asia', 'kr': 'asia', 'lan': 'americas', 'las': 'americas',
+        'na': 'americas', 'oce': 'sea', 'tr': 'europe', 'ru': 'europe'
+    }
+    return riot_region_map.get(region.lower(), 'europe')
+
+
 def pick_rank_entry(stats: List[dict]) -> Tuple[str, str, float]:
     if not stats:
         return 'UNRANKED', '', 50.0
@@ -1773,6 +1783,19 @@ class Hexbet(commands.Cog):
                 # Check if pro
                 is_pro = is_pro_player(riot_id)
                 
+                # Check if player is in an active game
+                riot_region_for_game = region_to_riot_region(region)
+                in_game = False
+                queue_type = "None"
+                try:
+                    game_data = await self.riot_api.get_active_game(puuid, riot_region_for_game)
+                    if game_data:
+                        in_game = True
+                        queue_id = game_data.get('gameQueueConfigId')
+                        queue_type = "Ranked Solo/Duo" if queue_id == 420 else f"Queue {queue_id}"
+                except:
+                    pass
+                
                 # Build embed
                 embed = discord.Embed(
                     title=f"{get_pro_emoji() + ' ' if is_pro else ''}{riot_id}",
@@ -1787,6 +1810,10 @@ class Hexbet(commands.Cog):
                 embed.add_field(name="Win Rate", value=f"{wr:.1f}%", inline=True)
                 embed.add_field(name="W/L", value=f"{wins}W / {losses}L", inline=True)
                 embed.add_field(name="Pro Player", value="✅ Yes" if is_pro else "❌ No", inline=True)
+                
+                # InGame Status
+                in_game_str = f"🎮 {queue_type}" if in_game else "⏹️ Not in game"
+                embed.add_field(name="InGame Status", value=in_game_str, inline=True)
                 
                 # OP.GG link
                 import urllib.parse
