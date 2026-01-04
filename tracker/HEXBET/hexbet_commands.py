@@ -166,6 +166,9 @@ class Hexbet(commands.Cog):
                     # Calculate time since settlement
                     from datetime import datetime, timezone
                     now = datetime.now(timezone.utc)
+                    # Make updated_at timezone-aware if it's naive
+                    if updated_at.tzinfo is None:
+                        updated_at = updated_at.replace(tzinfo=timezone.utc)
                     time_since_settlement = (now - updated_at).total_seconds() / 60  # in minutes
                     
                     should_delete = False
