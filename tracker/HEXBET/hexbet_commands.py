@@ -519,7 +519,12 @@ class Hexbet(commands.Cog):
             if not channel or not message_id:
                 return
             
-            msg = await channel.fetch_message(message_id)
+            try:
+                msg = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                logger.info(f"Message {message_id} not found (already deleted)")
+                return
+            
             old_embed = msg.embeds[0] if msg.embeds else None
             if not old_embed:
                 return
@@ -1124,7 +1129,12 @@ class Hexbet(commands.Cog):
                 await interaction.followup.send("❌ Could not find match message", ephemeral=True)
                 return
             
-            msg = await channel.fetch_message(message_id)
+            try:
+                msg = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                await interaction.followup.send("❌ Match message was deleted (already settled?)", ephemeral=True)
+                return
+            
             old_embed = msg.embeds[0] if msg.embeds else None
             if not old_embed:
                 await interaction.followup.send("❌ No embed found", ephemeral=True)
