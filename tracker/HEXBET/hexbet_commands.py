@@ -618,6 +618,16 @@ class Hexbet(commands.Cog):
                 await msg.edit(embed=embed, view=None)
                 logger.info(f"✅ Updated match message {message_id} with winner: {winner.upper()}")
                 
+                # Delete the match embed after 30 seconds
+                await asyncio.sleep(30)
+                try:
+                    await msg.delete()
+                    logger.info(f"🗑️ Auto-deleted winner embed {message_id} after 30 seconds")
+                except discord.NotFound:
+                    logger.info(f"Winner embed {message_id} already deleted")
+                except Exception as e:
+                    logger.warning(f"Failed to delete winner embed {message_id}: {e}")
+                
                 # Send notifications to betting notifications channel
                 notif_channel = self.bot.get_channel(1398985421014306856)
                 if notif_channel and payouts:
