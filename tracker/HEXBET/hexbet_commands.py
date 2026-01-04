@@ -919,12 +919,50 @@ class Hexbet(commands.Cog):
 
     def _assign_roles(self, players: List[dict]) -> List[dict]:
         """
-        Assign roles to players using spell IDs and champion roles
-        Smite (11) = Jungle, Others sorted by typical role patterns
+        Assign roles to players using:
+        1. Smite (spell ID 11) = Jungle
+        2. Champion ID patterns = Support
+        3. Remaining players = TOP, MID, ADC in order
         """
+        # Support champion IDs (enchanters, tanks, catchers typically played support)
+        SUPPORT_CHAMPIONS = {
+            412,  # Thresh
+            53,   # Blitzcrank
+            89,   # Leona
+            25,   # Morgana
+            40,   # Janna
+            37,   # Sona
+            267,  # Nami
+            16,   # Soraka
+            43,   # Karma
+            117,  # Lulu
+            143,  # Zyra
+            201,  # Braum
+            432,  # Bard
+            223,  # Tahm Kench
+            555,  # Pyke
+            235,  # Senna
+            350,  # Yuumi
+            526,  # Rell
+            497,  # Rakan
+            147,  # Seraphine
+            111,  # Nautilus
+            12,   # Alistar
+            78,   # Poppy (when support)
+            9,    # Fiddlesticks (when support)
+            101,  # Xerath (when support)
+            161,  # Vel'Koz (when support)
+            268,  # Azir (rare support)
+            44,   # Taric
+            98,   # Shen (when support)
+            888,  # Renata Glasc
+            895,  # Nilah (ADC but can support)
+            950,  # Milio
+        }
+        
         ordered = []
         
-        # First find jungler (has Smite = spell1Id or spell2Id == 11)
+        # Step 1: Find jungler (has Smite = spell1Id or spell2Id == 11)
         jungler = None
         non_jungle = []
         
@@ -936,27 +974,46 @@ class Hexbet(commands.Cog):
             else:
                 non_jungle.append(p)
         
-        # If no jungler found by smite, take first player as jungle
+        # Step 2: Find support (typical support champion)
+        support = None
+        non_jungle_non_support = []
+        
+        for p in non_jungle:
+            champ_id = p.get('championId', 0)
+            if champ_id in SUPPORT_CHAMPIONS:
+                support = p
+            else:
+                non_jungle_non_support.append(p)
+        
+        # Fallbacks
         if not jungler and players:
             jungler = players[0]
             non_jungle = players[1:]
+            non_jungle_non_support = non_jungle
         
-        # Assign roles in order: TOP, JUNGLE, MID, ADC, SUPPORT
+        if not support and non_jungle:
+            # Take last non-jungle player as support (usually last pick)
+            support = non_jungle[-1]
+            non_jungle_non_support = non_jungle[:-1]
+        
+        # Step 3: Assign remaining as TOP, MID, ADC
+        remaining = non_jungle_non_support[:3]  # Max 3 players left
+        
+        # Build role assignments
         role_assignments = []
         
-        if len(non_jungle) >= 4:
-            # Standard case: TOP, JGL, MID, ADC, SUP
+        if len(remaining) >= 3:
             role_assignments = [
-                (non_jungle[0], "Top", CFG_ROLE_EMOJIS.get('TOP', '🗻')),
+                (remaining[0], "Top", CFG_ROLE_EMOJIS.get('TOP', '🗻')),
                 (jungler, "Jungle", CFG_ROLE_EMOJIS.get('JUNGLE', '🌿')),
-                (non_jungle[1], "Mid", CFG_ROLE_EMOJIS.get('MIDDLE', '🌀')),
-                (non_jungle[2], "ADC", CFG_ROLE_EMOJIS.get('BOTTOM', '🎯')),
-                (non_jungle[3], "Support", CFG_ROLE_EMOJIS.get('UTILITY', '🛡️')),
+                (remaining[1], "Mid", CFG_ROLE_EMOJIS.get('MIDDLE', '🌀')),
+                (remaining[2], "ADC", CFG_ROLE_EMOJIS.get('BOTTOM', '🎯')),
+                (support, "Support", CFG_ROLE_EMOJIS.get('UTILITY', '🛡️')),
             ]
         else:
             # Fallback: assign by index
-            all_players = non_jungle + ([jungler] if jungler else [])
-            for idx, p in enumerate(all_players[:5]):
+            all_players = players[:5]
+            for idx, p in enumerate(all_players):
                 role_name, role_emoji = ROLE_LABELS[idx] if idx < len(ROLE_LABELS) else ("Player", "🎮")
                 role_assignments.append((p, role_name, role_emoji))
         
