@@ -639,15 +639,31 @@ class Hexbet(commands.Cog):
         # Calculate actual game duration from PostgreSQL timestamp
         if game_start_at:
             try:
-                # Parse ISO format timestamp from database
-                from datetime import datetime
-                start_dt = datetime.fromisoformat(game_start_at.replace('Z', '+00:00'))
-                now_dt = datetime.now(start_dt.tzinfo)
+                # Parse ISO format timestamp from database (format: "2026-01-04 05:22:00" or "2026-01-04T05:22:00")
+                from datetime import datetime, timezone
+                
+                # Handle both formats: with/without 'T', with/without 'Z'
+                timestamp_str = str(game_start_at).replace('Z', '+00:00').replace(' ', 'T')
+                
+                # Try parsing with timezone info
+                try:
+                    start_dt = datetime.fromisoformat(timestamp_str)
+                except ValueError:
+                    # Fallback to simple parsing without timezone
+                    start_dt = datetime.fromisoformat(timestamp_str.split('+')[0].split('T')[0] + 'T' + timestamp_str.split('T')[1].split('+')[0])
+                
+                # Use UTC now if start_dt has no timezone
+                if start_dt.tzinfo is None:
+                    from datetime import datetime, timezone
+                    now_dt = datetime.now(timezone.utc)
+                else:
+                    now_dt = datetime.now(start_dt.tzinfo)
+                
                 game_duration_min = int((now_dt - start_dt).total_seconds() / 60)
                 game_duration_min = max(0, game_duration_min)
                 desc += f"\n\n⏱️ **Game Duration:** {game_duration_min} min"
             except Exception as e:
-                logger.warning(f"Failed to parse timestamp: {e}")
+                logger.warning(f"Failed to parse timestamp '{game_start_at}': {e}")
                 desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
         else:
             desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
