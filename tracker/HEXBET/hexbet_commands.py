@@ -840,22 +840,51 @@ class Hexbet(commands.Cog):
         except Exception as e:
             logger.warning(f"Error updating live odds: {e}")
 
-    async def refresh_leaderboard_embed(self):
+    async def refresh_leaderboard_embed(self, page: int = 1):
         try:
             channel = self.bot.get_channel(LEADERBOARD_CHANNEL_ID)
             if not channel:
                 return
-            top = self._compute_leaderboard()
-            embed = discord.Embed(title="🏆 HEXBET Leaderboard", color=0xF1C40F)
-            if not top:
+            
+            # Get all players for pagination
+            all_players = self._compute_leaderboard(limit=None)  # Get all
+            total_players = len(all_players)
+            
+            # Pagination settings
+            per_page = 10
+            total_pages = max(1, (total_players + per_page - 1) // per_page)  # Ceiling division
+            page = max(1, min(page, total_pages))  # Clamp page number
+            
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_players = all_players[start_idx:end_idx]
+            
+            embed = discord.Embed(
+                title=f"🏆 HEXBET Leaderboard (Page {page}/{total_pages})",
+                color=0xF1C40F
+            )
+            
+            if not page_players:
                 embed.description = "No bets yet."
             else:
                 lines = []
-                for i, row in enumerate(top, start=1):
+                for i, row in enumerate(page_players, start=start_idx + 1):
+                    # Medal emojis for top 3
+                    medal = ""
+                    if i == 1:
+                        medal = "🥇 "
+                    elif i == 2:
+                        medal = "🥈 "
+                    elif i == 3:
+                        medal = "🥉 "
+                    
                     lines.append(
-                        f"**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
+                        f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
                     )
                 embed.description = "\n".join(lines)
+                
+                # Add stats footer
+                embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
                 
                 # Add useful commands at the bottom
                 embed.add_field(
@@ -871,8 +900,8 @@ class Hexbet(commands.Cog):
                     inline=False
                 )
             
-            # Create view with refresh button
-            view = LeaderboardView(self)
+            # Create view with pagination buttons
+            view = LeaderboardView(self, page=page, total_pages=total_pages)
             
             existing = await self._find_leaderboard_message(channel)
             if existing:
@@ -890,19 +919,20 @@ class Hexbet(commands.Cog):
                     return msg
         return None
 
-    def _compute_leaderboard(self):
+    def _compute_leaderboard(self, limit: Optional[int] = 10):
         conn = self.db.get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
+                query = """
                     SELECT discord_id, balance, total_won, bets_won, bets_placed,
                            CASE WHEN bets_placed>0 THEN ROUND((bets_won::decimal/bets_placed)*100,2) ELSE 0 END as win_rate
                     FROM user_balances
                     ORDER BY balance DESC
-                    LIMIT 10
-                    """
-                )
+                """
+                if limit:
+                    query += f" LIMIT {limit}"
+                
+                cur.execute(query)
                 rows = cur.fetchall()
                 res = []
                 for r in rows:
@@ -2698,19 +2728,47 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
 
 
 class LeaderboardView(discord.ui.View):
-    def __init__(self, cog: 'Hexbet'):
+    def __init__(self, cog: 'Hexbet', page: int = 1, total_pages: int = 1):
         super().__init__(timeout=None)
         self.cog = cog
+        self.page = page
+        self.total_pages = total_pages
+        
+        # Disable navigation buttons if on first/last page
+        self.children[0].disabled = (page == 1)  # Previous button
+        self.children[2].disabled = (page >= total_pages)  # Next button
+    
+    @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary, custom_id="hexbet_leaderboard_prev")
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        try:
+            new_page = max(1, self.page - 1)
+            await self.cog.refresh_leaderboard_embed(page=new_page)
+            await interaction.followup.send(f"📄 Page {new_page}/{self.total_pages}", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Failed to go to previous page: {e}")
+            await interaction.followup.send("❌ Failed to change page", ephemeral=True)
     
     @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.primary, custom_id="hexbet_leaderboard_refresh")
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         try:
-            await self.cog.refresh_leaderboard_embed()
+            await self.cog.refresh_leaderboard_embed(page=self.page)
             await interaction.followup.send("✅ Leaderboard refreshed!", ephemeral=True)
         except Exception as e:
             logger.error(f"Failed to refresh leaderboard: {e}")
             await interaction.followup.send("❌ Failed to refresh leaderboard", ephemeral=True)
+    
+    @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary, custom_id="hexbet_leaderboard_next")
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        try:
+            new_page = min(self.total_pages, self.page + 1)
+            await self.cog.refresh_leaderboard_embed(page=new_page)
+            await interaction.followup.send(f"📄 Page {new_page}/{self.total_pages}", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Failed to go to next page: {e}")
+            await interaction.followup.send("❌ Failed to change page", ephemeral=True)
 
 
 class BetView(discord.ui.View):
