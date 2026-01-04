@@ -112,11 +112,12 @@ class RiotAPI:
             logger.error("❌ No API key provided!")
 
     async def get_featured_games(self, platform: str = 'euw1', retries: int = 3) -> Optional[Dict]:
-        """Get featured games (public matches) from spectator/v5 featured-games"""
+        """Get featured games (public matches) from spectator API - trying v4 for compatibility"""
         if not self.api_key:
             logger.error("❌ No API key available for featured games!")
             return None
-        url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/featured-games"
+        # Try v4 endpoint first (might have better access with dev keys)
+        url = f"https://{platform}.api.riotgames.com/lol/spectator/v4/featured-games"
         
         for attempt in range(retries):
             try:
