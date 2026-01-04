@@ -558,6 +558,21 @@ class Hexbet(commands.Cog):
                 embed.title = f"{winner_emoji} {embed.title} - {winner.upper()} WON!"
                 embed.color = 0x2C2F33  # Dark gray/black color
                 
+                # Calculate bet statistics
+                winners = [(uid, payout) for uid, _, payout, won in payouts if won]
+                losers = [(uid, amount) for uid, amount, _, won in payouts if not won]
+                total_wagered = sum(amount for _, amount, _, _ in payouts)
+                total_payout = sum(payout for _, _, payout, won in payouts if won)
+                
+                # Add results field to embed
+                results_text = (
+                    f"**Total Bets:** {len(payouts)}\n"
+                    f"**Winners:** {len(winners)} | **Losers:** {len(losers)}\n"
+                    f"**Total Wagered:** {total_wagered}\n"
+                    f"**Total Payout:** {total_payout}"
+                )
+                embed.add_field(name="📊 Bet Results", value=results_text, inline=False)
+                
                 # Remove betting view
                 await msg.edit(embed=embed, view=None)
                 logger.info(f"✅ Updated match message {message_id} with winner: {winner.upper()}")
