@@ -547,6 +547,17 @@ class TrackerDatabase:
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
+                # First check what we're about to delete
+                cur.execute("""
+                    SELECT id, status, winner, updated_at 
+                    FROM hexbet_matches
+                    WHERE status = 'settled'
+                    AND updated_at < NOW() - make_interval(mins => %s)
+                """, (minutes,))
+                to_delete = cur.fetchall()
+                if to_delete:
+                    logger.info(f"🗑️ About to delete {len(to_delete)} matches: {to_delete}")
+                
                 # Delete bets for settled matches older than N minutes
                 cur.execute("""
                     DELETE FROM hexbet_bets
@@ -567,6 +578,7 @@ class TrackerDatabase:
                 deleted_matches = cur.rowcount
                 
                 conn.commit()
+                logger.info(f"🗑️ Deleted {deleted_matches} matches and {deleted_bets} bets")
                 return deleted_matches, deleted_bets
         finally:
             self.return_connection(conn)

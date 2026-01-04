@@ -643,21 +643,20 @@ class Hexbet(commands.Cog):
                 from datetime import datetime, timezone
                 
                 # Handle both formats: with/without 'T', with/without 'Z'
-                timestamp_str = str(game_start_at).replace('Z', '+00:00').replace(' ', 'T')
+                timestamp_str = str(game_start_at).replace('Z', '').replace(' ', 'T')
                 
                 # Try parsing with timezone info
                 try:
                     start_dt = datetime.fromisoformat(timestamp_str)
                 except ValueError:
                     # Fallback to simple parsing without timezone
-                    start_dt = datetime.fromisoformat(timestamp_str.split('+')[0].split('T')[0] + 'T' + timestamp_str.split('T')[1].split('+')[0])
+                    timestamp_str = timestamp_str.split('+')[0].split('T')[0] + 'T' + timestamp_str.split('T')[1].split('+')[0].split('.')[0]
+                    start_dt = datetime.fromisoformat(timestamp_str)
                 
-                # Use UTC now if start_dt has no timezone
-                if start_dt.tzinfo is None:
-                    from datetime import datetime, timezone
-                    now_dt = datetime.now(timezone.utc)
-                else:
-                    now_dt = datetime.now(start_dt.tzinfo)
+                # Make both timezone-naive for comparison (assume UTC)
+                if start_dt.tzinfo is not None:
+                    start_dt = start_dt.replace(tzinfo=None)
+                now_dt = datetime.utcnow()
                 
                 game_duration_min = int((now_dt - start_dt).total_seconds() / 60)
                 game_duration_min = max(0, game_duration_min)
