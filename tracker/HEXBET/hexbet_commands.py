@@ -162,8 +162,10 @@ class Hexbet(commands.Cog):
             score_blue = self._team_score(blue_ordered)
             score_red = self._team_score(red_ordered)
             odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+            chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+            chance_red = round(100 - chance_blue, 1)
 
-            embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red)
+            embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red)
 
             match_id = self.db.create_hexbet_match(
                 game_id,
@@ -319,6 +321,17 @@ class Hexbet(commands.Cog):
             p['tier'] = tier
             p['division'] = division
             p['wr'] = wr
+            lp = 0
+            wins = 0
+            losses = 0
+            if stats:
+                entry = stats[0]
+                lp = entry.get('leaguePoints', 0)
+                wins = entry.get('wins', 0)
+                losses = entry.get('losses', 0)
+            p['lp'] = lp
+            p['wins'] = wins
+            p['losses'] = losses
             champ_id = p.get('championId')
             champ_name = CHAMPION_ID_TO_NAME.get(champ_id, 'Unknown')
             p['champ_name'] = champ_name
@@ -332,10 +345,10 @@ class Hexbet(commands.Cog):
         comp_score = len({p.get('champ_name') for p in players}) / 10
         return rank_score + wr_score + comp_score
 
-    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float) -> discord.Embed:
+    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float) -> discord.Embed:
         embed = discord.Embed(title=f"HEXBET Match #{game_id}", description=f"Platform: {platform.upper()}", color=0x3498DB)
-        embed.add_field(name="🔵 BLUE", value=self._team_block(blue), inline=True)
-        embed.add_field(name="🔴 RED", value=self._team_block(red), inline=True)
+        embed.add_field(name=f"🔵 BLUE • Win Chance {chance_blue}%", value=self._team_block(blue), inline=True)
+        embed.add_field(name=f"🔴 RED • Win Chance {chance_red}%", value=self._team_block(red), inline=True)
         embed.add_field(name="📈 Odds", value=f"Blue: **{odds_blue}x**\nRed: **{odds_red}x**", inline=False)
         embed.set_footer(text="Use /bet side:<blue/red> amount:<value> or buttons below.")
         return embed
@@ -345,11 +358,15 @@ class Hexbet(commands.Cog):
         for p in team:
             role = p.get('role_emoji', '')
             tier = p.get('tier', 'UNRANKED')
+            division = p.get('division', '')
             tier_emoji = rank_emoji(tier) or tier
             champ = p.get('champ_emoji') or p.get('champ_name', '')
             name = p.get('summonerName', 'Player')
             wr = p.get('wr', 50)
-            lines.append(f"{role} {tier_emoji} {champ} **{name}** {wr}%")
+            lp = p.get('lp', 0)
+            rank_str = f"{tier}{' ' + division if division else ''}"
+            lines.append(f"{role} {champ} **{name}**")
+            lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
 
     @app_commands.command(name="bet", description="Place a bet on current match")
