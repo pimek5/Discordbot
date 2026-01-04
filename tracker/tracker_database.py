@@ -7,6 +7,7 @@ import psycopg2
 from psycopg2 import pool
 import os
 import json
+from typing import Optional, List, Dict
 from dotenv import load_dotenv
 import logging
 
