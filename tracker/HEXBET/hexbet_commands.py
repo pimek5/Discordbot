@@ -463,12 +463,59 @@ class Hexbet(commands.Cog):
         return rank_score + wr_score + comp_score
 
     def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None) -> discord.Embed:
-        desc = f"Platform: {platform.upper()}"
+        # Calculate team statistics
+        blue_avg_tier = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) for p in blue) / len(blue) if blue else 0
+        red_avg_tier = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) for p in red) / len(red) if red else 0
+        blue_avg_wr = sum(p.get('wr', 50) for p in blue) / len(blue) if blue else 50
+        red_avg_wr = sum(p.get('wr', 50) for p in red) / len(red) if red else 50
+        blue_avg_lp = sum(p.get('lp', 0) for p in blue) / len(blue) if blue else 0
+        red_avg_lp = sum(p.get('lp', 0) for p in red) / len(red) if red else 0
+        
+        # Get tier name from score
+        def tier_from_score(score):
+            if score >= 10: return "CHALLENGER"
+            elif score >= 9: return "GRANDMASTER"
+            elif score >= 8: return "MASTER"
+            elif score >= 7: return "DIAMOND"
+            elif score >= 6: return "EMERALD"
+            elif score >= 5: return "PLATINUM"
+            elif score >= 4: return "GOLD"
+            elif score >= 3: return "SILVER"
+            elif score >= 2: return "BRONZE"
+            else: return "IRON"
+        
+        blue_tier_name = tier_from_score(blue_avg_tier)
+        red_tier_name = tier_from_score(red_avg_tier)
+        
+        desc = f"**Region:** {platform.upper()}"
         if featured_player:
-            desc += f" • Featured: {featured_player}"
-        embed = discord.Embed(title=f"HEXBET Match #{game_id}", description=desc, color=0x3498DB)
-        embed.add_field(name=f"🔵 BLUE • Win Chance {chance_blue}%", value=self._team_block(blue), inline=True)
-        embed.add_field(name=f"🔴 RED • Win Chance {chance_red}%", value=self._team_block(red), inline=True)
+            desc += f" • **Featured:** {featured_player}"
+        desc += f"\n\n**Game Duration:** ~25-35 minutes"
+        
+        embed = discord.Embed(
+            title=f"⚔️ HEXBET Match #{game_id}",
+            description=desc,
+            color=0x3498DB
+        )
+        
+        # Team composition fields
+        embed.add_field(
+            name=f"🔵 BLUE TEAM • {chance_blue}% Win Chance",
+            value=self._team_block(blue),
+            inline=True
+        )
+        embed.add_field(
+            name=f"🔴 RED TEAM • {chance_red}% Win Chance",
+            value=self._team_block(red),
+            inline=True
+        )
+        
+        # Team statistics comparison
+        stats_comparison = (
+            f"**Blue:** {blue_tier_name} • {blue_avg_lp:.0f} LP avg • {blue_avg_wr:.1f}% WR\n"
+            f"**Red:** {red_tier_name} • {red_avg_lp:.0f} LP avg • {red_avg_wr:.1f}% WR"
+        )
+        embed.add_field(name="📊 Team Stats", value=stats_comparison, inline=False)
         
         # Get current bets if match exists
         bet_info = ""
