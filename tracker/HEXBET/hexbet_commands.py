@@ -208,7 +208,7 @@ class Hexbet(commands.Cog):
                     embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player, match_id)
 
                     self.db.increment_high_elo_featured(puuid)
-                    view = BetView(match_id, odds_blue, odds_red, self)
+                    view = BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered)
                     msg = await channel.send(embed=embed, view=view)
                     self.db.set_match_message(match_id, msg.id)
                     logger.info(f"✅ Posted bet for game {game_id}")
@@ -746,8 +746,8 @@ class Hexbet(commands.Cog):
             logger.error(f"Error populating pool: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
-    @hexbet_post.error
-    async def hexbet_post_error(self, interaction: discord.Interaction, error):
+    @hxpost.error
+    async def hxpost_error(self, interaction: discord.Interaction, error):
         if isinstance(error, app_commands.errors.MissingPermissions):
             await interaction.response.send_message("❌ You need Manage Server to use this.", ephemeral=True)
         else:
@@ -812,12 +812,15 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
 
 
 class BetView(discord.ui.View):
-    def __init__(self, match_id: int, odds_blue: float, odds_red: float, cog: Hexbet):
+    def __init__(self, match_id: int, odds_blue: float, odds_red: float, cog: Hexbet, platform: str, blue_players: List[dict], red_players: List[dict]):
         super().__init__(timeout=None)
         self.match_id = match_id
         self.odds_blue = odds_blue
         self.odds_red = odds_red
         self.cog = cog
+        self.platform = platform
+        self.blue_players = blue_players
+        self.red_players = red_players
 
     @discord.ui.button(label=f"🔵 Bet Blue", style=discord.ButtonStyle.primary, custom_id="hexbet_blue")
     async def bet_blue(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -830,6 +833,54 @@ class BetView(discord.ui.View):
         balance = self.cog.db.get_balance(interaction.user.id)
         modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="🔗 OP.GG", style=discord.ButtonStyle.secondary, custom_id="hexbet_opgg")
+    async def opgg_link(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Generate OP.GG multisearch link"""
+        try:
+            # Map platform to op.gg region
+            region_map = {
+                'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 
+                'kr': 'kr', 'br1': 'br', 'jp1': 'jp',
+                'la1': 'lan', 'la2': 'las', 'oc1': 'oce',
+                'tr1': 'tr', 'ru': 'ru'
+            }
+            region = region_map.get(self.platform.lower(), 'euw')
+            
+            # Collect all player names (use gameName from riotId or summonerName)
+            all_players = self.blue_players + self.red_players
+            names = []
+            for p in all_players:
+                riot_id = p.get('riotId', '')
+                if riot_id and '#' in riot_id:
+                    # Extract gameName from riotId (before #)
+                    name = riot_id.split('#')[0]
+                else:
+                    name = p.get('summonerName', '')
+                if name:
+                    names.append(name)
+            
+            if not names:
+                await interaction.response.send_message("❌ No player names found", ephemeral=True)
+                return
+            
+            # Create multisearch URL
+            summoners_param = ','.join(names)
+            url = f"https://www.op.gg/multisearch/{region}?summoners={summoners_param}"
+            
+            embed = discord.Embed(
+                title="🔗 OP.GG Multisearch",
+                description=f"[Click here to view all players on OP.GG]({url})",
+                color=0x1F8ECD
+            )
+            embed.add_field(name="Region", value=region.upper(), inline=True)
+            embed.add_field(name="Players", value=str(len(names)), inline=True)
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error generating OP.GG link: {e}", exc_info=True)
+            await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
 class ClosedBetView(discord.ui.View):
