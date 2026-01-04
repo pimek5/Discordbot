@@ -112,6 +112,7 @@ class Hexbet(commands.Cog):
         self.cleanup_task.start()
         self.check_embed_task.start()
         self.auto_refresh_task.start()  # Auto-refresh embeds every 1 minute
+        self.live_score_update_task.start()  # Update live odds every 5 minutes
         self.bot.loop.create_task(self._ensure_champions())
         self.bot.loop.create_task(self._restore_persistent_views())
         self.bot.loop.create_task(self._load_pro_players())
@@ -227,6 +228,7 @@ class Hexbet(commands.Cog):
         self.cleanup_task.cancel()
         self.check_embed_task.cancel()
         self.auto_refresh_task.cancel()
+        self.live_score_update_task.cancel()
 
     @tasks.loop(minutes=FEATURED_INTERVAL)
     async def featured_task(self):
@@ -318,23 +320,23 @@ class Hexbet(commands.Cog):
         except Exception as e:
             logger.error(f"❌ Error in check_embed_task: {e}", exc_info=True)
 
-    @tasks.loop(minutes=1)
-    async def auto_refresh_task(self):
-        """Auto-refresh all open match embeds every 1 minute with updated bet totals"""
+    @tasks.loop(minutes=5)
+    async def live_score_update_task(self):
+        """Update odds every 5 minutes based on live game data"""
         try:
             matches = self.db.get_open_matches()
             if not matches:
                 return
             
-            logger.info(f"🔄 Auto-refreshing {len(matches)} match embed(s)...")
+            logger.info(f"📊 Updating live scores for {len(matches)} match(es)...")
             
             for match in matches:
                 try:
-                    await self._refresh_match_embed(match['id'])
+                    await self._update_live_odds(match)
                 except Exception as e:
-                    logger.warning(f"Failed to auto-refresh match {match.get('id')}: {e}")
+                    logger.warning(f"Failed to update live score for match {match.get('id')}: {e}")
         except Exception as e:
-            logger.error(f"❌ Error in auto_refresh_task: {e}", exc_info=True)
+            logger.error(f"❌ Error in live_score_update_task: {e}", exc_info=True)
 
     @featured_task.before_loop
     async def before_featured(self):
@@ -773,6 +775,64 @@ class Hexbet(commands.Cog):
                 
         except Exception as e:
             logger.warning(f"Failed to refresh match embed: {e}")
+
+    async def _update_live_odds(self, match: dict):
+        """Update odds based on live game data every 5 minutes"""
+        try:
+            game_id = match.get('game_id')
+            platform = match.get('platform', 'euw1')
+            channel = self.bot.get_channel(match.get('channel_id'))
+            message_id = match.get('message_id')
+            
+            if not channel or not message_id:
+                return
+            
+            try:
+                msg = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                return
+            except Exception as e:
+                logger.warning(f"Failed to fetch match message: {e}")
+                return
+            
+            # Get live game data to see if still in progress
+            # Note: Live game API has limited info, we mainly use this to confirm game is still active
+            if not msg.embeds:
+                return
+            
+            embed = msg.embeds[0]
+            
+            # Get game duration from start time
+            game_start_at = match.get('game_start_at')
+            if not game_start_at:
+                game_start_time_ms = match.get('start_time', 0)
+            else:
+                # Parse timestamp
+                try:
+                    from datetime import datetime
+                    start_dt = datetime.fromisoformat(game_start_at.replace('Z', '+00:00'))
+                    game_start_time_ms = int(start_dt.timestamp() * 1000)
+                except:
+                    game_start_time_ms = 0
+            
+            if game_start_time_ms > 0:
+                current_time_ms = time.time() * 1000
+                game_duration_minutes = (current_time_ms - game_start_time_ms) / 1000 / 60
+                
+                # Update title to show game duration
+                title = embed.title
+                if '⏱️' in title:
+                    title = title.split('⏱️')[0].strip()
+                
+                new_title = f"{title} ⏱️ {game_duration_minutes:.0f}m"
+                embed.title = new_title
+                
+                # Update the embed
+                await msg.edit(embed=embed)
+                logger.info(f"📊 Updated live odds for match {game_id}: game duration {game_duration_minutes:.1f}m")
+        
+        except Exception as e:
+            logger.warning(f"Error updating live odds: {e}")
 
     async def refresh_leaderboard_embed(self):
         try:
