@@ -46,6 +46,14 @@ PLATFORM_ROUTES = {
     'vn': 'vn2'
 }
 
+# Match routing for match-v5
+MATCH_ROUTING = {
+    'br1': 'americas', 'la1': 'americas', 'la2': 'americas', 'na1': 'americas', 'oc1': 'americas',
+    'euw1': 'europe', 'eun1': 'europe', 'tr1': 'europe', 'ru': 'europe',
+    'kr': 'asia', 'jp1': 'asia',
+    'sg2': 'sea', 'ph2': 'sea', 'th2': 'sea', 'tw2': 'sea', 'vn2': 'sea'
+}
+
 # DDragon for champion data
 DDRAGON_VERSION = "14.23.1"
 DDRAGON_BASE = f"https://ddragon.leagueoflegends.com/cdn/{DDRAGON_VERSION}"

@@ -113,39 +113,34 @@ class RiotAPI:
             logger.error("❌ No API key available for featured games!")
             return None
         url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/featured-games"
-        logger.info(f"🔍 Fetching featured games: {url}")
         for attempt in range(retries):
             try:
                 timeout = aiohttp.ClientTimeout(total=10, connect=5)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, headers=self.headers) as response:
-                        logger.info(f"📡 Featured games response: status={response.status}, platform={platform}")
                         if response.status == 200:
                             data = await response.json()
-                            logger.info(f"✅ Featured games data: {len(data.get('gameList', []))} games")
+                            logger.info(f"✅ Found {len(data.get('gameList', []))} games on {platform}")
                             return data
                         if response.status == 429:
-                            logger.warning(f"⚠️ Rate limited on {platform}, retrying...")
+                            logger.warning(f"⚠️ Rate limited on {platform}")
                             await asyncio.sleep(1 + attempt)
                             continue
-                        # Log non-200 responses
+                        if response.status == 403:
+                            text = await response.text()
+                            logger.error(f"❌ API key forbidden (403) - check if key is valid and has Spectator API access")
+                            return None
+                        # Other errors
                         text = await response.text()
-                        logger.error(f"❌ Featured games error {response.status} on {platform}: {text[:200]}")
+                        logger.error(f"❌ Error {response.status} on {platform}: {text[:100]}")
                         return None
             except asyncio.TimeoutError:
-                logger.warning(f"⏰ Timeout getting featured games from {platform} (attempt {attempt+1}/{retries})")
-                if attempt < retries - 1:
-                    await asyncio.sleep(1)
-                continue
-            except aiohttp.ClientError as e:
-                logger.warning(f"🌐 Network error getting featured games from {platform}: {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
                 continue
             except Exception as e:
-                logger.error(f"❌ Error getting featured games from {platform}: {e}", exc_info=True)
+                logger.error(f"❌ Exception: {e}")
                 return None
-        logger.warning(f"⚠️ All retries exhausted for {platform}")
         return None
     
     async def get_account_by_riot_id(self, game_name: str, tag_line: str, 

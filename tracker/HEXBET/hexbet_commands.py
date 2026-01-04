@@ -409,38 +409,25 @@ class Hexbet(commands.Cog):
         
         for region in regions:
             try:
-                logger.info(f"🧪 Debugging {region}...")
-                await interaction.followup.send(f"🧪 Checking **{region.upper()}**...", ephemeral=False)
-                
                 data = await self.riot_api.get_featured_games(platform=region)
-                logger.info(f"Raw response for {region}: {data}")
                 
                 if not data:
-                    results.append(f"❌ {region.upper()}: **NULL response**")
-                    logger.warning(f"⚠️ {region}: NULL data")
+                    results.append(f"❌ {region.upper()}: **API Error** (check logs)")
                     continue
                 
                 game_list = data.get('gameList', [])
                 count = len(game_list) if game_list else 0
                 
                 if count > 0:
-                    results.append(f"✅ {region.upper()}: **{count} games** available")
-                    # Show first game info
-                    first_game = game_list[0]
-                    results.append(f"   └ Game ID: {first_game.get('gameId', 'N/A')}, Queue: {first_game.get('gameQueueConfigId', 'N/A')}")
-                    logger.info(f"✅ {region}: Found {count} games")
+                    results.append(f"✅ {region.upper()}: **{count} games**")
                 else:
-                    results.append(f"⚠️ {region.upper()}: **0 games** (empty list)")
-                    logger.warning(f"⚠️ {region}: Empty gameList")
+                    results.append(f"⚠️ {region.upper()}: **0 games**")
                 
             except Exception as e:
-                results.append(f"❌ {region.upper()}: **ERROR** - {str(e)}")
-                logger.error(f"❌ {region} error: {e}", exc_info=True)
+                results.append(f"❌ {region.upper()}: **{str(e)[:50]}**")
         
-        # Send summary
-        summary = "**Featured Games Debug Report**\n\n" + "\n".join(results)
+        summary = "**Featured Games Debug**\n\n" + "\n".join(results)
         await interaction.followup.send(summary, ephemeral=False)
-        logger.info(f"Debug report sent:\n{summary}")
 
     @app_commands.command(name="find_game", description="Search for active featured games and post bet")
     @app_commands.describe(platform="Optional platform route (euw1, na1, kr, eun1)")
@@ -459,15 +446,10 @@ class Hexbet(commands.Cog):
             platform = platform or random.choice(['euw1', 'na1', 'kr', 'eun1'])
             
             # Fetch featured games
-            await interaction.followup.send(f"🔍 Searching for games on **{platform.upper()}**...", ephemeral=False)
-            
-            logger.info(f"🔍 Fetching featured games from {platform}")
             data = await self.riot_api.get_featured_games(platform=platform)
-            logger.info(f"📊 Featured games response: {data}")
             
             if not data or not data.get('gameList'):
-                logger.warning(f"⚠️ No games on {platform}: data={data}")
-                await interaction.followup.send(f"❌ No featured games found on {platform.upper()}\n\n💡 **Try other regions:**\n• `/find_game platform:euw1` (Europe)\n• `/find_game platform:kr` (Korea)\n• `/find_game` (random)", ephemeral=False)
+                await interaction.followup.send(f"❌ No games on {platform.upper()}\n\n💡 Try: `/find_game platform:euw1` or `/find_game platform:kr`", ephemeral=False)
                 return
             
             games = data['gameList']

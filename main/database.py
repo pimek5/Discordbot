@@ -10,6 +10,7 @@ from psycopg2 import pool
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import logging
+import json
 
 logger = logging.getLogger('database')
 
@@ -942,6 +943,137 @@ class Database:
                 """, (guild_id, channel_id))
                 result = cur.fetchone()
                 return result[0] if result else None
+        finally:
+            self.return_connection(conn)
+
+    # ==================== BETTING OPERATIONS ====================
+
+    def create_bet(self, game_id: int, platform: str, match_id: str,
+                   red_team: dict, blue_team: dict, red_odds: float,
+                   blue_odds: float, channel_id: int, message_id: int) -> int:
+        """Insert a new bet and return bet id"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO betting_bets
+                    (game_id, platform, match_id, red_team, blue_team, red_odds, blue_odds, status, channel_id, message_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'open', %s, %s)
+                    RETURNING id
+                """, (game_id, platform, match_id, json.dumps(red_team), json.dumps(blue_team), red_odds, blue_odds, channel_id, message_id))
+                bet_id = cur.fetchone()[0]
+                conn.commit()
+                return bet_id
+        finally:
+            self.return_connection(conn)
+
+    def get_open_bet(self) -> Optional[dict]:
+        """Get latest open bet"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, game_id, platform, match_id, red_team, blue_team, red_odds, blue_odds, channel_id, message_id, created_at
+                    FROM betting_bets
+                    WHERE status = 'open'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """)
+                row = cur.fetchone()
+                if not row:
+                    return None
+                return {
+                    'id': row[0], 'game_id': row[1], 'platform': row[2], 'match_id': row[3],
+                    'red_team': row[4], 'blue_team': row[5], 'red_odds': row[6], 'blue_odds': row[7],
+                    'channel_id': row[8], 'message_id': row[9], 'created_at': row[10]
+                }
+        finally:
+            self.return_connection(conn)
+
+    def add_prediction(self, bet_id: int, user_id: int, side: str, amount: int):
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO betting_predictions (bet_id, user_id, side, amount, result)
+                    VALUES (%s, %s, %s, %s, 'pending')
+                """, (bet_id, user_id, side, amount))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def update_bet_winner(self, bet_id: int, winner: str):
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE betting_bets
+                    SET status = 'settled', winner = %s, closed_at = NOW()
+                    WHERE id = %s
+                """, (winner, bet_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def settle_predictions(self, bet_id: int, winner: str, red_odds: float, blue_odds: float):
+        """Compute payouts for predictions"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE betting_predictions
+                    SET result = CASE WHEN side = %s THEN 'win' ELSE 'lose' END,
+                        payout = CASE WHEN side = %s THEN amount * (CASE WHEN %s = 'red' THEN %s ELSE %s END) ELSE 0 END
+                    WHERE bet_id = %s
+                """, (winner, winner, winner, red_odds, blue_odds, bet_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def get_leaderboard(self, limit: int = 10) -> list:
+        """Return top users by total payout - total stake"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT user_id,
+                           COALESCE(SUM(CASE WHEN result = 'win' THEN payout ELSE 0 END),0) -
+                           COALESCE(SUM(CASE WHEN result IN ('win','lose') THEN amount ELSE 0 END),0) AS profit,
+                           COUNT(*) AS bets,
+                           SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) AS wins
+                    FROM betting_predictions
+                    GROUP BY user_id
+                    ORDER BY profit DESC
+                    LIMIT %s
+                """, (limit,))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def save_leaderboard_embed(self, guild_id: int, channel_id: int, message_id: int):
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO betting_leaderboard (guild_id, channel_id, message_id)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (guild_id, channel_id)
+                    DO UPDATE SET message_id = EXCLUDED.message_id, last_updated = NOW()
+                """, (guild_id, channel_id, message_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def get_leaderboard_embed(self, guild_id: int, channel_id: int) -> Optional[int]:
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT message_id FROM betting_leaderboard
+                    WHERE guild_id = %s AND channel_id = %s
+                """, (guild_id, channel_id))
+                row = cur.fetchone()
+                return row[0] if row else None
         finally:
             self.return_connection(conn)
     

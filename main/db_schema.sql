@@ -150,6 +150,45 @@ CREATE TABLE IF NOT EXISTS rank_embed (
     UNIQUE(guild_id, channel_id)
 );
 
+-- Betting system tables
+CREATE TABLE IF NOT EXISTS betting_bets (
+    id SERIAL PRIMARY KEY,
+    game_id BIGINT NOT NULL,
+    platform VARCHAR(10) NOT NULL,
+    match_id VARCHAR(32),
+    red_team JSONB NOT NULL,
+    blue_team JSONB NOT NULL,
+    red_odds NUMERIC(6,2) NOT NULL,
+    blue_odds NUMERIC(6,2) NOT NULL,
+    status VARCHAR(16) DEFAULT 'open', -- open | closed | settled
+    winner VARCHAR(8), -- red | blue
+    channel_id BIGINT,
+    message_id BIGINT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    closed_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS betting_predictions (
+    id SERIAL PRIMARY KEY,
+    bet_id INTEGER REFERENCES betting_bets(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    side VARCHAR(8) NOT NULL, -- red | blue
+    amount INTEGER NOT NULL,
+    payout NUMERIC(12,2),
+    result VARCHAR(12), -- win | lose | pending
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS betting_leaderboard (
+    id SERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    message_id BIGINT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    last_updated TIMESTAMP DEFAULT NOW(),
+    UNIQUE(guild_id, channel_id)
+);
+
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_snowflake ON users(snowflake);
 CREATE INDEX IF NOT EXISTS idx_league_accounts_user ON league_accounts(user_id);
@@ -165,6 +204,10 @@ CREATE INDEX IF NOT EXISTS idx_voting_sessions_status ON voting_sessions(status)
 CREATE INDEX IF NOT EXISTS idx_voting_votes_session ON voting_votes(session_id);
 CREATE INDEX IF NOT EXISTS idx_voting_votes_user ON voting_votes(user_id);
 CREATE INDEX IF NOT EXISTS idx_help_embed_guild ON help_embed(guild_id);
+CREATE INDEX IF NOT EXISTS idx_betting_bets_status ON betting_bets(status);
+CREATE INDEX IF NOT EXISTS idx_betting_predictions_user ON betting_predictions(user_id);
+CREATE INDEX IF NOT EXISTS idx_betting_predictions_bet ON betting_predictions(bet_id);
+CREATE INDEX IF NOT EXISTS idx_betting_leaderboard_guild ON betting_leaderboard(guild_id);
 CREATE INDEX IF NOT EXISTS idx_rank_embed_guild ON rank_embed(guild_id);
 
 -- ================================
