@@ -767,6 +767,10 @@ class Hexbet(commands.Cog):
                 is_special_bet = match.get('special_bet', False)
                 featured = "special" if is_special_bet else ""
                 
+                # PROTECTION: Verify special bet status and restore if removed
+                if is_special_bet and old_embed.title and '🎯 SOLO/DUO QUEUE' not in old_embed.title:
+                    logger.warning(f"⚠️ Special bet status was removed! Restoring for match {match_id}")
+                
                 game_start_at = match.get('game_start_at')
                 new_embed = self._build_embed(
                     game_id, platform, blue_players, red_players,
@@ -775,6 +779,9 @@ class Hexbet(commands.Cog):
                 )
                 
                 await msg.edit(embed=new_embed)
+                
+                if is_special_bet:
+                    logger.info(f"✅ Special bet status verified and maintained for match {match_id}")
                 
         except Exception as e:
             logger.warning(f"Failed to refresh match embed: {e}")
@@ -804,6 +811,20 @@ class Hexbet(commands.Cog):
                 return
             
             embed = msg.embeds[0]
+            
+            # PROTECTION: Verify special bet status from database
+            is_special_bet = match.get('special_bet', False)
+            if is_special_bet and '🎯 SOLO/DUO QUEUE' not in embed.title:
+                logger.warning(f"⚠️ Special bet indicator missing in live update! Restoring for match {game_id}")
+                # Rebuild title with special bet indicator
+                if '⚔️ HEXBET Match #' in embed.title:
+                    base_title = embed.title.split('⏱️')[0].strip()
+                    if '🎯 SOLO/DUO QUEUE' not in base_title:
+                        base_title = base_title.replace('⚔️ HEXBET Match #', '⚔️ HEXBET Match #')
+                        if ' - 🎯 SOLO/DUO QUEUE' not in base_title:
+                            parts = base_title.split('#')
+                            if len(parts) >= 2:
+                                embed.title = f"⚔️ HEXBET Match #{parts[1].split()[0]} - 🎯 SOLO/DUO QUEUE"
             
             # Get game duration from start time
             game_start_at = match.get('game_start_at')
