@@ -99,6 +99,7 @@ class Hexbet(commands.Cog):
         self.leaderboard_task.start()
         self.settle_task.start()
         self.cleanup_task.start()
+        self.check_embed_task.start()
         self.bot.loop.create_task(self._ensure_champions())
         self.bot.loop.create_task(self._restore_persistent_views())
         self.bot.loop.create_task(self._load_pro_players())
@@ -181,6 +182,7 @@ class Hexbet(commands.Cog):
         self.leaderboard_task.cancel()
         self.settle_task.cancel()
         self.cleanup_task.cancel()
+        self.check_embed_task.cancel()
 
     @tasks.loop(minutes=FEATURED_INTERVAL)
     async def featured_task(self):
@@ -214,6 +216,42 @@ class Hexbet(commands.Cog):
             await self.cleanup_old_bets()
         except Exception as e:
             logger.error(f"❌ Error in cleanup_task: {e}", exc_info=True)
+
+    @tasks.loop(minutes=1)
+    async def check_embed_task(self):
+        """Check if featured embed exists on channel, if not post new game"""
+        try:
+            logger.info("🔍 Checking if featured embed exists...")
+            # Get open matches on BET_CHANNEL_ID
+            open_matches = self.db.get_open_matches()
+            featured_matches = [m for m in open_matches if m.get('channel_id') == BET_CHANNEL_ID]
+            
+            if not featured_matches:
+                logger.info("⚠️ No featured match found, posting new game...")
+                await self.post_random_featured_game(force=False)
+                return
+            
+            # Check if message still exists
+            channel = self.bot.get_channel(BET_CHANNEL_ID)
+            if not channel:
+                logger.warning(f"⚠️ Featured channel {BET_CHANNEL_ID} not found")
+                return
+            
+            for match in featured_matches:
+                message_id = match.get('message_id')
+                if message_id:
+                    try:
+                        await channel.fetch_message(message_id)
+                        logger.info(f"✅ Featured embed {message_id} exists on channel")
+                    except discord.NotFound:
+                        logger.warning(f"⚠️ Featured embed {message_id} not found, posting new game...")
+                        # Mark as settled and post new game
+                        self.db.settle_match(match['id'], winner='cancel')
+                        await self.post_random_featured_game(force=False)
+                    except Exception as e:
+                        logger.error(f"❌ Error checking message {message_id}: {e}")
+        except Exception as e:
+            logger.error(f"❌ Error in check_embed_task: {e}", exc_info=True)
 
     @featured_task.before_loop
     async def before_featured(self):
