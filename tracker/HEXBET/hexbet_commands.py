@@ -473,9 +473,9 @@ class Hexbet(commands.Cog):
         new_balance = self.db.update_balance(interaction.user.id, -amount)
         await interaction.response.send_message(f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}", ephemeral=True)
 
-    @app_commands.command(name="hx_debug", description="(Admin) Debug high-elo pool and active games")
+    @app_commands.command(name="hxdebug", description="(Admin) Debug high-elo pool and active games")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hx_debug(self, interaction: discord.Interaction):
+    async def hxdebug(self, interaction: discord.Interaction):
         """Check high-elo pool and scan for active games"""
         await interaction.response.defer()
         
@@ -508,9 +508,9 @@ class Hexbet(commands.Cog):
         summary = "**HEXBET Debug - High-Elo Pool**\n\n" + "\n".join(results)
         await interaction.followup.send(summary, ephemeral=False)
 
-    @app_commands.command(name="hx_find", description="Find and post a high-elo game")
+    @app_commands.command(name="hxfind", description="Find and post a high-elo game")
     @app_commands.describe(platform="Platform: euw1, na1, kr, eun1")
-    async def hx_find(self, interaction: discord.Interaction, platform: Optional[str] = None):
+    async def hxfind(self, interaction: discord.Interaction, platform: Optional[str] = None):
         """Find and post active high-elo game for betting"""
         await interaction.response.defer()
         
@@ -542,17 +542,17 @@ class Hexbet(commands.Cog):
             logger.error(f"Error in find_game: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:100]}", ephemeral=True)
 
-    @app_commands.command(name="hx_post", description="(Admin) Force post a bet")
+    @app_commands.command(name="hxpost", description="(Admin) Force post a bet")
     @app_commands.describe(platform="Platform: euw1, na1, kr, eun1")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hx_post(self, interaction: discord.Interaction, platform: Optional[str] = None):
+    async def hxpost(self, interaction: discord.Interaction, platform: Optional[str] = None):
         await interaction.response.defer(ephemeral=True)
         await self.post_random_featured_game(force=True, platform_choice=platform)
         await interaction.followup.send("✅ Triggered high-elo game scan", ephemeral=True)
     
-    @app_commands.command(name="hx_refresh", description="(Admin) Refresh current bet embed")
+    @app_commands.command(name="hxrefresh", description="(Admin) Refresh current bet embed")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hx_refresh(self, interaction: discord.Interaction):
+    async def hxrefresh(self, interaction: discord.Interaction):
         """Refresh the current match embed with updated bet totals"""
         await interaction.response.defer(ephemeral=True)
         
@@ -609,13 +609,13 @@ class Hexbet(commands.Cog):
             logger.error(f"Error refreshing embed: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
     
-    @app_commands.command(name="hx_settle", description="(Admin) Settle or cancel match")
+    @app_commands.command(name="hxsettle", description="(Admin) Settle or cancel match")
     @app_commands.describe(
         winner="Winner: blue or red",
         cancel="Cancel and refund all bets"
     )
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hx_settle(self, interaction: discord.Interaction, winner: Optional[str] = None, cancel: bool = False):
+    async def hxsettle(self, interaction: discord.Interaction, winner: Optional[str] = None, cancel: bool = False):
         """Force settle the current match or cancel it"""
         await interaction.response.defer(ephemeral=True)
         
@@ -677,9 +677,9 @@ class Hexbet(commands.Cog):
             logger.error(f"Error in force settle: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
     
-    @app_commands.command(name="hx_pool", description="(Admin) Populate high-elo player pool")
+    @app_commands.command(name="hxpool", description="(Admin) Populate high-elo player pool")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hx_pool(self, interaction: discord.Interaction):
+    async def hxpool(self, interaction: discord.Interaction):
         """Fetch Challenger/Grandmaster/Master players and add to pool"""
         await interaction.response.defer(ephemeral=True)
         
