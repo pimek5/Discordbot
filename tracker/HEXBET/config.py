@@ -112,6 +112,12 @@ RANK_EMOJIS = {
     'UNRANKED': '<:rank_Unranked:1445196807133986947>',
 }
 
+# Player status badges
+PLAYER_BADGES = {
+    'PRO': '<:PRO:1457231609458851961>',
+    'STRM': '<:STRM:1457328151095939138>',
+}
+
 # Champion emojis (mapping champion IDs to custom emojis)
 CHAMPION_EMOJIS = {
     1: '<:champ_Annie:1441318429272309810>',

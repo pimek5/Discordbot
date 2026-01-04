@@ -1,6 +1,7 @@
 """
 Pro Players Database for HEXBET
-Tracks professional League of Legends players
+Tracks professional League of Legends players and streamers
+Uses Leaguepedia as primary source
 """
 import aiohttp
 import asyncio
@@ -8,6 +9,20 @@ from typing import Set, Optional
 import logging
 
 logger = logging.getLogger('hexbet.pro_players')
+
+# Import Leaguepedia scraper
+try:
+    from .leaguepedia_scraper import (
+        load_major_pro_players, 
+        is_verified_pro, 
+        is_verified_streamer,
+        get_player_badge,
+        get_player_info
+    )
+    LEAGUEPEDIA_AVAILABLE = True
+except ImportError:
+    LEAGUEPEDIA_AVAILABLE = False
+    logger.warning("Leaguepedia scraper not available")
 
 # Cache of pro player game names (just the name part, not tag)
 PRO_PLAYERS_CACHE: Set[str] = set()
@@ -35,10 +50,18 @@ KNOWN_PRO_PLAYERS = {
 
 async def load_pro_players_from_api():
     """
-    Load pro players from Riot Esports API
-    Uses esports-api.lolesports.com to get current pro players
+    Load pro players from Leaguepedia and Riot Esports API
+    Priority: Leaguepedia (verified accounts) > Riot API > Static list
     """
     global PRO_PLAYERS_CACHE
+    
+    # Load from Leaguepedia first (verified accounts)
+    if LEAGUEPEDIA_AVAILABLE:
+        try:
+            await load_major_pro_players()
+            logger.info("✅ Loaded verified accounts from Leaguepedia")
+        except Exception as e:
+            logger.warning(f"Failed to load Leaguepedia data: {e}")
     
     # Start with static list
     PRO_PLAYERS_CACHE = {name.lower() for name in KNOWN_PRO_PLAYERS}
@@ -108,6 +131,7 @@ async def load_pro_players_from_api():
 def is_pro_player(riot_id: str) -> bool:
     """
     Check if a player is a pro player
+    Priority: Leaguepedia verified > Name-based cache
     Args:
         riot_id: RiotID in format "gameName#tagLine" or just "gameName"
     Returns:
@@ -116,12 +140,53 @@ def is_pro_player(riot_id: str) -> bool:
     if not riot_id:
         return False
     
+    # Check Leaguepedia verified first
+    if LEAGUEPEDIA_AVAILABLE and is_verified_pro(riot_id):
+        return True
+    
     # Extract game name (before #)
     game_name = riot_id.split('#')[0].lower().strip()
     
     # Check against cache
     return game_name in PRO_PLAYERS_CACHE
 
+def is_streamer_player(riot_id: str) -> bool:
+    """
+    Check if a player is a verified streamer
+    Args:
+        riot_id: RiotID in format "gameName#tagLine" or just "gameName"
+    Returns:
+        True if player is verified streamer
+    """
+    if not riot_id or not LEAGUEPEDIA_AVAILABLE:
+        return False
+    
+    return is_verified_streamer(riot_id)
+
 def get_pro_emoji() -> str:
     """Return pro player emoji"""
     return "<:PRO:1457231609458851961>"
+
+def get_streamer_emoji() -> str:
+    """Return streamer emoji"""
+    return "<:STRM:1457328151095939138>"
+
+def get_player_badge_emoji(riot_id: str) -> Optional[str]:
+    """
+    Get appropriate badge emoji for player
+    Returns PRO emoji, STRM emoji, or None
+    """
+    if not riot_id:
+        return None
+    
+    # Use Leaguepedia if available
+    if LEAGUEPEDIA_AVAILABLE:
+        badge = get_player_badge(riot_id)
+        if badge:
+            return badge
+    
+    # Fallback to basic pro check
+    if is_pro_player(riot_id):
+        return get_pro_emoji()
+    
+    return None

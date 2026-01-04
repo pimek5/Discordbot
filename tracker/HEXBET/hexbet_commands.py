@@ -15,7 +15,14 @@ from HEXBET.config import (
     RANK_EMOJIS as CFG_RANK_EMOJIS,
     CHAMPION_EMOJIS as CFG_CHAMPION_EMOJIS,
 )
-from HEXBET.pro_players import load_pro_players_from_api, is_pro_player, get_pro_emoji
+from HEXBET.pro_players import (
+    load_pro_players_from_api, 
+    is_pro_player, 
+    is_streamer_player,
+    get_pro_emoji,
+    get_streamer_emoji,
+    get_player_badge_emoji
+)
 
 logger = logging.getLogger('hexbet')
 
@@ -960,9 +967,11 @@ class Hexbet(commands.Cog):
             p['champ_name'] = champ_name
             # Use emoji if available, fallback to champion name
             p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id) or f'**{champ_name}**'
-            # Check if player is a pro
+            # Check if player is a pro or streamer
             riot_id = p.get('riotId', '')
             p['is_pro'] = is_pro_player(riot_id)
+            p['is_streamer'] = is_streamer_player(riot_id)
+            p['badge_emoji'] = get_player_badge_emoji(riot_id)
     
     def _apply_lobby_average(self, all_players: List[dict]):
         """Apply lobby-wide average to streamer mode players (fairer distribution)"""
@@ -1145,9 +1154,10 @@ class Hexbet(commands.Cog):
             champ = p.get('champ_emoji') or p.get('champ_name', '')
             # Use riotId (gameName#tagLine) if available, fallback to summonerName
             name = p.get('riotId', p.get('summonerName', 'Player'))
-            # Add pro emoji if player is professional
-            if p.get('is_pro', False):
-                name = f"{get_pro_emoji()} {name}"
+            # Add badge emoji if player is pro or streamer
+            badge = p.get('badge_emoji')
+            if badge:
+                name = f"{badge} {name}"
             wr = p.get('wr', 50)
             lp = p.get('lp', 0)
             
