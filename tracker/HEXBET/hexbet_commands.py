@@ -9,7 +9,6 @@ from typing import Optional, List, Tuple
 
 from tracker_database import TrackerDatabase
 from riot_api import RiotAPI, platform_to_region, CHAMPION_ID_TO_NAME
-from main.emoji_dict import CHAMPION_EMOJIS, get_rank_emoji
 from HEXBET.config import (
     ROLE_EMOJIS as CFG_ROLE_EMOJIS,
     RANK_EMOJIS as CFG_RANK_EMOJIS,
@@ -79,8 +78,8 @@ def odds_from_scores(score_blue: float, score_red: float) -> Tuple[float, float]
 
 
 def rank_emoji(tier: str) -> str:
-    """Return configured rank emoji with fallback to main set."""
-    return CFG_RANK_EMOJIS.get(tier.upper(), '') or get_rank_emoji(tier)
+    """Return configured rank emoji."""
+    return CFG_RANK_EMOJIS.get(tier.upper(), '')
 
 
 class Hexbet(commands.Cog):
@@ -318,7 +317,7 @@ class Hexbet(commands.Cog):
             champ_id = p.get('championId')
             champ_name = CHAMPION_ID_TO_NAME.get(champ_id, 'Unknown')
             p['champ_name'] = champ_name
-            p['champ_emoji'] = CHAMPION_EMOJIS.get(champ_name, '') or CFG_CHAMPION_EMOJIS.get(champ_id, '')
+            p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id, '')
 
     def _team_score(self, players: List[dict]) -> float:
         if not players:
