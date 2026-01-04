@@ -34,17 +34,65 @@ KNOWN_PRO_PLAYERS = {
 
 async def load_pro_players_from_api():
     """
-    Load pro players from esports API or web scraping
-    This is a placeholder - you can implement actual scraping here
+    Load pro players from multiple sources
+    1. Riot Esports API (esports-api.lolesports.com)
+    2. Static KNOWN_PRO_PLAYERS list as fallback
     """
     global PRO_PLAYERS_CACHE
+    
+    # Start with static list
+    PRO_PLAYERS_CACHE = {name.lower() for name in KNOWN_PRO_PLAYERS}
+    initial_count = len(PRO_PLAYERS_CACHE)
+    
     try:
-        # For now, use static list
-        PRO_PLAYERS_CACHE = {name.lower() for name in KNOWN_PRO_PLAYERS}
-        logger.info(f"Loaded {len(PRO_PLAYERS_CACHE)} pro players")
+        async with aiohttp.ClientSession() as session:
+            # Riot Esports API - get leagues
+            leagues_url = "https://esports-api.lolesports.com/persisted/gw/getLeagues?hl=en-US"
+            headers = {
+                'User-Agent': 'Mozilla/5.0',
+                'x-api-key': '0TvQnueqKa5mxJntVWt0w4LpLfEkrV1Ta8rQBb9Z'  # Public API key from Riot
+            }
+            
+            async with session.get(leagues_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status == 200:
+                    leagues_data = await response.json()
+                    
+                    # Get major leagues (LEC, LCK, LCS, LPL, etc.)
+                    major_leagues = ['LEC', 'LCK', 'LCS', 'LPL', 'CBLOL', 'LJL', 'LLA', 'PCS', 'VCS']
+                    league_ids = []
+                    
+                    for league in leagues_data.get('data', {}).get('leagues', []):
+                        league_slug = league.get('slug', '').upper()
+                        if any(major in league_slug for major in major_leagues):
+                            league_ids.append(league.get('id'))
+                    
+                    # Get teams for each league
+                    for league_id in league_ids[:5]:  # Limit to 5 leagues to avoid rate limits
+                        try:
+                            teams_url = f"https://esports-api.lolesports.com/persisted/gw/getTeams?hl=en-US&leagueId={league_id}"
+                            async with session.get(teams_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as team_response:
+                                if team_response.status == 200:
+                                    teams_data = await team_response.json()
+                                    
+                                    for team in teams_data.get('data', {}).get('teams', []):
+                                        for player in team.get('players', []):
+                                            summoner_name = player.get('summonerName', '')
+                                            if summoner_name:
+                                                PRO_PLAYERS_CACHE.add(summoner_name.lower())
+                        except Exception as e:
+                            logger.debug(f"Could not fetch team data for league {league_id}: {e}")
+                            continue
+                        
+                        # Small delay to avoid rate limiting
+                        await asyncio.sleep(0.5)
+        
+        new_count = len(PRO_PLAYERS_CACHE)
+        logger.info(f"Loaded {new_count} pro players ({new_count - initial_count} from API, {initial_count} static)")
     except Exception as e:
-        logger.error(f"Failed to load pro players: {e}")
+        logger.warning(f"Failed to load pro players from API: {e}")
+        # Fallback to static list only
         PRO_PLAYERS_CACHE = {name.lower() for name in KNOWN_PRO_PLAYERS}
+        logger.info(f"Using static list: {len(PRO_PLAYERS_CACHE)} pro players")
 
 def is_pro_player(riot_id: str) -> bool:
     """
