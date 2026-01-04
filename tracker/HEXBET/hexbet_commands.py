@@ -152,8 +152,13 @@ class Hexbet(commands.Cog):
         self.cleanup_task.cancel()
 
     @tasks.loop(seconds=POLL_INTERVAL_SECONDS)
+    @tasks.loop(minutes=5)
     async def featured_task(self):
-        await self.post_random_featured_game()
+        try:
+            logger.info("🔄 Featured task running...")
+            await self.post_random_featured_game()
+        except Exception as e:
+            logger.error(f"❌ Error in featured_task: {e}", exc_info=True)
 
     @tasks.loop(minutes=10)
     async def leaderboard_task(self):
@@ -187,8 +192,10 @@ class Hexbet(commands.Cog):
     async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None):
         """Find and post a high-elo game by scanning active players from pool"""
         try:
+            logger.info("🎮 post_random_featured_game called")
             # Check if we already have 3 active matches
             open_count = self.db.count_open_matches()
+            logger.info(f"📊 Current open matches: {open_count}/3")
             if open_count >= 3 and not force:
                 logger.info(f"ℹ️ Already have {open_count} active matches, skipping post")
                 return
@@ -207,7 +214,9 @@ class Hexbet(commands.Cog):
             logger.info(f"🔍 Scanning {len(puuids)} high-elo players on {platform}...")
             
             # Check each PUUID for active game
+            games_checked = 0
             for puuid, tier, lp in puuids:
+                games_checked += 1
                 self.db.update_high_elo_last_checked(puuid)
                 game_data = await self.riot_api.get_active_game(puuid, region)
                 
@@ -215,36 +224,45 @@ class Hexbet(commands.Cog):
                     game_id = game_data.get('gameId')
                     queue_id = game_data.get('gameQueueConfigId')
                     
+                    logger.info(f"🎯 Found game {game_id} with queue {queue_id} (player: {tier} {lp} LP)")
+                    
                     # Accept Ranked Solo/Duo (420) and Flex (440)
                     if queue_id not in [420, 440]:
+                        logger.info(f"⏭️ Skipping game {game_id} - not ranked queue")
                         continue
                     
                     logger.info(f"✅ Found active game: {game_id} ({tier} {lp} LP player)")
                     
                     channel = self.bot.get_channel(BET_CHANNEL_ID)
                     if not channel:
-                        logger.warning("Bet channel not found")
+                        logger.error("❌ Bet channel not found!")
                         return
 
                     blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
                     red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
 
+                    logger.info(f"👥 Teams: {len(blue_team)} vs {len(red_team)} players")
+
                     blue_ordered = self._assign_roles(blue_team)
                     red_ordered = self._assign_roles(red_team)
 
                     # Enrich both teams and calculate lobby-wide average for streamer mode
+                    logger.info("🔍 Enriching player data...")
                     await self._enrich_players(blue_ordered, region)
                     await self._enrich_players(red_ordered, region)
                     self._apply_lobby_average(blue_ordered + red_ordered)
 
                     score_blue = self._team_score(blue_ordered)
                     score_red = self._team_score(red_ordered)
+                    logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
+                    
                     odds_blue, odds_red = odds_from_scores(score_blue, score_red)
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                     chance_red = round(100 - chance_blue, 1)
 
                     featured_player = f"{tier} {lp} LP"
                     
+                    logger.info(f"💾 Creating match in database...")
                     # Create match first to get match_id for bet tracking
                     match_id = self.db.create_hexbet_match(
                         game_id,
@@ -255,26 +273,31 @@ class Hexbet(commands.Cog):
                         game_data.get('gameStartTime', 0)
                     )
                     if not match_id and not force:
+                        logger.warning(f"⚠️ Match already exists for game {game_id}, skipping...")
                         continue
                     if not match_id and force:
                         existing = self.db.get_open_match()
                         if not existing:
+                            logger.warning("⚠️ Force flag set but no existing match found")
                             return
                         match_id = existing['id']
                     
+                    logger.info(f"📝 Building embed for match {match_id}...")
                     # Build embed with match_id for bet tracking
                     embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player, match_id)
 
                     self.db.increment_high_elo_featured(puuid)
                     view = BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered)
+                    
+                    logger.info(f"📤 Sending bet message to channel...")
                     msg = await channel.send(embed=embed, view=view)
                     self.db.set_match_message(match_id, msg.id)
-                    logger.info(f"✅ Posted bet for game {game_id}")
+                    logger.info(f"✅ Posted bet for game {game_id} with match_id {match_id}")
                     return
                 
                 await asyncio.sleep(0.1)  # Small delay between checks
             
-            logger.info(f"ℹ️ No active ranked games found among {len(puuids)} players")
+            logger.info(f"ℹ️ No active ranked games found among {len(puuids)} players (checked {games_checked} players)")
         except Exception as e:
             logger.error(f"Error posting featured game: {e}", exc_info=True)
 
@@ -1344,6 +1367,129 @@ class BetView(discord.ui.View):
         except Exception as e:
             logger.error(f"Error generating OP.GG link: {e}", exc_info=True)
             await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="hxtest", description="Test featured game posting (ADMIN)")
+    async def test_featured(self, interaction: discord.Interaction):
+        """Test featured game posting manually"""
+        if interaction.user.id != 303838639658229760:  # Your ID
+            await interaction.response.send_message("❌ Admin only", ephemeral=True)
+            return
+        
+        logger.info("🧪 MANUAL TEST: Featured game posting")
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            await self.post_random_featured_game(force=False)
+            await interaction.followup.send("✅ Featured game post attempted", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error in test: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="hxstatus", description="Check HEXBET database status (ADMIN)")
+    async def check_status(self, interaction: discord.Interaction):
+        """Check current status of bets and matches"""
+        if interaction.user.id != 303838639658229760:  # Your ID
+            await interaction.response.send_message("❌ Admin only", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Count matches
+            open_count = self.db.count_open_matches()
+            
+            # Get high-elo pool size
+            conn = self.db.get_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM hexbet_high_elo_pool;")
+                pool_size = cur.fetchone()[0]
+                
+                cur.execute("SELECT COUNT(*) FROM hexbet_bets WHERE status = 'open';")
+                open_bets = cur.fetchone()[0]
+                
+                cur.execute("SELECT COUNT(*) FROM hexbet_matches;")
+                total_matches = cur.fetchone()[0]
+                
+                # Get open match details
+                cur.execute("""
+                    SELECT match_id, game_id, platform, created_at, updated_at 
+                    FROM hexbet_matches 
+                    WHERE status = 'open' 
+                    ORDER BY created_at DESC 
+                    LIMIT 3;
+                """)
+                open_matches = cur.fetchall()
+            
+            self.db.return_connection(conn)
+            
+            status_text = f"""
+🎯 **HEXBET Status**
+━━━━━━━━━━━━━━━━━
+📊 **Matches:**
+  • Open: {open_count}/3
+  • Total: {total_matches}
+
+💰 **Bets:**
+  • Open: {open_bets}
+
+🎮 **High-Elo Pool:**
+  • Players: {pool_size}
+
+{"🔴 **Open Matches:**" + "".join([f"\n  • Match {m[0]}: Game {m[1]} ({m[2]}) - {m[3]}" for m in open_matches]) if open_matches else ""}
+
+✅ Database connected
+"""
+            
+            await interaction.followup.send(status_text, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error checking status: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="hxforce", description="Force close all open matches (ADMIN)")
+    async def force_close_matches(self, interaction: discord.Interaction):
+        """Force close all open matches and settled bets"""
+        if interaction.user.id != 303838639658229760:  # Your ID
+            await interaction.response.send_message("❌ Admin only", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            conn = self.db.get_connection()
+            with conn.cursor() as cur:
+                # Get all open matches
+                cur.execute("SELECT match_id FROM hexbet_matches WHERE status = 'open';")
+                matches = cur.fetchall()
+                
+                if matches:
+                    match_ids = [m[0] for m in matches]
+                    for match_id in match_ids:
+                        # Close match
+                        cur.execute(
+                            "UPDATE hexbet_matches SET status = 'settled', winner = 'draw', updated_at = NOW() WHERE id = %s;",
+                            (match_id,)
+                        )
+                        # Refund all bets
+                        cur.execute(
+                            "UPDATE hexbet_bets SET status = 'refunded', updated_at = NOW() WHERE match_id = %s AND status = 'open';",
+                            (match_id,)
+                        )
+                        # Return balance to users
+                        cur.execute("""
+                            UPDATE user_balances 
+                            SET balance = balance + (SELECT COALESCE(SUM(amount), 0) FROM hexbet_bets WHERE match_id = %s AND status = 'refunded')
+                            WHERE user_id IN (SELECT user_id FROM hexbet_bets WHERE match_id = %s);
+                        """, (match_id, match_id))
+                    
+                    conn.commit()
+                    await interaction.followup.send(f"✅ Closed {len(match_ids)} open matches", ephemeral=True)
+                else:
+                    await interaction.followup.send("ℹ️ No open matches to close", ephemeral=True)
+            
+            self.db.return_connection(conn)
+        except Exception as e:
+            logger.error(f"Error force closing matches: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
 class ClosedBetView(discord.ui.View):
