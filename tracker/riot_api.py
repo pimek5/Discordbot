@@ -56,36 +56,33 @@ async def load_champion_data():
     """Load champion data from DDragon"""
     global CHAMPION_ID_TO_NAME
     try:
-        print("🔄 Loading champion data from DDragon...")
+        logger.info("Loading champion data from DDragon...")
         timeout = aiohttp.ClientTimeout(total=10)  # 10 second timeout
         async with aiohttp.ClientSession(timeout=timeout) as session:
             url = f"{DDRAGON_BASE}/data/en_US/champion.json"
-            print(f"📡 Fetching: {url}")
+            logger.info(f"Fetching: {url}")
             async with session.get(url) as response:
-                print(f"📡 Response status: {response.status}")
+                logger.info(f"Response status: {response.status}")
                 if response.status == 200:
                     data = await response.json()
                     for champ_name, champ_data in data['data'].items():
                         champ_id = int(champ_data['key'])
                         CHAMPION_ID_TO_NAME[champ_id] = champ_name
-                    print(f"✅ Loaded {len(CHAMPION_ID_TO_NAME)} champions from DDragon")
-                    logger.info(f"✅ Loaded {len(CHAMPION_ID_TO_NAME)} champions from DDragon")
+                    logger.info(f"Loaded {len(CHAMPION_ID_TO_NAME)} champions from DDragon")
                     
                     # Add manual overrides for newest champions if not in DDragon yet
                     if 950 not in CHAMPION_ID_TO_NAME:
                         CHAMPION_ID_TO_NAME[950] = "Mel"
-                        print("✅ Added Mel (950) manually")
+                        logger.info("Added Mel (950) manually")
                     if 999 not in CHAMPION_ID_TO_NAME:
                         CHAMPION_ID_TO_NAME[999] = "Zaahen"
-                        print("✅ Added Zaahen (999) manually")
+                        logger.info("Added Zaahen (999) manually")
                 else:
-                    print(f"⚠️ DDragon returned status {response.status}")
+                    logger.warning(f"DDragon returned status {response.status}")
     except asyncio.TimeoutError:
-        print("❌ Timeout loading champion data from DDragon")
-        logger.error("❌ Timeout loading champion data from DDragon")
+        logger.error("Timeout loading champion data from DDragon")
     except Exception as e:
-        print(f"❌ Error loading champion data: {e}")
-        logger.error(f"❌ Error loading champion data: {e}")
+        logger.error(f"Error loading champion data: {e}")
 
 def get_champion_icon_url(champion_id: int) -> str:
     """Get champion splash art URL"""

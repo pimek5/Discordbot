@@ -523,6 +523,35 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
+    def cleanup_old_bets(self, minutes: int = 1):
+        """Delete settled matches and their bets older than specified minutes"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Delete bets for settled matches older than N minutes
+                cur.execute("""
+                    DELETE FROM hexbet_bets
+                    WHERE match_id IN (
+                        SELECT id FROM hexbet_matches
+                        WHERE status = 'settled'
+                        AND updated_at < NOW() - INTERVAL '%s minutes'
+                    )
+                """, (minutes,))
+                deleted_bets = cur.rowcount
+                
+                # Delete settled matches older than N minutes
+                cur.execute("""
+                    DELETE FROM hexbet_matches
+                    WHERE status = 'settled'
+                    AND updated_at < NOW() - INTERVAL '%s minutes'
+                """, (minutes,))
+                deleted_matches = cur.rowcount
+                
+                conn.commit()
+                return deleted_matches, deleted_bets
+        finally:
+            self.return_connection(conn)
+
 # Global database instance
 _tracker_db = None
 

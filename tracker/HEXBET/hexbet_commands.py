@@ -91,6 +91,7 @@ class Hexbet(commands.Cog):
         self.featured_task.start()
         self.leaderboard_task.start()
         self.settle_task.start()
+        self.cleanup_task.start()
         self.bot.loop.create_task(self._ensure_champions())
         self.bot.loop.create_task(self._restore_persistent_views())
     
@@ -123,10 +124,20 @@ class Hexbet(commands.Cog):
         except Exception as e:
             logger.warning(f"⚠️ Could not pre-load champion data: {e}")
 
+    async def cleanup_old_bets(self):
+        """Delete settled matches and their bets older than 1 minute"""
+        try:
+            deleted_matches, deleted_bets = self.db.cleanup_old_bets(minutes=1)
+            if deleted_matches > 0 or deleted_bets > 0:
+                logger.info(f"🗑️ Cleaned up {deleted_matches} matches and {deleted_bets} bets")
+        except Exception as e:
+            logger.error(f"❌ Failed to cleanup old bets: {e}")
+
     def cog_unload(self):
         self.featured_task.cancel()
         self.leaderboard_task.cancel()
         self.settle_task.cancel()
+        self.cleanup_task.cancel()
 
     @tasks.loop(seconds=POLL_INTERVAL_SECONDS)
     async def featured_task(self):
@@ -140,6 +151,11 @@ class Hexbet(commands.Cog):
     async def settle_task(self):
         await self.try_settle_match()
 
+    @tasks.loop(minutes=1)
+    async def cleanup_task(self):
+        """Delete settled bets older than 1 minute"""
+        await self.cleanup_old_bets()
+
     @featured_task.before_loop
     async def before_featured(self):
         await self.bot.wait_until_ready()
@@ -150,6 +166,10 @@ class Hexbet(commands.Cog):
 
     @settle_task.before_loop
     async def before_settle(self):
+        await self.bot.wait_until_ready()
+
+    @cleanup_task.before_loop
+    async def before_cleanup(self):
         await self.bot.wait_until_ready()
 
     async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None):
@@ -200,8 +220,10 @@ class Hexbet(commands.Cog):
                     blue_ordered = self._assign_roles(blue_team)
                     red_ordered = self._assign_roles(red_team)
 
+                    # Enrich both teams and calculate lobby-wide average for streamer mode
                     await self._enrich_players(blue_ordered, region)
                     await self._enrich_players(red_ordered, region)
+                    self._apply_lobby_average(blue_ordered + red_ordered)
 
                     score_blue = self._team_score(blue_ordered)
                     score_red = self._team_score(red_ordered)
@@ -464,22 +486,32 @@ class Hexbet(commands.Cog):
             p['losses'] = losses
             champ_id = p.get('championId')
             champ_name = CHAMPION_ID_TO_NAME.get(champ_id, 'Unknown')
+            # Log if champion is Unknown to help debugging
+            if champ_name == 'Unknown':
+                logger.warning(f"⚠️ Unknown champion detected - championId: {champ_id} for player {p.get('riotIdGameName', 'N/A')}")
+            # Log new champions for monitoring
+            if champ_id in [799, 950, 999]:
+                logger.info(f"✅ New champion detected - {champ_name} (ID: {champ_id}) played by {p.get('riotIdGameName', 'N/A')}")
             p['champ_name'] = champ_name
             # Use emoji if available, fallback to champion name
             p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id) or f'**{champ_name}**'
+    
+    def _apply_lobby_average(self, all_players: List[dict]):
+        """Apply lobby-wide average to streamer mode players"""
+        # Calculate average from all ranked players in the lobby (10 players total)
+        ranked_players = [p for p in all_players if not p.get('streamer_mode', False)]
+        if not ranked_players:
+            return
         
-        # Second pass: calculate team average for streamer mode players
-        ranked_players = [p for p in players if not p['streamer_mode']]
-        if ranked_players:
-            avg_tier_score = sum(TIER_SCORE.get(p['tier'], 1) + DIVISION_SCORE.get(p['division'], 0) for p in ranked_players) / len(ranked_players)
-            avg_wr = sum(p['wr'] for p in ranked_players) / len(ranked_players)
-            avg_lp = sum(p['lp'] for p in ranked_players) / len(ranked_players)
-            
-            for p in players:
-                if p['streamer_mode']:
-                    # Estimate tier from average
-                    p['wr'] = avg_wr
-                    p['lp'] = int(avg_lp)
+        avg_tier_score = sum(TIER_SCORE.get(p['tier'], 1) + DIVISION_SCORE.get(p['division'], 0) for p in ranked_players) / len(ranked_players)
+        avg_wr = sum(p['wr'] for p in ranked_players) / len(ranked_players)
+        avg_lp = sum(p['lp'] for p in ranked_players) / len(ranked_players)
+        
+        # Apply to all streamer mode players
+        for p in all_players:
+            if p.get('streamer_mode', False):
+                p['wr'] = avg_wr
+                p['lp'] = int(avg_lp)
 
     def _team_score(self, players: List[dict]) -> float:
         if not players:
@@ -490,13 +522,16 @@ class Hexbet(commands.Cog):
         return rank_score + wr_score + comp_score
 
     def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None) -> discord.Embed:
-        # Calculate team statistics
-        blue_avg_tier = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) for p in blue) / len(blue) if blue else 0
-        red_avg_tier = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) for p in red) / len(red) if red else 0
-        blue_avg_wr = sum(p.get('wr', 50) for p in blue) / len(blue) if blue else 50
-        red_avg_wr = sum(p.get('wr', 50) for p in red) / len(red) if red else 50
-        blue_avg_lp = sum(p.get('lp', 0) for p in blue) / len(blue) if blue else 0
-        red_avg_lp = sum(p.get('lp', 0) for p in red) / len(red) if red else 0
+        # Calculate team statistics (only from ranked players, not streamer mode)
+        blue_ranked = [p for p in blue if not p.get('streamer_mode', False)]
+        red_ranked = [p for p in red if not p.get('streamer_mode', False)]
+        
+        blue_avg_tier = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in blue_ranked) / len(blue_ranked) if blue_ranked else 0
+        red_avg_tier = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in red_ranked) / len(red_ranked) if red_ranked else 0
+        blue_avg_wr = sum(p.get('wr', 50) for p in blue_ranked) / len(blue_ranked) if blue_ranked else 50
+        red_avg_wr = sum(p.get('wr', 50) for p in red_ranked) / len(red_ranked) if red_ranked else 50
+        blue_avg_lp = sum(p.get('lp', 0) for p in blue_ranked) / len(blue_ranked) if blue_ranked else 0
+        red_avg_lp = sum(p.get('lp', 0) for p in red_ranked) / len(red_ranked) if red_ranked else 0
         
         # Get tier name from score
         def tier_from_score(score):
