@@ -382,6 +382,7 @@ class Hexbet(commands.Cog):
                 if game_data:
                     game_id = game_data.get('gameId')
                     queue_id = game_data.get('gameQueueConfigId')
+                    game_start_time = game_data.get('gameStartTime', 0)
                     
                     logger.info(f"🎯 Found game {game_id} with queue {queue_id} (player: {tier} {lp} LP)")
                     
@@ -389,6 +390,17 @@ class Hexbet(commands.Cog):
                     if queue_id != 420:
                         logger.info(f"⏭️ Skipping game {game_id} - not Ranked Solo/Duo (queue {queue_id})")
                         continue
+                    
+                    # Check game duration - skip if game is older than 15 minutes
+                    if game_start_time > 0:
+                        current_time_ms = time.time() * 1000
+                        game_duration_minutes = (current_time_ms - game_start_time) / 1000 / 60
+                        
+                        if game_duration_minutes > 15:
+                            logger.info(f"⏭️ Skipping game {game_id} - too old ({game_duration_minutes:.1f} minutes)")
+                            continue
+                        
+                        logger.info(f"⏱️ Game duration: {game_duration_minutes:.1f} minutes - accepting")
                     
                     logger.info(f"✅ Found active game: {game_id} ({tier} {lp} LP player)")
                     
@@ -2230,6 +2242,7 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
             
             game_id = game_data.get('gameId')
             queue_id = game_data.get('gameQueueConfigId')
+            game_start_time = game_data.get('gameStartTime', 0)
             
             # Only accept Ranked Solo/Duo
             if queue_id != 420:
@@ -2238,6 +2251,20 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
                     ephemeral=True
                 )
                 return
+            
+            # Check game duration - skip if game is older than 15 minutes
+            if game_start_time > 0:
+                current_time_ms = time.time() * 1000
+                game_duration_minutes = (current_time_ms - game_start_time) / 1000 / 60
+                
+                if game_duration_minutes > 15:
+                    await interaction.followup.send(
+                        f"❌ Game is too old ({game_duration_minutes:.1f} minutes). Please choose a player in a game that started less than 15 minutes ago.",
+                        ephemeral=True
+                    )
+                    return
+                
+                logger.info(f"⏱️ Game duration: {game_duration_minutes:.1f} minutes - accepting")
             
             # Check if match already exists
             open_count = self.cog.db.count_open_matches()
