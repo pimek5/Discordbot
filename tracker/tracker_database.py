@@ -125,6 +125,17 @@ class TrackerDatabase:
                         recorded_at TIMESTAMP DEFAULT NOW()
                     );
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS hexbet_high_elo_pool (
+                        puuid TEXT PRIMARY KEY,
+                        region TEXT NOT NULL,
+                        tier TEXT NOT NULL,
+                        lp INTEGER DEFAULT 0,
+                        last_checked TIMESTAMP,
+                        times_featured INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
                 conn.commit()
         finally:
             self.return_connection(conn)
