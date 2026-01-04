@@ -345,7 +345,12 @@ class Hexbet(commands.Cog):
                 chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                 chance_red = round(100 - chance_blue, 1)
                 
-                featured = old_embed.description.split('Featured: ')[1] if 'Featured:' in old_embed.description else ""
+                # Get featured player from description
+                featured = ""
+                if old_embed.description and 'Featured:' in old_embed.description:
+                    parts = old_embed.description.split('Featured: ')
+                    if len(parts) > 1:
+                        featured = parts[1]
                 
                 new_embed = self._build_embed(
                     game_id, platform, blue_players, red_players,
@@ -727,7 +732,11 @@ class Hexbet(commands.Cog):
                 chance_red = round(100 - chance_blue, 1)
                 
                 # Get featured player from description
-                featured = old_embed.description.split('Featured: ')[1] if 'Featured:' in old_embed.description else ""
+                featured = ""
+                if old_embed.description and 'Featured:' in old_embed.description:
+                    parts = old_embed.description.split('Featured: ')
+                    if len(parts) > 1:
+                        featured = parts[1]
                 
                 # Rebuild embed with current bet data
                 new_embed = self._build_embed(
