@@ -130,14 +130,13 @@ class Hexbet(commands.Cog):
     async def before_settle(self):
         await self.bot.wait_until_ready()
 
-    async def post_random_featured_game(self):
+    async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None):
         try:
-            # Avoid flooding if a match is already open
             existing = self.db.get_open_match()
-            if existing:
+            if existing and not force:
                 return
 
-            platform = random.choice(['euw1', 'na1', 'kr', 'eun1'])
+            platform = platform_choice or random.choice(['euw1', 'na1', 'kr', 'eun1'])
             data = await self.riot_api.get_featured_games(platform=platform)
             if not data or not data.get('gameList'):
                 return
@@ -174,8 +173,14 @@ class Hexbet(commands.Cog):
                 {'players': red_ordered, 'odds': odds_red},
                 game.get('gameStartTime', 0)
             )
-            if not match_id:
+            if not match_id and not force:
                 return
+            if not match_id and force:
+                # If conflict, fetch existing and use its id/view
+                existing = self.db.get_open_match()
+                if not existing:
+                    return
+                match_id = existing['id']
 
             view = BetView(match_id, odds_blue, odds_red, self)
             msg = await channel.send(embed=embed, view=view)
@@ -375,6 +380,21 @@ class Hexbet(commands.Cog):
         self.db.record_wager(interaction.user.id, amount)
         new_balance = self.db.update_balance(interaction.user.id, -amount)
         await interaction.response.send_message(f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}", ephemeral=True)
+
+    @app_commands.command(name="hexbet_post", description="(Admin) Post a featured game bet now")
+    @app_commands.describe(platform="Optional platform route (euw1, na1, kr, eun1)")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hexbet_post(self, interaction: discord.Interaction, platform: Optional[str] = None):
+        await interaction.response.defer(ephemeral=True)
+        await self.post_random_featured_game(force=True, platform_choice=platform)
+        await interaction.followup.send("✅ Triggered featured-game bet post", ephemeral=True)
+
+    @hexbet_post.error
+    async def hexbet_post_error(self, interaction: discord.Interaction, error):
+        if isinstance(error, app_commands.errors.MissingPermissions):
+            await interaction.response.send_message("❌ You need Manage Server to use this.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Error: {error}", ephemeral=True)
 
 
 class BetView(discord.ui.View):
