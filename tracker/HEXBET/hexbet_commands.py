@@ -153,7 +153,7 @@ class Hexbet(commands.Cog):
             if old_matches:
                 logger.info(f"🗑️ Found {len(old_matches)} settled matches to cleanup")
                 
-                # Delete Discord messages first
+                # Delete Discord messages ONLY for remakes and cancelled matches
                 for match in old_matches:
                     match_id = match.get('id')
                     channel_id = match.get('channel_id')
@@ -163,13 +163,15 @@ class Hexbet(commands.Cog):
                     
                     logger.info(f"🗑️ Processing match {match_id}: winner={winner}, updated_at={updated_at}")
                     
-                    if channel_id and message_id:
+                    # Only delete messages for remakes (refunded) and cancelled matches
+                    # Normal settled matches (blue/red winners) keep their messages with black embed
+                    if winner in ['refunded', 'cancel', 'cancelled'] and channel_id and message_id:
                         try:
                             channel = self.bot.get_channel(channel_id)
                             if channel:
                                 message = await channel.fetch_message(message_id)
                                 await message.delete()
-                                logger.info(f"✅ Deleted message {message_id} in channel {channel_id}")
+                                logger.info(f"✅ Deleted {winner} match message {message_id} in channel {channel_id}")
                             else:
                                 logger.warning(f"⚠️ Channel {channel_id} not found")
                         except discord.NotFound:
@@ -177,7 +179,10 @@ class Hexbet(commands.Cog):
                         except Exception as e:
                             logger.error(f"❌ Failed to delete message {message_id}: {e}")
                     else:
-                        logger.warning(f"⚠️ Match {match_id} has no channel_id or message_id")
+                        if winner not in ['refunded', 'cancel', 'cancelled']:
+                            logger.info(f"ℹ️ Keeping message for normal settled match {match_id} (winner: {winner})")
+                        else:
+                            logger.warning(f"⚠️ Match {match_id} has no channel_id or message_id")
             
             # Now delete from database (no time filter)
             deleted_matches, deleted_bets = self.db.cleanup_old_bets(minutes=0)
@@ -551,7 +556,7 @@ class Hexbet(commands.Cog):
                 embed = msg.embeds[0]
                 winner_emoji = "<:BlueSide:1457209225976484014>" if winner == 'blue' else "<:RedSide:1457209221031395472>"
                 embed.title = f"{winner_emoji} {embed.title} - {winner.upper()} WON!"
-                embed.color = 0x3498DB if winner == 'blue' else 0xE74C3C
+                embed.color = 0x2C2F33  # Dark gray/black color
                 
                 # Remove betting view
                 await msg.edit(embed=embed, view=None)
