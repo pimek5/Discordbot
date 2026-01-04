@@ -90,8 +90,8 @@ def odds_from_scores(score_blue: float, score_red: float) -> Tuple[float, float]
     prob_red = score_red / total
     prob_blue = min(max(prob_blue, 0.05), 0.95)
     prob_red = 1 - prob_blue
-    odds_blue = round(1 / prob_blue, 2)
-    odds_red = round(1 / prob_red, 2)
+    odds_blue = round(1 / prob_blue, 1)
+    odds_red = round(1 / prob_red, 1)
     return odds_blue, odds_red
 
 
