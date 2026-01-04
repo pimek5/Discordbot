@@ -398,6 +398,50 @@ class Hexbet(commands.Cog):
         new_balance = self.db.update_balance(interaction.user.id, -amount)
         await interaction.response.send_message(f"✅ Bet placed on {side.upper()} for {amount}. Potential win: {potential}. New balance: {new_balance}", ephemeral=True)
 
+    @app_commands.command(name="hexbet_debug", description="(Admin) Debug featured games across all regions")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hexbet_debug(self, interaction: discord.Interaction):
+        """Check featured games availability on all regions"""
+        await interaction.response.defer()
+        
+        regions = ['euw1', 'eun1', 'na1', 'kr']
+        results = []
+        
+        for region in regions:
+            try:
+                logger.info(f"🧪 Debugging {region}...")
+                await interaction.followup.send(f"🧪 Checking **{region.upper()}**...", ephemeral=False)
+                
+                data = await self.riot_api.get_featured_games(platform=region)
+                logger.info(f"Raw response for {region}: {data}")
+                
+                if not data:
+                    results.append(f"❌ {region.upper()}: **NULL response**")
+                    logger.warning(f"⚠️ {region}: NULL data")
+                    continue
+                
+                game_list = data.get('gameList', [])
+                count = len(game_list) if game_list else 0
+                
+                if count > 0:
+                    results.append(f"✅ {region.upper()}: **{count} games** available")
+                    # Show first game info
+                    first_game = game_list[0]
+                    results.append(f"   └ Game ID: {first_game.get('gameId', 'N/A')}, Queue: {first_game.get('gameQueueConfigId', 'N/A')}")
+                    logger.info(f"✅ {region}: Found {count} games")
+                else:
+                    results.append(f"⚠️ {region.upper()}: **0 games** (empty list)")
+                    logger.warning(f"⚠️ {region}: Empty gameList")
+                
+            except Exception as e:
+                results.append(f"❌ {region.upper()}: **ERROR** - {str(e)}")
+                logger.error(f"❌ {region} error: {e}", exc_info=True)
+        
+        # Send summary
+        summary = "**Featured Games Debug Report**\n\n" + "\n".join(results)
+        await interaction.followup.send(summary, ephemeral=False)
+        logger.info(f"Debug report sent:\n{summary}")
+
     @app_commands.command(name="find_game", description="Search for active featured games and post bet")
     @app_commands.describe(platform="Optional platform route (euw1, na1, kr, eun1)")
     async def find_game(self, interaction: discord.Interaction, platform: Optional[str] = None):
