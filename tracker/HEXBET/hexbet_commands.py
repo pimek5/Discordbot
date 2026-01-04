@@ -662,10 +662,21 @@ class Hexbet(commands.Cog):
     def _team_score(self, players: List[dict]) -> float:
         if not players:
             return 1.0
+        
+        # Base rank score (tier + division)
         rank_score = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in players) / len(players)
+        
+        # LP contribution (normalized to 0-1 scale, max 1000 LP)
+        lp_score = sum(min(p.get('lp', 0), 1000) for p in players) / (len(players) * 1000)
+        
+        # Winrate score (normalized around 50%)
         wr_score = sum(p.get('wr', 50) for p in players) / (len(players) * 50)
+        
+        # Champion diversity score
         comp_score = len({p.get('champ_name') for p in players}) / 10
-        return rank_score + wr_score + comp_score
+        
+        # Weighted sum: rank (most important), LP (significant), WR (moderate), comp (minor)
+        return (rank_score * 5.0) + (lp_score * 2.0) + (wr_score * 1.0) + (comp_score * 0.5)
 
     def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None, game_start_at: Optional[str] = None) -> discord.Embed:
         # Calculate team statistics (only from ranked players, not streamer mode)
