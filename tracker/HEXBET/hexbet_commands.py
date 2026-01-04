@@ -763,12 +763,9 @@ class Hexbet(commands.Cog):
                 chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                 chance_red = round(100 - chance_blue, 1)
                 
-                # Get featured player from description
-                featured = ""
-                if old_embed.description and '**Featured:**' in old_embed.description:
-                    parts = old_embed.description.split('**Featured:**')
-                    if len(parts) > 1:
-                        featured = parts[1].strip()
+                # Check if this is a special bet (use database flag)
+                is_special_bet = match.get('special_bet', False)
+                featured = "special" if is_special_bet else ""
                 
                 game_start_at = match.get('game_start_at')
                 new_embed = self._build_embed(
