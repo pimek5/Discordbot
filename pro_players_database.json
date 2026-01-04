@@ -1,0 +1,264 @@
+{
+  "pros": [
+    {
+      "name": "Faker",
+      "riot_id": "Hide on bush#KR1",
+      "team": "T1",
+      "role": "Mid",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Chovy",
+      "riot_id": "Gen Chovy#KR1",
+      "team": "Gen.G",
+      "role": "Mid",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Zeus",
+      "riot_id": "T1 Zeus#KR1",
+      "team": "T1",
+      "role": "Top",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Keria",
+      "riot_id": "T1 Keria#KR1",
+      "team": "T1",
+      "role": "Support",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Oner",
+      "riot_id": "T1 Oner#KR1",
+      "team": "T1",
+      "role": "Jungle",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Caps",
+      "riot_id": "G2 Caps#EUW",
+      "team": "G2 Esports",
+      "role": "Mid",
+      "region": "euw",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Upset",
+      "riot_id": "FNC Upset#EUW",
+      "team": "Fnatic",
+      "role": "ADC",
+      "region": "euw",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Razork",
+      "riot_id": "FNC Razork#EUW",
+      "team": "Fnatic",
+      "role": "Jungle",
+      "region": "euw",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Rekkles",
+      "riot_id": "Rekkles#EUW",
+      "team": "Free Agent",
+      "role": "ADC",
+      "region": "euw",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Perkz",
+      "riot_id": "G2 Perkz#EUW",
+      "team": "G2 Esports",
+      "role": "ADC",
+      "region": "euw",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "ShowMaker",
+      "riot_id": "DK ShowMaker#KR1",
+      "team": "Dplus KIA",
+      "role": "Mid",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Canyon",
+      "riot_id": "DK Canyon#KR1",
+      "team": "Dplus KIA",
+      "role": "Jungle",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Ruler",
+      "riot_id": "JDG Ruler#KR1",
+      "team": "JD Gaming",
+      "role": "ADC",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Doinb",
+      "riot_id": "FPX Doinb#NA1",
+      "team": "Retired",
+      "role": "Mid",
+      "region": "na",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "TheShy",
+      "riot_id": "WBG TheShy#KR1",
+      "team": "Weibo Gaming",
+      "role": "Top",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    },
+    {
+      "name": "Rookie",
+      "riot_id": "IG Rookie#KR1",
+      "team": "Free Agent",
+      "role": "Mid",
+      "region": "kr",
+      "type": "pro",
+      "source": "manual"
+    }
+  ],
+  "streamers": [
+    {
+      "name": "TheBausffs",
+      "riot_id": "Thebausffs#COOL",
+      "role": "Top",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "TheBausffs",
+      "riot_id": "Dangerous Dork#Lick",
+      "role": "Top",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "TheBausffs",
+      "riot_id": "Streaming Badboy#INT",
+      "role": "Top",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "TheBausffs",
+      "riot_id": "Thebausffs#3710",
+      "role": "Top",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "TheBausffs",
+      "riot_id": "Bosch Drill#EUW",
+      "role": "Top",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "TheBausffs",
+      "riot_id": "Mollusca Slime#Yummy",
+      "role": "Top",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "TheBausffs",
+      "riot_id": "Silly Snail#Öga",
+      "role": "Top",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "Agurin",
+      "riot_id": "Agurin#EUW",
+      "role": "Jungle",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "Agurin",
+      "riot_id": "Agurin#9464",
+      "role": "Jungle",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "Kamet0",
+      "riot_id": "Kamet0#EUW",
+      "role": "Jungle",
+      "region": "euw",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "RatIRL",
+      "riot_id": "Rat IRL#EUNE",
+      "role": "ADC",
+      "region": "eune",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "RatIRL",
+      "riot_id": "RAT IRL#EUW",
+      "role": "ADC",
+      "region": "eune",
+      "type": "streamer",
+      "source": "manual"
+    },
+    {
+      "name": "Doublelift",
+      "riot_id": "Doublelift#NA1",
+      "role": "ADC",
+      "region": "na",
+      "type": "streamer",
+      "source": "manual"
+    }
+  ],
+  "high_elo": [],
+  "total_pros": 16,
+  "total_streamers": 13,
+  "total_high_elo": 0,
+  "timestamp": "2026-01-04T13:02:04.032383",
+  "sources": [
+    "manual",
+    "leaguepedia",
+    "riot_api"
+  ]
+}
