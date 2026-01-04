@@ -445,10 +445,10 @@ class Hexbet(commands.Cog):
                     score_red = self._team_score(red_ordered)
                     logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
                     
-                    # Check if average LP > 850 for special bet
+                    # Check if average LP > 700 for special bet
                     all_players = blue_ordered + red_ordered
                     avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
-                    is_special_bet = avg_lp > 850
+                    is_special_bet = avg_lp > 700
                     logger.info(f"📈 Average LP: {avg_lp:.0f} LP - Special bet: {is_special_bet}")
                     
                     odds_blue, odds_red = odds_from_scores(score_blue, score_red)
