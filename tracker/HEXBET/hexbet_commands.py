@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import random
 import asyncio
+import aiohttp
 import logging
 import time
 from typing import Optional, List, Tuple
@@ -499,7 +500,76 @@ class Hexbet(commands.Cog):
     async def hexbet_post(self, interaction: discord.Interaction, platform: Optional[str] = None):
         await interaction.response.defer(ephemeral=True)
         await self.post_random_featured_game(force=True, platform_choice=platform)
-        await interaction.followup.send("✅ Triggered featured-game bet post", ephemeral=True)
+        await interaction.followup.send("✅ Triggered high-elo game scan", ephemeral=True)
+    
+    @app_commands.command(name="populate_pool", description="(Admin) Populate high-elo player pool from Riot API")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def populate_pool(self, interaction: discord.Interaction):
+        """Fetch Challenger/Grandmaster/Master players and add to pool"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            region_map = {'euw': 'euw1', 'eune': 'eun1', 'na': 'na1', 'kr': 'kr'}
+            all_players = []
+            
+            await interaction.followup.send("🔄 Fetching high-elo players from all regions...", ephemeral=True)
+            
+            for region, platform in region_map.items():
+                for tier in ['challenger', 'grandmaster', 'master']:
+                    url = f"https://{platform}.api.riotgames.com/lol/league/v4/{tier}leagues/by-queue/RANKED_SOLO_5x5"
+                    headers = {'X-Riot-Token': self.riot_api.api_key}
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, headers=headers) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                entries = data.get('entries', [])
+                                logger.info(f"✅ {platform} {tier}: {len(entries)} players")
+                                
+                                for entry in entries:
+                                    puuid = entry.get('puuid')
+                                    if puuid:
+                                        all_players.append((puuid, region, tier, entry.get('leaguePoints', 0)))
+                            else:
+                                logger.error(f"❌ {platform} {tier}: {response.status}")
+                    
+                    await asyncio.sleep(1)  # Rate limit
+            
+            # Save to database
+            conn = self.db.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    from psycopg2.extras import execute_batch
+                    execute_batch(cur, """
+                        INSERT INTO hexbet_high_elo_pool (puuid, region, tier, lp)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (puuid) DO UPDATE SET
+                            region = EXCLUDED.region,
+                            tier = EXCLUDED.tier,
+                            lp = EXCLUDED.lp
+                    """, all_players)
+                    conn.commit()
+                    
+                    # Get stats
+                    cur.execute("""
+                        SELECT region, tier, COUNT(*) 
+                        FROM hexbet_high_elo_pool 
+                        GROUP BY region, tier 
+                        ORDER BY region, tier
+                    """)
+                    stats = cur.fetchall()
+                    
+                    summary = f"✅ Saved {len(all_players)} players to pool\n\n**Pool Stats:**\n"
+                    for region, tier, count in stats:
+                        summary += f"• {region.upper()} {tier}: {count}\n"
+                    
+                    await interaction.followup.send(summary, ephemeral=False)
+            finally:
+                self.db.return_connection(conn)
+                
+        except Exception as e:
+            logger.error(f"Error populating pool: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @hexbet_post.error
     async def hexbet_post_error(self, interaction: discord.Interaction, error):
