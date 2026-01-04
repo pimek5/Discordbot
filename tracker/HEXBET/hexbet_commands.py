@@ -801,6 +801,14 @@ class Hexbet(commands.Cog):
                         logger.error(f"Failed to update message: {e}")
                 
                 await interaction.followup.send(f"✅ Match cancelled. {len(bets)} bets refunded.", ephemeral=True)
+                
+                # Auto-post new match after cancellation
+                try:
+                    await self.post_random_featured_game(force=True)
+                    logger.info("✅ Auto-posted new match after cancellation")
+                except Exception as e:
+                    logger.error(f"Failed to auto-post after cancellation: {e}")
+                
                 return
             
             if not winner or winner.lower() not in ['blue', 'red']:
