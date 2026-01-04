@@ -859,6 +859,68 @@ class Hexbet(commands.Cog):
         except Exception as e:
             logger.error(f"Error populating pool: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+    
+    @app_commands.command(name="hxbalance", description="(Staff) Manage user balances")
+    @app_commands.describe(
+        action="Action: add, remove, set, check",
+        user="User to manage",
+        amount="Amount (not needed for check)"
+    )
+    async def hxbalance(self, interaction: discord.Interaction, action: str, user: discord.Member, amount: Optional[int] = None):
+        """Manage user balances - Staff only"""
+        # Check if user has required roles
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        action = action.lower()
+        if action not in ['add', 'remove', 'set', 'check']:
+            await interaction.followup.send("❌ Action must be: add, remove, set, or check", ephemeral=True)
+            return
+        
+        current_balance = self.db.get_balance(user.id)
+        
+        if action == 'check':
+            await interaction.followup.send(f"💰 {user.mention} balance: **{current_balance}**", ephemeral=True)
+            return
+        
+        if amount is None:
+            await interaction.followup.send("❌ Amount is required for add/remove/set actions", ephemeral=True)
+            return
+        
+        try:
+            if action == 'add':
+                new_balance = self.db.update_balance(user.id, amount)
+                await interaction.followup.send(
+                    f"✅ Added **{amount}** to {user.mention}\n"
+                    f"Old: {current_balance} → New: {new_balance}",
+                    ephemeral=True
+                )
+            elif action == 'remove':
+                new_balance = self.db.update_balance(user.id, -amount)
+                await interaction.followup.send(
+                    f"✅ Removed **{amount}** from {user.mention}\n"
+                    f"Old: {current_balance} → New: {new_balance}",
+                    ephemeral=True
+                )
+            elif action == 'set':
+                # Set balance by calculating difference
+                diff = amount - current_balance
+                new_balance = self.db.update_balance(user.id, diff)
+                await interaction.followup.send(
+                    f"✅ Set {user.mention} balance to **{amount}**\n"
+                    f"Old: {current_balance} → New: {new_balance}",
+                    ephemeral=True
+                )
+        except Exception as e:
+            logger.error(f"Error managing balance: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @hxpost.error
     async def hxpost_error(self, interaction: discord.Interaction, error):
