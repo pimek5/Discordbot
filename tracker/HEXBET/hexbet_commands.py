@@ -453,7 +453,49 @@ class Hexbet(commands.Cog):
             
             # REFUND PROTECTION: Auto-refund if game < 180 seconds (3 minutes) = remake/afk
             if game_duration < 180:
-                logger.info(f\"🔄 Game {match['game_id']} is a REMAKE ({game_duration}s < 3min) - refunding all bets\")\n                refunds = self.db.refund_match(match['id'])\n                \n                # Delete match message\n                channel = self.bot.get_channel(match.get('channel_id'))\n                message_id = match.get('message_id')\n                if channel and message_id:\n                    try:\n                        msg = await channel.fetch_message(message_id)\n                        await msg.delete()\n                        logger.info(f\"🗑️ Deleted remake match message {message_id}\")\n                    except Exception as e:\n                        logger.warning(f\"Failed to delete remake message: {e}\")\n                \n                # Log refund to bet logs channel\n                try:\n                    log_channel = self.bot.get_channel(BET_LOGS_CHANNEL_ID)\n                    if log_channel:\n                        log_embed = discord.Embed(\n                            title=\"🔄 Match Refunded (Remake)\",\n                            description=f\"Game duration: {game_duration}s (< 3 min)\",\n                            color=0x95A5A6,\n                            timestamp=discord.utils.utcnow()\n                        )\n                        log_embed.add_field(name=\"Match ID\", value=str(match['id']), inline=True)\n                        log_embed.add_field(name=\"Game ID\", value=str(match['game_id']), inline=True)\n                        \n                        total_refunded = sum(amount for _, amount in refunds)\n                        bettors_count = len(refunds)\n                        \n                        log_embed.add_field(name=\"Bettors\", value=str(bettors_count), inline=True)\n                        log_embed.add_field(name=\"Total Refunded\", value=str(total_refunded), inline=True)\n                        \n                        if bettors_count > 0:\n                            refund_list = [f\"<@{uid}>: +{amount}\" for uid, amount in refunds]\n                            log_embed.add_field(name=\"Refunds\", value=\"\\n\".join(refund_list[:10]), inline=False)\n                        \n                        await log_channel.send(embed=log_embed)\n                except Exception as e:\n                    logger.warning(f\"Failed to log refund: {e}\")\n                \n                continue  # Skip to next match\n            
+                logger.info(f"🔄 Game {match['game_id']} is a REMAKE ({game_duration}s < 3min) - refunding all bets")
+                refunds = self.db.refund_match(match['id'])
+                
+                # Delete match message
+                channel = self.bot.get_channel(match.get('channel_id'))
+                message_id = match.get('message_id')
+                if channel and message_id:
+                    try:
+                        msg = await channel.fetch_message(message_id)
+                        await msg.delete()
+                        logger.info(f"🗑️ Deleted remake match message {message_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete remake message: {e}")
+                
+                # Log refund to bet logs channel
+                try:
+                    log_channel = self.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                    if log_channel:
+                        log_embed = discord.Embed(
+                            title="🔄 Match Refunded (Remake)",
+                            description=f"Game duration: {game_duration}s (< 3 min)",
+                            color=0x95A5A6,
+                            timestamp=discord.utils.utcnow()
+                        )
+                        log_embed.add_field(name="Match ID", value=str(match['id']), inline=True)
+                        log_embed.add_field(name="Game ID", value=str(match['game_id']), inline=True)
+                        
+                        total_refunded = sum(amount for _, amount in refunds)
+                        bettors_count = len(refunds)
+                        
+                        log_embed.add_field(name="Bettors", value=str(bettors_count), inline=True)
+                        log_embed.add_field(name="Total Refunded", value=str(total_refunded), inline=True)
+                        
+                        if bettors_count > 0:
+                            refund_list = [f"<@{uid}>: +{amount}" for uid, amount in refunds]
+                            log_embed.add_field(name="Refunds", value="\n".join(refund_list[:10]), inline=False)
+                        
+                        await log_channel.send(embed=log_embed)
+                except Exception as e:
+                    logger.warning(f"Failed to log refund: {e}")
+                
+                continue  # Skip to next match
+            
             winner_team = next((t.get('teamId') for t in info.get('teams', []) if t.get('win')), None)
             if winner_team not in (100, 200):
                 continue
