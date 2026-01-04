@@ -108,6 +108,7 @@ class RiotAPI:
         }
         if api_key:
             logger.info(f"🔑 API Key loaded: {api_key[:10]}...{api_key[-4:]} (len={len(api_key)})")
+            logger.info(f"🔍 FULL KEY FOR DEBUG: {api_key}")  # TEMPORARY DEBUG
         else:
             logger.error("❌ No API key provided!")
 
