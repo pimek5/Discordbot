@@ -143,3 +143,50 @@ CREATE TABLE IF NOT EXISTS guild_settings (
 
 CREATE INDEX IF NOT EXISTS idx_guild_settings_guild_id ON guild_settings(guild_id);
 CREATE INDEX IF NOT EXISTS idx_guild_settings_guild_key ON guild_settings(guild_id, key);
+
+-- HEXBET (featured-game betting)
+CREATE TABLE IF NOT EXISTS hexbet_matches (
+    id SERIAL PRIMARY KEY,
+    game_id BIGINT UNIQUE NOT NULL,
+    platform VARCHAR(10) NOT NULL,
+    channel_id BIGINT NOT NULL,
+    message_id BIGINT,
+    blue_team JSONB,
+    red_team JSONB,
+    status VARCHAR(20) DEFAULT 'open', -- open, closed, settled
+    winner VARCHAR(10), -- blue/red
+    start_time BIGINT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hexbet_bets (
+    id SERIAL PRIMARY KEY,
+    match_id INTEGER NOT NULL REFERENCES hexbet_matches(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    side VARCHAR(10) NOT NULL, -- blue/red
+    amount INTEGER NOT NULL,
+    odds DECIMAL(6,3) DEFAULT 1.0,
+    potential_win INTEGER,
+    settled BOOLEAN DEFAULT FALSE,
+    won BOOLEAN,
+    payout INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(match_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS hexbet_leaderboard_cache (
+    id SERIAL PRIMARY KEY,
+    discord_id BIGINT NOT NULL,
+    username VARCHAR(100),
+    balance INTEGER DEFAULT 0,
+    total_won INTEGER DEFAULT 0,
+    bets_won INTEGER DEFAULT 0,
+    bets_placed INTEGER DEFAULT 0,
+    win_rate DECIMAL(6,2) DEFAULT 0,
+    recorded_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_hexbet_bets_match ON hexbet_bets(match_id);
+CREATE INDEX IF NOT EXISTS idx_hexbet_bets_user ON hexbet_bets(user_id);

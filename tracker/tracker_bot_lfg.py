@@ -13,8 +13,12 @@ Features:
 import discord
 from discord.ext import commands
 import os
+import sys
 import logging
 from dotenv import load_dotenv
+
+# Ensure parent directory (repo root) is on path so `HEXBET` package works after move
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Load environment variables
 load_dotenv()
@@ -75,7 +79,7 @@ async def on_ready():
     
     # Setup help message
     try:
-        from lfg.lfg_commands import setup_help_message
+        from HEXBET.lfg_commands import setup_help_message
         await setup_help_message(bot)
         logger.info("✅ Help message initialized")
     except Exception as e:
@@ -107,7 +111,7 @@ async def setup_hook():
     
     try:
         # Initialize LFG database
-        from lfg.lfg_database import initialize_lfg_database
+        from HEXBET.lfg_database import initialize_lfg_database
         initialize_lfg_database()
         logger.info("✅ LFG database initialized")
         
@@ -117,7 +121,7 @@ async def setup_hook():
     
     try:
         # Load LFG commands
-        from lfg.lfg_commands import setup as setup_lfg
+        from HEXBET.lfg_commands import setup as setup_lfg
         await setup_lfg(bot, riot_api)
         logger.info("✅ LFG commands loaded")
         

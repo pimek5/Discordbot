@@ -92,12 +92,49 @@ def get_rank_icon_url(tier: str) -> str:
     return f"https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-emblems/emblem-{tier_lower}.png"
 
 
+def platform_to_region(platform: str) -> str:
+    """Map platform route (euw1) to short region code (euw). Fallback to euw."""
+    for k, v in PLATFORM_ROUTES.items():
+        if v == platform:
+            return k
+    return 'euw'
+
+
 class RiotAPI:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.headers = {
             'X-Riot-Token': api_key
         }
+
+    async def get_featured_games(self, platform: str = 'euw1', retries: int = 3) -> Optional[Dict]:
+        """Get featured games (public matches) from spectator/v5 featured-games"""
+        if not self.api_key:
+            return None
+        url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/featured-games"
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=10, connect=5)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        if response.status == 429:
+                            await asyncio.sleep(1 + attempt)
+                            continue
+            except asyncio.TimeoutError:
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                continue
+            except aiohttp.ClientError as e:
+                logger.warning(f"🌐 Network error getting featured games: {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)
+                continue
+            except Exception as e:
+                logger.error(f"❌ Error getting featured games: {e}")
+                return None
+        return None
     
     async def get_account_by_riot_id(self, game_name: str, tag_line: str, 
                                      region: Optional[str] = None, 

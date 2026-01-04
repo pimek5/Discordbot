@@ -15,6 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tracker_database import get_tracker_db
 from riot_api import RiotAPI
 from tracker_commands_v3 import TrackerCommandsV3
+from HEXBET.hexbet_commands import setup as setup_hexbet
 import config_commands
 
 # Load environment variables
@@ -57,6 +58,7 @@ class TrackerBot(commands.Bot):
         """Setup hook called before bot starts - load cogs here"""
         # Initialize Riot API
         self.riot_api = RiotAPI(RIOT_API_KEY)
+        self.db = get_tracker_db()
         
         # Add tracker cog V3
         tracking_channel_id = 1440713433887805470  # Your tracking channel
@@ -66,6 +68,10 @@ class TrackerBot(commands.Bot):
         # Add config commands
         await config_commands.setup(self)
         logger.info("✅ ConfigCommands loaded")
+
+        # Add HEXBET commands
+        await setup_hexbet(self, self.riot_api, self.db)
+        logger.info("✅ HEXBET loaded")
         
         # Log available commands
         commands_list = [cmd.name for cmd in self.tree.get_commands()]
