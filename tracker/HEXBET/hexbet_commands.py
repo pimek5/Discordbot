@@ -371,6 +371,12 @@ class Hexbet(commands.Cog):
                     score_red = self._team_score(red_ordered)
                     logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
                     
+                    # Check if average LP > 1000 for special bet
+                    all_players = blue_ordered + red_ordered
+                    avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
+                    is_special_bet = avg_lp > 1000
+                    logger.info(f"📈 Average LP: {avg_lp:.0f} LP - Special bet: {is_special_bet}")
+                    
                     odds_blue, odds_red = odds_from_scores(score_blue, score_red)
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                     chance_red = round(100 - chance_blue, 1)
@@ -384,7 +390,7 @@ class Hexbet(commands.Cog):
                         {'players': blue_ordered, 'odds': odds_blue},
                         {'players': red_ordered, 'odds': odds_red},
                         game_data.get('gameStartTime', 0),
-                        special_bet=False  # Regular featured bets, not special
+                        special_bet=is_special_bet  # Special if avg LP > 1000
                     )
                     if not match_id and not force:
                         logger.warning(f"⚠️ Match already exists for game {game_id}, skipping...")
@@ -397,8 +403,9 @@ class Hexbet(commands.Cog):
                         match_id = existing['id']
                     
                     logger.info(f"📝 Building embed for match {match_id}...")
-                    # Build embed WITHOUT featured_player (regular bets, no special label)
-                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, "", match_id)
+                    # Build embed with special label if high LP lobby
+                    featured_label = "special" if is_special_bet else ""
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_label, match_id)
 
                     self.db.increment_high_elo_featured(puuid)
                     view = BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered)

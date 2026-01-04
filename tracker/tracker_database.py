@@ -421,6 +421,29 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
     
+    def refund_match(self, match_id: int) -> list:
+        """Refund all bets on a match (remake/afk detected). Returns list of (user_id, amount) refunded."""
+        conn = self.get_connection()
+        refunds = []
+        try:
+            with conn.cursor() as cur:
+                # Update match status to refunded
+                cur.execute("UPDATE hexbet_matches SET status='refunded', updated_at=NOW() WHERE id=%s", (match_id,))
+                
+                # Get all bets for this match
+                cur.execute("SELECT user_id, amount FROM hexbet_bets WHERE match_id=%s AND NOT settled", (match_id,))
+                for user_id, amount in cur.fetchall():
+                    # Return tokens to user
+                    cur.execute("UPDATE user_balances SET balance = balance + %s WHERE discord_id = %s", (amount, user_id))
+                    refunds.append((user_id, amount))
+                
+                # Mark bets as settled with refund (won=NULL, payout=amount)
+                cur.execute("UPDATE hexbet_bets SET settled=TRUE, payout=amount, updated_at=NOW() WHERE match_id=%s", (match_id,))
+                conn.commit()
+                return refunds
+        finally:
+            self.return_connection(conn)
+    
     def get_user_league_accounts(self, user_id: int):
         """Get all league accounts for a user from main bot schema"""
         conn = self.get_connection()
