@@ -8,72 +8,53 @@ import logging
 logger = logging.getLogger('hexbet.leaguepedia')
 
 # Manual database of verified pro players and their accounts
-# Source: https://lol.fandom.com/wiki/{PlayerName}
+# Auto-generated from multi_source_scraper.py
+# Source: pro_players_database.json
 PRO_ACCOUNTS = {
-    # Faker (T1)
-    'hide on bush': {'name': 'Faker', 'team': 'T1', 'accounts': ['Hide on bush#KR1', 'Hide on bush#61151', 'Hide on bush#canad']},
+    # T1
     'hide on bush#kr1': {'name': 'Faker', 'team': 'T1'},
-    'hide on bush#61151': {'name': 'Faker', 'team': 'T1'},
-    'hide on bush#canad': {'name': 'Faker', 'team': 'T1'},
-    
-    # Chovy (Gen.G)
-    'chovy': {'name': 'Chovy', 'team': 'Gen.G'},
-    
-    # Zeus (T1)
-    'zeus': {'name': 'Zeus', 'team': 'T1'},
-    
-    # Keria (T1)
-    'keria': {'name': 'Keria', 'team': 'T1'},
-    
-    # Oner (T1)
-    'oner': {'name': 'Oner', 'team': 'T1'},
-    
-    # Gumayusi (T1)
+    't1 zeus#kr1': {'name': 'Zeus', 'team': 'T1'},
+    't1 keria#kr1': {'name': 'Keria', 'team': 'T1'},
+    't1 oner#kr1': {'name': 'Oner', 'team': 'T1'},
     'gumayusi': {'name': 'Gumayusi', 'team': 'T1'},
-    
-    # Doran (T1)
     'doran': {'name': 'Doran', 'team': 'T1'},
-    
-    # Caps (G2)
-    'caps': {'name': 'Caps', 'team': 'G2'},
-    
-    # Upset (FNC)
-    'upset': {'name': 'Upset', 'team': 'Fnatic'},
-    
-    # Jankos
-    'jankos': {'name': 'Jankos', 'team': 'Heretics'},
-    
-    # ShowMaker (KT)
-    'showmaker': {'name': 'ShowMaker', 'team': 'KT'},
-    
-    # Canyon (Gen.G)  
-    'canyon': {'name': 'Canyon', 'team': 'Gen.G'},
-    
-    # Ruler (JDG)
-    'ruler': {'name': 'Ruler', 'team': 'JDG'},
-    
-    # Deft (HLE)
-    'deft': {'name': 'Deft', 'team': 'HLE'},
-    
-    # BeryL (DRX)
-    'beryl': {'name': 'BeryL', 'team': 'DRX'},
-    
-    # Peanut (Gen.G)
-    'peanut': {'name': 'Peanut', 'team': 'Gen.G'},
-    
-    # Peyz (T1)
     'peyz': {'name': 'Peyz', 'team': 'T1'},
     
-    # Lehends (Gen.G)
+    # Gen.G
+    'gen chovy#kr1': {'name': 'Chovy', 'team': 'Gen.G'},
+    'canyon': {'name': 'Canyon', 'team': 'Gen.G'},
+    'peanut': {'name': 'Peanut', 'team': 'Gen.G'},
     'lehends': {'name': 'Lehends', 'team': 'Gen.G'},
+    
+    # Dplus KIA
+    'dk showmaker#kr1': {'name': 'ShowMaker', 'team': 'Dplus KIA'},
+    'dk canyon#kr1': {'name': 'Canyon', 'team': 'Dplus KIA'},
+    
+    # G2 Esports
+    'g2 caps#euw': {'name': 'Caps', 'team': 'G2 Esports'},
+    'g2 perkz#euw': {'name': 'Perkz', 'team': 'G2 Esports'},
+    
+    # Fnatic
+    'fnc upset#euw': {'name': 'Upset', 'team': 'Fnatic'},
+    'fnc razork#euw': {'name': 'Razork', 'team': 'Fnatic'},
+    
+    # Other teams
+    'jdg ruler#kr1': {'name': 'Ruler', 'team': 'JD Gaming'},
+    'wbg theshy#kr1': {'name': 'TheShy', 'team': 'Weibo Gaming'},
+    'jankos': {'name': 'Jankos', 'team': 'Heretics'},
+    'deft': {'name': 'Deft', 'team': 'HLE'},
+    'beryl': {'name': 'BeryL', 'team': 'DRX'},
+    
+    # Free Agents / Retired
+    'rekkles#euw': {'name': 'Rekkles', 'team': 'Free Agent'},
+    'ig rookie#kr1': {'name': 'Rookie', 'team': 'Free Agent'},
+    'fpx doinb#na1': {'name': 'Doinb', 'team': 'Retired'},
 }
 
 # Streamer accounts
+# Verified accounts only - do not add guessed/placeholder data
 STREAMER_ACCOUNTS = {
-    # Agurin
-    'agurin': {'name': 'Agurin', 'platform': 'Twitch'},
-    
-    # Thebausffs (Simon Hofverberg) - Source: lolpros.gg
+    # TheBausffs (verified from multiple sources)
     'thebausffs#cool': {'name': 'Thebausffs', 'platform': 'Twitch'},
     'dangerous dork#lick': {'name': 'Thebausffs', 'platform': 'Twitch'},
     'streaming badboy#int': {'name': 'Thebausffs', 'platform': 'Twitch'},
@@ -81,13 +62,10 @@ STREAMER_ACCOUNTS = {
     'bosch drill#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
     'mollusca slime#yummy': {'name': 'Thebausffs', 'platform': 'Twitch'},
     'silly snail#öga': {'name': 'Thebausffs', 'platform': 'Twitch'},
-    'demon simon#0000': {'name': 'Thebausffs', 'platform': 'Twitch'},
-    'thebausffs#56243': {'name': 'Thebausffs', 'platform': 'Twitch'},
-    'thebausffs#euw': {'name': 'Thebausffs', 'platform': 'Twitch'},
     
-    # Other streamers
-    'drututt': {'name': 'Drututt', 'platform': 'Twitch'},
-    'nemesis': {'name': 'Nemesis', 'platform': 'Twitch'},
+    # Other verified streamers (add only with confirmed Riot IDs)
+    # 'agurin#euw': {'name': 'Agurin', 'platform': 'Twitch'},  # Needs verification
+    # 'drututt': {'name': 'Drututt', 'platform': 'Twitch'},     # Needs verification
 }
 
 # Cache structure

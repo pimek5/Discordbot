@@ -201,61 +201,13 @@
       "region": "euw",
       "type": "streamer",
       "source": "manual"
-    },
-    {
-      "name": "Agurin",
-      "riot_id": "Agurin#EUW",
-      "role": "Jungle",
-      "region": "euw",
-      "type": "streamer",
-      "source": "manual"
-    },
-    {
-      "name": "Agurin",
-      "riot_id": "Agurin#9464",
-      "role": "Jungle",
-      "region": "euw",
-      "type": "streamer",
-      "source": "manual"
-    },
-    {
-      "name": "Kamet0",
-      "riot_id": "Kamet0#EUW",
-      "role": "Jungle",
-      "region": "euw",
-      "type": "streamer",
-      "source": "manual"
-    },
-    {
-      "name": "RatIRL",
-      "riot_id": "Rat IRL#EUNE",
-      "role": "ADC",
-      "region": "eune",
-      "type": "streamer",
-      "source": "manual"
-    },
-    {
-      "name": "RatIRL",
-      "riot_id": "RAT IRL#EUW",
-      "role": "ADC",
-      "region": "eune",
-      "type": "streamer",
-      "source": "manual"
-    },
-    {
-      "name": "Doublelift",
-      "riot_id": "Doublelift#NA1",
-      "role": "ADC",
-      "region": "na",
-      "type": "streamer",
-      "source": "manual"
     }
   ],
   "high_elo": [],
   "total_pros": 16,
-  "total_streamers": 13,
+  "total_streamers": 7,
   "total_high_elo": 0,
-  "timestamp": "2026-01-04T13:02:04.032383",
+  "timestamp": "2026-01-04T13:04:18.474003",
   "sources": [
     "manual",
     "leaguepedia",

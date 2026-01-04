@@ -33,6 +33,7 @@ KNOWN_PROS = {
 }
 
 KNOWN_STREAMERS = {
+    # Verified accounts only (from leaguepedia_scraper.py)
     'TheBausffs': {
         'accounts': [
             'Thebausffs#COOL',
@@ -46,26 +47,8 @@ KNOWN_STREAMERS = {
         'region': 'euw',
         'main_role': 'Top'
     },
-    'Agurin': {
-        'accounts': ['Agurin#EUW', 'Agurin#9464'],
-        'region': 'euw',
-        'main_role': 'Jungle'
-    },
-    'Kamet0': {
-        'accounts': ['Kamet0#EUW'],
-        'region': 'euw',
-        'main_role': 'Jungle'
-    },
-    'RatIRL': {
-        'accounts': ['Rat IRL#EUNE', 'RAT IRL#EUW'],
-        'region': 'eune',
-        'main_role': 'ADC'
-    },
-    'Doublelift': {
-        'accounts': ['Doublelift#NA1'],
-        'region': 'na',
-        'main_role': 'ADC'
-    },
+    # Add more verified streamers here with actual Riot IDs
+    # Don't add placeholder/guessed data
 }
 
 async def scrape_leaguepedia():
