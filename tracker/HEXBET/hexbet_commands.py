@@ -133,8 +133,10 @@ class Hexbet(commands.Cog):
     async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None):
         """Find and post a high-elo game by scanning active players from pool"""
         try:
-            existing = self.db.get_open_match()
-            if existing and not force:
+            # Check if we already have 3 active matches
+            open_count = self.db.count_open_matches()
+            if open_count >= 3 and not force:
+                logger.info(f"ℹ️ Already have {open_count} active matches, skipping post")
                 return
 
             # Map platform to region for database lookup
@@ -221,36 +223,44 @@ class Hexbet(commands.Cog):
             logger.error(f"Error posting featured game: {e}", exc_info=True)
 
     async def try_settle_match(self):
-        match = self.db.get_open_match()
-        if not match:
+        """Check and settle all open matches that are ready"""
+        matches = self.db.get_open_matches()
+        if not matches:
             return
-        start_time = match.get('start_time') or 0
-        if not start_time:
-            return
-        # Wait until reasonable duration has passed to avoid early fetch
-        if start_time and (time.time() * 1000) - start_time < MIN_MINUTES_BEFORE_SETTLE * 60 * 1000:
-            return
-        platform = match.get('platform', 'euw1')
-        region = platform_to_region(platform)
-        match_ref = f"{platform.upper()}_{match['game_id']}"
-        try:
-            data = await self.riot_api.get_match_details(match_ref, region)
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to pull match details for settlement: {e}")
-            return
-        if not data or 'info' not in data:
-            return
-        info = data.get('info', {})
-        winner_team = next((t.get('teamId') for t in info.get('teams', []) if t.get('win')), None)
-        if winner_team not in (100, 200):
-            return
-        winner = 'blue' if winner_team == 100 else 'red'
-        payouts = self.db.settle_match(match['id'], winner)
-        for user_id, amount, payout, won in payouts:
-            if payout:
-                self.db.update_balance(user_id, payout)
-            self.db.record_result(user_id, amount, payout, won)
-        await self._update_match_message(match, winner, payouts)
+        
+        for match in matches:
+            start_time = match.get('start_time') or 0
+            if not start_time:
+                continue
+            # Wait until reasonable duration has passed to avoid early fetch
+            if (time.time() * 1000) - start_time < MIN_MINUTES_BEFORE_SETTLE * 60 * 1000:
+                continue
+            
+            platform = match.get('platform', 'euw1')
+            region = platform_to_region(platform)
+            match_ref = f"{platform.upper()}_{match['game_id']}"
+            try:
+                data = await self.riot_api.get_match_details(match_ref, region)
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to pull match details for settlement: {e}")
+                continue
+            
+            if not data or 'info' not in data:
+                continue
+            
+            info = data.get('info', {})
+            winner_team = next((t.get('teamId') for t in info.get('teams', []) if t.get('win')), None)
+            if winner_team not in (100, 200):
+                continue
+            
+            winner = 'blue' if winner_team == 100 else 'red'
+            payouts = self.db.settle_match(match['id'], winner)
+            for user_id, amount, payout, won in payouts:
+                if payout:
+                    self.db.update_balance(user_id, payout)
+                self.db.record_result(user_id, amount, payout, won)
+            await self._update_match_message(match, winner, payouts)
+            logger.info(f"✅ Settled match {match['game_id']} - Winner: {winner.upper()}")
 
     async def _update_match_message(self, match: dict, winner: str, payouts: List[tuple]):
         channel = self.bot.get_channel(match.get('channel_id'))
@@ -268,6 +278,63 @@ class Hexbet(commands.Cog):
             winners = [f"<@{u}> +{payout}" for u, _amt, payout, won in payouts if won]
             embed.add_field(name="Payouts", value="\n".join(winners) if winners else "No winners", inline=False)
         await msg.edit(embed=embed, view=ClosedBetView())
+    
+    async def _refresh_match_embed(self, match_id: int):
+        """Refresh a match embed with current bet totals"""
+        try:
+            # Get match data
+            conn = self.db.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM hexbet_matches WHERE id = %s", (match_id,))
+                    row = cur.fetchone()
+                    if not row:
+                        return
+                    cols = [desc[0] for desc in cur.description]
+                    match = dict(zip(cols, row))
+            finally:
+                self.db.return_connection(conn)
+            
+            if match['status'] != 'open':
+                return
+            
+            channel = self.bot.get_channel(match.get('channel_id'))
+            message_id = match.get('message_id')
+            if not channel or not message_id:
+                return
+            
+            msg = await channel.fetch_message(message_id)
+            old_embed = msg.embeds[0] if msg.embeds else None
+            if not old_embed:
+                return
+            
+            # Extract data from stored match
+            game_id = match['game_id']
+            platform = match['platform']
+            blue_team = match.get('blue_team', {})
+            red_team = match.get('red_team', {})
+            
+            if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                blue_players = blue_team.get('players', [])
+                red_players = red_team.get('players', [])
+                odds_blue = blue_team.get('odds', 1.5)
+                odds_red = red_team.get('odds', 1.5)
+                
+                chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                chance_red = round(100 - chance_blue, 1)
+                
+                featured = old_embed.description.split('Featured: ')[1] if 'Featured:' in old_embed.description else ""
+                
+                new_embed = self._build_embed(
+                    game_id, platform, blue_players, red_players,
+                    odds_blue, odds_red, chance_blue, chance_red,
+                    featured, match['id']
+                )
+                
+                await msg.edit(embed=new_embed)
+                
+        except Exception as e:
+            logger.warning(f"Failed to refresh match embed: {e}")
 
     async def refresh_leaderboard_embed(self):
         try:
@@ -806,6 +873,12 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
                 description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            # Auto-refresh the match embed with updated bet totals
+            try:
+                await self.cog._refresh_match_embed(self.match_id)
+            except Exception as e:
+                logger.warning(f"Failed to auto-refresh embed: {e}")
             
         except ValueError:
             await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)

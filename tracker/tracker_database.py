@@ -237,15 +237,31 @@ class TrackerDatabase:
             self.return_connection(conn)
 
     def get_open_match(self) -> Optional[dict]:
+        """Get single open match (backwards compatibility)"""
+        matches = self.get_open_matches(limit=1)
+        return matches[0] if matches else None
+    
+    def get_open_matches(self, limit: int = 3) -> List[dict]:
+        """Get all open matches up to limit"""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM hexbet_matches WHERE status = 'open' ORDER BY created_at DESC LIMIT 1")
-                row = cur.fetchone()
-                if not row:
-                    return None
+                cur.execute("SELECT * FROM hexbet_matches WHERE status = 'open' ORDER BY created_at DESC LIMIT %s", (limit,))
+                rows = cur.fetchall()
+                if not rows:
+                    return []
                 cols = [desc[0] for desc in cur.description]
-                return dict(zip(cols, row))
+                return [dict(zip(cols, row)) for row in rows]
+        finally:
+            self.return_connection(conn)
+    
+    def count_open_matches(self) -> int:
+        """Count number of open matches"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM hexbet_matches WHERE status = 'open'")
+                return cur.fetchone()[0]
         finally:
             self.return_connection(conn)
 
