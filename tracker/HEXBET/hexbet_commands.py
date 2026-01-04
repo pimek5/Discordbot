@@ -151,7 +151,6 @@ class Hexbet(commands.Cog):
         self.settle_task.cancel()
         self.cleanup_task.cancel()
 
-    @tasks.loop(seconds=POLL_INTERVAL_SECONDS)
     @tasks.loop(minutes=5)
     async def featured_task(self):
         try:
