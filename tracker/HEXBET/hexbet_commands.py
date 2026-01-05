@@ -1404,6 +1404,72 @@ class Hexbet(commands.Cog):
                 lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
 
+    @hxpro_group.command(name="add", description="Add a pro player to HEXBET")
+    @app_commands.describe(
+        riot_id="Player RiotID (gameName#tagLine)",
+        pro="Pro player display name"
+    )
+    async def hxpro_add(self, interaction: discord.Interaction, riot_id: str, pro: str):
+        """Add a pro player to HEXBET database"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Check if already exists
+            cursor = self.db.conn.cursor()
+            cursor.execute(
+                "SELECT id FROM hexbet_verified_players WHERE riot_id = %s",
+                (riot_id,)
+            )
+            existing = cursor.fetchone()
+            if existing:
+                await interaction.followup.send(f"⚠️ Player `{riot_id}` already in database", ephemeral=True)
+                cursor.close()
+                return
+            
+            # Add to database
+            cursor.execute(
+                """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
+                   VALUES (%s, %s, 'pro')
+                   RETURNING id""",
+                (riot_id, pro)
+            )
+            pro_player_id = cursor.fetchone()[0]
+            self.db.conn.commit()
+            cursor.close()
+            
+            # Scrape DPM.LOL for accounts (use pro name without #tag)
+            pro_display_name = pro.split('#')[0] if '#' in pro else pro
+            accounts = await scrape_dpm_pro_accounts(pro_display_name)
+            
+            account_text = ""
+            if accounts:
+                # Add accounts to database
+                count = self.db.add_pro_accounts(pro_player_id, accounts)
+                logger.info(f"✅ Added {count} accounts for {pro}")
+                
+                # Format account list
+                for acc in accounts[:5]:  # Show top 5
+                    account_text += f"\n  • `{acc['riot_id']}` - **{acc['rank']}** {acc['lp']} LP ({acc['wr']:.1f}% WR)"
+                if len(accounts) > 5:
+                    account_text += f"\n  ... and {len(accounts) - 5} more"
+            else:
+                account_text = "\n  ❌ No accounts found (try adding manually later)"
+            
+            embed = discord.Embed(
+                title="✅ Pro Player Added",
+                description=f"**{pro}** added to HEXBET pro database",
+                color=0x2ECC71
+            )
+            embed.add_field(name="RiotID", value=riot_id, inline=False)
+            embed.add_field(name="Display Name", value=pro, inline=False)
+            embed.add_field(name=f"📊 SoloQ Accounts ({len(accounts)})", value=account_text or "None", inline=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Added pro player: {riot_id} ({pro}) with {len(accounts)} accounts")
+        
+        except Exception as e:
+            logger.error(f"Error in hxpro add command: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="hxhelp", description="Show all HEXBET commands")
     async def hxhelp(self, interaction: discord.Interaction):
         """Display help for all HEXBET commands"""
@@ -3448,74 +3514,6 @@ class BetView(discord.ui.View):
         except Exception as e:
             logger.error(f"Error generating OP.GG link: {e}", exc_info=True)
             await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
-
-
-
-    @hxpro_group.command(name="add", description="Add a pro player to HEXBET")
-    @app_commands.describe(
-        riot_id="Player RiotID (gameName#tagLine)",
-        pro="Pro player display name"
-    )
-    async def hxpro_add(self, interaction: discord.Interaction, riot_id: str, pro: str):
-        """Add a pro player to HEXBET database"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            # Check if already exists
-            cursor = self.db.conn.cursor()
-            cursor.execute(
-                "SELECT id FROM hexbet_verified_players WHERE riot_id = %s",
-                (riot_id,)
-            )
-            existing = cursor.fetchone()
-            if existing:
-                await interaction.followup.send(f"⚠️ Player `{riot_id}` already in database", ephemeral=True)
-                cursor.close()
-                return
-            
-            # Add to database
-            cursor.execute(
-                """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
-                   VALUES (%s, %s, 'pro')
-                   RETURNING id""",
-                (riot_id, pro)
-            )
-            pro_player_id = cursor.fetchone()[0]
-            self.db.conn.commit()
-            cursor.close()
-            
-            # Scrape DPM.LOL for accounts (use pro name without #tag)
-            pro_display_name = pro.split('#')[0] if '#' in pro else pro
-            accounts = await scrape_dpm_pro_accounts(pro_display_name)
-            
-            account_text = ""
-            if accounts:
-                # Add accounts to database
-                count = self.db.add_pro_accounts(pro_player_id, accounts)
-                logger.info(f"✅ Added {count} accounts for {pro}")
-                
-                # Format account list
-                for acc in accounts[:5]:  # Show top 5
-                    account_text += f"\n  • `{acc['riot_id']}` - **{acc['rank']}** {acc['lp']} LP ({acc['wr']:.1f}% WR)"
-                if len(accounts) > 5:
-                    account_text += f"\n  ... and {len(accounts) - 5} more"
-            else:
-                account_text = "\n  ❌ No accounts found (try adding manually later)"
-            
-            embed = discord.Embed(
-                title="✅ Pro Player Added",
-                description=f"**{pro}** added to HEXBET pro database",
-                color=0x2ECC71
-            )
-            embed.add_field(name="RiotID", value=riot_id, inline=False)
-            embed.add_field(name="Display Name", value=pro, inline=False)
-            embed.add_field(name=f"📊 SoloQ Accounts ({len(accounts)})", value=account_text or "None", inline=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            logger.info(f"✅ Added pro player: {riot_id} ({pro}) with {len(accounts)} accounts")
-        
-        except Exception as e:
-            logger.error(f"Error in hxpro add command: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
