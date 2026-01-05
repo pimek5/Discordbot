@@ -1404,9 +1404,9 @@ class Hexbet(commands.Cog):
                         if time_left > 0:
                             # Convert to Unix timestamp for Discord relative time format
                             close_timestamp = int(betting_closes_at.timestamp())
-                            desc += f"\n\n⏰ **Zakłady zamykają się:** <t:{close_timestamp}:R>"
+                            desc += f"\n\n⏰ **Betting closes:** <t:{close_timestamp}:R>"
                         else:
-                            desc += f"\n\n🔒 **Zakłady zamknięte**"
+                            desc += f"\n\n🔒 **Betting Closed**"
                 self.db.return_connection(conn)
             except Exception as e:
                 logger.warning(f"Failed to get betting timer: {e}")
