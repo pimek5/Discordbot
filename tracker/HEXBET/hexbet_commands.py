@@ -2253,7 +2253,7 @@ class Hexbet(commands.Cog):
                     # Add pro/streamer badge to message content
                     content = f"⭐ **{nickname}**{pro_status} found in game!"
                     msg = await channel.send(content=content, embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
-                    self.db.update_match_message(match_id, BET_CHANNEL_ID, msg.id)
+                    self.db.set_match_message(match_id, BET_CHANNEL_ID, msg.id)
                     
                     logger.info(f"✅ Posted priority match {match_id} with {nickname}")
                     await interaction.followup.send(f"🎯 Priority game posted with **{nickname}**!")
@@ -2362,6 +2362,24 @@ class Hexbet(commands.Cog):
                     # Re-assign roles to ensure proper role detection (Smite, support champs, etc.)
                     blue_players = self._assign_roles(blue_players)
                     red_players = self._assign_roles(red_players)
+                    
+                    # Add pro/streamer badges if missing
+                    all_players = blue_players + red_players
+                    conn = self.db.get_connection()
+                    cur = conn.cursor()
+                    for p in all_players:
+                        riot_id = p.get('riotId', '')
+                        if riot_id and not p.get('badge_emoji'):
+                            cur.execute("SELECT player_type FROM hexbet_verified_players WHERE riot_id = %s", (riot_id,))
+                            result = cur.fetchone()
+                            if result:
+                                player_type = result[0]
+                                if player_type == 'pro':
+                                    p['badge_emoji'] = get_pro_emoji()
+                                elif player_type == 'streamer':
+                                    p['badge_emoji'] = get_streamer_emoji()
+                    cur.close()
+                    self.db.return_connection(conn)
                     
                     # Recalculate odds if requested
                     if recalc_odds:
