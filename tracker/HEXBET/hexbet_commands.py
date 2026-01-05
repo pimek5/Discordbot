@@ -1897,9 +1897,23 @@ class Hexbet(commands.Cog):
     @app_commands.describe(
         name="Player name (display name or gameName#tagLine)",
         new_riot_id="New RiotID (optional)",
-        new_display_name="New display name (optional)"
+        new_display_name="New display name (optional)",
+        region="Region to validate new RiotID (optional)"
     )
-    async def hxproedit(self, interaction: discord.Interaction, name: str, new_riot_id: str = None, new_display_name: str = None):
+    @app_commands.choices(region=[
+        app_commands.Choice(name="EUW (Europe West)", value="euw1"),
+        app_commands.Choice(name="EUNE (Europe Nordic & East)", value="eun1"),
+        app_commands.Choice(name="NA (North America)", value="na1"),
+        app_commands.Choice(name="KR (Korea)", value="kr"),
+        app_commands.Choice(name="BR (Brazil)", value="br1"),
+        app_commands.Choice(name="LAN (Latin America North)", value="la1"),
+        app_commands.Choice(name="LAS (Latin America South)", value="la2"),
+        app_commands.Choice(name="OCE (Oceania)", value="oc1"),
+        app_commands.Choice(name="TR (Turkey)", value="tr1"),
+        app_commands.Choice(name="RU (Russia)", value="ru"),
+        app_commands.Choice(name="JP (Japan)", value="jp1")
+    ])
+    async def hxproedit(self, interaction: discord.Interaction, name: str, new_riot_id: str = None, new_display_name: str = None, region: str = "euw1"):
         """Edit player information."""
         await interaction.response.defer(ephemeral=True)
         
@@ -1915,6 +1929,22 @@ class Hexbet(commands.Cog):
                 return
             
             player_id, old_player_name, old_riot_id, player_type = result
+            
+            # Validate new_riot_id if provided
+            if new_riot_id:
+                if '#' not in new_riot_id:
+                    await interaction.followup.send("❌ RiotID must be in format: `gameName#tagLine`", ephemeral=True)
+                    return
+                
+                game_name, tag_line = new_riot_id.split('#', 1)
+                
+                # Validate with Riot API
+                puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line, region)
+                if not puuid:
+                    await interaction.followup.send(f"❌ RiotID `{new_riot_id}` not found on {region.upper()}", ephemeral=True)
+                    return
+                
+                logger.info(f"✅ Validated RiotID {new_riot_id} on {region} (PUUID: {puuid[:8]}...)")
             
             # Build update query
             updates = []
