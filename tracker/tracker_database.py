@@ -218,7 +218,7 @@ class TrackerDatabase:
                         last_checked TIMESTAMP DEFAULT NOW()
                     );
                 """)
-                self.conn.execute("""
+                cur.execute("""
                     CREATE TABLE IF NOT EXISTS hexbet_pro_accounts (
                         id SERIAL PRIMARY KEY,
                         pro_player_id INT REFERENCES hexbet_verified_players(id) ON DELETE CASCADE,
