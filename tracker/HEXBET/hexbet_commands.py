@@ -2472,15 +2472,16 @@ class Hexbet(commands.Cog):
                     
                     refreshed += 1
                 else:
+                    logger.warning(f"⚠️ Match {match['id']} has invalid team data structure")
                     failed += 1
             except Exception as e:
-                logger.error(f"Failed to refresh match {match['id']}: {e}")
+                logger.error(f"Failed to refresh match {match['id']}: {e}", exc_info=True)
                 failed += 1
         
         if refreshed > 0:
             await interaction.followup.send(f"✅ Refreshed {refreshed} embed(s)" + (f" ({failed} failed)" if failed > 0 else ""), ephemeral=True)
         else:
-            await interaction.followup.send(f"❌ Failed to refresh embeds", ephemeral=True)
+            await interaction.followup.send(f"❌ Failed to refresh embeds. Check logs for details.", ephemeral=True)
     
     @app_commands.command(name="hxsettle", description="(Admin) Settle or cancel match")
     @app_commands.describe(
