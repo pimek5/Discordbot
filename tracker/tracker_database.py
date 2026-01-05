@@ -158,6 +158,27 @@ class TrackerDatabase:
                         logger.warning(f"Migration note: {e}")
                     cur = conn.cursor()
                 
+                # Migration: add streak tracking and daily free bet
+                try:
+                    cur.execute("ALTER TABLE user_balances ADD COLUMN IF NOT EXISTS current_streak INTEGER DEFAULT 0")
+                    cur.execute("ALTER TABLE user_balances ADD COLUMN IF NOT EXISTS last_daily_free_bet TIMESTAMP")
+                    logger.info("✅ Migrated: current_streak and last_daily_free_bet columns")
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    if "already exists" not in str(e):
+                        logger.warning(f"Migration note: {e}")
+                    cur = conn.cursor()
+                
+                # Migration: add bet_type column for tracking Over/Under and other bet types
+                try:
+                    cur.execute("ALTER TABLE hexbet_bets ADD COLUMN IF NOT EXISTS bet_type VARCHAR(20) DEFAULT 'regular'")
+                    logger.info("✅ Migrated: bet_type column")
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    if "already exists" not in str(e):
+                        logger.warning(f"Migration note: {e}")
+                    cur = conn.cursor()
+                
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS hexbet_leaderboard_cache (
                         id SERIAL PRIMARY KEY,
@@ -254,7 +275,7 @@ class TrackerDatabase:
             self.return_connection(conn)
 
     def record_result(self, discord_id: int, amount: int, payout: int, won: bool):
-        """Track bet outcome stats (amount wagered, payout)."""
+        """Track bet outcome stats (amount wagered, payout) and update streak."""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
@@ -265,10 +286,11 @@ class TrackerDatabase:
                         total_won = total_won + %s,
                         total_lost = total_lost + %s,
                         bets_won = bets_won + CASE WHEN %s THEN 1 ELSE 0 END,
+                        current_streak = CASE WHEN %s THEN current_streak + 1 ELSE 0 END,
                         updated_at = NOW()
                     WHERE discord_id = %s
                     """,
-                    (payout if won else 0, amount if not won else 0, won, discord_id)
+                    (payout if won else 0, amount if not won else 0, won, won, discord_id)
                 )
                 conn.commit()
         finally:
@@ -1053,13 +1075,87 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-# Global singleton instance
-_tracker_db = None
+    # ==================== STREAK AND DAILY FREE BET TRACKING ====================
+    
+    def get_current_streak(self, discord_id: int) -> int:
+        """Get current win streak"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT current_streak FROM user_balances WHERE discord_id = %s", (discord_id,))
+                row = cur.fetchone()
+                return row[0] if row else 0
+        finally:
+            self.return_connection(conn)
+    
+    def increment_streak(self, discord_id: int) -> int:
+        """Increment win streak, return new streak value"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE user_balances SET current_streak = current_streak + 1 WHERE discord_id = %s RETURNING current_streak",
+                    (discord_id,)
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return row[0] if row else 0
+        finally:
+            self.return_connection(conn)
+    
+    def reset_streak(self, discord_id: int):
+        """Reset win streak to 0 (on loss)"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE user_balances SET current_streak = 0 WHERE discord_id = %s",
+                    (discord_id,)
+                )
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def claim_daily_free_bet(self, discord_id: int, amount: int = 100) -> tuple[bool, str]:
+        """
+        Claim daily free bet (100 tokens per day)
+        Returns (success, message)
+        """
+        from datetime import datetime, timezone, timedelta
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT last_daily_free_bet FROM user_balances WHERE discord_id = %s", (discord_id,))
+                row = cur.fetchone()
+                
+                now = datetime.now(timezone.utc)
+                
+                if row and row[0]:
+                    last_claim = row[0]
+                    # Make timezone-aware if needed
+                    if last_claim.tzinfo is None:
+                        last_claim = last_claim.replace(tzinfo=timezone.utc)
+                    
+                    # Check if 24 hours have passed
+                    if now - last_claim < timedelta(hours=24):
+                        remaining = timedelta(hours=24) - (now - last_claim)
+                        hours = int(remaining.total_seconds() // 3600)
+                        minutes = int((remaining.total_seconds() % 3600) // 60)
+                        return False, f"⏳ Daily bet available in {hours}h {minutes}m"
+                
+                # Claim the reward
+                cur.execute(
+                    """
+                    INSERT INTO user_balances (discord_id, balance, last_daily_free_bet)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (discord_id) DO UPDATE SET
+                        balance = user_balances.balance + EXCLUDED.balance,
+                        last_daily_free_bet = EXCLUDED.last_daily_free_bet
+                    """,
+                    (discord_id, amount, now)
+                )
+                conn.commit()
+                return True, f"✅ Claimed {amount} tokens for daily free bet!"
+        finally:
+            self.return_connection(conn)
 
-def get_tracker_db():
-    """Get or create the global tracker database instance"""
-    global _tracker_db
-    if _tracker_db is None:
-        _tracker_db = TrackerDatabase()
-        _tracker_db.initialize_schema()
-    return _tracker_db

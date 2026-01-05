@@ -1890,9 +1890,26 @@ class Hexbet(commands.Cog):
             payouts = self.db.settle_match(match['id'], winner)
             
             for user_id, amount, payout, won in payouts:
+                streak_bonus = 0
+                new_streak = 0
+                if won and payout:
+                    # Get current streak BEFORE incrementing (so +1 is new streak)
+                    new_streak = self.db.increment_streak(user_id)
+                    # Streak bonus: from 2 wins with +10% per win
+                    if new_streak >= 2:
+                        streak_bonus = int(payout * (new_streak - 1) * 0.10)  # 1 win = +0%, 2 wins = +10%, 3 wins = +20%, etc
+                        payout += streak_bonus
+                else:
+                    # Loss resets streak
+                    if not won:
+                        self.db.reset_streak(user_id)
+                
                 if payout:
                     self.db.update_balance(user_id, payout)
                 self.db.record_result(user_id, amount, payout, won)
+                
+                if streak_bonus > 0:
+                    logger.info(f"🔥 Streak bonus +{streak_bonus} tokens for user {user_id} (streak: {new_streak})")
             
             await self._update_match_message(match, winner, payouts)
             
@@ -2535,6 +2552,31 @@ class Hexbet(commands.Cog):
             logger.error(f"Error claiming daily reward: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxdaily", description="Claim daily free bet tokens")
+    async def hxdaily(self, interaction: discord.Interaction):
+        """Claim 100 tokens daily free bet (resets every 24 hours)"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            success, message = self.db.claim_daily_free_bet(interaction.user.id, amount=100)
+            
+            embed = discord.Embed(
+                title="📅 Daily Free Bet",
+                description=message,
+                color=0x2ECC71 if success else 0xE74C3C,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            if success:
+                balance = self.db.get_balance(interaction.user.id)
+                embed.add_field(name="New Balance", value=f"💰 {balance} tokens", inline=True)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error claiming daily free bet: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:100]}", ephemeral=True)
+
     @app_commands.command(name="hxstats", description="View your betting statistics")
     async def betting_stats(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
         """View betting statistics for you or another user"""
@@ -3042,6 +3084,102 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
             await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
 
 
+class BetOUModal(discord.ui.Modal, title='Over/Under 22.5 minutes'):
+    """Bet on game duration Over or Under 22.5 minutes"""
+    ou_choice = discord.ui.TextInput(
+        label='Over or Under',
+        placeholder='Enter: O (Over) or U (Under)',
+        required=True,
+        min_length=1,
+        max_length=1,
+        style=discord.TextStyle.short
+    )
+    amount = discord.ui.TextInput(
+        label='Amount to bet',
+        placeholder='Enter amount (e.g., 100)',
+        required=True,
+        min_length=1,
+        max_length=10,
+        style=discord.TextStyle.short
+    )
+    
+    def __init__(self, balance: int, match_id: int, cog: 'Hexbet'):
+        super().__init__()
+        self.balance = balance
+        self.match_id = match_id
+        self.cog = cog
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            choice = self.ou_choice.value.upper()
+            if choice not in ['O', 'U']:
+                await interaction.response.send_message("❌ Please enter O (Over) or U (Under)!", ephemeral=True)
+                return
+            
+            bet_amount = int(self.amount.value)
+            if bet_amount <= 0:
+                await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+                return
+            if bet_amount > self.balance:
+                await interaction.response.send_message(f"❌ Not enough balance! You have {self.balance}", ephemeral=True)
+                return
+            
+            match = self.cog.db.get_open_match()
+            if not match or match['id'] != self.match_id:
+                await interaction.response.send_message("❌ This match is no longer open for betting.", ephemeral=True)
+                return
+            
+            # O/U odds are 1.9x for both over and under
+            odds = 1.9
+            potential = int(bet_amount * odds)
+            
+            # Store O/U as "ou_over" or "ou_under"
+            bet_side = 'ou_over' if choice == 'O' else 'ou_under'
+            
+            if not self.cog.db.add_bet(match['id'], interaction.user.id, bet_side, bet_amount, odds, potential):
+                await interaction.response.send_message("⚠️ You already placed a bet on this match!", ephemeral=True)
+                return
+            
+            self.cog.db.record_wager(interaction.user.id, bet_amount)
+            new_balance = self.cog.db.update_balance(interaction.user.id, -bet_amount)
+            
+            choice_text = "Over" if choice == 'O' else "Under"
+            embed = discord.Embed(
+                title="✅ O/U Bet Confirmed!",
+                color=0x9B59B6,
+                description=f"**Choice:** {choice_text} 22.5 minutes\n**Amount:** {bet_amount}\n**Odds:** {odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            # Log to bet logs channel
+            try:
+                log_channel = self.cog.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                if log_channel:
+                    log_embed = discord.Embed(
+                        title="⏱️ O/U Bet",
+                        color=0x9B59B6,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    log_embed.add_field(name="User", value=interaction.user.mention, inline=True)
+                    log_embed.add_field(name="Choice", value=choice_text, inline=True)
+                    log_embed.add_field(name="Amount", value=str(bet_amount), inline=True)
+                    log_embed.add_field(name="Odds", value=f"{odds}x", inline=True)
+                    log_embed.add_field(name="Potential Win", value=str(potential), inline=True)
+                    log_embed.add_field(name="Match ID", value=str(self.match_id), inline=True)
+                    await log_channel.send(embed=log_embed)
+            except Exception as e:
+                logger.warning(f"Failed to log O/U bet: {e}")
+            
+            # Auto-refresh the match embed
+            try:
+                await self.cog._refresh_match_embed(self.match_id)
+            except Exception as e:
+                logger.warning(f"Failed to auto-refresh embed: {e}")
+            
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
+
+
 class LeaderboardView(discord.ui.View):
     def __init__(self, cog: 'Hexbet', page: int = 1, total_pages: int = 1):
         super().__init__(timeout=None)
@@ -3250,6 +3388,13 @@ class BetView(discord.ui.View):
     async def bet_red(self, interaction: discord.Interaction, button: discord.ui.Button):
         balance = self.cog.db.get_balance(interaction.user.id)
         modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="⏱️ O/U Duration", style=discord.ButtonStyle.secondary, custom_id="hexbet_ou")
+    async def bet_ou(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Bet on game duration (Over/Under 22.5 minutes)"""
+        balance = self.cog.db.get_balance(interaction.user.id)
+        modal = BetOUModal(balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="🔗 OP.GG", style=discord.ButtonStyle.secondary, custom_id="hexbet_opgg")
