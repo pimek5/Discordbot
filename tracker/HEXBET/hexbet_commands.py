@@ -2535,15 +2535,7 @@ class Hexbet(commands.Cog):
                     blue_players = blue_team.get('players', [])
                     red_players = red_team.get('players', [])
                     
-                    # Re-detect streamer mode based on RiotID presence
-                    all_players = blue_players + red_players
-                    for p in all_players:
-                        riot_id_name = p.get('riotIdGameName', '').strip()
-                        riot_id_tag = p.get('riotIdTagline', '').strip()
-                        has_riot_id = bool(riot_id_name and riot_id_tag)
-                        p['streamer_mode'] = not has_riot_id
-                    
-                    # Skip rebuilding embed for full streamer mode games
+                    # Check if this is a full streamer mode game - if so, skip refresh
                     blue_all_streamer = all(p.get('streamer_mode', False) for p in blue_players)
                     red_all_streamer = all(p.get('streamer_mode', False) for p in red_players)
                     if blue_all_streamer or red_all_streamer:
@@ -2554,6 +2546,10 @@ class Hexbet(commands.Cog):
                     # Re-assign roles to ensure proper role detection (Smite, support champs, etc.)
                     blue_players = self._assign_roles(blue_players)
                     red_players = self._assign_roles(red_players)
+                    
+                    # DO NOT re-detect streamer mode - preserve existing status to avoid changing working lobbies
+                    # Just add missing badges if needed
+                    all_players = blue_players + red_players
                     
                     # Add pro/streamer badges if missing
                     conn = self.db.get_connection()
