@@ -1174,14 +1174,14 @@ class Hexbet(commands.Cog):
         if not players:
             return 1.0
         
-        # Base rank score (tier + division) - STRONG exponential scaling for bigger differences
+        # Base rank score (tier + division) - VERY STRONG exponential scaling for massive differences
         rank_scores = [TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in players]
         rank_score = sum(rank_scores) / len(players)
-        # Much stronger exponential: 1.4^rank creates HUGE gaps between tiers
-        # Diamond (7.2): 1.4^7.2 = 21.1
-        # Master (8.2): 1.4^8.2 = 29.6
-        # Difference: 8.5x more impactful
-        rank_contribution = (1.4 ** rank_score) * 2.0
+        # MASSIVE exponential: 1.7^rank creates HUGE gaps between tiers
+        # Diamond (7.2): 1.7^7.2 = 55.2
+        # Master (8.2): 1.7^8.2 = 93.8
+        # Difference: 38.6 point difference (vs previous 8.5)
+        rank_contribution = (1.7 ** rank_score) * 2.0
         
         # LP contribution (increased weight)
         avg_lp = sum(p.get('lp', 0) for p in players) / len(players)
