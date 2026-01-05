@@ -3444,60 +3444,58 @@ class BetView(discord.ui.View):
             await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
-    @app_commands.command(name="hxpro", description="Pro player management")
+
+
+    hxpro_group = app_commands.Group(name="hxpro", description="Pro player management")
+
+    @hxpro_group.command(name="add", description="Add a pro player to HEXBET")
     @app_commands.describe(
-        subcommand="Action to perform",
         riot_id="Player RiotID (gameName#tagLine)",
         pro="Pro player display name"
     )
-    async def hxpro(self, interaction: discord.Interaction, subcommand: str, riot_id: str = None, pro: str = None):
-        """Manage pro players in HEXBET"""
+    async def hxpro_add(self, interaction: discord.Interaction, riot_id: str, pro: str):
+        """Add a pro player to HEXBET database"""
         await interaction.response.defer(ephemeral=True)
         
         try:
-            if subcommand.lower() == "add":
-                if not riot_id or not pro:
-                    await interaction.followup.send("❌ Usage: `/hxpro add:riotid pro:name`\nExample: `/hxpro add:\"FREE PALESTINE#humzh\" pro:Humzh`", ephemeral=True)
-                    return
-                
-                # Check if already exists
-                cursor = self.db.conn.cursor()
-                cursor.execute(
-                    "SELECT id FROM hexbet_verified_players WHERE riot_id = %s",
-                    (riot_id,)
-                )
-                if cursor.fetchone():
-                    await interaction.followup.send(f"⚠️ Player `{riot_id}` already in database", ephemeral=True)
-                    return
-                
-                # Add to database
-                cursor.execute(
-                    """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
-                       VALUES (%s, %s, 'pro')""",
-                    (riot_id, pro)
-                )
-                self.db.conn.commit()
+            # Check if already exists
+            cursor = self.db.conn.cursor()
+            cursor.execute(
+                "SELECT id FROM hexbet_verified_players WHERE riot_id = %s",
+                (riot_id,)
+            )
+            if cursor.fetchone():
+                await interaction.followup.send(f"⚠️ Player `{riot_id}` already in database", ephemeral=True)
                 cursor.close()
-                
-                embed = discord.Embed(
-                    title="✅ Pro Player Added",
-                    description=f"**{pro}** ({riot_id}) added to HEXBET pro database",
-                    color=0x2ECC71
-                )
-                embed.add_field(name="RiotID", value=riot_id, inline=False)
-                embed.add_field(name="Display Name", value=pro, inline=False)
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                logger.info(f"✅ Added pro player: {riot_id} ({pro})")
+                return
             
-            else:
-                await interaction.followup.send("❌ Unknown subcommand. Use: `add`", ephemeral=True)
+            # Add to database
+            cursor.execute(
+                """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
+                   VALUES (%s, %s, 'pro')""",
+                (riot_id, pro)
+            )
+            self.db.conn.commit()
+            cursor.close()
+            
+            embed = discord.Embed(
+                title="✅ Pro Player Added",
+                description=f"**{pro}** ({riot_id}) added to HEXBET pro database",
+                color=0x2ECC71
+            )
+            embed.add_field(name="RiotID", value=riot_id, inline=False)
+            embed.add_field(name="Display Name", value=pro, inline=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Added pro player: {riot_id} ({pro})")
         
         except Exception as e:
-            logger.error(f"Error in hxpro command: {e}", exc_info=True)
+            logger.error(f"Error in hxpro add command: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
     cog = Hexbet(bot, riot_api, db)
+    bot.tree.add_command(cog.hxpro_group)
     await bot.add_cog(cog)
     logger.info("✅ HEXBET commands loaded")
+
