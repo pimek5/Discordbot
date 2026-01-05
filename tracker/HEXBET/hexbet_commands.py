@@ -1447,6 +1447,8 @@ class Hexbet(commands.Cog):
             player_display_name = name.split('#')[0] if '#' in name else name
             scraped_accounts = await scrape_dpm_pro_accounts(player_display_name)
             
+            logger.info(f"🔍 DPM.LOL returned {len(scraped_accounts)} riot_ids for {player_display_name}")
+            
             # Fetch rank/LP/WR from Riot API for each account
             accounts = []
             for scraped in scraped_accounts:
@@ -1493,9 +1495,12 @@ class Hexbet(commands.Cog):
                         'losses': losses,
                         'wr': wr
                     })
+                    logger.info(f"✅ Fetched stats for {riot_id}: {tier} {lp} LP")
                 except Exception as e:
-                    logger.warning(f"Failed to fetch data for {scraped.get('riot_id')}: {e}")
+                    logger.warning(f"❌ Failed to fetch data for {scraped.get('riot_id')}: {e}")
                     continue
+            
+            logger.info(f"📊 Successfully fetched {len(accounts)}/{len(scraped_accounts)} accounts from Riot API")
             
             account_text = ""
             if accounts:
