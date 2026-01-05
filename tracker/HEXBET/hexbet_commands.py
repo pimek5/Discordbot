@@ -1333,16 +1333,30 @@ class Hexbet(commands.Cog):
                 # Parse ISO format timestamp from database (format: "2026-01-04 05:22:00" or "2026-01-04T05:22:00")
                 from datetime import datetime, timezone
                 
-                # Handle both formats: with/without 'T', with/without 'Z'
-                timestamp_str = str(game_start_at).replace('Z', '').replace(' ', 'T')
+                timestamp_str = str(game_start_at)
                 
-                # Try parsing with timezone info
-                try:
-                    start_dt = datetime.fromisoformat(timestamp_str)
-                except ValueError:
-                    # Fallback to simple parsing without timezone
-                    timestamp_str = timestamp_str.split('+')[0].split('T')[0] + 'T' + timestamp_str.split('T')[1].split('+')[0].split('.')[0]
-                    start_dt = datetime.fromisoformat(timestamp_str)
+                # Handle millisecond timestamps (e.g., "1767603169891")
+                if timestamp_str.isdigit():
+                    # Unix timestamp in milliseconds
+                    start_dt = datetime.utcfromtimestamp(int(timestamp_str) / 1000)
+                else:
+                    # Handle both formats: with/without 'T', with/without 'Z'
+                    timestamp_str = timestamp_str.replace('Z', '').replace(' ', 'T')
+                    
+                    # Try parsing with timezone info
+                    try:
+                        start_dt = datetime.fromisoformat(timestamp_str)
+                    except ValueError:
+                        # Fallback to simple parsing without timezone
+                        parts = timestamp_str.split('T')
+                        if len(parts) >= 2:
+                            date_part = parts[0]
+                            time_part = parts[1].split('+')[0].split('.')[0]
+                            timestamp_str = f"{date_part}T{time_part}"
+                        else:
+                            # If no 'T', just use as-is
+                            timestamp_str = timestamp_str.split('+')[0].split('.')[0]
+                        start_dt = datetime.fromisoformat(timestamp_str)
                 
                 # Make both timezone-naive for comparison (assume UTC)
                 if start_dt.tzinfo is not None:
