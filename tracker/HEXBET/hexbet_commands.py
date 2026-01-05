@@ -1648,26 +1648,27 @@ class Hexbet(commands.Cog):
             
             game_name, tag_line = riot_id.split('#', 1)
             
-            # Get PUUID - try all regions
-            account_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+            # URL encode the tagline (for special characters like Chinese)
+            import urllib.parse
+            encoded_tag = urllib.parse.quote(tag_line)
+            encoded_name = urllib.parse.quote(game_name)
+            
+            # Get PUUID - try all regions with URL encoding
+            puuid = None
             headers = {'X-Riot-Token': self.riot_api.api_key}
             
-            puuid = None
-            async with aiohttp.ClientSession() as session:
-                async with session.get(account_url, headers=headers) as resp:
-                    if resp.status == 200:
-                        account_data = await resp.json()
-                        puuid = account_data.get('puuid')
-            
-            if not puuid:
-                # Try other regions
-                for riot_region in ['americas', 'asia', 'sea']:
-                    account_url = f"https://{riot_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(account_url, headers=headers) as resp:
-                            if resp.status == 200:
-                                account_data = await resp.json()
-                                puuid = account_data.get('puuid')
+            for riot_region in ['europe', 'americas', 'asia', 'sea']:
+                account_url = f"https://{riot_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(account_url, headers=headers) as resp:
+                        if resp.status == 200:
+                            account_data = await resp.json()
+                            puuid = account_data.get('puuid')
+                            if puuid:
+                                logger.info(f"✅ Found PUUID on {riot_region}: {puuid}")
+                                break
+                await asyncio.sleep(0.3)
+
                                 if puuid:
                                     break
                     await asyncio.sleep(0.5)
@@ -1676,12 +1677,12 @@ class Hexbet(commands.Cog):
                 await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` (checked all regions)", ephemeral=True)
                 return
             
-            # Get summoner data - try multiple regions
+            # Get summoner data - try multiple regions (including Asian regions)
             summoner_data = None
             summoner_id = None
             found_region = None
             
-            for region in ['euw1', 'kr', 'na1', 'eun1', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1']:
+            for region in ['euw1', 'kr', 'na1', 'eun1', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1', 'ph2', 'sg2', 'th2', 'tw2', 'vn2']:
                 summoner_url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
                 
                 async with aiohttp.ClientSession() as session:
@@ -1690,8 +1691,9 @@ class Hexbet(commands.Cog):
                             summoner_data = await resp.json()
                             summoner_id = summoner_data.get('id')
                             found_region = region
+                            logger.info(f"✅ Found summoner on {region}")
                             break
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
             
             if not summoner_id:
                 await interaction.followup.send("❌ Failed to get summoner data from any region", ephemeral=True)
