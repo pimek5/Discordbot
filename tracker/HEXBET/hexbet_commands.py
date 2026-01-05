@@ -1478,6 +1478,150 @@ class Hexbet(commands.Cog):
             logger.error(f"Error in hxpro add command: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxproremove", description="Remove a pro player or streamer from HEXBET")
+    @app_commands.describe(name="Player name (display name or gameName#tagLine)")
+    async def hxproremove(self, interaction: discord.Interaction, name: str):
+        """Remove a verified pro/streamer from database."""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Try to find by player_name first
+            cursor.execute("""
+                SELECT id, player_name, riot_id, player_type 
+                FROM hexbet_verified_players 
+                WHERE LOWER(player_name) = LOWER(%s)
+            """, (name,))
+            
+            result = cursor.fetchone()
+            
+            # If not found, try by riot_id
+            if not result:
+                cursor.execute("""
+                    SELECT id, player_name, riot_id, player_type 
+                    FROM hexbet_verified_players 
+                    WHERE riot_id = %s
+                """, (name,))
+                result = cursor.fetchone()
+            
+            if not result:
+                cursor.close()
+                self.db.return_connection(conn)
+                await interaction.followup.send(f"❌ Player `{name}` not found in database", ephemeral=True)
+                return
+            
+            player_id, player_name, riot_id, player_type = result
+            
+            # Delete player (CASCADE will remove linked accounts)
+            cursor.execute("DELETE FROM hexbet_verified_players WHERE id = %s", (player_id,))
+            conn.commit()
+            cursor.close()
+            self.db.return_connection(conn)
+            
+            player_type_label = "Pro Player" if player_type == "pro" else "Streamer"
+            
+            embed = discord.Embed(
+                title="✅ Player Removed",
+                description=f"**{player_name}** removed from HEXBET database",
+                color=0xE74C3C
+            )
+            embed.add_field(name="RiotID", value=riot_id, inline=False)
+            embed.add_field(name="Type", value=player_type_label, inline=False)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Removed player: {player_name} ({riot_id})")
+        
+        except Exception as e:
+            logger.error(f"Error in hxproremove: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="hxproedit", description="Edit pro player or streamer information")
+    @app_commands.describe(
+        name="Player name (display name or gameName#tagLine)",
+        new_riot_id="New RiotID (optional)",
+        new_display_name="New display name (optional)"
+    )
+    async def hxproedit(self, interaction: discord.Interaction, name: str, new_riot_id: str = None, new_display_name: str = None):
+        """Edit player information."""
+        await interaction.response.defer(ephemeral=True)
+        
+        if not new_riot_id and not new_display_name:
+            await interaction.followup.send("❌ Provide at least one field to update: `new_riot_id` or `new_display_name`", ephemeral=True)
+            return
+        
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Find player
+            cursor.execute("""
+                SELECT id, player_name, riot_id, player_type 
+                FROM hexbet_verified_players 
+                WHERE LOWER(player_name) = LOWER(%s)
+            """, (name,))
+            
+            result = cursor.fetchone()
+            
+            if not result:
+                cursor.execute("""
+                    SELECT id, player_name, riot_id, player_type 
+                    FROM hexbet_verified_players 
+                    WHERE riot_id = %s
+                """, (name,))
+                result = cursor.fetchone()
+            
+            if not result:
+                cursor.close()
+                self.db.return_connection(conn)
+                await interaction.followup.send(f"❌ Player `{name}` not found in database", ephemeral=True)
+                return
+            
+            player_id, old_player_name, old_riot_id, player_type = result
+            
+            # Build update query
+            updates = []
+            params = []
+            
+            if new_riot_id:
+                updates.append("riot_id = %s")
+                params.append(new_riot_id)
+            
+            if new_display_name:
+                updates.append("player_name = %s")
+                params.append(new_display_name)
+            
+            params.append(player_id)
+            
+            query = f"UPDATE hexbet_verified_players SET {', '.join(updates)} WHERE id = %s"
+            cursor.execute(query, params)
+            conn.commit()
+            cursor.close()
+            self.db.return_connection(conn)
+            
+            player_type_label = "Pro Player" if player_type == "pro" else "Streamer"
+            
+            embed = discord.Embed(
+                title="✅ Player Updated",
+                description=f"**{old_player_name}** information updated",
+                color=0x3498DB
+            )
+            
+            if new_riot_id:
+                embed.add_field(name="RiotID", value=f"{old_riot_id} → {new_riot_id}", inline=False)
+            if new_display_name:
+                embed.add_field(name="Display Name", value=f"{old_player_name} → {new_display_name}", inline=False)
+            
+            embed.add_field(name="Type", value=player_type_label, inline=False)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Updated player: {old_player_name} → RiotID={new_riot_id or 'unchanged'}, Name={new_display_name or 'unchanged'}")
+        
+        except Exception as e:
+            logger.error(f"Error in hxproedit: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="hxprotype", description="Change player type between Pro and Streamer")
     @app_commands.describe(
         name="Player name (display name or gameName#tagLine)",
