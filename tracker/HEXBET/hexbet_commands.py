@@ -1504,7 +1504,8 @@ class Hexbet(commands.Cog):
             # Otherwise use riotId, fallback to summonerName
             pro_name = p.get('pro_name', '').strip() or None
             riot_id = p.get('riotId', '').strip() or None
-            summoner_name = p.get('summonerName', 'Player').strip() or 'Player'\n            
+            summoner_name = p.get('summonerName', 'Player').strip() or 'Player'
+            
             # Priority: pro_name > riot_id > summoner_name
             if pro_name:
                 name = pro_name
