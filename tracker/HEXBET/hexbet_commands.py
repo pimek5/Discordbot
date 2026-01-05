@@ -2580,9 +2580,9 @@ class Hexbet(commands.Cog):
                     tier = stats.get('tier', 'DIAMOND') if stats else 'DIAMOND'
                     lp = stats.get('leaguePoints', 0) if stats else 0
                     
-                    # Calculate priority boost
-                    # PRO = +1% boost, STREAMER = +0.5% boost
-                    priority_boost = 1.01 if player_type == 'pro' else 1.005
+                    # Calculate priority boost - equal boost for PRO and STREAMER
+                    # Both get +10% boost
+                    priority_boost = 1.10
                     
                     # Insert or update in pool
                     conn = self.db.get_connection()
