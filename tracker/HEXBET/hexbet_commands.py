@@ -1648,38 +1648,57 @@ class Hexbet(commands.Cog):
             
             game_name, tag_line = riot_id.split('#', 1)
             
-            # Get PUUID
+            # Get PUUID - try all regions
             account_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
             headers = {'X-Riot-Token': self.riot_api.api_key}
             
+            puuid = None
             async with aiohttp.ClientSession() as session:
                 async with session.get(account_url, headers=headers) as resp:
-                    if resp.status != 200:
-                        await interaction.followup.send(f"❌ RiotID not found: `{riot_id}`", ephemeral=True)
-                        return
-                    
-                    account_data = await resp.json()
-                    puuid = account_data.get('puuid')
+                    if resp.status == 200:
+                        account_data = await resp.json()
+                        puuid = account_data.get('puuid')
             
             if not puuid:
-                await interaction.followup.send("❌ Failed to get PUUID", ephemeral=True)
+                # Try other regions
+                for riot_region in ['americas', 'asia', 'sea']:
+                    account_url = f"https://{riot_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(account_url, headers=headers) as resp:
+                            if resp.status == 200:
+                                account_data = await resp.json()
+                                puuid = account_data.get('puuid')
+                                if puuid:
+                                    break
+                    await asyncio.sleep(0.5)
+            
+            if not puuid:
+                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` (checked all regions)", ephemeral=True)
                 return
             
-            # Get summoner data
-            summoner_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+            # Get summoner data - try multiple regions
+            summoner_data = None
+            summoner_id = None
+            found_region = None
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(summoner_url, headers=headers) as resp:
-                    if resp.status != 200:
-                        await interaction.followup.send("❌ Failed to get summoner data", ephemeral=True)
-                        return
-                    
-                    summoner_data = await resp.json()
+            for region in ['euw1', 'kr', 'na1', 'eun1', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1']:
+                summoner_url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(summoner_url, headers=headers) as resp:
+                        if resp.status == 200:
+                            summoner_data = await resp.json()
+                            summoner_id = summoner_data.get('id')
+                            found_region = region
+                            break
+                await asyncio.sleep(0.5)
             
-            summoner_id = summoner_data.get('id')
+            if not summoner_id:
+                await interaction.followup.send("❌ Failed to get summoner data from any region", ephemeral=True)
+                return
             
-            # Get ranked stats
-            ranked_url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+            # Get ranked stats from the region we found the summoner in
+            ranked_url = f"https://{found_region}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
             stats = None
             
             async with aiohttp.ClientSession() as session:
