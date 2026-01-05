@@ -513,12 +513,6 @@ class Hexbet(commands.Cog):
                     # Apply lobby-wide average for streamer mode (fairer when teams have uneven ranked players)
                     all_players = blue_ordered + red_ordered
                     self._apply_lobby_average(all_players)
-                    
-                    # Check if too many players in streamer mode (likely custom/practice game)
-                    streamer_mode_count = sum(1 for p in all_players if p.get('streamer_mode', False))
-                    if streamer_mode_count >= 8:  # If 8+ players have no ranked data
-                        logger.warning(f"⚠️ Skipping game {game_id} - {streamer_mode_count}/10 players in streamer mode (likely custom/practice game)")
-                        continue
 
                     score_blue = self._team_score(blue_ordered)
                     score_red = self._team_score(red_ordered)
@@ -1161,7 +1155,13 @@ class Hexbet(commands.Cog):
             p['tier'] = tier
             p['division'] = division
             p['wr'] = wr
-            p['streamer_mode'] = (tier == 'UNRANKED')
+            
+            # Streamer mode = player hides their summoner name (no riotIdGameName/riotIdTagline)
+            riot_id_name = p.get('riotIdGameName', '').strip()
+            riot_id_tag = p.get('riotIdTagline', '').strip()
+            has_riot_id = bool(riot_id_name and riot_id_tag)
+            p['streamer_mode'] = not has_riot_id
+            
             lp = 0
             wins = 0
             losses = 0
