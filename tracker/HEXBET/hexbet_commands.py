@@ -1402,9 +1402,9 @@ class Hexbet(commands.Cog):
                         
                         time_left = (betting_closes_at - now_dt).total_seconds()
                         if time_left > 0:
-                            minutes_left = int(time_left / 60)
-                            seconds_left = int(time_left % 60)
-                            desc += f"\n\n⏰ **Odliczanie:** {minutes_left:02d}:{seconds_left:02d}"
+                            # Convert to Unix timestamp for Discord relative time format
+                            close_timestamp = int(betting_closes_at.timestamp())
+                            desc += f"\n\n⏰ **Zakłady zamykają się:** <t:{close_timestamp}:R>"
                         else:
                             desc += f"\n\n🔒 **Zakłady zamknięte**"
                 self.db.return_connection(conn)
