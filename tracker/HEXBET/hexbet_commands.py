@@ -109,10 +109,6 @@ def rank_emoji(tier: str) -> str:
     return CFG_RANK_EMOJIS.get(tier.upper(), '')
 
 
-# Pro player management group (module-level, used by Hexbet cog)
-hxpro_group = app_commands.Group(name="hxpro", description="Pro player management")
-
-
 class Hexbet(commands.Cog):
     
     def __init__(self, bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
@@ -1404,12 +1400,12 @@ class Hexbet(commands.Cog):
                 lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
 
-    @hxpro_group.command(name="add", description="Add a pro player to HEXBET")
+    @app_commands.command(name="hxaddpro", description="Add a pro player to HEXBET")
     @app_commands.describe(
         riot_id="Player RiotID (gameName#tagLine)",
         pro="Pro player display name"
     )
-    async def hxpro_add(self, interaction: discord.Interaction, riot_id: str, pro: str):
+    async def hxaddpro(self, interaction: discord.Interaction, riot_id: str, pro: str):
         """Add a pro player to HEXBET database"""
         await interaction.response.defer(ephemeral=True)
         
@@ -3518,7 +3514,6 @@ class BetView(discord.ui.View):
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
     cog = Hexbet(bot, riot_api, db)
-    bot.tree.add_command(hxpro_group)
     await bot.add_cog(cog)
     
     # Sync command tree to ensure Discord knows about all commands
