@@ -1384,6 +1384,33 @@ class Hexbet(commands.Cog):
             # Priority game - SOLO/DUO QUEUE special bet
             desc += f"\n━━━━━━━━━━━━━━━━━━━━━\n🎯 **SOLO/DUO QUEUE**\n⭐ **SPECIAL BET** - 1.5x bonus on winnings!\n━━━━━━━━━━━━━━━━━━━━━"
         
+        # Show betting timer if match exists
+        if match_id:
+            try:
+                conn = self.db.get_connection()
+                with conn.cursor() as cur:
+                    cur.execute("SELECT betting_closes_at FROM hexbet_matches WHERE id = %s", (match_id,))
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        from datetime import datetime, timezone
+                        betting_closes_at = row[0]
+                        now_dt = datetime.utcnow()
+                        
+                        # Handle both timezone-aware and naive datetimes
+                        if betting_closes_at.tzinfo is not None:
+                            betting_closes_at = betting_closes_at.replace(tzinfo=None)
+                        
+                        time_left = (betting_closes_at - now_dt).total_seconds()
+                        if time_left > 0:
+                            minutes_left = int(time_left / 60)
+                            seconds_left = int(time_left % 60)
+                            desc += f"\n\n⏰ **Betting Closes In:** {minutes_left}m {seconds_left}s"
+                        else:
+                            desc += f"\n\n🔒 **Betting Closed**"
+                self.db.return_connection(conn)
+            except Exception as e:
+                logger.warning(f"Failed to get betting timer: {e}")
+        
         # Calculate actual game duration from PostgreSQL timestamp
         if game_start_at:
             try:
@@ -4606,12 +4633,18 @@ class BetView(discord.ui.View):
 
     @discord.ui.button(emoji="<:BlueSide:1457209225976484014>", label="Bet Blue", style=discord.ButtonStyle.secondary, custom_id="hexbet_blue")
     async def bet_blue(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if betting is still open
+        if not await self._is_betting_open(interaction):
+            return
         balance = self.cog.db.get_balance(interaction.user.id)
         modal = BetModal('blue', self.odds_blue, balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(emoji="<:RedSide:1457209221031395472>", label="Bet Red", style=discord.ButtonStyle.secondary, custom_id="hexbet_red")
     async def bet_red(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if betting is still open
+        if not await self._is_betting_open(interaction):
+            return
         balance = self.cog.db.get_balance(interaction.user.id)
         modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
@@ -4619,9 +4652,52 @@ class BetView(discord.ui.View):
     @discord.ui.button(label="📊 Game Length", style=discord.ButtonStyle.secondary, custom_id="hexbet_ou")
     async def bet_ou(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Bet on game duration (Over/Under 22.5 minutes)"""
+        # Check if betting is still open
+        if not await self._is_betting_open(interaction):
+            return
         balance = self.cog.db.get_balance(interaction.user.id)
         modal = BetOUModal(balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
+    
+    async def _is_betting_open(self, interaction: discord.Interaction) -> bool:
+        """Check if betting window is still open"""
+        try:
+            conn = self.cog.db.get_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT betting_closes_at, status FROM hexbet_matches WHERE id = %s", (self.match_id,))
+                row = cur.fetchone()
+                if not row:
+                    await interaction.response.send_message("❌ Match not found", ephemeral=True)
+                    self.cog.db.return_connection(conn)
+                    return False
+                
+                betting_closes_at, status = row
+                self.cog.db.return_connection(conn)
+                
+                # Check if match is still open
+                if status != 'open':
+                    await interaction.response.send_message("🔒 This match is already settled", ephemeral=True)
+                    return False
+                
+                # Check if betting window is closed
+                if betting_closes_at:
+                    from datetime import datetime
+                    now_dt = datetime.utcnow()
+                    
+                    if betting_closes_at.tzinfo is not None:
+                        betting_closes_at = betting_closes_at.replace(tzinfo=None)
+                    
+                    if now_dt > betting_closes_at:
+                        time_since_close = (now_dt - betting_closes_at).total_seconds()
+                        mins_ago = int(time_since_close / 60)
+                        await interaction.response.send_message(f"🔒 Betting closed {mins_ago}m ago", ephemeral=True)
+                        return False
+                
+                return True
+        except Exception as e:
+            logger.error(f"Error checking betting window: {e}")
+            await interaction.response.send_message("❌ Error checking betting status", ephemeral=True)
+            return False
     
     @discord.ui.button(label="🔗 OP.GG", style=discord.ButtonStyle.secondary, custom_id="hexbet_opgg")
     async def opgg_link(self, interaction: discord.Interaction, button: discord.ui.Button):

@@ -92,6 +92,7 @@ class TrackerDatabase:
                         winner VARCHAR(10),
                         start_time BIGINT,
                         game_start_at TIMESTAMP,
+                        betting_closes_at TIMESTAMP,
                         special_bet BOOLEAN DEFAULT FALSE,
                         created_at TIMESTAMP DEFAULT NOW(),
                         updated_at TIMESTAMP DEFAULT NOW()
@@ -125,6 +126,16 @@ class TrackerDatabase:
                     if "already exists" not in str(e):
                         logger.warning(f"Migration note: {e}")
                     # Reconnect cursor after rollback
+                    cur = conn.cursor()
+                
+                # Migration: add betting_closes_at column if it doesn't exist
+                try:
+                    cur.execute("ALTER TABLE hexbet_matches ADD COLUMN IF NOT EXISTS betting_closes_at TIMESTAMP")
+                    logger.info("✅ Migrated: betting_closes_at column")
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    if "already exists" not in str(e):
+                        logger.warning(f"Migration note: {e}")
                     cur = conn.cursor()
                 
                 # Migration: add special_bet column if it doesn't exist
@@ -353,24 +364,27 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False) -> int:
+    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False, betting_window_minutes: int = 5) -> int:
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
                 # Convert milliseconds to PostgreSQL TIMESTAMP
                 # gameStartTime from Riot API is in milliseconds
                 game_start_at = None
+                betting_closes_at = None
                 if start_time and start_time > 0:
                     # TO_TIMESTAMP expects seconds, so divide milliseconds by 1000
                     game_start_at = start_time / 1000.0
+                    # Set betting close time: game_start + betting_window_minutes
+                    betting_closes_at = (start_time / 1000.0) + (betting_window_minutes * 60)
                 
                 # Try to insert, if exists do nothing
                 cur.execute("""
-                    INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at, special_bet)
-                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s), %s)
+                    INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at, betting_closes_at, special_bet)
+                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), %s)
                     ON CONFLICT (game_id) DO NOTHING
                     RETURNING id
-                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at, special_bet))
+                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at, betting_closes_at, special_bet))
                 row = cur.fetchone()
                 conn.commit()
                 
