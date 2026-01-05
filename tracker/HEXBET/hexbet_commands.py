@@ -1680,20 +1680,40 @@ class Hexbet(commands.Cog):
             
             routing_region = region_map.get(region, 'americas')
             
-            # Get PUUID from specified routing region
+            # Get PUUID - try specified routing region first, then all regions
             puuid = None
             headers = {'X-Riot-Token': self.riot_api.api_key}
+            found_routing_region = None
             
+            # Try specified region first
             account_url = f"https://{routing_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
             async with aiohttp.ClientSession() as session:
                 async with session.get(account_url, headers=headers) as resp:
                     if resp.status == 200:
                         account_data = await resp.json()
                         puuid = account_data.get('puuid')
+                        found_routing_region = routing_region
                         logger.info(f"✅ Found PUUID on {routing_region}: {puuid}")
             
+            # If not found, try all routing regions
             if not puuid:
-                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` on {region} ({routing_region})", ephemeral=True)
+                for try_region in ['europe', 'americas', 'asia', 'sea']:
+                    if try_region == routing_region:
+                        continue  # Already tried
+                    account_url = f"https://{try_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(account_url, headers=headers) as resp:
+                            if resp.status == 200:
+                                account_data = await resp.json()
+                                puuid = account_data.get('puuid')
+                                if puuid:
+                                    found_routing_region = try_region
+                                    logger.info(f"✅ Found PUUID on {try_region} (fallback): {puuid}")
+                                    break
+                    await asyncio.sleep(0.3)
+            
+            if not puuid:
+                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` (checked all regions)", ephemeral=True)
                 return
             
             # Get summoner data from specified platform region
