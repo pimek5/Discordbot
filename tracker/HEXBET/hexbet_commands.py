@@ -1364,12 +1364,12 @@ class Hexbet(commands.Cog):
         
         # Team composition fields
         embed.add_field(
-            name=f"<:BlueSide:1457209225976484014> BLUE TEAM • {chance_blue}% Win Chance",
+            name=f"<:BlueSide:1457209225976484014> BLUE TEAM • {chance_blue:.1f}% Win Chance",
             value=self._team_block(blue),
             inline=True
         )
         embed.add_field(
-            name=f"<:RedSide:1457209221031395472> RED TEAM • {chance_red}% Win Chance",
+            name=f"<:RedSide:1457209221031395472> RED TEAM • {chance_red:.1f}% Win Chance",
             value=self._team_block(red),
             inline=True
         )
