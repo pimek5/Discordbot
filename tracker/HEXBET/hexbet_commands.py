@@ -1422,8 +1422,18 @@ class Hexbet(commands.Cog):
             tier_emoji = rank_emoji(tier) or tier
             champ = p.get('champ_emoji') or p.get('champ_name', '')
             
-            # Use pro_name (display_name from DB) if available, otherwise riotId, fallback to summonerName
-            name = p.get('pro_name') or p.get('riotId', p.get('summonerName', 'Player'))
+            # Use pro_name (display_name from DB) only if present and not empty
+            # Otherwise use riotId, fallback to summonerName
+            pro_name = p.get('pro_name')
+            riot_id = p.get('riotId')
+            summoner_name = p.get('summonerName', 'Player')
+            
+            if pro_name:
+                name = pro_name
+            elif riot_id:
+                name = riot_id
+            else:
+                name = summoner_name
             
             # Add badge emoji before name if player is pro or streamer
             badge = p.get('badge_emoji', '')
