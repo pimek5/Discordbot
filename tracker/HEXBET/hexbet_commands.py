@@ -1197,15 +1197,12 @@ class Hexbet(commands.Cog):
             p['wins'] = wins
             p['losses'] = losses
             champ_id = p.get('championId')
-            champ_name = CHAMPION_ID_TO_NAME.get(champ_id, 'Unknown')
-            # Log if champion is Unknown to help debugging
-            if champ_name == 'Unknown':
-                logger.warning(f"⚠️ Unknown champion detected - championId: {champ_id} for player {p.get('riotIdGameName', 'N/A')}")
-            # Log new champions for monitoring
-            if champ_id in [799, 950, 1000, 1001]:
-                logger.info(f"✅ New champion detected - {champ_name} (ID: {champ_id}) played by {p.get('riotIdGameName', 'N/A')}")
+            champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f'Champion#{champ_id}')
+            # Log new champions for monitoring (including correct DDragon IDs)
+            if champ_id in [799, 804, 888, 893, 895, 901, 902, 904, 910, 950]:
+                logger.info(f"✅ Champion in embed - {champ_name} (ID: {champ_id}) by {p.get('riotIdGameName', 'N/A')}")
             p['champ_name'] = champ_name
-            # Use emoji if available, fallback to champion name
+            # Use emoji if available, fallback to bold champion name
             p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id) or f'**{champ_name}**'
             # Check if player is a pro or streamer (database + lolpros.gg)
             riot_id = p.get('riotId', '')
@@ -1355,8 +1352,7 @@ class Hexbet(commands.Cog):
         desc = f"**Region:** {region_display}"
         if featured_player:
             # Priority game - SOLO/DUO QUEUE special bet
-            desc += f"\n🎯 **SOLO/DUO QUEUE**"
-            desc += f"\n⭐ **SPECIAL BET** - 1.5x bonus on winnings!"
+            desc += f"\n━━━━━━━━━━━━━━━━━━━━━\n🎯 **SOLO/DUO QUEUE**\n⭐ **SPECIAL BET** - 1.5x bonus on winnings!\n━━━━━━━━━━━━━━━━━━━━━"
         
         # Calculate actual game duration from PostgreSQL timestamp
         if game_start_at:
@@ -1403,10 +1399,16 @@ class Hexbet(commands.Cog):
         else:
             desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
         
+        # Use distinct colors for special vs normal bets
+        embed_color = 0xE74C3C if featured_player else 0x3498DB  # Red for special, blue for normal
+        embed_title = f"⚔️ HEXBET Match #{game_id}"
+        if featured_player:
+            embed_title += " - 🎯 SOLO/DUO QUEUE"
+        
         embed = discord.Embed(
-            title=f"⚔️ HEXBET Match #{game_id}" + (" - 🎯 SOLO/DUO QUEUE" if featured_player else ""),
+            title=embed_title,
             description=desc,
-            color=0xF1C40F if featured_player else 0x3498DB
+            color=embed_color
         )
         
         # Team composition fields
@@ -1462,19 +1464,22 @@ class Hexbet(commands.Cog):
     def _team_block(self, team: List[dict]) -> str:
         lines = []
         for p in team:
-            role = p.get('role_emoji', '')
+            role = p.get('role_emoji', '🎮')
             tier = p.get('tier', 'UNRANKED')
             division = p.get('division', '')
             streamer_mode = p.get('streamer_mode', False)
             tier_emoji = rank_emoji(tier) or tier
-            champ = p.get('champ_emoji') or p.get('champ_name', '')
+            # Ensure champion is never empty or Unknown
+            champ_emoji = p.get('champ_emoji')
+            champ_name = p.get('champ_name', 'Player')
+            champ = champ_emoji or f'**{champ_name}**'
             
             # Use pro_name (display_name from DB) only if present and not empty
             # Otherwise use riotId, fallback to summonerName
-            pro_name = p.get('pro_name')
-            riot_id = p.get('riotId')
-            summoner_name = p.get('summonerName', 'Player')
-            
+            pro_name = p.get('pro_name', '').strip() or None
+            riot_id = p.get('riotId', '').strip() or None
+            summoner_name = p.get('summonerName', 'Player').strip() or 'Player'\n            
+            # Priority: pro_name > riot_id > summoner_name
             if pro_name:
                 name = pro_name
             elif riot_id:
@@ -1482,13 +1487,15 @@ class Hexbet(commands.Cog):
             else:
                 name = summoner_name
             
+            logger.debug(f"Player name selection: pro_name={pro_name}, riot_id={riot_id}, summoner={summoner_name} -> using: {name}")
+            
             # Add badge emoji before name if player is pro or streamer (only if badge exists and is not 'none')
-            badge = p.get('badge_emoji', '')
+            badge = p.get('badge_emoji', '') or ''
             # Filter out None, empty string, and string 'none'
-            if badge and badge != 'none' and str(badge).lower() != 'none':
-                badge = badge + ' '  # Add space after badge
+            if badge and str(badge).strip().lower() not in ['none', 'null', '']:
+                badge = str(badge).strip() + ' '  # Add space after badge for proper formatting
             else:
-                badge = ''
+                badge = ''  # No badge - clean separation
             
             wr = p.get('wr', 50)
             lp = p.get('lp', 0)
