@@ -1445,7 +1445,57 @@ class Hexbet(commands.Cog):
             
             # Scrape DPM.LOL for accounts (use player name without #tag)
             player_display_name = name.split('#')[0] if '#' in name else name
-            accounts = await scrape_dpm_pro_accounts(player_display_name)
+            scraped_accounts = await scrape_dpm_pro_accounts(player_display_name)
+            
+            # Fetch rank/LP/WR from Riot API for each account
+            accounts = []
+            for scraped in scraped_accounts:
+                try:
+                    riot_id = scraped['riot_id']
+                    game_name, tag_line = riot_id.split('#', 1)
+                    
+                    # Get PUUID from Riot API
+                    account_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+                    headers = {'X-Riot-Token': self.riot_api.api_key}
+                    
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(account_url, headers=headers) as response:
+                            if response.status != 200:
+                                logger.warning(f"Failed to fetch PUUID for {riot_id}: {response.status}")
+                                continue
+                            
+                            account_data = await response.json()
+                            puuid = account_data.get('puuid')
+                    
+                    # Get ranked stats (assume EUW for pro players, can be improved)
+                    stats = await self.riot_api.get_ranked_stats_by_puuid(puuid, 'euw')
+                    
+                    if not stats:
+                        logger.warning(f"No ranked stats for {riot_id}")
+                        continue
+                    
+                    # Pick SOLOQ entry
+                    from HEXBET.pro_players import pick_rank_entry
+                    tier, division, wr = pick_rank_entry(stats)
+                    
+                    # Find SOLOQ entry for LP/wins/losses
+                    soloq_entry = next((s for s in stats if s.get('queueType') == 'RANKED_SOLO_5x5'), stats[0] if stats else {})
+                    lp = soloq_entry.get('leaguePoints', 0)
+                    wins = soloq_entry.get('wins', 0)
+                    losses = soloq_entry.get('losses', 0)
+                    
+                    accounts.append({
+                        'riot_id': riot_id,
+                        'rank': tier,
+                        'lp': lp,
+                        'wins': wins,
+                        'losses': losses,
+                        'wr': wr
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to fetch data for {scraped.get('riot_id')}: {e}")
+                    continue
             
             account_text = ""
             if accounts:

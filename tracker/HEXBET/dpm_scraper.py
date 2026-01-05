@@ -23,14 +23,14 @@ except ImportError:
 
 async def scrape_dpm_pro_accounts(player_name: str) -> List[Dict[str, any]]:
     """
-    Scrape DPM.LOL for pro player accounts
-    Returns list of accounts with: riot_id, rank, lp, wins, losses, wr%
+    Scrape DPM.LOL for pro player accounts (RiotIDs only)
+    Returns list of riot_ids - rank/LP/WR will be fetched from Riot API
     
     Args:
         player_name: Pro player name (e.g., "Agurin")
     
     Returns:
-        List[Dict] with keys: riot_id, rank, lp, wins, losses, wr
+        List[Dict] with keys: riot_id (other fields will be fetched from API)
     """
     try:
         if get_pro_accounts_async:
@@ -100,42 +100,21 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
             if not rank_img:
                 continue
             
-            rank = rank_img.get('alt', 'UNRANKED').upper()
-            
-            # Find LP text (e.g., "1167 LP")
-            lp = 0
-            lp_span = link.find('span', string=re.compile(r'\d+\s*LP'))
-            if lp_span:
-                lp_text = lp_span.get_text(strip=True)
-                lp_match = re.search(r'(\d+)\s*LP', lp_text)
-                if lp_match:
-                    lp = int(lp_match.group(1))
-            
-            # Find W/L text (e.g., "363W - 295L (55%)")
-            wins = 0
-            losses = 0
-            wr = 0.0
-            
-            wl_span = link.find('span', string=re.compile(r'\d+W\s*-\s*\d+L'))
-            if wl_span:
-                wl_text = wl_span.get_text(strip=True)
-                wl_match = re.search(r'(\d+)W\s*-\s*(\d+)L\s*\((\d+)%\)', wl_text)
-                if wl_match:
-                    wins = int(wl_match.group(1))
-                    losses = int(wl_match.group(2))
-                    wr = float(wl_match.group(3))
-            
+            # Only extract riot_id - rank/LP/WR will come from Riot API
             accounts.append({
-                'riot_id': riot_id,
-                'rank': rank,
-                'lp': lp,
-                'wins': wins,
-                'losses': losses,
-                'wr': wr
+                'riot_id': riot_id
             })
         
-        logger.info(f"✅ Scraped {len(accounts)} accounts for {player_name} from DPM.LOL HTML")
-        return accounts
+        # Deduplicate by riot_id
+        seen = set()
+        unique_accounts = []
+        for acc in accounts:
+            if acc['riot_id'] not in seen:
+                seen.add(acc['riot_id'])
+                unique_accounts.append(acc)
+        
+        logger.info(f"✅ Scraped {len(unique_accounts)} unique accounts for {player_name} from DPM.LOL")
+        return unique_accounts
     
     except Exception as e:
         logger.error(f"❌ Error in fallback scrape for {player_name}: {e}")
