@@ -1,15 +1,24 @@
 """
 DPM.LOL Pro Player Account Scraper
 Extracts SoloQ accounts, ranks, LP, and winrates for pro players
+Uses cloudscraper from apis/dpm_api.py infrastructure
 """
-import aiohttp
-import asyncio
+import sys
+import os
 import re
 import logging
+import asyncio
 from typing import List, Dict, Optional
-from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+# Import from our existing API
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../apis'))
+try:
+    from dpm_api_pro import get_pro_accounts_async
+except ImportError:
+    logger.warning("Could not import dpm_api_pro, using inline fallback")
+    get_pro_accounts_async = None
 
 
 async def scrape_dpm_pro_accounts(player_name: str) -> List[Dict[str, any]]:
@@ -23,114 +32,80 @@ async def scrape_dpm_pro_accounts(player_name: str) -> List[Dict[str, any]]:
     Returns:
         List[Dict] with keys: riot_id, rank, lp, wins, losses, wr
     """
+    try:
+        if get_pro_accounts_async:
+            # Use the API function with cloudscraper
+            accounts = await get_pro_accounts_async(player_name)
+            logger.info(f"✅ Fetched {len(accounts)} accounts for {player_name} from DPM.LOL")
+            return accounts
+        else:
+            # Fallback if import fails
+            logger.warning(f"⚠️ DPM API not available, trying inline method")
+            return await _fallback_scrape(player_name)
+    
+    except Exception as e:
+        logger.error(f"❌ Error scraping DPM.LOL for {player_name}: {e}", exc_info=True)
+        return []
+
+
+async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
+    """Fallback scraper using cloudscraper directly"""
+    import cloudscraper
+    
     url = f"https://dpm.lol/pro/{player_name}"
     accounts = []
     
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status != 200:
-                    logger.warning(f"❌ DPM.LOL returned {response.status} for {player_name}")
-                    return []
-                
-                html = await response.text()
-                soup = BeautifulSoup(html, 'html.parser')
-                
-                # Find all SoloQ account entries
-                # Pattern: "Profile Icon LR Rekkles #LRAT CHALLENGER 1658 LP 418W - 330L (56%)"
-                soloq_section = soup.find('h3', string=lambda x: x and 'SOLO Q' in x.upper() if x else False)
-                
-                if not soloq_section:
-                    logger.warning(f"⚠️ No SOLO Q section found for {player_name}")
-                    return []
-                
-                # Find all account links after SOLO Q heading
-                parent = soloq_section.parent
-                if not parent:
-                    return []
-                
-                # Look for account entries in the section
-                for item in parent.find_all('a', href=True):
-                    href = item.get('href', '')
-                    text = item.get_text(strip=True)
-                    
-                    # Skip premium prompts and non-account links
-                    if 'premium' in text.lower() or not href.startswith('/'):
-                        continue
-                    
-                    # Parse account text: "Profile Icon LR Rekkles #LRAT CHALLENGER 1658 LP 418W - 330L (56%)"
-                    # Or: "LR Rekkles #LRAT CHALLENGER 1658 LP 418W - 330L (56%)"
-                    account_data = _parse_account_line(text)
-                    if account_data:
-                        accounts.append(account_data)
-                
-                logger.info(f"✅ Scraped {len(accounts)} accounts for {player_name} from DPM.LOL")
-                return accounts
-    
-    except asyncio.TimeoutError:
-        logger.error(f"⏱️ DPM.LOL request timeout for {player_name}")
-        return []
-    except Exception as e:
-        logger.error(f"❌ Error scraping DPM.LOL for {player_name}: {e}")
-        return []
-
-
-def _parse_account_line(text: str) -> Optional[Dict[str, any]]:
-    """
-    Parse account line text
-    Format: "LR Rekkles #LRAT CHALLENGER 1658 LP 418W - 330L (56%)"
-    """
-    try:
-        # Remove "Profile Icon" prefix if present
-        text = text.replace("Profile Icon", "").strip()
-        
-        # Pattern: gameName#tag RANK LP winW - lossL (winrate%)
-        # Example: "LR Rekkles #LRAT CHALLENGER 1658 LP 418W - 330L (56%)"
-        
-        # Extract riot_id (gameName#tag)
-        riot_id_match = re.search(r'^(.+?#\w+)\s+', text)
-        if not riot_id_match:
-            return None
-        riot_id = riot_id_match.group(1).strip()
-        
-        # Extract rank (CHALLENGER, GRANDMASTER, MASTER, DIAMOND, etc)
-        rank_match = re.search(r'(CHALLENGER|GRANDMASTER|MASTER|DIAMOND|PLATINUM|GOLD|SILVER|BRONZE|IRON)\s+(\d+)', text)
-        if not rank_match:
-            return None
-        rank = rank_match.group(1)
-        lp = int(rank_match.group(2))
-        
-        # Extract W-L record and winrate
-        # Pattern: "418W - 330L (56%)"
-        record_match = re.search(r'(\d+)W\s*-\s*(\d+)L\s*\((\d+(?:\.\d+)?)\%\)', text)
-        if not record_match:
+        def fetch():
+            scraper = cloudscraper.create_scraper()
+            resp = scraper.get(url, timeout=10)
+            if resp.status_code == 200:
+                return resp.text
             return None
         
-        wins = int(record_match.group(1))
-        losses = int(record_match.group(2))
-        wr = float(record_match.group(3))
+        loop = asyncio.get_event_loop()
+        html = await loop.run_in_executor(None, fetch)
         
-        return {
-            'riot_id': riot_id,
-            'rank': rank,
-            'lp': lp,
-            'wins': wins,
-            'losses': losses,
-            'wr': wr
-        }
+        if not html:
+            logger.warning(f"❌ DPM.LOL returned non-200 for {player_name}")
+            return []
+        
+        # Parse accounts using regex
+        # Pattern: "gameName#tag RANK LP Wins-Losses (WR%)"
+        pattern = r'(\w+[\s\w]*#\w+)\s+(CHALLENGER|GRANDMASTER|MASTER|DIAMOND|PLATINUM|GOLD|SILVER|BRONZE|IRON)\s+(\d+)\s+LP\s+(\d+)W\s*-\s*(\d+)L\s*\((\d+(?:\.\d+)?)\%\)'
+        
+        matches = re.finditer(pattern, html)
+        for match in matches:
+            riot_id = match.group(1).strip()
+            rank = match.group(2)
+            lp = int(match.group(3))
+            wins = int(match.group(4))
+            losses = int(match.group(5))
+            wr = float(match.group(6))
+            
+            accounts.append({
+                'riot_id': riot_id,
+                'rank': rank,
+                'lp': lp,
+                'wins': wins,
+                'losses': losses,
+                'wr': wr
+            })
+        
+        logger.info(f"✅ Scraped {len(accounts)} accounts for {player_name} from DPM.LOL")
+        return accounts
     
     except Exception as e:
-        logger.warning(f"Failed to parse account line: {text} - {e}")
-        return None
+        logger.error(f"❌ Error in fallback scrape for {player_name}: {e}")
+        return []
 
 
 # For testing
 if __name__ == "__main__":
-    import asyncio
-    
     async def test():
         accounts = await scrape_dpm_pro_accounts("Rekkles")
         for acc in accounts:
             print(f"  {acc['riot_id']} - {acc['rank']} {acc['lp']} LP ({acc['wr']}% WR)")
     
     asyncio.run(test())
+
