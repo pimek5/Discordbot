@@ -1507,8 +1507,16 @@ class Hexbet(commands.Cog):
                             account_data = await response.json()
                             puuid = account_data.get('puuid')
                     
-                    # Get ranked stats (assume EUW for pro players, can be improved)
-                    stats = await self.riot_api.get_ranked_stats_by_puuid(puuid, 'euw')
+                    # Get ranked stats - try multiple regions
+                    stats = None
+                    for region in ['euw', 'kr', 'na', 'eun', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp', 'ph', 'sg', 'th', 'tw', 'vn']:
+                        try:
+                            stats = await self.riot_api.get_ranked_stats_by_puuid(puuid, region)
+                            if stats:
+                                logger.debug(f"✅ Found stats for {riot_id} on {region}")
+                                break
+                        except:
+                            continue
                     
                     if not stats:
                         logger.warning(f"No ranked stats for {riot_id}")
