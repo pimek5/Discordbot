@@ -2037,6 +2037,24 @@ class Hexbet(commands.Cog):
                 region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
                 region = region_map.get(platform, 'euw')
                 
+                # First check if nickname is a display_name in database
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT riot_id, player_name FROM hexbet_verified_players 
+                    WHERE LOWER(player_name) = LOWER(%s)
+                    LIMIT 1
+                """, (nickname,))
+                db_result = cur.fetchone()
+                cur.close()
+                self.db.return_connection(conn)
+                
+                # If found in DB, use the riot_id from database
+                if db_result:
+                    riot_id_from_db, display_name = db_result
+                    logger.info(f"✅ Found {nickname} in DB as {display_name} with riot_id: {riot_id_from_db}")
+                    nickname = riot_id_from_db  # Override with correct riot_id
+                
                 # Parse Riot ID (gameName#tagLine)
                 if '#' in nickname:
                     game_name, tag_line = nickname.split('#', 1)
