@@ -1151,6 +1151,8 @@ class Hexbet(commands.Cog):
         tasks_rank = []
         for p in players:
             puuid = p.get('puuid')
+            if not puuid:
+                logger.warning(f"⚠️ Player {p.get('riotIdGameName', 'unknown')} missing PUUID - keys: {list(p.keys())}")
             if puuid:
                 tasks_rank.append(self.riot_api.get_ranked_stats_by_puuid(puuid, region))
             else:
@@ -1160,6 +1162,8 @@ class Hexbet(commands.Cog):
         # First pass: get basic stats and mark streamer mode
         for p, r in zip(players, ranks):
             stats = r if isinstance(r, list) else []
+            if not stats:
+                logger.warning(f"⚠️ No ranked stats for {p.get('riotIdGameName', 'unknown')} - response: {r}")
             tier, division, wr = pick_rank_entry(stats)
             p['tier'] = tier
             p['division'] = division
