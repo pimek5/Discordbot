@@ -1670,6 +1670,9 @@ class Hexbet(commands.Cog):
             encoded_tag = urllib.parse.quote(tag_line)
             encoded_name = urllib.parse.quote(game_name)
             
+            logger.info(f"🔍 Searching for: {game_name}#{tag_line}")
+            logger.info(f"🔗 Encoded as: {encoded_name}#{encoded_tag}")
+            
             # Map platform region to routing region
             region_map = {
                 'euw1': 'europe', 'eun1': 'europe', 'ru': 'europe', 'tr1': 'europe',
@@ -1680,40 +1683,26 @@ class Hexbet(commands.Cog):
             
             routing_region = region_map.get(region, 'americas')
             
-            # Get PUUID - try specified routing region first, then all regions
+            # Get PUUID from specified routing region
             puuid = None
             headers = {'X-Riot-Token': self.riot_api.api_key}
-            found_routing_region = None
             
-            # Try specified region first
             account_url = f"https://{routing_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
+            logger.info(f"📡 Account URL: {account_url}")
+            
             async with aiohttp.ClientSession() as session:
                 async with session.get(account_url, headers=headers) as resp:
+                    logger.info(f"📊 Response status: {resp.status}")
                     if resp.status == 200:
                         account_data = await resp.json()
                         puuid = account_data.get('puuid')
-                        found_routing_region = routing_region
                         logger.info(f"✅ Found PUUID on {routing_region}: {puuid}")
-            
-            # If not found, try all routing regions
-            if not puuid:
-                for try_region in ['europe', 'americas', 'asia', 'sea']:
-                    if try_region == routing_region:
-                        continue  # Already tried
-                    account_url = f"https://{try_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(account_url, headers=headers) as resp:
-                            if resp.status == 200:
-                                account_data = await resp.json()
-                                puuid = account_data.get('puuid')
-                                if puuid:
-                                    found_routing_region = try_region
-                                    logger.info(f"✅ Found PUUID on {try_region} (fallback): {puuid}")
-                                    break
-                    await asyncio.sleep(0.3)
+                    else:
+                        error_text = await resp.text()
+                        logger.error(f"❌ API Error {resp.status}: {error_text[:200]}")
             
             if not puuid:
-                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` (checked all regions)", ephemeral=True)
+                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` on {region} ({routing_region})\nCheck Railway logs for details.", ephemeral=True)
                 return
             
             # Get summoner data from specified platform region
