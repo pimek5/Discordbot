@@ -3147,7 +3147,7 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
             await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
 
 
-class BetOUModal(discord.ui.Modal, title='Over/Under 22.5 minutes'):
+class BetOUModal(discord.ui.Modal, title='Game Length: Over/Under 22.5 min'):
     """Bet on game duration Over or Under 22.5 minutes"""
     ou_choice = discord.ui.TextInput(
         label='Over or Under',
@@ -3453,7 +3453,7 @@ class BetView(discord.ui.View):
         modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="⏱️ O/U Duration", style=discord.ButtonStyle.secondary, custom_id="hexbet_ou")
+    @discord.ui.button(label="📊 Game Length", style=discord.ButtonStyle.secondary, custom_id="hexbet_ou")
     async def bet_ou(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Bet on game duration (Over/Under 22.5 minutes)"""
         balance = self.cog.db.get_balance(interaction.user.id)
