@@ -28,6 +28,45 @@ from HEXBET.dpm_scraper import scrape_dpm_pro_accounts
 
 logger = logging.getLogger('hexbet')
 
+# Global cache for champion roles from ddragon
+CHAMP_ROLES_CACHE = {}
+
+async def load_champion_roles_from_ddragon():
+    """Load champion position data from Data Dragon API - called at bot startup"""
+    global CHAMP_ROLES_CACHE
+    try:
+        # Get latest version
+        async with aiohttp.ClientSession() as session:
+            async with session.get('https://ddragon.leagueoflegends.com/api/versions.json') as resp:
+                versions = await resp.json()
+                latest_version = versions[0]
+            
+            # Get champion data - this now includes role information
+            champion_url = f'https://ddragon.leagueoflegends.com/cdn/{latest_version}/data/en_US/champion.json'
+            async with session.get(champion_url) as resp:
+                data = await resp.json()
+                
+                # Build role mappings from ddragon
+                # Note: ddragon provides 'classes' or similar tags, we'll use primary position
+                for champ_name, champ_data in data['data'].items():
+                    try:
+                        champ_id = int(champ_data['key'])
+                        # Store champion data for reference
+                        CHAMP_ROLES_CACHE[champ_id] = {
+                            'name': champ_name,
+                            'title': champ_data.get('title', ''),
+                            'tags': champ_data.get('tags', [])  # Classes/tags from ddragon
+                        }
+                    except (KeyError, ValueError):
+                        continue
+        
+        logger.info(f"✅ Loaded {len(CHAMP_ROLES_CACHE)} champions from ddragon")
+        logger.info(f"📊 Sample: {list(CHAMP_ROLES_CACHE.items())[:3]}")  # Log first 3 for debugging
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to load champion data from ddragon: {e}")
+        return False
+
 BET_CHANNEL_ID = 1398977064261910580
 LEADERBOARD_CHANNEL_ID = 1398985421014306856
 BET_LOGS_CHANNEL_ID = 1398986567988674704
@@ -127,6 +166,7 @@ class Hexbet(commands.Cog):
         self.bot.loop.create_task(self._ensure_champions())
         self.bot.loop.create_task(self._restore_persistent_views())
         self.bot.loop.create_task(self._load_pro_players())
+        self.bot.loop.create_task(self._load_champion_roles())  # Load champion roles from ddragon
     
     async def _restore_persistent_views(self):
         """Restore persistent views for open matches after bot restart"""
@@ -165,6 +205,15 @@ class Hexbet(commands.Cog):
             logger.info("✅ Loaded pro players database")
         except Exception as e:
             logger.warning(f"⚠️ Could not load pro players: {e}")
+    
+    async def _load_champion_roles(self):
+        """Load champion roles from ddragon on startup"""
+        await self.bot.wait_until_ready()
+        try:
+            await load_champion_roles_from_ddragon()
+            logger.info("✅ Loaded champion roles from ddragon")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load champion roles: {e}")
 
     async def cleanup_old_bets(self):
         """Delete settled matches and their bets immediately"""
