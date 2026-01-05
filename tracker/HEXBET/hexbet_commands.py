@@ -300,9 +300,13 @@ class Hexbet(commands.Cog):
         """Check if featured embed exists on channel, if not post new game. Also update game time."""
         try:
             logger.info("🔍 Checking if featured embed exists...")
-            # Get open matches on BET_CHANNEL_ID
-            open_matches = self.db.get_open_matches()
+            # Get open matches on BET_CHANNEL_ID (use higher limit to include all)
+            open_matches = self.db.get_open_matches(limit=10)
+            logger.info(f"📊 Found {len(open_matches)} open matches total")
+            for m in open_matches:
+                logger.info(f"  - Match {m.get('id')}: game_id={m.get('game_id')}, channel_id={m.get('channel_id')}, special_bet={m.get('special_bet', False)}")
             featured_matches = [m for m in open_matches if m.get('channel_id') == BET_CHANNEL_ID]
+            logger.info(f"📊 {len(featured_matches)} matches on BET_CHANNEL_ID ({BET_CHANNEL_ID})")
             
             if not featured_matches:
                 logger.info("⚠️ No featured match found, posting new game...")
@@ -2309,6 +2313,7 @@ class Hexbet(commands.Cog):
                     chance_red = 100 - chance_blue
                     
                     game_id = game_data.get('gameId')
+                    logger.info(f"🎯 Creating SPECIAL BET for game {game_id} on channel {BET_CHANNEL_ID}")
                     match_id = self.db.create_hexbet_match(
                         game_id,
                         platform,
@@ -2323,6 +2328,8 @@ class Hexbet(commands.Cog):
                         logger.error(f"❌ Failed to create match for game {game_id}")
                         await interaction.followup.send("❌ Failed to create match", ephemeral=True)
                         return
+                    
+                    logger.info(f"✅ SPECIAL BET created with match_id={match_id}, special_bet=True, channel_id={BET_CHANNEL_ID}")
                     
                     embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player="special", match_id=match_id, game_start_at=game_data.get('gameStartTime'))
                     
