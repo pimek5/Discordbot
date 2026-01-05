@@ -1489,13 +1489,7 @@ class Hexbet(commands.Cog):
         platform="Platform: euw1, na1, kr, eun1 (or 'custom' for manual entry)",
         nickname="(Optional) Specific player nickname - their game will be prioritized"
     )
-    @app_commands.command(name="hxfind", description="(Staff) Find and post active game")
-    @app_commands.describe(
-        platform="Platform/region: euw1, eun1, na1, kr, custom",
-        nickname="Optional: Player name to find (format: Name#TAG)",
-        add="Add extra match beyond 3-match limit (default: False)"
-    )
-    async def hxfind(self, interaction: discord.Interaction, platform: Optional[str] = None, nickname: Optional[str] = None, add: bool = False):
+    async def hxfind(self, interaction: discord.Interaction, platform: Optional[str] = None, nickname: Optional[str] = None):
         """Find and post active high-elo game for betting"""
         # Check if user has required roles
         staff_role_id = 1153030265782927501
@@ -1506,14 +1500,11 @@ class Hexbet(commands.Cog):
             await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
             return
         
-        # Check if already have 3 open matches (unless add=True)
+        # Check if already have 3 open matches
         open_count = self.db.count_open_matches()
-        if open_count >= 3 and not add:
-            await interaction.response.send_message(f"⏳ Already have {open_count}/3 active matches. Max limit reached.\nUse `add:True` to force add extra match.", ephemeral=True)
+        if open_count >= 3:
+            await interaction.response.send_message(f"⏳ Already have {open_count}/3 active matches. Max limit reached.", ephemeral=True)
             return
-        
-        if open_count >= 3 and add:
-            await interaction.response.send_message(f"⚠️ Force adding extra match! Currently {open_count}/3 active.", ephemeral=True)
         
         await interaction.response.defer()
         
