@@ -2102,6 +2102,33 @@ class Hexbet(commands.Cog):
                 # Post the priority game directly with the found player's game data
                 await interaction.followup.send(f"✅ Found **{nickname}**'s game! Creating bet...")
                 
+                # Check if player is Pro or Streamer
+                pro_status = ""
+                if '#' in nickname:
+                    game_name, tag_line = nickname.split('#', 1)
+                    check_riot_id = f"{game_name}#{tag_line}"
+                else:
+                    check_riot_id = nickname
+                
+                # Check database first
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT player_type FROM hexbet_verified_players 
+                    WHERE riot_id = %s OR LOWER(player_name) = LOWER(%s)
+                    LIMIT 1
+                """, (check_riot_id, nickname))
+                result = cur.fetchone()
+                cur.close()
+                self.db.return_connection(conn)
+                
+                if result:
+                    player_type = result[0]
+                    if player_type == 'pro':
+                        pro_status = f" {get_pro_emoji()}"
+                    elif player_type == 'streamer':
+                        pro_status = f" {get_streamer_emoji()}"
+                
                 channel = self.bot.get_channel(BET_CHANNEL_ID)
                 if not channel:
                     await interaction.followup.send("❌ Bet channel not found!", ephemeral=True)
@@ -2149,7 +2176,9 @@ class Hexbet(commands.Cog):
                     
                     embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player="special", match_id=match_id, game_start_at=game_data.get('gameStartTime'))
                     
-                    msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
+                    # Add pro/streamer badge to message content
+                    content = f"⭐ **{nickname}**{pro_status} found in game!"
+                    msg = await channel.send(content=content, embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
                     self.db.update_match_message(match_id, BET_CHANNEL_ID, msg.id)
                     
                     logger.info(f"✅ Posted priority match {match_id} with {nickname}")
