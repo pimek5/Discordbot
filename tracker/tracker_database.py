@@ -364,27 +364,25 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False, betting_window_minutes: int = 5) -> int:
+    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False, betting_window_minutes: int = 2) -> int:
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
                 # Convert milliseconds to PostgreSQL TIMESTAMP
                 # gameStartTime from Riot API is in milliseconds
                 game_start_at = None
-                betting_closes_at = None
                 if start_time and start_time > 0:
                     # TO_TIMESTAMP expects seconds, so divide milliseconds by 1000
                     game_start_at = start_time / 1000.0
-                    # Set betting close time: game_start + betting_window_minutes
-                    betting_closes_at = (start_time / 1000.0) + (betting_window_minutes * 60)
                 
                 # Try to insert, if exists do nothing
+                # betting_closes_at is set automatically by database: NOW() + betting_window_minutes
                 cur.execute("""
                     INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at, betting_closes_at, special_bet)
-                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s), NOW() + INTERVAL '%s minutes', %s)
                     ON CONFLICT (game_id) DO NOTHING
                     RETURNING id
-                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at, betting_closes_at, special_bet))
+                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at, betting_window_minutes, special_bet))
                 row = cur.fetchone()
                 conn.commit()
                 
