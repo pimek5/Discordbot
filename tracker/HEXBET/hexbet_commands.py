@@ -1155,6 +1155,22 @@ class Hexbet(commands.Cog):
             p['is_pro'] = badge == get_pro_emoji() if badge else is_pro_player(riot_id)
             p['is_streamer'] = badge == get_streamer_emoji() if badge else is_streamer_player(riot_id)
             p['badge_emoji'] = badge
+            
+            # Load ProName from database if player is verified pro/streamer
+            if riot_id:
+                try:
+                    cursor = self.db.conn.cursor()
+                    cursor.execute(
+                        "SELECT player_name FROM hexbet_verified_players WHERE riot_id = %s",
+                        (riot_id,)
+                    )
+                    result = cursor.fetchone()
+                    cursor.close()
+                    if result:
+                        p['pro_name'] = result[0]
+                except Exception as e:
+                    logger.warning(f"Failed to load ProName for {riot_id}: {e}")
+
     
     def _apply_lobby_average(self, all_players: List[dict]):
         """Apply lobby-wide average to streamer mode players (balanced distribution)"""
@@ -1363,8 +1379,8 @@ class Hexbet(commands.Cog):
             streamer_mode = p.get('streamer_mode', False)
             tier_emoji = rank_emoji(tier) or tier
             champ = p.get('champ_emoji') or p.get('champ_name', '')
-            # Use riotId (gameName#tagLine) if available, fallback to summonerName
-            name = p.get('riotId', p.get('summonerName', 'Player'))
+            # Use ProName if player is pro/streamer, otherwise use riotId, fallback to summonerName
+            name = p.get('pro_name') or p.get('riotId', p.get('summonerName', 'Player'))
             # Add badge emoji if player is pro or streamer
             badge = p.get('badge_emoji')
             if badge:
