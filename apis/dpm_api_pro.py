@@ -34,6 +34,9 @@ def get_pro_accounts_from_dpmlol(pro_name: str) -> List[Dict[str, any]]:
         
         text = resp.text
         
+        # Debug: log first 2000 chars to see what we're parsing
+        logger.debug(f"DPM.LOL HTML sample for {pro_name}: {text[:2000]}")
+        
         # Find all account entries with pattern: "gameName#tag RANK LP Wins-Losses (WR%)"
         # Example: "LR Rekkles #LRAT CHALLENGER 1658 LP 418W - 330L (56%)"
         
@@ -41,7 +44,9 @@ def get_pro_accounts_from_dpmlol(pro_name: str) -> List[Dict[str, any]]:
         pattern = r'(\w+[\s\w]*#\w+)\s+(CHALLENGER|GRANDMASTER|MASTER|DIAMOND|PLATINUM|GOLD|SILVER|BRONZE|IRON)\s+(\d+)\s+LP\s+(\d+)W\s*-\s*(\d+)L\s*\((\d+(?:\.\d+)?)\%\)'
         
         matches = re.finditer(pattern, text)
+        match_count = 0
         for match in matches:
+            match_count += 1
             riot_id = match.group(1).strip()
             rank = match.group(2)
             lp = int(match.group(3))
@@ -57,6 +62,9 @@ def get_pro_accounts_from_dpmlol(pro_name: str) -> List[Dict[str, any]]:
                 'losses': losses,
                 'wr': wr
             })
+        
+        if match_count == 0:
+            logger.warning(f"⚠️ No regex matches found for {pro_name}. Pattern may need update.")
         
         logger.info(f"✅ Scraped {len(accounts)} accounts for {pro_name} from DPM.LOL")
         return accounts

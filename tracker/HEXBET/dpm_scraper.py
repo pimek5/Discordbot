@@ -70,12 +70,17 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
             logger.warning(f"❌ DPM.LOL returned non-200 for {player_name}")
             return []
         
+        # Debug: log sample
+        logger.debug(f"DPM.LOL HTML sample for {player_name}: {html[:2000]}")
+        
         # Parse accounts using regex
         # Pattern: "gameName#tag RANK LP Wins-Losses (WR%)"
         pattern = r'(\w+[\s\w]*#\w+)\s+(CHALLENGER|GRANDMASTER|MASTER|DIAMOND|PLATINUM|GOLD|SILVER|BRONZE|IRON)\s+(\d+)\s+LP\s+(\d+)W\s*-\s*(\d+)L\s*\((\d+(?:\.\d+)?)\%\)'
         
         matches = re.finditer(pattern, html)
+        match_count = 0
         for match in matches:
+            match_count += 1
             riot_id = match.group(1).strip()
             rank = match.group(2)
             lp = int(match.group(3))
@@ -91,6 +96,9 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
                 'losses': losses,
                 'wr': wr
             })
+        
+        if match_count == 0:
+            logger.warning(f"⚠️ No regex matches found for {player_name}. Pattern may need update.")
         
         logger.info(f"✅ Scraped {len(accounts)} accounts for {player_name} from DPM.LOL")
         return accounts
