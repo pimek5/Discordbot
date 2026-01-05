@@ -1400,13 +1400,18 @@ class Hexbet(commands.Cog):
                 lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
 
-    @app_commands.command(name="hxpro", description="Add a pro player to HEXBET")
+    @app_commands.command(name="hxpro", description="Add a pro player or streamer to HEXBET")
     @app_commands.describe(
         riot_id="Player RiotID (gameName#tagLine)",
-        pro="Pro player display name"
+        name="Pro/Streamer display name",
+        player_type="Type of player"
     )
-    async def hxpro(self, interaction: discord.Interaction, riot_id: str, pro: str):
-        """Add a pro player to HEXBET database"""
+    @app_commands.choices(player_type=[
+        app_commands.Choice(name="Pro Player", value="pro"),
+        app_commands.Choice(name="Streamer", value="streamer")
+    ])
+    async def hxpro(self, interaction: discord.Interaction, riot_id: str, name: str, player_type: str = "pro"):
+        """Add a pro player or streamer to HEXBET database"""
         await interaction.response.defer(ephemeral=True)
         
         try:
@@ -1427,24 +1432,24 @@ class Hexbet(commands.Cog):
             # Add to database
             cursor.execute(
                 """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
-                   VALUES (%s, %s, 'pro')
+                   VALUES (%s, %s, %s)
                    RETURNING id""",
-                (riot_id, pro)
+                (riot_id, name, player_type)
             )
-            pro_player_id = cursor.fetchone()[0]
+            player_id = cursor.fetchone()[0]
             conn.commit()
             cursor.close()
             self.db.return_connection(conn)
             
-            # Scrape DPM.LOL for accounts (use pro name without #tag)
-            pro_display_name = pro.split('#')[0] if '#' in pro else pro
-            accounts = await scrape_dpm_pro_accounts(pro_display_name)
+            # Scrape DPM.LOL for accounts (use player name without #tag)
+            player_display_name = name.split('#')[0] if '#' in name else name
+            accounts = await scrape_dpm_pro_accounts(player_display_name)
             
             account_text = ""
             if accounts:
                 # Add accounts to database
-                count = self.db.add_pro_accounts(pro_player_id, accounts)
-                logger.info(f"✅ Added {count} accounts for {pro}")
+                count = self.db.add_pro_accounts(player_id, accounts)
+                logger.info(f"✅ Added {count} accounts for {name}")
                 
                 # Format account list
                 for acc in accounts[:5]:  # Show top 5
@@ -1454,13 +1459,15 @@ class Hexbet(commands.Cog):
             else:
                 account_text = "\n  ❌ No accounts found (try adding manually later)"
             
+            player_type_label = "Pro Player" if player_type == "pro" else "Streamer"
             embed = discord.Embed(
-                title="✅ Pro Player Added",
-                description=f"**{pro}** added to HEXBET pro database",
+                title=f"✅ {player_type_label} Added",
+                description=f"**{name}** added to HEXBET database",
                 color=0x2ECC71
             )
             embed.add_field(name="RiotID", value=riot_id, inline=False)
-            embed.add_field(name="Display Name", value=pro, inline=False)
+            embed.add_field(name="Display Name", value=name, inline=False)
+            embed.add_field(name="Type", value=player_type_label, inline=False)
             embed.add_field(name=f"📊 SoloQ Accounts ({len(accounts)})", value=account_text or "None", inline=False)
             await interaction.followup.send(embed=embed, ephemeral=True)
             logger.info(f"✅ Added pro player: {riot_id} ({pro}) with {len(accounts)} accounts")
