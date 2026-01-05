@@ -35,7 +35,7 @@ def get_pro_accounts_from_dpmlol(pro_name: str) -> List[Dict[str, any]]:
         text = resp.text
         
         # Debug: log first 2000 chars to see what we're parsing
-        logger.debug(f"DPM.LOL HTML sample for {pro_name}: {text[:2000]}")
+        logger.info(f"📄 DPM.LOL HTML sample for {pro_name} (first 2000 chars):\n{text[:2000]}")
         
         # Find all account entries with pattern: "gameName#tag RANK LP Wins-Losses (WR%)"
         # Example: "LR Rekkles #LRAT CHALLENGER 1658 LP 418W - 330L (56%)"

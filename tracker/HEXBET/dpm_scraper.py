@@ -71,7 +71,7 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
             return []
         
         # Debug: log sample
-        logger.debug(f"DPM.LOL HTML sample for {player_name}: {html[:2000]}")
+        logger.info(f"📄 DPM.LOL HTML sample for {player_name} (first 2000 chars):\n{html[:2000]}")
         
         # Parse accounts using regex
         # Pattern: "gameName#tag RANK LP Wins-Losses (WR%)"
