@@ -1135,32 +1135,32 @@ class Hexbet(commands.Cog):
             else:
                 unassigned.append(p)
         
-        # Build ordered list: fill each role slot with first candidate
-        ordered = []
-        for role in ROLE_ORDER:
+        # Build ordered list with fixed positions: 0=TOP, 1=JUNGLE, 2=MID, 3=ADC, 4=SUPPORT
+        # Each role gets its slot, if empty we'll fill later with unassigned/duplicates
+        ordered = [None] * 5  # Initialize 5 slots
+        
+        for idx, role in enumerate(ROLE_ORDER):
             candidates = role_buckets[role]
             if candidates:
-                # Take first candidate for this role
-                player = candidates[0]
-                ordered.append(player)  # Don't assign role yet, just add to ordered list
-                # If multiple champions for same role, add extras to duplicates (end of queue)
+                # Place first candidate in their role's position
+                ordered[idx] = candidates[0]
+                # If multiple champions for same role, add extras to duplicates
                 if len(candidates) > 1:
                     duplicates.extend(candidates[1:])
         
-        # Fill remaining empty role slots with unassigned players (champions without role mapping)
-        while len(ordered) < 5 and unassigned:
-            ordered.append(unassigned.pop(0))
+        # Fill empty slots with unassigned players first, then duplicates
+        fill_queue = unassigned + duplicates
+        for idx in range(5):
+            if ordered[idx] is None and fill_queue:
+                ordered[idx] = fill_queue.pop(0)
         
-        # Now add duplicate role players at the end (fill remaining empty slots)
-        while len(ordered) < 5 and duplicates:
-            ordered.append(duplicates.pop(0))
-        
-        # Assign role names and emojis based on POSITION in ordered list (not champion role)
+        # Assign role names and emojis based on POSITION
         final_ordered = []
-        for idx, player in enumerate(ordered[:5]):  # Max 5 players
+        for idx, player in enumerate(ordered):
+            if player is None:
+                continue  # Skip empty slots
             p_copy = dict(player)
-            # Position 0=TOP, 1=JUNGLE, 2=MID, 3=ADC, 4=SUPPORT
-            role = ROLE_ORDER[idx] if idx < len(ROLE_ORDER) else 'TOP'
+            role = ROLE_ORDER[idx]
             p_copy['role_name'] = ROLE_NAMES[role]
             p_copy['role_emoji'] = ROLE_EMOJIS[role]
             final_ordered.append(p_copy)
