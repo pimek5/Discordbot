@@ -3522,5 +3522,12 @@ async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
     cog = Hexbet(bot, riot_api, db)
     bot.tree.add_command(hxpro_group)
     await bot.add_cog(cog)
-    logger.info("✅ HEXBET commands loaded")
+    
+    # Sync command tree to ensure Discord knows about all commands
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"✅ HEXBET commands loaded - Synced {len(synced)} commands")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not sync commands: {e}")
+        logger.info("✅ HEXBET commands loaded (sync will happen on next startup)")
 
