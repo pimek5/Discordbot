@@ -1411,7 +1411,8 @@ class Hexbet(commands.Cog):
         
         try:
             # Check if already exists
-            cursor = self.db.conn.cursor()
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
             cursor.execute(
                 "SELECT id FROM hexbet_verified_players WHERE riot_id = %s",
                 (riot_id,)
@@ -1420,6 +1421,7 @@ class Hexbet(commands.Cog):
             if existing:
                 await interaction.followup.send(f"⚠️ Player `{riot_id}` already in database", ephemeral=True)
                 cursor.close()
+                self.db.return_connection(conn)
                 return
             
             # Add to database
@@ -1430,8 +1432,9 @@ class Hexbet(commands.Cog):
                 (riot_id, pro)
             )
             pro_player_id = cursor.fetchone()[0]
-            self.db.conn.commit()
+            conn.commit()
             cursor.close()
+            self.db.return_connection(conn)
             
             # Scrape DPM.LOL for accounts (use pro name without #tag)
             pro_display_name = pro.split('#')[0] if '#' in pro else pro
