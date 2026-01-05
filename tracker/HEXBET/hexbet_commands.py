@@ -959,7 +959,7 @@ class Hexbet(commands.Cog):
             page_players = all_players[start_idx:end_idx]
             
             # Determine title based on sort
-            sort_title = "Balance 💰" if sort_by == 'balance' else "Win Rate 🎯"
+            sort_title = "Balance 💰" if sort_by == 'balance' else "Wygrana 🏆"
             embed = discord.Embed(
                 title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {page}/{total_pages}",
                 color=0xF1C40F
@@ -1034,9 +1034,9 @@ class Hexbet(commands.Cog):
                 """
                 
                 # Choose sort order
-                if sort_by == 'win_rate':
-                    # Sort by win rate (must have at least 5 bets), then balance
-                    order_clause = "ORDER BY CASE WHEN bets_placed >= 5 THEN win_rate ELSE 0 END DESC, balance DESC"
+                if sort_by == 'total_won':
+                    # Sort by total won, then balance
+                    order_clause = "ORDER BY total_won DESC, balance DESC"
                 else:  # default: balance
                     order_clause = "ORDER BY balance DESC"
                 
@@ -4362,7 +4362,7 @@ class LeaderboardView(discord.ui.View):
         placeholder="📊 Sort by...",
         options=[
             discord.SelectOption(label="Balance 💰", value="balance", description="Sort by token balance", emoji="💰"),
-            discord.SelectOption(label="Win Rate 🎯", value="win_rate", description="Sort by win percentage (min 5 bets)", emoji="🎯")
+            discord.SelectOption(label="Wygrana 🏆", value="total_won", description="Sort by total tokens won", emoji="🏆")
         ],
         custom_id="hexbet_leaderboard_sort"
     )
@@ -4382,7 +4382,7 @@ class LeaderboardView(discord.ui.View):
             page_players = all_players[start_idx:end_idx]
             
             # Determine title
-            sort_title = "Balance 💰" if new_sort == 'balance' else "Win Rate 🎯"
+            sort_title = "Balance 💰" if new_sort == 'balance' else "Wygrana 🏆"
             embed = discord.Embed(
                 title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {current_page}/{total_pages}",
                 color=0xF1C40F
@@ -4441,7 +4441,7 @@ class LeaderboardView(discord.ui.View):
             page_players = all_players[start_idx:end_idx]
             
             # Build embed
-            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Win Rate 🎯"
+            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Wygrana 🎯"
             embed = discord.Embed(
                 title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {new_page}/{total_pages}",
                 color=0xF1C40F
@@ -4499,7 +4499,7 @@ class LeaderboardView(discord.ui.View):
             page_players = all_players[start_idx:end_idx]
             
             # Build embed
-            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Win Rate 🎯"
+            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Wygrana 🏆"
             embed = discord.Embed(
                 title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {current_page}/{total_pages}",
                 color=0xF1C40F
@@ -4559,7 +4559,7 @@ class LeaderboardView(discord.ui.View):
             page_players = all_players[start_idx:end_idx]
             
             # Build embed
-            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Win Rate 🎯"
+            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Wygrana 🎯"
             embed = discord.Embed(
                 title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {new_page}/{total_pages}",
                 color=0xF1C40F
