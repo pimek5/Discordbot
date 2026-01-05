@@ -72,22 +72,49 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
         
         # DPM.LOL uses Next.js - data is in __NEXT_DATA__ JSON
         import json
-        next_data_pattern = r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>'
-        match = re.search(next_data_pattern, html, re.DOTALL)
         
-        if match:
-            try:
-                next_data = json.loads(match.group(1))
-                logger.info(f"✅ Found __NEXT_DATA__ for {player_name}")
+        # Search for __NEXT_DATA__ script tag
+        logger.info(f"🔍 Searching for __NEXT_DATA__ in HTML ({len(html)} chars total)")
+        
+        # Try different patterns
+        patterns = [
+            r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
+            r'<script id="__NEXT_DATA__">(.+?)</script>',
+            r'__NEXT_DATA__.*?({.+?})</script>',
+        ]
+        
+        next_data = None
+        for pattern in patterns:
+            match = re.search(pattern, html, re.DOTALL)
+            if match:
+                try:
+                    next_data = json.loads(match.group(1))
+                    logger.info(f"✅ Found __NEXT_DATA__ using pattern: {pattern[:50]}")
+                    break
+                except:
+                    continue
+        
+        if not next_data:
+            # Log what script tags we do see
+            script_tags = re.findall(r'<script[^>]*id="([^"]*)"', html)
+            logger.warning(f"⚠️ No __NEXT_DATA__ found. Available script IDs: {script_tags[:10]}")
+            
+            # Check if there's any JSON-like data
+            if '"props"' in html or '"pageProps"' in html:
+                logger.info("Found props/pageProps keywords in HTML, trying broader search...")
+                # Try to find any large JSON blob
+                json_pattern = r'({[^<]{500,}})'
+                matches = re.findall(json_pattern, html)
+                logger.info(f"Found {len(matches)} potential JSON blobs")
+            
+            return []
+        
+        try:
                 
                 # Extract accounts from Next.js data structure
                 accounts = []
                 props = next_data.get('props', {}).get('pageProps', {})
-                
-                # Try to find accounts in various possible locations
-                player_data = props.get('player', {}) or props.get('data', {}) or props
-                accounts_data = player_data.get('accounts', []) or player_data.get('soloQueueAccounts', [])
-                
+
                 for acc in accounts_data:
                     try:
                         riot_id = f"{acc.get('gameName', 'Unknown')}#{acc.get('tagLine', 'NA1')}"
@@ -113,11 +140,9 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
                 logger.info(f"✅ Scraped {len(accounts)} accounts for {player_name} from __NEXT_DATA__")
                 return accounts
             
-            except Exception as e:
-                logger.error(f"Failed to parse __NEXT_DATA__: {e}")
-        
-        logger.warning(f"⚠️ No __NEXT_DATA__ found for {player_name}, DPM.LOL may have changed structure")
-        return []
+        except Exception as e:
+            logger.error(f"Failed to parse __NEXT_DATA__: {e}")
+            return []
     
     except Exception as e:
         logger.error(f"❌ Error in fallback scrape for {player_name}: {e}")
