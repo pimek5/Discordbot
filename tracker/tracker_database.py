@@ -218,6 +218,21 @@ class TrackerDatabase:
                         last_checked TIMESTAMP DEFAULT NOW()
                     );
                 """)
+                self.conn.execute("""
+                    CREATE TABLE IF NOT EXISTS hexbet_pro_accounts (
+                        id SERIAL PRIMARY KEY,
+                        pro_player_id INT REFERENCES hexbet_verified_players(id) ON DELETE CASCADE,
+                        riot_id TEXT NOT NULL,
+                        rank TEXT,
+                        lp INT,
+                        wins INT,
+                        losses INT,
+                        wr FLOAT,
+                        scraped_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW(),
+                        UNIQUE(pro_player_id, riot_id)
+                    );
+                """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_verified_riot_id ON hexbet_verified_players(riot_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_verified_type ON hexbet_verified_players(player_type)")
                 conn.commit()
@@ -1156,6 +1171,77 @@ class TrackerDatabase:
                 )
                 conn.commit()
                 return True, f"✅ Claimed {amount} tokens for daily free bet!"
+        finally:
+            self.return_connection(conn)
+    
+    def add_pro_accounts(self, pro_player_id: int, accounts: List[Dict]) -> int:
+        """
+        Add/update SoloQ accounts for a pro player
+        
+        Args:
+            pro_player_id: ID of the verified pro player
+            accounts: List of dicts with keys: riot_id, rank, lp, wins, losses, wr
+        
+        Returns:
+            Count of accounts added/updated
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            count = 0
+            for acc in accounts:
+                cursor.execute(
+                    """
+                    INSERT INTO hexbet_pro_accounts (pro_player_id, riot_id, rank, lp, wins, losses, wr)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (pro_player_id, riot_id) DO UPDATE SET
+                        rank = EXCLUDED.rank,
+                        lp = EXCLUDED.lp,
+                        wins = EXCLUDED.wins,
+                        losses = EXCLUDED.losses,
+                        wr = EXCLUDED.wr,
+                        updated_at = NOW()
+                    """,
+                    (pro_player_id, acc['riot_id'], acc['rank'], acc['lp'], acc['wins'], acc['losses'], acc['wr'])
+                )
+                count += 1
+            
+            conn.commit()
+            cursor.close()
+            return count
+        finally:
+            self.return_connection(conn)
+    
+    def get_pro_accounts(self, pro_player_id: int) -> List[Dict]:
+        """Get all SoloQ accounts for a pro player"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                """
+                SELECT riot_id, rank, lp, wins, losses, wr 
+                FROM hexbet_pro_accounts 
+                WHERE pro_player_id = %s 
+                ORDER BY lp DESC
+                """,
+                (pro_player_id,)
+            )
+            
+            accounts = []
+            for row in cursor.fetchall():
+                accounts.append({
+                    'riot_id': row[0],
+                    'rank': row[1],
+                    'lp': row[2],
+                    'wins': row[3],
+                    'losses': row[4],
+                    'wr': row[5]
+                })
+            
+            cursor.close()
+            return accounts
         finally:
             self.return_connection(conn)
 
