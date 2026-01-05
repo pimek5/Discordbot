@@ -1500,6 +1500,12 @@ class Hexbet(commands.Cog):
             await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
             return
         
+        # Check if already have 3 open matches
+        open_count = self.db.count_open_matches()
+        if open_count >= 3:
+            await interaction.response.send_message(f"⏳ Already have {open_count}/3 active matches. Max limit reached.", ephemeral=True)
+            return
+        
         await interaction.response.defer()
         
         try:
