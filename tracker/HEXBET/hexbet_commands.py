@@ -1713,6 +1713,7 @@ class Hexbet(commands.Cog):
         region="Platform region (euw1, kr, na1, etc.)",
         player_type="Type of player"
     )
+    @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.choices(
         player_type=[
             app_commands.Choice(name="Pro Player", value="pro"),
