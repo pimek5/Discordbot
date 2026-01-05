@@ -1478,14 +1478,14 @@ class Hexbet(commands.Cog):
 
     @app_commands.command(name="hxprotype", description="Change player type between Pro and Streamer")
     @app_commands.describe(
-        riot_id="Player RiotID (gameName#tagLine)",
+        name="Player name (display name or gameName#tagLine)",
         player_type="New player type"
     )
     @app_commands.choices(player_type=[
         app_commands.Choice(name="Pro Player", value="pro"),
         app_commands.Choice(name="Streamer", value="streamer")
     ])
-    async def hxprotype(self, interaction: discord.Interaction, riot_id: str, player_type: str):
+    async def hxprotype(self, interaction: discord.Interaction, name: str, player_type: str):
         """Change the type of an existing player."""
         await interaction.response.defer(ephemeral=True)
         
@@ -1493,27 +1493,37 @@ class Hexbet(commands.Cog):
             conn = self.db.get_connection()
             cursor = conn.cursor()
             
-            # Check if player exists
+            # First try to find by player_name (display name)
             cursor.execute("""
-                SELECT id, player_name, player_type 
+                SELECT id, player_name, player_type, riot_id 
                 FROM hexbet_verified_players 
-                WHERE riot_id = %s
-            """, (riot_id,))
+                WHERE LOWER(player_name) = LOWER(%s)
+            """, (name,))
             
             result = cursor.fetchone()
+            
+            # If not found by display name, try by riot_id
+            if not result:
+                cursor.execute("""
+                    SELECT id, player_name, player_type, riot_id 
+                    FROM hexbet_verified_players 
+                    WHERE riot_id = %s
+                """, (name,))
+                result = cursor.fetchone()
+            
             if not result:
                 cursor.close()
                 self.db.return_connection(conn)
-                await interaction.followup.send(f"❌ Player `{riot_id}` not found in database", ephemeral=True)
+                await interaction.followup.send(f"❌ Player `{name}` not found in database", ephemeral=True)
                 return
             
-            player_id, player_name, old_type = result
+            player_id, player_name, old_type, riot_id = result
             
             if old_type == player_type:
                 cursor.close()
                 self.db.return_connection(conn)
                 type_label = "Pro Player" if player_type == "pro" else "Streamer"
-                await interaction.followup.send(f"ℹ️ `{riot_id}` is already set as **{type_label}**", ephemeral=True)
+                await interaction.followup.send(f"ℹ️ **{player_name}** is already set as **{type_label}**", ephemeral=True)
                 return
             
             # Update player type
@@ -1540,7 +1550,7 @@ class Hexbet(commands.Cog):
             embed.add_field(name="New Type", value=new_label, inline=True)
             
             await interaction.followup.send(embed=embed, ephemeral=True)
-            logger.info(f"✅ Changed {riot_id} type: {old_type} → {player_type}")
+            logger.info(f"✅ Changed {player_name} ({riot_id}) type: {old_type} → {player_type}")
         
         except Exception as e:
             logger.error(f"Error in hxprotype command: {e}", exc_info=True)
