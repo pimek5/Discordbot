@@ -311,19 +311,19 @@ CHAMPION_EMOJIS = {
     711: '<:champ_Vex:1441318660642963466>',
     777: '<:champ_Yone:1441318677143355412>',
     799: '<:champ_Ambessa:1441318425283792937>',
+    800: '<:champ_Mel:1441318562504642650>',  # Correct DDragon ID
+    804: '<:champ_Yunara:1441318681220218880>',  # Correct DDragon ID
     875: '<:champ_Sett:1441318614987964427>',
     876: '<:champ_Lillia:1441318548352930012>',
     887: '<:champ_Gwen:1441318478379225168>',
     888: '<:champ_RenataGlasc:1441318601016737792>',
     893: '<:champ_Aurora:1441318434540617809>',
-    895: '<:champ_Naafiri:1441318569789882449>',
     897: '<:champ_KSante:1441318527314296965>',
     901: '<:champ_Smolder:1441318627797106750>',
     902: '<:champ_Milio:1441318563792158830>',
-    910: '<:champ_Hwei:1441318482980376576>',
-    950: '<:champ_Mel:1441318562504642650>',
-    804: '<:champ_Yunara:1441318681220218880>',  # Correct DDragon ID
     904: '<:champ_Zaahen:1442809688042508420>',  # Correct DDragon ID
+    910: '<:champ_Hwei:1441318482980376576>',
+    950: '<:champ_Naafiri:1441318569789882449>',  # Correct DDragon ID
 }
 
 
