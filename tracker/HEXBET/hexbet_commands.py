@@ -1668,10 +1668,8 @@ class Hexbet(commands.Cog):
                                 logger.info(f"✅ Found PUUID on {riot_region}: {puuid}")
                                 break
                 await asyncio.sleep(0.3)
-
-                                if puuid:
-                                    break
-                    await asyncio.sleep(0.5)
+                if puuid:
+                    break
             
             if not puuid:
                 await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` (checked all regions)", ephemeral=True)
