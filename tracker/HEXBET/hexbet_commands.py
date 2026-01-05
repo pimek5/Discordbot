@@ -1051,111 +1051,117 @@ class Hexbet(commands.Cog):
 
     def _assign_roles(self, players: List[dict]) -> List[dict]:
         """
-        Assign roles to players using:
-        1. Smite (spell ID 11) = Jungle
-        2. Champion ID patterns = Support
-        3. Remaining players = TOP, MID, ADC in order
+        Assign roles based on champion ID patterns and Smite spell.
+        If multiple champions fit same role, assign in order.
         """
-        # Support champion IDs (enchanters, tanks, catchers typically played support)
-        SUPPORT_CHAMPIONS = {
-            412,  # Thresh
-            53,   # Blitzcrank
-            89,   # Leona
-            25,   # Morgana
-            40,   # Janna
-            37,   # Sona
-            267,  # Nami
-            16,   # Soraka
-            43,   # Karma
-            117,  # Lulu
-            143,  # Zyra
-            201,  # Braum
-            432,  # Bard
-            223,  # Tahm Kench
-            555,  # Pyke
-            235,  # Senna
-            350,  # Yuumi
-            526,  # Rell
-            497,  # Rakan
-            147,  # Seraphine
-            111,  # Nautilus
-            12,   # Alistar
-            78,   # Poppy (when support)
-            9,    # Fiddlesticks (when support)
-            101,  # Xerath (when support)
-            161,  # Vel'Koz (when support)
-            268,  # Azir (rare support)
-            44,   # Taric
-            98,   # Shen (when support)
-            888,  # Renata Glasc
-            895,  # Nilah (ADC but can support)
-            950,  # Milio
+        # Champion role mappings (most common role for each champion)
+        CHAMP_ROLES = {
+            # TOP laners
+            1: 'TOP', 86: 'TOP', 266: 'TOP', 23: 'TOP', 122: 'TOP', 240: 'TOP', 
+            114: 'TOP', 420: 'TOP', 39: 'TOP', 24: 'TOP', 126: 'TOP', 59: 'TOP',
+            85: 'TOP', 58: 'TOP', 92: 'TOP', 98: 'TOP', 27: 'TOP', 516: 'TOP',
+            78: 'TOP', 106: 'TOP', 83: 'TOP', 50: 'TOP', 8: 'TOP', 14: 'TOP',
+            80: 'TOP', 68: 'TOP', 54: 'TOP', 36: 'TOP', 150: 'TOP', 164: 'TOP',
+            875: 'TOP', 887: 'TOP', 897: 'TOP', 799: 'TOP',
+            
+            # JUNGLE (also check Smite spell ID 11)
+            11: 'JUNGLE', 5: 'JUNGLE', 64: 'JUNGLE', 60: 'JUNGLE', 28: 'JUNGLE',
+            9: 'JUNGLE', 79: 'JUNGLE', 121: 'JUNGLE', 127: 'JUNGLE', 56: 'JUNGLE',
+            154: 'JUNGLE', 107: 'JUNGLE', 421: 'JUNGLE', 141: 'JUNGLE', 120: 'JUNGLE',
+            102: 'JUNGLE', 113: 'JUNGLE', 48: 'JUNGLE', 77: 'JUNGLE', 19: 'JUNGLE',
+            62: 'JUNGLE', 35: 'JUNGLE', 72: 'JUNGLE', 254: 'JUNGLE', 427: 'JUNGLE',
+            876: 'JUNGLE', 234: 'JUNGLE', 200: 'JUNGLE', 233: 'JUNGLE',
+            
+            # MID laners
+            1: 'MID', 103: 'MID', 84: 'MID', 34: 'MID', 136: 'MID', 268: 'MID',
+            63: 'MID', 69: 'MID', 131: 'MID', 245: 'MID', 105: 'MID', 910: 'MID',
+            38: 'MID', 7: 'MID', 90: 'MID', 61: 'MID', 74: 'MID', 246: 'MID',
+            13: 'MID', 517: 'MID', 134: 'MID', 91: 'MID', 163: 'MID', 45: 'MID',
+            161: 'MID', 112: 'MID', 8: 'MID', 101: 'MID', 142: 'MID', 238: 'MID',
+            143: 'MID', 157: 'MID', 777: 'MID', 893: 'MID', 804: 'MID', 800: 'MID',
+            
+            # ADC (Bottom)
+            22: 'ADC', 51: 'ADC', 119: 'ADC', 81: 'ADC', 222: 'ADC', 202: 'ADC',
+            145: 'ADC', 429: 'ADC', 96: 'ADC', 21: 'ADC', 15: 'ADC', 18: 'ADC',
+            236: 'ADC', 110: 'ADC', 498: 'ADC', 221: 'ADC', 360: 'ADC', 901: 'ADC',
+            29: 'ADC', 42: 'ADC', 67: 'ADC', 104: 'ADC', 203: 'ADC', 950: 'ADC',
+            
+            # SUPPORT
+            412: 'SUPPORT', 53: 'SUPPORT', 89: 'SUPPORT', 25: 'SUPPORT', 40: 'SUPPORT',
+            37: 'SUPPORT', 267: 'SUPPORT', 16: 'SUPPORT', 43: 'SUPPORT', 117: 'SUPPORT',
+            201: 'SUPPORT', 432: 'SUPPORT', 223: 'SUPPORT', 555: 'SUPPORT', 235: 'SUPPORT',
+            350: 'SUPPORT', 526: 'SUPPORT', 497: 'SUPPORT', 147: 'SUPPORT', 111: 'SUPPORT',
+            12: 'SUPPORT', 44: 'SUPPORT', 888: 'SUPPORT', 902: 'SUPPORT', 711: 'SUPPORT',
         }
         
-        ordered = []
+        ROLE_ORDER = ['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT']
+        ROLE_NAMES = {'TOP': 'Top', 'JUNGLE': 'Jungle', 'MID': 'Mid', 'ADC': 'ADC', 'SUPPORT': 'Support'}
+        ROLE_EMOJIS = {
+            'TOP': CFG_ROLE_EMOJIS.get('TOP', '🗻'),
+            'JUNGLE': CFG_ROLE_EMOJIS.get('JUNGLE', '🌿'),
+            'MID': CFG_ROLE_EMOJIS.get('MIDDLE', '🌀'),
+            'ADC': CFG_ROLE_EMOJIS.get('BOTTOM', '🎯'),
+            'SUPPORT': CFG_ROLE_EMOJIS.get('UTILITY', '🛡️'),
+        }
         
-        # Step 1: Find jungler (has Smite = spell1Id or spell2Id == 11)
-        jungler = None
-        non_jungle = []
+        # Assign predicted role to each player
+        role_buckets = {role: [] for role in ROLE_ORDER}
+        unassigned = []
         
         for p in players:
+            champ_id = p.get('championId', 0)
             spell1 = p.get('spell1Id', 0)
             spell2 = p.get('spell2Id', 0)
-            if spell1 == 11 or spell2 == 11:  # Smite
-                jungler = p
+            
+            # Jungle override: if has Smite (spell 11), always jungle
+            if spell1 == 11 or spell2 == 11:
+                role_buckets['JUNGLE'].append(p)
+            elif champ_id in CHAMP_ROLES:
+                predicted_role = CHAMP_ROLES[champ_id]
+                role_buckets[predicted_role].append(p)
             else:
-                non_jungle.append(p)
+                unassigned.append(p)
         
-        # Step 2: Find support (typical support champion)
-        support = None
-        non_jungle_non_support = []
-        
-        for p in non_jungle:
-            champ_id = p.get('championId', 0)
-            if champ_id in SUPPORT_CHAMPIONS:
-                support = p
-            else:
-                non_jungle_non_support.append(p)
-        
-        # Fallbacks
-        if not jungler and players:
-            jungler = players[0]
-            non_jungle = players[1:]
-            non_jungle_non_support = non_jungle
-        
-        if not support and non_jungle:
-            # Take last non-jungle player as support (usually last pick)
-            support = non_jungle[-1]
-            non_jungle_non_support = non_jungle[:-1]
-        
-        # Step 3: Assign remaining as TOP, MID, ADC
-        remaining = non_jungle_non_support[:3]  # Max 3 players left
-        
-        # Build role assignments
-        role_assignments = []
-        
-        if len(remaining) >= 3:
-            role_assignments = [
-                (remaining[0], "Top", CFG_ROLE_EMOJIS.get('TOP', '🗻')),
-                (jungler, "Jungle", CFG_ROLE_EMOJIS.get('JUNGLE', '🌿')),
-                (remaining[1], "Mid", CFG_ROLE_EMOJIS.get('MIDDLE', '🌀')),
-                (remaining[2], "ADC", CFG_ROLE_EMOJIS.get('BOTTOM', '🎯')),
-                (support, "Support", CFG_ROLE_EMOJIS.get('UTILITY', '🛡️')),
-            ]
-        else:
-            # Fallback: assign by index
-            all_players = players[:5]
-            for idx, p in enumerate(all_players):
-                role_name, role_emoji = ROLE_LABELS[idx] if idx < len(ROLE_LABELS) else ("Player", "🎮")
-                role_assignments.append((p, role_name, role_emoji))
-        
-        # Build ordered list with role info
-        for player, role_name, role_emoji in role_assignments:
-            if player:
+        # Build ordered list: fill each role slot
+        ordered = []
+        for role in ROLE_ORDER:
+            candidates = role_buckets[role]
+            if candidates:
+                # Take first candidate for this role
+                player = candidates[0]
                 p_copy = dict(player)
+                p_copy['role_name'] = ROLE_NAMES[role]
+                p_copy['role_emoji'] = ROLE_EMOJIS[role]
+                ordered.append(p_copy)
+                # If multiple champions for same role, add extras to unassigned
+                if len(candidates) > 1:
+                    unassigned.extend(candidates[1:])
+        
+        # Fill remaining slots with unassigned players in order
+        for role in ROLE_ORDER:
+            if len(ordered) >= 5:
+                break
+            # Check if this role slot is empty
+            if not any(p.get('role_name') == ROLE_NAMES[role] for p in ordered):
+                if unassigned:
+                    player = unassigned.pop(0)
+                    p_copy = dict(player)
+                    p_copy['role_name'] = ROLE_NAMES[role]
+                    p_copy['role_emoji'] = ROLE_EMOJIS[role]
+                    ordered.append(p_copy)
+        
+        # Fallback: if we don't have exactly 5, add remaining players
+        while len(ordered) < len(players) and len(ordered) < 5:
+            if unassigned:
+                player = unassigned.pop(0)
+                p_copy = dict(player)
+                idx = len(ordered)
+                role_name, role_emoji = ROLE_LABELS[idx] if idx < len(ROLE_LABELS) else ("Player", "🎮")
                 p_copy['role_name'] = role_name
                 p_copy['role_emoji'] = role_emoji
                 ordered.append(p_copy)
+            else:
+                break
         
         return ordered
 
