@@ -1081,16 +1081,17 @@ class Hexbet(commands.Cog):
             9: 'JUNGLE', 79: 'JUNGLE', 121: 'JUNGLE', 127: 'JUNGLE', 56: 'JUNGLE',
             154: 'JUNGLE', 107: 'JUNGLE', 421: 'JUNGLE', 141: 'JUNGLE', 120: 'JUNGLE',
             102: 'JUNGLE', 113: 'JUNGLE', 48: 'JUNGLE', 77: 'JUNGLE', 19: 'JUNGLE',
-            62: 'JUNGLE', 35: 'JUNGLE', 72: 'JUNGLE', 254: 'JUNGLE', 427: 'JUNGLE',
+            62: 'JUNGLE', 72: 'JUNGLE', 254: 'JUNGLE', 427: 'JUNGLE',
             876: 'JUNGLE', 234: 'JUNGLE', 200: 'JUNGLE', 233: 'JUNGLE',
             
             # MID laners
-            1: 'MID', 103: 'MID', 84: 'MID', 34: 'MID', 136: 'MID', 268: 'MID',
+            103: 'MID', 84: 'MID', 34: 'MID', 136: 'MID', 268: 'MID',
             63: 'MID', 69: 'MID', 131: 'MID', 245: 'MID', 105: 'MID', 910: 'MID',
             38: 'MID', 7: 'MID', 90: 'MID', 61: 'MID', 74: 'MID', 246: 'MID',
             13: 'MID', 517: 'MID', 134: 'MID', 91: 'MID', 163: 'MID', 45: 'MID',
-            161: 'MID', 112: 'MID', 8: 'MID', 101: 'MID', 142: 'MID', 238: 'MID',
-            143: 'MID', 157: 'MID', 777: 'MID', 893: 'MID', 804: 'MID', 800: 'MID',
+            161: 'MID', 112: 'MID', 101: 'MID', 142: 'MID', 238: 'MID',
+            157: 'MID', 777: 'MID', 893: 'MID', 804: 'MID', 800: 'MID',
+            55: 'MID',  # Syndra
             
             # ADC (Bottom)
             22: 'ADC', 51: 'ADC', 119: 'ADC', 81: 'ADC', 222: 'ADC', 202: 'ADC',
@@ -1098,12 +1099,20 @@ class Hexbet(commands.Cog):
             236: 'ADC', 110: 'ADC', 498: 'ADC', 221: 'ADC', 360: 'ADC', 901: 'ADC',
             29: 'ADC', 42: 'ADC', 67: 'ADC', 104: 'ADC', 203: 'ADC', 950: 'ADC',
             
-            # SUPPORT
+            # SUPPORT (primary role for supports)
             412: 'SUPPORT', 53: 'SUPPORT', 89: 'SUPPORT', 25: 'SUPPORT', 40: 'SUPPORT',
             37: 'SUPPORT', 267: 'SUPPORT', 16: 'SUPPORT', 43: 'SUPPORT', 117: 'SUPPORT',
             201: 'SUPPORT', 432: 'SUPPORT', 223: 'SUPPORT', 555: 'SUPPORT', 235: 'SUPPORT',
             350: 'SUPPORT', 526: 'SUPPORT', 497: 'SUPPORT', 147: 'SUPPORT', 111: 'SUPPORT',
             12: 'SUPPORT', 44: 'SUPPORT', 888: 'SUPPORT', 902: 'SUPPORT', 711: 'SUPPORT',
+            143: 'SUPPORT',  # Zyra (primary SUPPORT)
+            35: 'SUPPORT',   # Neeko (primary SUPPORT)
+        }
+        
+        # Champions that can play multiple roles (secondary roles)
+        CHAMP_CAN_FILL = {
+            143: ['SUPPORT', 'JUNGLE'],  # Zyra - can play JG or SUPPORT
+            35: ['SUPPORT', 'JUNGLE'],   # Neeko - can play JG or SUPPORT
         }
         
         ROLE_ORDER = ['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT']
@@ -1148,7 +1157,17 @@ class Hexbet(commands.Cog):
                 if len(candidates) > 1:
                     duplicates.extend(candidates[1:])
         
-        # Fill empty slots with unassigned players first, then duplicates
+        # If a role slot is empty and we have multi-role champions that can fill it, use them
+        for idx, role in enumerate(ROLE_ORDER):
+            if ordered[idx] is None:
+                # Look for a multi-role champion in duplicates that can play this role
+                for i, player in enumerate(duplicates[:]):
+                    champ_id = player.get('championId', 0)
+                    if champ_id in CHAMP_CAN_FILL and role in CHAMP_CAN_FILL[champ_id]:
+                        ordered[idx] = duplicates.pop(i)
+                        break
+        
+        # Fill remaining empty slots with unassigned players first, then duplicates
         fill_queue = unassigned + duplicates
         for idx in range(5):
             if ordered[idx] is None and fill_queue:
