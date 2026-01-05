@@ -1421,22 +1421,23 @@ class Hexbet(commands.Cog):
             streamer_mode = p.get('streamer_mode', False)
             tier_emoji = rank_emoji(tier) or tier
             champ = p.get('champ_emoji') or p.get('champ_name', '')
-            # Use ProName if player is pro/streamer, otherwise use riotId, fallback to summonerName
+            
+            # Use pro_name (display_name from DB) if available, otherwise riotId, fallback to summonerName
             name = p.get('pro_name') or p.get('riotId', p.get('summonerName', 'Player'))
-            # Add badge emoji if player is pro or streamer
-            badge = p.get('badge_emoji')
-            if badge:
-                name = f"{badge} {name}"
+            
+            # Add badge emoji before name if player is pro or streamer
+            badge = p.get('badge_emoji', '')
+            
             wr = p.get('wr', 50)
             lp = p.get('lp', 0)
             
             if streamer_mode:
                 rank_str = "🤖STREAMER MODE"
-                lines.append(f"{role} {champ} **{name}**")
+                lines.append(f"{role} {champ} {badge} **{name}**")
                 lines.append(f"   └ {rank_str} • {wr:.1f}% WR")
             else:
                 rank_str = f"{tier}{' ' + division if division else ''}"
-                lines.append(f"{role} {champ} **{name}**")
+                lines.append(f"{role} {champ} {badge} **{name}**")
                 lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
 
@@ -2287,9 +2288,8 @@ class Hexbet(commands.Cog):
                     
                     embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player="special", match_id=match_id, game_start_at=game_data.get('gameStartTime'))
                     
-                    # Add pro/streamer badge to message content
-                    content = f"⭐ **{nickname}**{pro_status} found in game!"
-                    msg = await channel.send(content=content, embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
+                    # Send embed without content message
+                    msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
                     self.db.set_match_message(match_id, BET_CHANNEL_ID, msg.id)
                     
                     logger.info(f"✅ Posted priority match {match_id} with {nickname}")
