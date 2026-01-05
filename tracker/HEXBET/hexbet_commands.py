@@ -337,6 +337,15 @@ class Hexbet(commands.Cog):
                             if isinstance(blue_team, dict) and isinstance(red_team, dict):
                                 blue_players = blue_team.get('players', [])
                                 red_players = red_team.get('players', [])
+                                
+                                # Re-detect streamer mode based on RiotID presence
+                                all_players = blue_players + red_players
+                                for p in all_players:
+                                    riot_id_name = p.get('riotIdGameName', '').strip()
+                                    riot_id_tag = p.get('riotIdTagline', '').strip()
+                                    has_riot_id = bool(riot_id_name and riot_id_tag)
+                                    p['streamer_mode'] = not has_riot_id
+                                
                                 odds_blue = blue_team.get('odds', 1.5)
                                 odds_red = red_team.get('odds', 1.5)
                                 
@@ -2482,8 +2491,15 @@ class Hexbet(commands.Cog):
                     blue_players = self._assign_roles(blue_players)
                     red_players = self._assign_roles(red_players)
                     
-                    # Add pro/streamer badges if missing
+                    # Re-detect streamer mode based on RiotID presence
                     all_players = blue_players + red_players
+                    for p in all_players:
+                        riot_id_name = p.get('riotIdGameName', '').strip()
+                        riot_id_tag = p.get('riotIdTagline', '').strip()
+                        has_riot_id = bool(riot_id_name and riot_id_tag)
+                        p['streamer_mode'] = not has_riot_id
+                    
+                    # Add pro/streamer badges if missing
                     conn = self.db.get_connection()
                     cur = conn.cursor()
                     for p in all_players:
