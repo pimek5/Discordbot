@@ -184,19 +184,13 @@ STREAMER_PLAYERS = [
     'RekSaiKing',
 ]
 
-async def add_player(db: TrackerDatabase, riot_api: RiotAPI, name: str, player_type: str):
-    """Add a single player to database"""
+async def add_player_simple(db: TrackerDatabase, name: str, player_type: str):
+    """Add player with simple placeholder riot_id - will be updated by /hxpro command"""
     try:
         logger.info(f"Adding {player_type}: {name}")
         
-        # Scrape DPM.LOL
-        scraped_accounts = await scrape_dpm_pro_accounts(name)
-        
-        if not scraped_accounts:
-            logger.warning(f"❌ No accounts found on DPM.LOL for {name}")
-            return False
-        
-        logger.info(f"🔍 Found {len(scraped_accounts)} accounts for {name}")
+        # Create placeholder riot_id
+        placeholder_riot_id = f"{name}#0000"
         
         # Check if already exists
         conn = db.get_connection()
@@ -213,95 +207,22 @@ async def add_player(db: TrackerDatabase, riot_api: RiotAPI, name: str, player_t
             logger.warning(f"⚠️ {name} already in database")
             return False
         
-        # Use first account as primary
-        primary_riot_id = scraped_accounts[0]['riot_id']
-        
-        # Insert player
+        # Insert player with placeholder
         conn = db.get_connection()
         cursor = conn.cursor()
         cursor.execute(
             """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
                VALUES (%s, %s, %s)
                RETURNING id""",
-            (primary_riot_id, name, player_type)
+            (placeholder_riot_id, name, player_type)
         )
         player_id = cursor.fetchone()[0]
         conn.commit()
         cursor.close()
         db.return_connection(conn)
         
-        logger.info(f"✅ Added player {name} with ID {player_id}")
-        
-        # Fetch stats for each account
-        accounts = []
-        for idx, scraped in enumerate(scraped_accounts):
-            try:
-                if idx > 0:
-                    await asyncio.sleep(1.5)  # Rate limit
-                
-                riot_id = scraped['riot_id']
-                game_name, tag_line = riot_id.split('#', 1)
-                
-                # Get PUUID
-                account_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
-                headers = {'X-Riot-Token': riot_api.api_key}
-                
-                import aiohttp
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(account_url, headers=headers) as response:
-                        if response.status != 200:
-                            logger.warning(f"Failed to fetch PUUID for {riot_id}")
-                            continue
-                        
-                        account_data = await response.json()
-                        puuid = account_data.get('puuid')
-                
-                # Get ranked stats
-                stats = await riot_api.get_ranked_stats_by_puuid(puuid, 'euw')
-                
-                if not stats:
-                    logger.warning(f"No ranked stats for {riot_id}")
-                    continue
-                
-                # Pick rank
-                def pick_rank_entry(stats_list):
-                    if not stats_list:
-                        return 'UNRANKED', '', 50.0
-                    solo = [s for s in stats_list if s.get('queueType') == 'RANKED_SOLO_5x5']
-                    entry = solo[0] if solo else stats_list[0]
-                    wins = entry.get('wins', 0)
-                    losses = entry.get('losses', 0)
-                    games = wins + losses
-                    wr = round((wins / games) * 100, 1) if games else 50.0
-                    return entry.get('tier', 'UNRANKED').upper(), entry.get('rank', '').upper(), wr
-                
-                tier, division, wr = pick_rank_entry(stats)
-                
-                soloq_entry = next((s for s in stats if s.get('queueType') == 'RANKED_SOLO_5x5'), stats[0] if stats else {})
-                lp = soloq_entry.get('leaguePoints', 0)
-                wins = soloq_entry.get('wins', 0)
-                losses = soloq_entry.get('losses', 0)
-                
-                accounts.append({
-                    'riot_id': riot_id,
-                    'rank': tier,
-                    'lp': lp,
-                    'wins': wins,
-                    'losses': losses,
-                    'wr': wr
-                })
-                logger.info(f"✅ Fetched {riot_id}: {tier} {lp} LP")
-            except Exception as e:
-                logger.warning(f"❌ Failed to fetch {scraped.get('riot_id')}: {e}")
-                continue
-        
-        if accounts:
-            count = db.add_pro_accounts(player_id, accounts)
-            logger.info(f"✅ Added {count} accounts for {name}")
-            return True
-        else:
-            logger.warning(f"⚠️ No accounts added for {name}")
-            return False
+        logger.info(f"✅ Added player {name} (ID: {player_id})")
+        return True
             
     except Exception as e:
         logger.error(f"Error adding {name}: {e}", exc_info=True)
@@ -309,10 +230,14 @@ async def add_player(db: TrackerDatabase, riot_api: RiotAPI, name: str, player_t
 
 async def main():
     """Main batch add function"""
-    from dotenv import load_dotenv
     import os
+    from dotenv import load_dotenv
     
     load_dotenv()
+    
+    # Override DATABASE_URL to Railway URL
+    railway_url = "postgresql://postgres:VeNZZTCabRnROGyGHQbVSBcLlIIhYDuB@shinkansen.proxy.rlwy.net:23983/railway"
+    os.environ['DATABASE_URL'] = railway_url
     
     db = TrackerDatabase()
     riot_api = RiotAPI(api_key=os.getenv('RIOT_API_KEY'))
@@ -320,6 +245,7 @@ async def main():
     print("\n" + "="*50)
     print("HEXBET BATCH PLAYER ADD")
     print("="*50)
+    print(f">> Connected to: {railway_url.split('@')[1].split('/')[0]}")
     
     added = 0
     failed = 0
@@ -327,23 +253,23 @@ async def main():
     # Add pros
     print("\n[PRO PLAYERS]")
     for name in PRO_PLAYERS:
-        if await add_player(db, riot_api, name, 'pro'):
+        if await add_player_simple(db, name, 'pro'):
             added += 1
         else:
             failed += 1
-        await asyncio.sleep(2)  # Delay between players
+        await asyncio.sleep(0.5)  # Shorter delay
     
     # Add streamers
     print("\n[STREAMERS]")
     for name in STREAMER_PLAYERS:
-        if await add_player(db, riot_api, name, 'streamer'):
+        if await add_player_simple(db, name, 'streamer'):
             added += 1
         else:
             failed += 1
-        await asyncio.sleep(2)
+        await asyncio.sleep(0.5)
     
     print("\n" + "="*50)
-    print(f"✅ Added: {added} | ❌ Failed: {failed}")
+    print(f">> Added: {added} | FAILED: {failed}")
     print("="*50 + "\n")
 
 if __name__ == '__main__':
