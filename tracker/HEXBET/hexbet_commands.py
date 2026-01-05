@@ -1205,11 +1205,13 @@ class Hexbet(commands.Cog):
                     if result:
                         p['pro_name'] = result[0]
                         player_type = result[1]
-                        # Add badge if not already set
+                        # Always set badge for verified players (override any previous value)
                         if player_type == 'pro':
                             p['badge_emoji'] = get_pro_emoji()
+                            logger.info(f"🎖️ Set PRO badge for {p['pro_name']} ({riot_id})")
                         elif player_type == 'streamer':
                             p['badge_emoji'] = get_streamer_emoji()
+                            logger.info(f"📺 Set STREAMER badge for {p['pro_name']} ({riot_id})")
                 except Exception as e:
                     logger.warning(f"Failed to load ProName for {riot_id}: {e}")
 
