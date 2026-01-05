@@ -1581,6 +1581,8 @@ class Hexbet(commands.Cog):
             player_id, player_name, riot_id, player_type = result
             
             # Delete player (CASCADE will remove linked accounts)
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
             cursor.execute("DELETE FROM hexbet_verified_players WHERE id = %s", (player_id,))
             conn.commit()
             cursor.close()
