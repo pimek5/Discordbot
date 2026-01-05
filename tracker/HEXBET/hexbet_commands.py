@@ -1759,6 +1759,8 @@ class Hexbet(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
+            logger.info(f"🔄 hxadd started: {display_name} ({riot_id}) on {region} as {player_type}")
+            
             # Validate riot_id format
             if '#' not in riot_id:
                 await interaction.followup.send("❌ RiotID must be in format: `gameName#tagLine`", ephemeral=True)
@@ -1815,6 +1817,7 @@ class Hexbet(commands.Cog):
                             break
             
             if not puuid:
+                logger.error(f"❌ Failed to get PUUID for {riot_id} on {routing_region}")
                 await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` on {region} ({routing_region})\nThis may be due to API rate limits. Try again in a moment.", ephemeral=True)
                 return
             
@@ -1853,6 +1856,8 @@ class Hexbet(commands.Cog):
             losses = stats.get('losses', 0) if stats else 0
             wr = round((wins / (wins + losses) * 100), 1) if (wins + losses) > 0 else 50.0
             
+            logger.info(f"📊 Player stats: {tier} {lp}LP, {wins}W {losses}L ({wr}% WR)")
+            
             # Add to verified_players
             conn = self.db.get_connection()
             cur = conn.cursor()
@@ -1863,9 +1868,11 @@ class Hexbet(commands.Cog):
                 (display_name, riot_id)
             )
             
-            if cur.fetchone():
+            existing = cur.fetchone()
+            if existing:
                 cur.close()
                 self.db.return_connection(conn)
+                logger.warning(f"⚠️ Player {display_name} already exists (id: {existing[0]})")
                 await interaction.followup.send(f"⚠️ Player **{display_name}** already exists in database", ephemeral=True)
                 return
             
@@ -1878,6 +1885,7 @@ class Hexbet(commands.Cog):
             )
             player_id = cur.fetchone()[0]
             conn.commit()
+            logger.info(f"📝 Inserted player with ID {player_id}")
             
             # Add stats to pro_accounts
             cur.execute(
@@ -1894,6 +1902,7 @@ class Hexbet(commands.Cog):
                 (player_id, riot_id, tier, lp, wins, losses, wr)
             )
             conn.commit()
+            logger.info(f"📝 Added stats to pro_accounts")
             cur.close()
             self.db.return_connection(conn)
             
