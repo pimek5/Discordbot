@@ -396,7 +396,7 @@ class Hexbet(commands.Cog):
             games_checked = 0
             rate_limit_backoff = 0.5  # Start with 0.5s delay
             
-            for puuid, tier, lp in puuids:
+            for puuid, tier, lp, boost in puuids:
                 games_checked += 1
                 self.db.update_high_elo_last_checked(puuid)
                 
