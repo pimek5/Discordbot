@@ -1400,12 +1400,12 @@ class Hexbet(commands.Cog):
                 lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
 
-    @app_commands.command(name="hxaddpro", description="Add a pro player to HEXBET")
+    @app_commands.command(name="hxpro", description="Add a pro player to HEXBET")
     @app_commands.describe(
         riot_id="Player RiotID (gameName#tagLine)",
         pro="Pro player display name"
     )
-    async def hxaddpro(self, interaction: discord.Interaction, riot_id: str, pro: str):
+    async def hxpro(self, interaction: discord.Interaction, riot_id: str, pro: str):
         """Add a pro player to HEXBET database"""
         await interaction.response.defer(ephemeral=True)
         
