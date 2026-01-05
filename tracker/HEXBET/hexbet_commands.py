@@ -1404,50 +1404,55 @@ class Hexbet(commands.Cog):
 
     @app_commands.command(name="hxpro", description="Add a pro player or streamer to HEXBET")
     @app_commands.describe(
-        riot_id="Player RiotID (gameName#tagLine)",
-        name="Pro/Streamer display name",
+        name="Pro/Streamer name (will search DPM.LOL)",
         player_type="Type of player"
     )
     @app_commands.choices(player_type=[
         app_commands.Choice(name="Pro Player", value="pro"),
         app_commands.Choice(name="Streamer", value="streamer")
     ])
-    async def hxpro(self, interaction: discord.Interaction, riot_id: str, name: str, player_type: str = "pro"):
+    async def hxpro(self, interaction: discord.Interaction, name: str, player_type: str = "pro"):
         """Add a pro player or streamer to HEXBET database"""
         await interaction.response.defer(ephemeral=True)
         
         try:
+            # Scrape DPM.LOL for accounts first
+            scraped_accounts = await scrape_dpm_pro_accounts(name)
+            
+            logger.info(f"🔍 DPM.LOL returned {len(scraped_accounts)} riot_ids for {name}")
+            
+            if not scraped_accounts:
+                await interaction.followup.send(f"❌ No accounts found on DPM.LOL for `{name}`", ephemeral=True)
+                return
+            
+            # Use first account as primary riot_id
+            primary_riot_id = scraped_accounts[0]['riot_id']
+            
             # Check if already exists
             conn = self.db.get_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id FROM hexbet_verified_players WHERE riot_id = %s",
-                (riot_id,)
+                "SELECT id FROM hexbet_verified_players WHERE LOWER(player_name) = LOWER(%s)",
+                (name,)
             )
             existing = cursor.fetchone()
             if existing:
-                await interaction.followup.send(f"⚠️ Player `{riot_id}` already in database", ephemeral=True)
+                await interaction.followup.send(f"⚠️ Player `{name}` already in database", ephemeral=True)
                 cursor.close()
                 self.db.return_connection(conn)
                 return
             
-            # Add to database
+            # Add to database with primary riot_id
             cursor.execute(
                 """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
                    VALUES (%s, %s, %s)
                    RETURNING id""",
-                (riot_id, name, player_type)
+                (primary_riot_id, name, player_type)
             )
             player_id = cursor.fetchone()[0]
             conn.commit()
             cursor.close()
             self.db.return_connection(conn)
-            
-            # Scrape DPM.LOL for accounts (use player name without #tag)
-            player_display_name = name.split('#')[0] if '#' in name else name
-            scraped_accounts = await scrape_dpm_pro_accounts(player_display_name)
-            
-            logger.info(f"🔍 DPM.LOL returned {len(scraped_accounts)} riot_ids for {player_display_name}")
             
             # Fetch rank/LP/WR from Riot API for each account
             accounts = []
@@ -1522,12 +1527,12 @@ class Hexbet(commands.Cog):
                 description=f"**{name}** added to HEXBET database",
                 color=0x2ECC71
             )
-            embed.add_field(name="RiotID", value=riot_id, inline=False)
+            embed.add_field(name="Primary RiotID", value=primary_riot_id, inline=False)
             embed.add_field(name="Display Name", value=name, inline=False)
             embed.add_field(name="Type", value=player_type_label, inline=False)
             embed.add_field(name=f"📊 SoloQ Accounts ({len(accounts)})", value=account_text or "None", inline=False)
             await interaction.followup.send(embed=embed, ephemeral=True)
-            logger.info(f"✅ Added pro player: {riot_id} ({name}) with {len(accounts)} accounts")
+            logger.info(f"✅ Added pro player: {primary_riot_id} ({name}) with {len(accounts)} accounts")
         
         except Exception as e:
             logger.error(f"Error in hxpro add command: {e}", exc_info=True)
