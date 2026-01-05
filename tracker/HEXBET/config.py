@@ -148,7 +148,7 @@ RANK_EMOJIS = {
 # Player status badges
 PLAYER_BADGES = {
     'PRO': '<:PRO:1457231609458851961>',
-    'STRM': '<:STRM:1457328151095939138>',
+    'STRM': '<:STRM:1457671230432743567>',
 }
 
 # Champion emojis (mapping champion IDs to custom emojis)
