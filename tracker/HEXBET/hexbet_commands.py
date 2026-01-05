@@ -1626,6 +1626,144 @@ class Hexbet(commands.Cog):
             logger.error(f"Error in hxproremove: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxadd", description="Manually add a player to verified pool and database")
+    @app_commands.describe(
+        display_name="Player display name (how they appear in embeds)",
+        riot_id="RiotID (gameName#tagLine)",
+        player_type="Type of player"
+    )
+    @app_commands.choices(player_type=[
+        app_commands.Choice(name="Pro Player", value="pro"),
+        app_commands.Choice(name="Streamer", value="streamer")
+    ])
+    async def hxadd(self, interaction: discord.Interaction, display_name: str, riot_id: str, player_type: str = "pro"):
+        """Manually add a player to verified database"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Validate riot_id format
+            if '#' not in riot_id:
+                await interaction.followup.send("❌ RiotID must be in format: `gameName#tagLine`", ephemeral=True)
+                return
+            
+            game_name, tag_line = riot_id.split('#', 1)
+            
+            # Get PUUID
+            account_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+            headers = {'X-Riot-Token': self.riot_api.api_key}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(account_url, headers=headers) as resp:
+                    if resp.status != 200:
+                        await interaction.followup.send(f"❌ RiotID not found: `{riot_id}`", ephemeral=True)
+                        return
+                    
+                    account_data = await resp.json()
+                    puuid = account_data.get('puuid')
+            
+            if not puuid:
+                await interaction.followup.send("❌ Failed to get PUUID", ephemeral=True)
+                return
+            
+            # Get summoner data
+            summoner_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(summoner_url, headers=headers) as resp:
+                    if resp.status != 200:
+                        await interaction.followup.send("❌ Failed to get summoner data", ephemeral=True)
+                        return
+                    
+                    summoner_data = await resp.json()
+            
+            summoner_id = summoner_data.get('id')
+            
+            # Get ranked stats
+            ranked_url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+            stats = None
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(ranked_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        stats_data = await resp.json()
+                        if stats_data:
+                            ranked = [s for s in stats_data if s.get('queueType') == 'RANKED_SOLO_5x5']
+                            stats = ranked[0] if ranked else stats_data[0]
+            
+            tier = stats.get('tier', 'DIAMOND') if stats else 'DIAMOND'
+            lp = stats.get('leaguePoints', 0) if stats else 0
+            wins = stats.get('wins', 0) if stats else 0
+            losses = stats.get('losses', 0) if stats else 0
+            wr = round((wins / (wins + losses) * 100), 1) if (wins + losses) > 0 else 50.0
+            
+            # Add to verified_players
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            
+            # Check if already exists
+            cur.execute(
+                "SELECT id FROM hexbet_verified_players WHERE LOWER(player_name) = LOWER(%s) OR riot_id = %s",
+                (display_name, riot_id)
+            )
+            
+            if cur.fetchone():
+                cur.close()
+                self.db.return_connection(conn)
+                await interaction.followup.send(f"⚠️ Player **{display_name}** already exists in database", ephemeral=True)
+                return
+            
+            # Insert player
+            cur.execute(
+                """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
+                   VALUES (%s, %s, %s)
+                   RETURNING id""",
+                (riot_id, display_name, player_type)
+            )
+            player_id = cur.fetchone()[0]
+            conn.commit()
+            
+            # Add stats to pro_accounts
+            cur.execute(
+                """INSERT INTO hexbet_pro_accounts (pro_player_id, riot_id, rank, lp, wins, losses, wr)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (pro_player_id, riot_id) DO UPDATE SET
+                       rank = EXCLUDED.rank,
+                       lp = EXCLUDED.lp,
+                       wins = EXCLUDED.wins,
+                       losses = EXCLUDED.losses,
+                       wr = EXCLUDED.wr,
+                       updated_at = NOW()
+                """,
+                (player_id, riot_id, tier, lp, wins, losses, wr)
+            )
+            conn.commit()
+            cur.close()
+            self.db.return_connection(conn)
+            
+            # Build embed
+            pro_emoji = get_pro_emoji()
+            streamer_emoji = get_streamer_emoji()
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
+            
+            embed = discord.Embed(
+                title="✅ Player Added",
+                description=f"**{display_name}** added to HEXBET database",
+                color=0x2ECC71
+            )
+            embed.add_field(name="Display Name", value=display_name, inline=False)
+            embed.add_field(name="RiotID", value=riot_id, inline=False)
+            embed.add_field(name="Type", value=player_type_label, inline=False)
+            embed.add_field(name="Rank", value=f"{tier} {lp}LP", inline=True)
+            embed.add_field(name="W/L", value=f"{wins}W {losses}L ({wr}% WR)", inline=True)
+            embed.add_field(name="Status", value="✅ Will be added to pool on next hourly update", inline=False)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Added player: {display_name} ({riot_id}) - {tier} {lp}LP")
+            
+        except Exception as e:
+            logger.error(f"Error in hxadd: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="hxproedit", description="Edit pro player or streamer information")
     @app_commands.describe(
         name="Player name (display name or gameName#tagLine)",
