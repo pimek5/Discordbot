@@ -1683,26 +1683,38 @@ class Hexbet(commands.Cog):
             
             routing_region = region_map.get(region, 'americas')
             
-            # Get PUUID from specified routing region
+            # Get PUUID from specified routing region with retry on rate limit
             puuid = None
             headers = {'X-Riot-Token': self.riot_api.api_key}
             
             account_url = f"https://{routing_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
             logger.info(f"📡 Account URL: {account_url}")
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(account_url, headers=headers) as resp:
-                    logger.info(f"📊 Response status: {resp.status}")
-                    if resp.status == 200:
-                        account_data = await resp.json()
-                        puuid = account_data.get('puuid')
-                        logger.info(f"✅ Found PUUID on {routing_region}: {puuid}")
-                    else:
-                        error_text = await resp.text()
-                        logger.error(f"❌ API Error {resp.status}: {error_text[:200]}")
+            # Retry up to 3 times on rate limit
+            for attempt in range(3):
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(account_url, headers=headers) as resp:
+                        logger.info(f"📊 Response status: {resp.status} (attempt {attempt + 1}/3)")
+                        
+                        if resp.status == 200:
+                            account_data = await resp.json()
+                            puuid = account_data.get('puuid')
+                            logger.info(f"✅ Found PUUID on {routing_region}: {puuid}")
+                            break
+                        elif resp.status == 429:
+                            # Rate limit - wait and retry
+                            retry_after = resp.headers.get('Retry-After', '2')
+                            wait_time = int(retry_after) if retry_after.isdigit() else 2
+                            logger.warning(f"⏳ Rate limited, waiting {wait_time}s before retry...")
+                            if attempt < 2:  # Don't wait on last attempt
+                                await asyncio.sleep(wait_time)
+                        else:
+                            error_text = await resp.text()
+                            logger.error(f"❌ API Error {resp.status}: {error_text[:200]}")
+                            break
             
             if not puuid:
-                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` on {region} ({routing_region})\nCheck Railway logs for details.", ephemeral=True)
+                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` on {region} ({routing_region})\nThis may be due to API rate limits. Try again in a moment.", ephemeral=True)
                 return
             
             # Get summoner data from specified platform region
