@@ -343,7 +343,10 @@ class Hexbet(commands.Cog):
                                 for p in all_players:
                                     riot_id_name = p.get('riotIdGameName', '').strip()
                                     riot_id_tag = p.get('riotIdTagline', '').strip()
-                                    has_riot_id = bool(riot_id_name and riot_id_tag)
+                                    riot_id_combined = p.get('riotId', '').strip()
+                                    
+                                    # Check if player has visible riot ID (either split or combined format)
+                                    has_riot_id = bool(riot_id_name and riot_id_tag) or bool(riot_id_combined and '#' in riot_id_combined)
                                     p['streamer_mode'] = not has_riot_id
                                 
                                 odds_blue = blue_team.get('odds', 1.5)
@@ -1172,8 +1175,13 @@ class Hexbet(commands.Cog):
             # Streamer mode = player hides their summoner name (no riotIdGameName/riotIdTagline)
             riot_id_name = p.get('riotIdGameName', '').strip()
             riot_id_tag = p.get('riotIdTagline', '').strip()
-            has_riot_id = bool(riot_id_name and riot_id_tag)
+            riot_id_combined = p.get('riotId', '').strip()
+            
+            # Check if player has visible riot ID (either split or combined format)
+            has_riot_id = bool(riot_id_name and riot_id_tag) or bool(riot_id_combined and '#' in riot_id_combined)
             p['streamer_mode'] = not has_riot_id
+            
+            logger.debug(f"Player {p.get('summonerName', 'unknown')}: riotIdGameName='{riot_id_name}', riotIdTagline='{riot_id_tag}', riotId='{riot_id_combined}', streamer_mode={not has_riot_id}")
             
             lp = 0
             wins = 0
