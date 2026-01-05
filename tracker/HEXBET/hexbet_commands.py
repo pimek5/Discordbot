@@ -350,7 +350,7 @@ class Hexbet(commands.Cog):
                                 )
                                 
                                 await msg.edit(embed=new_embed)
-                                logger.info(f"🕐 Updated game time for match {match['id']}")
+                                logger.info(f"🕐 Updated game time for match {match['id']}" + (f" (SPECIAL BET)" if is_special_bet else ""))
                         
                     except discord.NotFound:
                         logger.warning(f"⚠️ Featured embed {message_id} not found, posting new game...")
@@ -1435,19 +1435,21 @@ class Hexbet(commands.Cog):
             else:
                 name = summoner_name
             
-            # Add badge emoji before name if player is pro or streamer
+            # Add badge emoji before name if player is pro or streamer (only if badge exists)
             badge = p.get('badge_emoji', '')
+            if badge:
+                badge = badge + ' '  # Add space after badge
             
             wr = p.get('wr', 50)
             lp = p.get('lp', 0)
             
             if streamer_mode:
                 rank_str = "🤖STREAMER MODE"
-                lines.append(f"{role} {champ} {badge} **{name}**")
+                lines.append(f"{role} {champ} {badge}**{name}**")
                 lines.append(f"   └ {rank_str} • {wr:.1f}% WR")
             else:
                 rank_str = f"{tier}{' ' + division if division else ''}"
-                lines.append(f"{role} {champ} {badge} **{name}**")
+                lines.append(f"{role} {champ} {badge}**{name}**")
                 lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
 
@@ -2449,21 +2451,12 @@ class Hexbet(commands.Cog):
                     is_special_bet = match.get('special_bet', False)
                     featured = "special" if is_special_bet else ""
                     
-                    # PROTECTION: Verify special bet status and restore if removed
-                    if is_special_bet and old_embed.title and '🎯 SOLO/DUO QUEUE' not in old_embed.title:
-                        logger.warning(f"⚠️ Special bet status was removed! Restoring for match {match['id']}")
-                    
                     game_start_at = match.get('game_start_at')
                     new_embed = self._build_embed(
                         game_id, platform, blue_players, red_players,
                         odds_blue, odds_red, chance_blue, chance_red,
                         featured, match['id'], game_start_at
                     )
-                    
-                    await msg.edit(embed=new_embed)
-                    
-                    if is_special_bet:
-                        logger.info(f"✅ Special bet status verified and maintained for match {match['id']}")
                     
                     refreshed += 1
                 else:
