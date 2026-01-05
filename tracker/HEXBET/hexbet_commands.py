@@ -1122,7 +1122,9 @@ class Hexbet(commands.Cog):
             wins = 0
             losses = 0
             if stats:
-                entry = stats[0]
+                # Pick the correct ranked entry (SOLOQ preferred)
+                solo = [s for s in stats if s.get('queueType') == 'RANKED_SOLO_5x5']
+                entry = solo[0] if solo else stats[0]
                 lp = entry.get('leaguePoints', 0)
                 wins = entry.get('wins', 0)
                 losses = entry.get('losses', 0)
