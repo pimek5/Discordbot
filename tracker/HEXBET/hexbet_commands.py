@@ -2550,10 +2550,7 @@ class Hexbet(commands.Cog):
                         failed += 1
                         continue
                     
-                    # Re-assign roles to ensure proper role detection (Smite, support champs, etc.)
-                    blue_players = self._assign_roles(blue_players)
-                    red_players = self._assign_roles(red_players)
-                    
+                    # DO NOT re-assign roles - they are already correctly assigned and stored in DB
                     # DO NOT re-detect streamer mode - preserve existing status to avoid changing working lobbies
                     # Just add missing badges if needed
                     all_players = blue_players + red_players
