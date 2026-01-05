@@ -1630,13 +1630,29 @@ class Hexbet(commands.Cog):
     @app_commands.describe(
         display_name="Player display name (how they appear in embeds)",
         riot_id="RiotID (gameName#tagLine)",
+        region="Platform region (euw1, kr, na1, etc.)",
         player_type="Type of player"
     )
-    @app_commands.choices(player_type=[
-        app_commands.Choice(name="Pro Player", value="pro"),
-        app_commands.Choice(name="Streamer", value="streamer")
-    ])
-    async def hxadd(self, interaction: discord.Interaction, display_name: str, riot_id: str, player_type: str = "pro"):
+    @app_commands.choices(
+        player_type=[
+            app_commands.Choice(name="Pro Player", value="pro"),
+            app_commands.Choice(name="Streamer", value="streamer")
+        ],
+        region=[
+            app_commands.Choice(name="EUW", value="euw1"),
+            app_commands.Choice(name="EUNE", value="eun1"),
+            app_commands.Choice(name="Korea", value="kr"),
+            app_commands.Choice(name="NA", value="na1"),
+            app_commands.Choice(name="Brazil", value="br1"),
+            app_commands.Choice(name="LAN", value="la1"),
+            app_commands.Choice(name="LAS", value="la2"),
+            app_commands.Choice(name="OCE", value="oc1"),
+            app_commands.Choice(name="Turkey", value="tr1"),
+            app_commands.Choice(name="Russia", value="ru"),
+            app_commands.Choice(name="Japan", value="jp1")
+        ]
+    )
+    async def hxadd(self, interaction: discord.Interaction, display_name: str, riot_id: str, region: str, player_type: str = "pro"):
         """Manually add a player to verified database"""
         await interaction.response.defer(ephemeral=True)
         
@@ -1653,52 +1669,51 @@ class Hexbet(commands.Cog):
             encoded_tag = urllib.parse.quote(tag_line)
             encoded_name = urllib.parse.quote(game_name)
             
-            # Get PUUID - try all regions with URL encoding
+            # Map platform region to routing region
+            region_map = {
+                'euw1': 'europe', 'eun1': 'europe', 'ru': 'europe', 'tr1': 'europe',
+                'na1': 'americas', 'br1': 'americas', 'la1': 'americas', 'la2': 'americas',
+                'kr': 'asia', 'jp1': 'asia',
+                'oc1': 'sea'
+            }
+            
+            routing_region = region_map.get(region, 'americas')
+            
+            # Get PUUID from specified routing region
             puuid = None
             headers = {'X-Riot-Token': self.riot_api.api_key}
             
-            for riot_region in ['europe', 'americas', 'asia', 'sea']:
-                account_url = f"https://{riot_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(account_url, headers=headers) as resp:
-                        if resp.status == 200:
-                            account_data = await resp.json()
-                            puuid = account_data.get('puuid')
-                            if puuid:
-                                logger.info(f"✅ Found PUUID on {riot_region}: {puuid}")
-                                break
-                await asyncio.sleep(0.3)
-                if puuid:
-                    break
+            account_url = f"https://{routing_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(account_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        account_data = await resp.json()
+                        puuid = account_data.get('puuid')
+                        logger.info(f"✅ Found PUUID on {routing_region}: {puuid}")
             
             if not puuid:
-                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` (checked all regions)", ephemeral=True)
+                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` on {region} ({routing_region})", ephemeral=True)
                 return
             
-            # Get summoner data - try all valid platform regions
+            # Get summoner data from specified platform region
             summoner_data = None
             summoner_id = None
-            found_region = None
             
-            for region in ['kr', 'jp1', 'na1', 'euw1', 'eun1', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru']:
-                summoner_url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
-                
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(summoner_url, headers=headers) as resp:
-                        if resp.status == 200:
-                            summoner_data = await resp.json()
-                            summoner_id = summoner_data.get('id')
-                            found_region = region
-                            logger.info(f"✅ Found summoner on {region}")
-                            break
-                await asyncio.sleep(0.3)
+            summoner_url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(summoner_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        summoner_data = await resp.json()
+                        summoner_id = summoner_data.get('id')
+                        logger.info(f"✅ Found summoner on {region}")
             
             if not summoner_id:
-                await interaction.followup.send("❌ Failed to get summoner data from any region", ephemeral=True)
+                await interaction.followup.send(f"❌ Failed to get summoner data from {region}", ephemeral=True)
                 return
             
-            # Get ranked stats from the region we found the summoner in
-            ranked_url = f"https://{found_region}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+            # Get ranked stats from the specified region
+            ranked_url = f"https://{region}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
             stats = None
             
             async with aiohttp.ClientSession() as session:
