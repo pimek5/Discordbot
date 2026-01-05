@@ -297,7 +297,7 @@ class Hexbet(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def check_embed_task(self):
-        """Check if featured embed exists on channel, if not post new game"""
+        """Check if featured embed exists on channel, if not post new game. Also update game time."""
         try:
             logger.info("🔍 Checking if featured embed exists...")
             # Get open matches on BET_CHANNEL_ID
@@ -309,7 +309,7 @@ class Hexbet(commands.Cog):
                 await self.post_random_featured_game(force=False)
                 return
             
-            # Check if message still exists
+            # Check if message still exists and update time
             channel = self.bot.get_channel(BET_CHANNEL_ID)
             if not channel:
                 logger.warning(f"⚠️ Featured channel {BET_CHANNEL_ID} not found")
@@ -319,8 +319,39 @@ class Hexbet(commands.Cog):
                 message_id = match.get('message_id')
                 if message_id:
                     try:
-                        await channel.fetch_message(message_id)
+                        msg = await channel.fetch_message(message_id)
                         logger.info(f"✅ Featured embed {message_id} exists on channel")
+                        
+                        # Update game time in embed
+                        if msg.embeds:
+                            old_embed = msg.embeds[0]
+                            game_id = match['game_id']
+                            platform = match['platform']
+                            blue_team = match.get('blue_team', {})
+                            red_team = match.get('red_team', {})
+                            
+                            if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                                blue_players = blue_team.get('players', [])
+                                red_players = red_team.get('players', [])
+                                odds_blue = blue_team.get('odds', 1.5)
+                                odds_red = red_team.get('odds', 1.5)
+                                
+                                chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                                chance_red = round(100 - chance_blue, 1)
+                                
+                                is_special_bet = match.get('special_bet', False)
+                                featured = "special" if is_special_bet else ""
+                                game_start_at = match.get('game_start_at')
+                                
+                                new_embed = self._build_embed(
+                                    game_id, platform, blue_players, red_players,
+                                    odds_blue, odds_red, chance_blue, chance_red,
+                                    featured, match['id'], game_start_at
+                                )
+                                
+                                await msg.edit(embed=new_embed)
+                                logger.info(f"🕐 Updated game time for match {match['id']}")
+                        
                     except discord.NotFound:
                         logger.warning(f"⚠️ Featured embed {message_id} not found, posting new game...")
                         # Mark as settled and post new game
@@ -1159,13 +1190,13 @@ class Hexbet(commands.Cog):
             p['is_streamer'] = badge == get_streamer_emoji() if badge else is_streamer_player(riot_id)
             p['badge_emoji'] = badge
             
-            # Load ProName from database if player is verified pro/streamer
+            # Load ProName and badge from database if player is verified pro/streamer
             if riot_id:
                 try:
                     conn = self.db.get_connection()
                     cursor = conn.cursor()
                     cursor.execute(
-                        "SELECT player_name FROM hexbet_verified_players WHERE riot_id = %s",
+                        "SELECT player_name, player_type FROM hexbet_verified_players WHERE riot_id = %s",
                         (riot_id,)
                     )
                     result = cursor.fetchone()
@@ -1173,6 +1204,12 @@ class Hexbet(commands.Cog):
                     self.db.return_connection(conn)
                     if result:
                         p['pro_name'] = result[0]
+                        player_type = result[1]
+                        # Add badge if not already set
+                        if player_type == 'pro':
+                            p['badge_emoji'] = get_pro_emoji()
+                        elif player_type == 'streamer':
+                            p['badge_emoji'] = get_streamer_emoji()
                 except Exception as e:
                     logger.warning(f"Failed to load ProName for {riot_id}: {e}")
 
