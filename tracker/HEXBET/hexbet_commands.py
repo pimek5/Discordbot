@@ -1701,7 +1701,7 @@ class Hexbet(commands.Cog):
             
             pro_emoji = get_pro_emoji()
             streamer_emoji = get_streamer_emoji()
-            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
             embed = discord.Embed(
                 title=f"✅ {player_type_label} Added",
                 description=f"**{name}** added to HEXBET database",
@@ -1743,7 +1743,7 @@ class Hexbet(commands.Cog):
             
             pro_emoji = get_pro_emoji()
             streamer_emoji = get_streamer_emoji()
-            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
             
             embed = discord.Embed(
                 title="✅ Player Removed",
@@ -1942,7 +1942,7 @@ class Hexbet(commands.Cog):
             # Build embed
             pro_emoji = get_pro_emoji()
             streamer_emoji = get_streamer_emoji()
-            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
             
             embed = discord.Embed(
                 title="✅ Player Added",
@@ -2040,7 +2040,7 @@ class Hexbet(commands.Cog):
             
             pro_emoji = get_pro_emoji()
             streamer_emoji = get_streamer_emoji()
-            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
             
             embed = discord.Embed(
                 title="✅ Player Updated",
@@ -3310,7 +3310,7 @@ These players will now appear more frequently in betting matches!"""
                 name = riot_id_to_search  # Override name with riot_id from DB
                 pro_emoji = get_pro_emoji()
                 streamer_emoji = get_streamer_emoji()
-                player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
+                player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
             else:
                 # Not in database - treat as regular riot_id lookup
                 display_name = None
