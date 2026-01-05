@@ -1902,37 +1902,85 @@ class Hexbet(commands.Cog):
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
     
     @app_commands.command(name="hxpool", description="(Admin) Populate high-elo player pool")
+    @app_commands.describe(
+        sample_size="Number of random players to fetch per tier/region (default: 50)"
+    )
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hxpool(self, interaction: discord.Interaction):
-        """Fetch Challenger/Grandmaster/Master players and add to pool"""
+    async def hxpool(self, interaction: discord.Interaction, sample_size: int = 50):
+        """Fetch random high-elo players (Challenger/GM/Master/Diamond) and add to pool"""
         await interaction.response.defer(ephemeral=True)
         
         try:
-            region_map = {'euw': 'euw1', 'eune': 'eun1', 'na': 'na1', 'kr': 'kr'}
+            regions = ['euw', 'eune', 'na', 'kr']
             all_players = []
+            total_fetched = 0
             
-            await interaction.followup.send("🔄 Fetching high-elo players from all regions...", ephemeral=True)
+            await interaction.followup.send("🔄 Fetching random high-elo players from all regions...", ephemeral=True)
             
-            for region, platform in region_map.items():
-                for tier in ['challenger', 'grandmaster', 'master']:
-                    url = f"https://{platform}.api.riotgames.com/lol/league/v4/{tier}leagues/by-queue/RANKED_SOLO_5x5"
-                    headers = {'X-Riot-Token': self.riot_api.api_key}
-                    
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(url, headers=headers) as response:
-                            if response.status == 200:
-                                data = await response.json()
-                                entries = data.get('entries', [])
-                                logger.info(f"✅ {platform} {tier}: {len(entries)} players")
-                                
-                                for entry in entries:
-                                    puuid = entry.get('puuid')
-                                    if puuid:
-                                        all_players.append((puuid, region, tier, entry.get('leaguePoints', 0)))
-                            else:
-                                logger.error(f"❌ {platform} {tier}: {response.status}")
-                    
-                    await asyncio.sleep(1)  # Rate limit
+            for region in regions:
+                # Challenger - fetch all (usually ~300 per region)
+                logger.info(f"🔍 Fetching Challenger from {region}")
+                chall_data = await self.riot_api.get_challenger_league(region)
+                if chall_data and chall_data.get('entries'):
+                    entries = chall_data['entries']
+                    sampled = random.sample(entries, min(sample_size, len(entries)))
+                    for entry in sampled:
+                        summoner_id = entry.get('summonerId')
+                        if summoner_id:
+                            # Get PUUID from summoner ID
+                            summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                            if summoner and summoner.get('puuid'):
+                                all_players.append((summoner['puuid'], region, 'challenger', entry.get('leaguePoints', 0)))
+                                total_fetched += 1
+                    logger.info(f"✅ {region} Challenger: sampled {len(sampled)} players")
+                await asyncio.sleep(1.2)  # Rate limit
+                
+                # Grandmaster
+                logger.info(f"🔍 Fetching Grandmaster from {region}")
+                gm_data = await self.riot_api.get_grandmaster_league(region)
+                if gm_data and gm_data.get('entries'):
+                    entries = gm_data['entries']
+                    sampled = random.sample(entries, min(sample_size, len(entries)))
+                    for entry in sampled:
+                        summoner_id = entry.get('summonerId')
+                        if summoner_id:
+                            summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                            if summoner and summoner.get('puuid'):
+                                all_players.append((summoner['puuid'], region, 'grandmaster', entry.get('leaguePoints', 0)))
+                                total_fetched += 1
+                    logger.info(f"✅ {region} Grandmaster: sampled {len(sampled)} players")
+                await asyncio.sleep(1.2)
+                
+                # Master
+                logger.info(f"🔍 Fetching Master from {region}")
+                master_data = await self.riot_api.get_master_league(region)
+                if master_data and master_data.get('entries'):
+                    entries = master_data['entries']
+                    sampled = random.sample(entries, min(sample_size, len(entries)))
+                    for entry in sampled:
+                        summoner_id = entry.get('summonerId')
+                        if summoner_id:
+                            summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                            if summoner and summoner.get('puuid'):
+                                all_players.append((summoner['puuid'], region, 'master', entry.get('leaguePoints', 0)))
+                                total_fetched += 1
+                    logger.info(f"✅ {region} Master: sampled {len(sampled)} players")
+                await asyncio.sleep(1.2)
+                
+                # Diamond I (page 1 only, ~200 players)
+                logger.info(f"🔍 Fetching Diamond I from {region}")
+                dia_data = await self.riot_api.get_diamond_players(region, division='I', page=1)
+                if dia_data and isinstance(dia_data, list):
+                    sampled = random.sample(dia_data, min(sample_size, len(dia_data)))
+                    for entry in sampled:
+                        summoner_id = entry.get('summonerId')
+                        if summoner_id:
+                            summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                            if summoner and summoner.get('puuid'):
+                                all_players.append((summoner['puuid'], region, 'diamond', entry.get('leaguePoints', 0)))
+                                total_fetched += 1
+                    logger.info(f"✅ {region} Diamond I: sampled {len(sampled)} players")
+                await asyncio.sleep(1.2)
             
             # Save to database
             conn = self.db.get_connection()
