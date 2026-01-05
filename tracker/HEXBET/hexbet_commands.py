@@ -548,7 +548,7 @@ class Hexbet(commands.Cog):
                     logger.info(f"📝 Building embed for match {match_id}...")
                     # Build embed with special label if high LP lobby
                     featured_label = "special" if is_special_bet else ""
-                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_label, match_id)
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_label, match_id, game_data.get('gameStartTime'))
 
                     self.db.increment_high_elo_featured(puuid)
                     view = BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered)
@@ -1435,10 +1435,13 @@ class Hexbet(commands.Cog):
             else:
                 name = summoner_name
             
-            # Add badge emoji before name if player is pro or streamer (only if badge exists)
+            # Add badge emoji before name if player is pro or streamer (only if badge exists and is not 'none')
             badge = p.get('badge_emoji', '')
-            if badge:
+            # Filter out None, empty string, and string 'none'
+            if badge and badge != 'none' and str(badge).lower() != 'none':
                 badge = badge + ' '  # Add space after badge
+            else:
+                badge = ''
             
             wr = p.get('wr', 50)
             lp = p.get('lp', 0)
