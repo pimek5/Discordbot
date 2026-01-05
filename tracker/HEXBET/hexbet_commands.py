@@ -2978,11 +2978,13 @@ class Hexbet(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
+            logger.info(f"🔄 hxpool command started by {interaction.user} with sample_size={sample_size}")
             await interaction.followup.send("🔄 Fetching random high-elo players from all regions...", ephemeral=True)
             fetched, summary = await self._fetch_and_update_pool(sample_size=sample_size)
+            logger.info(f"✅ hxpool completed: {fetched} players fetched")
             await interaction.followup.send(summary, ephemeral=False)
         except Exception as e:
-            logger.error(f"Error populating pool: {e}", exc_info=True)
+            logger.error(f"❌ Error populating pool: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @app_commands.command(name="hxpool_add_verified", description="(Admin) Add verified pro/streamer players to pool")
