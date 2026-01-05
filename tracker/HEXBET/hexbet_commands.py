@@ -2403,7 +2403,7 @@ class Hexbet(commands.Cog):
         """Refresh all open match embeds with updated bet totals and optionally recalculate odds"""
         await interaction.response.defer(ephemeral=True)
         
-        matches = self.db.get_open_matches()
+        matches = self.db.get_open_matches(limit=10)
         if not matches:
             await interaction.followup.send("❌ No active matches to refresh", ephemeral=True)
             return
@@ -2490,6 +2490,10 @@ class Hexbet(commands.Cog):
                         odds_blue, odds_red, chance_blue, chance_red,
                         featured, match['id'], game_start_at
                     )
+                    
+                    # Actually update the message!
+                    await msg.edit(embed=new_embed)
+                    logger.info(f"✅ Refreshed match {match['id']}" + (f" (SPECIAL BET)" if is_special_bet else ""))
                     
                     refreshed += 1
                 else:
