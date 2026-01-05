@@ -169,7 +169,7 @@ def get_pro_emoji() -> str:
 
 def get_streamer_emoji() -> str:
     """Return streamer emoji"""
-    return "<:STRM:1457328151095939138>"
+    return "<:STRM:1457671230432743567>"
 
 def get_player_badge_emoji(riot_id: str) -> Optional[str]:
     """
