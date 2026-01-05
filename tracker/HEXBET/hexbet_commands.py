@@ -32,13 +32,13 @@ LEADERBOARD_CHANNEL_ID = 1398985421014306856
 BET_LOGS_CHANNEL_ID = 1398986567988674704
 
 # Task intervals
-FEATURED_INTERVAL = 8  # minutes - how often to check for and post new matches (increased to reduce rate limits)
+FEATURED_INTERVAL = 5  # minutes - how often to check for and post new matches (faster to maintain 3 slots)
 LEADERBOARD_INTERVAL = 10  # minutes - how often to refresh leaderboard
 SETTLE_CHECK_SECONDS = 120  # 2 minutes - how often to check if matches are ready to settle
 CLEANUP_INTERVAL = 1  # minute - how often to delete old settled bets
 MIN_MINUTES_BEFORE_SETTLE = 12  # 12 minutes - minimum game duration before settlement check
 POLL_INTERVAL_SECONDS = 300  # 5 minutes - avoid rate limits
-MAX_PLAYERS_TO_SCAN = 30  # Maximum players to scan per featured check (reduced to avoid rate limits)
+MAX_PLAYERS_TO_SCAN = 100  # Maximum players to scan per featured check (increased to find more games)
 
 ROLE_LABELS = [
     ("Top", CFG_ROLE_EMOJIS.get('TOP', '🗻')),
@@ -246,12 +246,12 @@ class Hexbet(commands.Cog):
             open_count = self.db.count_open_matches()
             logger.info(f"📋 Featured task: {open_count}/3 matches active")
             
-            # Post games until we have 3, but max 3 per task to fill all slots quickly
+            # Post games until we have 3, but max 5 attempts to find games
             posts_this_run = 0
-            max_posts = 3
+            max_posts = 5
             
             while open_count < 3 and posts_this_run < max_posts:
-                logger.info(f"📝 Posting new game ({posts_this_run + 1}/{max_posts})...")
+                logger.info(f"📝 Posting new game (attempt {posts_this_run + 1}/{max_posts}, {open_count}/3 active)...")
                 await self.post_random_featured_game()
                 open_count = self.db.count_open_matches()
                 posts_this_run += 1
@@ -262,8 +262,8 @@ class Hexbet(commands.Cog):
                 
                 # Delay between posts to avoid rate limit
                 if posts_this_run < max_posts and open_count < 3:
-                    logger.info("⏳ Rate limit protection: waiting 3 seconds...")
-                    await asyncio.sleep(3)
+                    logger.info("⏳ Rate limit protection: waiting 2 seconds...")
+                    await asyncio.sleep(2)
         except Exception as e:
             logger.error(f"❌ Error in featured_task: {e}", exc_info=True)
 
