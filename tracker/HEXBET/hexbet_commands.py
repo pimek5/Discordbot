@@ -109,8 +109,11 @@ def rank_emoji(tier: str) -> str:
     return CFG_RANK_EMOJIS.get(tier.upper(), '')
 
 
+# Pro player management group (module-level, used by Hexbet cog)
+hxpro_group = app_commands.Group(name="hxpro", description="Pro player management")
+
+
 class Hexbet(commands.Cog):
-    hxpro_group = app_commands.Group(name="hxpro", description="Pro player management")
     
     def __init__(self, bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
         self.bot = bot
@@ -3517,7 +3520,7 @@ class BetView(discord.ui.View):
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
     cog = Hexbet(bot, riot_api, db)
-    bot.tree.add_command(cog.hxpro_group)
+    bot.tree.add_command(hxpro_group)
     await bot.add_cog(cog)
     logger.info("✅ HEXBET commands loaded")
 
