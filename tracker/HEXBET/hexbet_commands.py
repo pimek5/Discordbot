@@ -2283,6 +2283,13 @@ class Hexbet(commands.Cog):
                     score_red = self._team_score(red_ordered)
                     logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
                     
+                    # Check if special bet already exists
+                    open_matches = self.db.get_open_matches()
+                    special_exists = any(m.get('special_bet', False) and m.get('channel_id') == BET_CHANNEL_ID for m in open_matches)
+                    if special_exists:
+                        await interaction.followup.send("⚠️ A special bet is already active. Wait for it to finish first.", ephemeral=True)
+                        return
+                    
                     odds_blue, odds_red = odds_from_scores(score_blue, score_red)
                     chance_blue = score_blue / (score_blue + score_red) * 100
                     chance_red = 100 - chance_blue
