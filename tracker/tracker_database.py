@@ -357,6 +357,38 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
+    def update_match_odds(self, match_id: int, odds_blue: float, odds_red: float):
+        """Update match odds in database"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Get current match data
+                cur.execute("SELECT blue_team, red_team FROM hexbet_matches WHERE id = %s", (match_id,))
+                row = cur.fetchone()
+                if not row:
+                    logger.error(f"Match {match_id} not found")
+                    return False
+                
+                blue_team = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                red_team = json.loads(row[1]) if isinstance(row[1], str) else row[1]
+                
+                # Update odds
+                blue_team['odds'] = odds_blue
+                red_team['odds'] = odds_red
+                
+                # Save back to database
+                cur.execute(
+                    "UPDATE hexbet_matches SET blue_team = %s, red_team = %s WHERE id = %s",
+                    (json.dumps(blue_team), json.dumps(red_team), match_id)
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error updating match odds: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+
     def get_open_match(self) -> Optional[dict]:
         """Get single open match (backwards compatibility)"""
         matches = self.get_open_matches(limit=1)

@@ -6,6 +6,39 @@ Edit these values to customize the LFG system for your server.
 """
 
 # ================================
+#    HEXBET GAME MODE
+# ================================
+
+# Current game mode for HEXBET betting
+# Options: 'soloq' (Ranked Solo/Duo), 'flexq' (Ranked Flex), 'drafts' (Draft Games), 'custom' (Manual Entry)
+GAME_MODE = 'soloq'
+
+# Game mode queue type mapping for Riot API
+GAME_MODE_QUEUE_MAP = {
+    'soloq': 'RANKED_SOLO_5x5',      # Ranked Solo/Duo
+    'flexq': 'RANKED_FLEX_SR',       # Ranked Flex (Summoner's Rift)
+    'drafts': 'NORMAL_5x5',          # Draft Games (Normal)
+    'custom': None,                   # Custom games (manual entry only)
+}
+
+# Minimum tier for each game mode
+MIN_TIER_PER_MODE = {
+    'soloq': 'DIAMOND',               # Only Diamond+ for SoloQ
+    'flexq': 'DIAMOND',               # Only Diamond+ for FlexQ
+    'drafts': 'GOLD',                 # Gold+ for Drafts
+    'custom': 'UNRANKED',             # Any rank for custom (manual)
+}
+
+# Display names for game modes
+GAME_MODE_DISPLAY = {
+    'soloq': '🎮 Solo Queue',
+    'flexq': '👥 Flex Queue', 
+    'drafts': '📋 Normal Draft',
+    'custom': '✏️ Custom/Manual',
+}
+
+
+# ================================
 #    DISCORD CONFIGURATION
 # ================================
 

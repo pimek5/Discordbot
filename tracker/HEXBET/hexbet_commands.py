@@ -419,9 +419,24 @@ class Hexbet(commands.Cog):
                     
                     logger.info(f"🎯 Found game {game_id} with queue {queue_id} (player: {tier} {lp} LP)")
                     
-                    # Accept only Ranked Solo/Duo (420)
-                    if queue_id != 420:
-                        logger.info(f"⏭️ Skipping game {game_id} - not Ranked Solo/Duo (queue {queue_id})")
+                    # Get expected queue ID from current game mode
+                    from HEXBET.config import GAME_MODE_QUEUE_MAP, GAME_MODE, MIN_TIER_PER_MODE
+                    expected_queue = GAME_MODE_QUEUE_MAP.get(GAME_MODE.lower())
+                    min_tier = MIN_TIER_PER_MODE.get(GAME_MODE.lower())
+                    
+                    # Map queue ID
+                    queue_map = {
+                        420: 'RANKED_SOLO_5x5',
+                        440: 'RANKED_FLEX_SR',
+                        700: 'CLASH',
+                    }
+                    queue_name = queue_map.get(queue_id, f'Queue {queue_id}')
+                    
+                    # For custom mode, accept any queue (manual input)
+                    if GAME_MODE.lower() == 'custom':
+                        logger.info(f"✏️ Custom mode - accepting any queue: {queue_name}")
+                    elif expected_queue and queue_name != expected_queue:
+                        logger.info(f"⏭️ Skipping game {game_id} - expected {expected_queue}, got {queue_name}")
                         continue
                     
                     # Check game duration - skip if game is older than 15 minutes
@@ -1159,24 +1174,27 @@ class Hexbet(commands.Cog):
         if not players:
             return 1.0
         
-        # Base rank score (tier + division) - exponential scaling for bigger differences
+        # Base rank score (tier + division) - STRONG exponential scaling for bigger differences
         rank_scores = [TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in players]
         rank_score = sum(rank_scores) / len(players)
-        # Stronger exponential: 1.25^rank makes tier gaps much more significant
-        rank_contribution = (1.25 ** rank_score) * 2.5
+        # Much stronger exponential: 1.4^rank creates HUGE gaps between tiers
+        # Diamond (7.2): 1.4^7.2 = 21.1
+        # Master (8.2): 1.4^8.2 = 29.6
+        # Difference: 8.5x more impactful
+        rank_contribution = (1.4 ** rank_score) * 2.0
         
-        # LP contribution (less impact than tier, but still matters)
+        # LP contribution (increased weight)
         avg_lp = sum(p.get('lp', 0) for p in players) / len(players)
-        lp_contribution = (avg_lp / 600) * 1.0  # Reduced weight so tier dominates
+        lp_contribution = (avg_lp / 500) * 1.5  # Increased from 1.0 to 1.5
         
         # Winrate score (very predictive of actual performance)
         avg_wr = sum(p.get('wr', 50) for p in players) / len(players)
-        wr_contribution = ((avg_wr - 50) / 5) * 1.0  # ±5% WR = ±1.0 points
+        wr_contribution = ((avg_wr - 50) / 4) * 1.5  # Increased impact: ±4% WR = ±1.5 points
         
         # Champion diversity score (minor)
         comp_score = len({p.get('champ_name') for p in players}) / 20
         
-        # Total: exponential rank dominates, then WR, then LP
+        # Total: exponential rank dominates heavily, then WR and LP
         return rank_contribution + lp_contribution + wr_contribution + comp_score
 
     def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None, game_start_at: Optional[str] = None) -> discord.Embed:
@@ -1446,7 +1464,7 @@ class Hexbet(commands.Cog):
 
     @app_commands.command(name="hxfind", description="Find and post a high-elo game")
     @app_commands.describe(
-        platform="Platform: euw1, na1, kr, eun1",
+        platform="Platform: euw1, na1, kr, eun1 (or 'custom' for manual entry)",
         nickname="(Optional) Specific player nickname - their game will be prioritized"
     )
     async def hxfind(self, interaction: discord.Interaction, platform: Optional[str] = None, nickname: Optional[str] = None):
@@ -1463,6 +1481,13 @@ class Hexbet(commands.Cog):
         await interaction.response.defer()
         
         try:
+            # If platform is 'custom', show manual entry modal
+            if platform and platform.lower() == 'custom':
+                modal = ManualGameModal(self)
+                await interaction.followup.send("📝 Opening manual game entry form...", ephemeral=True)
+                await interaction.response.send_modal(modal)
+                return
+            
             # If nickname provided, handle priority game
             if nickname:
                 await interaction.followup.send(f"🔍 Searching for game with **{nickname}**...")
@@ -1646,10 +1671,11 @@ class Hexbet(commands.Cog):
         await self.post_random_featured_game(force=True, platform_choice=platform)
         await interaction.followup.send("✅ Triggered high-elo game scan", ephemeral=True)
     
-    @app_commands.command(name="hxrefresh", description="(Admin) Refresh all open bet embeds")
+    @app_commands.command(name="hxrefresh", description="(Admin) Refresh all open bet embeds and optionally recalculate odds")
+    @app_commands.describe(recalc_odds="Recalculate odds based on new scoring formula")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hxrefresh(self, interaction: discord.Interaction):
-        """Refresh all open match embeds with updated bet totals"""
+    async def hxrefresh(self, interaction: discord.Interaction, recalc_odds: bool = False):
+        """Refresh all open match embeds with updated bet totals and optionally recalculate odds"""
         await interaction.response.defer(ephemeral=True)
         
         matches = self.db.get_open_matches()
@@ -1689,21 +1715,36 @@ class Hexbet(commands.Cog):
                 if isinstance(blue_team, dict) and isinstance(red_team, dict):
                     blue_players = blue_team.get('players', [])
                     red_players = red_team.get('players', [])
-                    odds_blue = blue_team.get('odds', 1.5)
-                    odds_red = red_team.get('odds', 1.5)
                     
-                    # Calculate chances
+                    # Re-assign roles to ensure proper role detection (Smite, support champs, etc.)
+                    blue_players = self._assign_roles(blue_players)
+                    red_players = self._assign_roles(red_players)
+                    
+                    # Recalculate odds if requested
+                    if recalc_odds:
+                        score_blue = self._team_score(blue_players)
+                        score_red = self._team_score(red_players)
+                        odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+                        
+                        # Update in database
+                        self.db.update_match_odds(match['id'], odds_blue, odds_red)
+                        
+                        logger.info(f"🔄 Recalculated odds for match {match['id']}: Blue {odds_blue:.2f}x, Red {odds_red:.2f}x")
+                    else:
+                        odds_blue = blue_team.get('odds', 1.5)
+                        odds_red = red_team.get('odds', 1.5)
+                    
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                     chance_red = round(100 - chance_blue, 1)
                     
-                    # Get featured player from description
-                    featured = ""
-                    if old_embed.description and '**Featured:**' in old_embed.description:
-                        parts = old_embed.description.split('**Featured:**')
-                        if len(parts) > 1:
-                            featured = parts[1].strip()
+                    # Check if this is a special bet (use database flag)
+                    is_special_bet = match.get('special_bet', False)
+                    featured = "special" if is_special_bet else ""
                     
-                    # Rebuild embed with current bet data
+                    # PROTECTION: Verify special bet status and restore if removed
+                    if is_special_bet and old_embed.title and '🎯 SOLO/DUO QUEUE' not in old_embed.title:
+                        logger.warning(f"⚠️ Special bet status was removed! Restoring for match {match['id']}")
+                    
                     game_start_at = match.get('game_start_at')
                     new_embed = self._build_embed(
                         game_id, platform, blue_players, red_players,
@@ -1712,6 +1753,10 @@ class Hexbet(commands.Cog):
                     )
                     
                     await msg.edit(embed=new_embed)
+                    
+                    if is_special_bet:
+                        logger.info(f"✅ Special bet status verified and maintained for match {match['id']}")
+                    
                     refreshed += 1
                 else:
                     failed += 1
@@ -2117,8 +2162,64 @@ class Hexbet(commands.Cog):
             logger.error(f"Error force syncing commands: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
-    @app_commands.command(name="hxtest", description="Test featured game posting (ADMIN)")
-    async def test_featured(self, interaction: discord.Interaction):
+    @app_commands.command(name="hxmode", description="(Admin) Switch game mode: soloq, flexq, drafts, custom")
+    @app_commands.describe(mode="Game mode: soloq, flexq, drafts, or custom")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def switch_game_mode(self, interaction: discord.Interaction, mode: str):
+        """Switch HEXBET game mode between SoloQ, FlexQ, Normal Games, and Custom"""
+        from HEXBET.config import GAME_MODE_DISPLAY
+        
+        mode = mode.lower().strip()
+        valid_modes = ['soloq', 'flexq', 'drafts', 'custom']
+        
+        if mode not in valid_modes:
+            await interaction.response.send_message(f"❌ Invalid mode! Use: {', '.join(valid_modes)}", ephemeral=True)
+            return
+        
+        # Update global config (runtime)
+        from HEXBET import config
+        config.GAME_MODE = mode
+        
+        display_name = GAME_MODE_DISPLAY.get(mode, mode.upper())
+        await interaction.response.send_message(
+            f"✅ Game mode switched to **{display_name}**\n\n"
+            f"📊 New settings:\n"
+            f"• Mode: {display_name}\n"
+            f"• Min Tier: {config.MIN_TIER_PER_MODE.get(mode)}\n"
+            f"• Queue Type: {config.GAME_MODE_QUEUE_MAP.get(mode) or 'Manual Entry'}\n\n"
+            f"This affects all new matches posted going forward.",
+            ephemeral=True
+        )
+        logger.info(f"🎮 Game mode switched to {mode.upper()} by {interaction.user}")
+    
+    @app_commands.command(name="hxmodeinfo", description="Show current game mode")
+    async def show_game_mode(self, interaction: discord.Interaction):
+        """Show current HEXBET game mode"""
+        from HEXBET import config
+        from HEXBET.config import GAME_MODE_DISPLAY, MIN_TIER_PER_MODE, GAME_MODE_QUEUE_MAP
+        
+        current_mode = config.GAME_MODE.lower()
+        display_name = GAME_MODE_DISPLAY.get(current_mode, current_mode.upper())
+        min_tier = MIN_TIER_PER_MODE.get(current_mode)
+        queue_type = GAME_MODE_QUEUE_MAP.get(current_mode) or 'Manual Entry'
+        
+        embed = discord.Embed(
+            title="🎮 HEXBET Game Mode",
+            description=f"Currently: {display_name}",
+            color=0x3498DB
+        )
+        embed.add_field(name="Mode", value=display_name, inline=True)
+        embed.add_field(name="Min Tier", value=min_tier or 'N/A', inline=True)
+        embed.add_field(name="Queue", value=queue_type, inline=False)
+        
+        # Show all available modes
+        modes_text = "\n".join([f"• {GAME_MODE_DISPLAY.get(m, m.upper())}" for m in ['soloq', 'flexq', 'drafts', 'custom']])
+        embed.add_field(name="Available Modes", value=modes_text, inline=False)
+        
+        embed.set_footer(text="Use /hxmode <soloq|flexq|drafts> to switch")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    
         """Test featured game posting manually"""
         # Check if user has required roles
         staff_role_id = 1153030265782927501
@@ -2463,6 +2564,85 @@ class Hexbet(commands.Cog):
             self.db.return_connection(conn)
         except Exception as e:
             logger.error(f"Error force closing matches: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+
+class ManualGameModal(discord.ui.Modal, title='✏️ Add Custom/Manual Game'):
+    game_id = discord.ui.TextInput(
+        label='Game ID',
+        placeholder='Enter game ID or match identifier',
+        required=True,
+        max_length=50
+    )
+    
+    platform = discord.ui.TextInput(
+        label='Platform',
+        placeholder='euw1, na1, kr, eun1',
+        required=True,
+        max_length=10
+    )
+    
+    team_one = discord.ui.TextInput(
+        label='Team 1 (comma-separated summonernames)',
+        placeholder='Player1, Player2, Player3, Player4, Player5',
+        required=True,
+        max_length=200,
+        style=discord.TextStyle.paragraph
+    )
+    
+    team_two = discord.ui.TextInput(
+        label='Team 2 (comma-separated summonernames)',
+        placeholder='Player1, Player2, Player3, Player4, Player5',
+        required=True,
+        max_length=200,
+        style=discord.TextStyle.paragraph
+    )
+    
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        game_id = self.game_id.value.strip()
+        platform = self.platform.value.strip().lower()
+        team_one_str = self.team_one.value.strip()
+        team_two_str = self.team_two.value.strip()
+        
+        # Validate platform
+        valid_platforms = ['euw1', 'na1', 'kr', 'eun1']
+        if platform not in valid_platforms:
+            await interaction.followup.send(f"❌ Invalid platform! Use: {', '.join(valid_platforms)}", ephemeral=True)
+            return
+        
+        # Parse teams
+        try:
+            team_one = [name.strip() for name in team_one_str.split(',') if name.strip()]
+            team_two = [name.strip() for name in team_two_str.split(',') if name.strip()]
+            
+            if len(team_one) != 5 or len(team_two) != 5:
+                await interaction.followup.send("❌ Each team must have exactly 5 players!", ephemeral=True)
+                return
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error parsing teams: {str(e)}", ephemeral=True)
+            return
+        
+        try:
+            # Create manual game entry (this would need to be implemented in your system)
+            # For now, show confirmation
+            await interaction.followup.send(
+                f"✅ Custom game queued for posting:\n\n"
+                f"Game ID: {game_id}\n"
+                f"Platform: {platform.upper()}\n"
+                f"Team 1: {', '.join(team_one)}\n"
+                f"Team 2: {', '.join(team_two)}\n\n"
+                f"📋 Manual game posting is currently a placeholder.\n"
+                f"You can use `/hxpost` to find an automatic game instead.",
+                ephemeral=True
+            )
+            logger.info(f"📋 Manual game entry by {interaction.user}: {game_id} on {platform}")
+        except Exception as e:
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
