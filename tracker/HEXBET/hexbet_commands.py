@@ -513,6 +513,12 @@ class Hexbet(commands.Cog):
                     # Apply lobby-wide average for streamer mode (fairer when teams have uneven ranked players)
                     all_players = blue_ordered + red_ordered
                     self._apply_lobby_average(all_players)
+                    
+                    # Check if too many players in streamer mode (likely custom/practice game)
+                    streamer_mode_count = sum(1 for p in all_players if p.get('streamer_mode', False))
+                    if streamer_mode_count >= 8:  # If 8+ players have no ranked data
+                        logger.warning(f"⚠️ Skipping game {game_id} - {streamer_mode_count}/10 players in streamer mode (likely custom/practice game)")
+                        continue
 
                     score_blue = self._team_score(blue_ordered)
                     score_red = self._team_score(red_ordered)
