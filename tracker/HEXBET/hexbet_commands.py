@@ -1557,7 +1557,9 @@ class Hexbet(commands.Cog):
             else:
                 account_text = "❌ No accounts found (try adding manually later)"
             
-            player_type_label = "👨‍💼 Pro" if player_type == "pro" else "📡 Streamer"
+            pro_emoji = get_pro_emoji()
+            streamer_emoji = get_streamer_emoji()
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
             embed = discord.Embed(
                 title=f"✅ {player_type_label} Added",
                 description=f"**{name}** added to HEXBET database",
@@ -1597,7 +1599,9 @@ class Hexbet(commands.Cog):
             cursor.close()
             self.db.return_connection(conn)
             
-            player_type_label = "👨‍💼 Pro" if player_type == "pro" else "📡 Streamer"
+            pro_emoji = get_pro_emoji()
+            streamer_emoji = get_streamer_emoji()
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
             
             embed = discord.Embed(
                 title="✅ Player Removed",
@@ -1659,7 +1663,9 @@ class Hexbet(commands.Cog):
             cursor.close()
             self.db.return_connection(conn)
             
-            player_type_label = "👨‍💼 Pro" if player_type == "pro" else "📡 Streamer"
+            pro_emoji = get_pro_emoji()
+            streamer_emoji = get_streamer_emoji()
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
             
             embed = discord.Embed(
                 title="✅ Player Updated",
@@ -2522,7 +2528,9 @@ class Hexbet(commands.Cog):
                 # Found in database - use their riot_id
                 riot_id_to_search, display_name, player_type = db_result
                 name = riot_id_to_search  # Override name with riot_id from DB
-                player_type_label = "�‍💼 Pro" if player_type == "pro" else "📡 Streamer"
+                pro_emoji = get_pro_emoji()
+                streamer_emoji = get_streamer_emoji()
+                player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} STRM"
             else:
                 # Not in database - treat as regular riot_id lookup
                 display_name = None
@@ -3830,4 +3838,5 @@ async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
     except Exception as e:
         logger.warning(f"⚠️ Could not sync commands: {e}")
         logger.info("✅ HEXBET commands loaded (sync will happen on next startup)")
+
 
