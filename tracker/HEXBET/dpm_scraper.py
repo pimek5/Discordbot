@@ -1,14 +1,14 @@
 """
 DPM.LOL Pro Player Account Scraper
 Extracts SoloQ accounts, ranks, LP, and winrates for pro players
-Uses cloudscraper from apis/dpm_api.py infrastructure
 """
 import sys
 import os
 import re
 import logging
 import asyncio
-from typing import List, Dict, Optional
+from typing import List, Dict
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ async def scrape_dpm_pro_accounts(player_name: str) -> List[Dict[str, any]]:
     Returns list of accounts with: riot_id, rank, lp, wins, losses, wr%
     
     Args:
-        player_name: Pro player name (e.g., "Rekkles")
+        player_name: Pro player name (e.g., "Agurin")
     
     Returns:
         List[Dict] with keys: riot_id, rank, lp, wins, losses, wr
@@ -53,7 +53,6 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
     import cloudscraper
     
     url = f"https://dpm.lol/pro/{player_name}"
-    accounts = []
     
     try:
         def fetch():
@@ -70,79 +69,73 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
             logger.warning(f"❌ DPM.LOL returned non-200 for {player_name}")
             return []
         
-        # DPM.LOL uses Next.js - data is in __NEXT_DATA__ JSON
-        import json
+        # Parse HTML with BeautifulSoup
+        soup = BeautifulSoup(html, 'html.parser')
+        accounts = []
         
-        # Search for __NEXT_DATA__ script tag
-        logger.info(f"🔍 Searching for __NEXT_DATA__ in HTML ({len(html)} chars total)")
+        # Find all account links (format: /GameName-TAG)
+        account_links = soup.find_all('a', href=True)
         
-        # Try different patterns
-        patterns = [
-            r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
-            r'<script id="__NEXT_DATA__">(.+?)</script>',
-            r'__NEXT_DATA__.*?({.+?})</script>',
-        ]
-        
-        next_data = None
-        for pattern in patterns:
-            match = re.search(pattern, html, re.DOTALL)
-            if match:
-                try:
-                    next_data = json.loads(match.group(1))
-                    logger.info(f"✅ Found __NEXT_DATA__ using pattern: {pattern[:50]}")
-                    break
-                except:
-                    continue
-        
-        if not next_data:
-            # Log what script tags we do see
-            script_tags = re.findall(r'<script[^>]*id="([^"]*)"', html)
-            logger.warning(f"⚠️ No __NEXT_DATA__ found. Available script IDs: {script_tags[:10]}")
+        for link in account_links:
+            href = link.get('href', '')
             
-            # Check if there's any JSON-like data
-            if '"props"' in html or '"pageProps"' in html:
-                logger.info("Found props/pageProps keywords in HTML, trying broader search...")
-                # Try to find any large JSON blob
-                json_pattern = r'({[^<]{500,}})'
-                matches = re.findall(json_pattern, html)
-                logger.info(f"Found {len(matches)} potential JSON blobs")
-            
-            return []
-        
-        try:
+            # Skip non-account links
+            if not href.startswith('/') or href.count('-') < 1:
+                continue
                 
-                # Extract accounts from Next.js data structure
-                accounts = []
-                props = next_data.get('props', {}).get('pageProps', {})
-
-                for acc in accounts_data:
-                    try:
-                        riot_id = f"{acc.get('gameName', 'Unknown')}#{acc.get('tagLine', 'NA1')}"
-                        rank = acc.get('tier', 'UNRANKED').upper()
-                        lp = acc.get('leaguePoints', 0)
-                        wins = acc.get('wins', 0)
-                        losses = acc.get('losses', 0)
-                        total = wins + losses
-                        wr = (wins / total * 100) if total > 0 else 0.0
-                        
-                        accounts.append({
-                            'riot_id': riot_id,
-                            'rank': rank,
-                            'lp': lp,
-                            'wins': wins,
-                            'losses': losses,
-                            'wr': wr
-                        })
-                    except Exception as e:
-                        logger.warning(f"Failed to parse account: {e}")
-                        continue
-                
-                logger.info(f"✅ Scraped {len(accounts)} accounts for {player_name} from __NEXT_DATA__")
-                return accounts
+            # Extract riot_id from href: /Bgurin-4000 -> Bgurin#4000
+            riot_id_raw = href.strip('/')
+            # Replace last dash with # (since gameName can have dashes)
+            parts = riot_id_raw.rsplit('-', 1)
+            if len(parts) != 2:
+                continue
+            riot_id = f"{parts[0]}#{parts[1]}"
             
-        except Exception as e:
-            logger.error(f"Failed to parse __NEXT_DATA__: {e}")
-            return []
+            # Find rank image (has alt text like "CHALLENGER", "GRANDMASTER")
+            rank_img = link.find('img', alt=lambda x: x and x.upper() in [
+                'CHALLENGER', 'GRANDMASTER', 'MASTER', 'DIAMOND', 
+                'PLATINUM', 'GOLD', 'SILVER', 'BRONZE', 'IRON'
+            ])
+            
+            if not rank_img:
+                continue
+            
+            rank = rank_img.get('alt', 'UNRANKED').upper()
+            
+            # Find LP text (e.g., "1167 LP")
+            lp = 0
+            lp_span = link.find('span', string=re.compile(r'\d+\s*LP'))
+            if lp_span:
+                lp_text = lp_span.get_text(strip=True)
+                lp_match = re.search(r'(\d+)\s*LP', lp_text)
+                if lp_match:
+                    lp = int(lp_match.group(1))
+            
+            # Find W/L text (e.g., "363W - 295L (55%)")
+            wins = 0
+            losses = 0
+            wr = 0.0
+            
+            wl_span = link.find('span', string=re.compile(r'\d+W\s*-\s*\d+L'))
+            if wl_span:
+                wl_text = wl_span.get_text(strip=True)
+                wl_match = re.search(r'(\d+)W\s*-\s*(\d+)L\s*\((\d+)%\)', wl_text)
+                if wl_match:
+                    wins = int(wl_match.group(1))
+                    losses = int(wl_match.group(2))
+                    wr = float(wl_match.group(3))
+            
+            accounts.append({
+                'riot_id': riot_id,
+                'rank': rank,
+                'lp': lp,
+                'wins': wins,
+                'losses': losses,
+                'wr': wr
+            })
+        
+        logger.info(f"✅ Scraped {len(accounts)} accounts for {player_name} from DPM.LOL HTML")
+        return accounts
     
     except Exception as e:
         logger.error(f"❌ Error in fallback scrape for {player_name}: {e}")
@@ -152,9 +145,8 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
 # For testing
 if __name__ == "__main__":
     async def test():
-        accounts = await scrape_dpm_pro_accounts("Rekkles")
+        accounts = await scrape_dpm_pro_accounts("Agurin")
         for acc in accounts:
             print(f"  {acc['riot_id']} - {acc['rank']} {acc['lp']} LP ({acc['wr']}% WR)")
     
     asyncio.run(test())
-
