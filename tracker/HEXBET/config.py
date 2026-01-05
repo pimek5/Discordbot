@@ -322,8 +322,8 @@ CHAMPION_EMOJIS = {
     902: '<:champ_Milio:1441318563792158830>',
     910: '<:champ_Hwei:1441318482980376576>',
     950: '<:champ_Mel:1441318562504642650>',
-    951: '<:champ_Yunara:1441318681220218880>',
-    999: '<:champ_Zaahen:1442809688042508420>',
+    804: '<:champ_Yunara:1441318681220218880>',  # Correct DDragon ID
+    904: '<:champ_Zaahen:1442809688042508420>',  # Correct DDragon ID
 }
 
 

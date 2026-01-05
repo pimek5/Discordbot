@@ -525,6 +525,15 @@ class Hexbet(commands.Cog):
                     # Apply lobby-wide average for streamer mode (fairer when teams have uneven ranked players)
                     all_players = blue_ordered + red_ordered
                     self._apply_lobby_average(all_players)
+                    
+                    # SKIP: Check if entire team is in streamer mode
+                    blue_all_streamer = all(p.get('streamer_mode', False) for p in blue_ordered)
+                    red_all_streamer = all(p.get('streamer_mode', False) for p in red_ordered)
+                    
+                    if blue_all_streamer or red_all_streamer:
+                        team_name = 'BLUE' if blue_all_streamer else 'RED'
+                        logger.warning(f"⏭️ Skipping game {game_id} - {team_name} team all in streamer mode, cannot create valid odds")
+                        continue
 
                     score_blue = self._team_score(blue_ordered)
                     score_red = self._team_score(red_ordered)
@@ -1244,7 +1253,18 @@ class Hexbet(commands.Cog):
                     logger.warning(f"Failed to load ProName for {riot_id}: {e}")
 
     
-    def _apply_lobby_average(self, all_players: List[dict]):
+    async def _should_skip_game(self, blue_team: List[dict], red_team: List[dict]) -> bool:
+        """Check if game should be skipped (both teams in streamer mode, all banned champs, etc.)"""
+        # Skip if entire team is in streamer mode (both blue AND red full streamer)
+        blue_all_streamer = all(p.get('streamer_mode', False) for p in blue_team)
+        red_all_streamer = all(p.get('streamer_mode', False) for p in red_team)
+        
+        if blue_all_streamer or red_all_streamer:
+            team_name = 'BLUE' if blue_all_streamer else 'RED'
+            logger.warning(f"⏭️ Skipping game - {team_name} team all in streamer mode")
+            return True
+        
+        return False
         """Apply lobby-wide average to streamer mode players (balanced distribution)"""
         # Calculate average from ALL ranked players in lobby
         ranked_players = [p for p in all_players if not p.get('streamer_mode', False)]
