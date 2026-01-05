@@ -8,94 +8,93 @@ Total: 88 PRO + 60 STREAMER = 148 graczy
 PRO PLAYERS (88)
 ========================================
 
-/hxpro name:Agurin player_type:pro
-/hxpro name:Rekkles player_type:pro
-/hxpro name:Nemesis player_type:pro
-/hxpro name:Hans Sama player_type:pro
-/hxpro name:Wunder player_type:pro
-/hxpro name:Markoon player_type:pro
-/hxpro name:UNF0RGIVEN player_type:pro
-/hxpro name:Vladi player_type:pro
-/hxpro name:Nisqy player_type:pro
-/hxpro name:Vizicsacsi player_type:pro
-/hxpro name:Steeelback player_type:pro
-/hxpro name:Lyncas player_type:pro
-/hxpro name:RoyalKanin player_type:pro
-/hxpro name:Kenal player_type:pro
-/hxpro name:Kozi player_type:pro
-/hxpro name:Fleshy player_type:pro
-/hxpro name:Gordinho player_type:pro
-/hxpro name:Potent player_type:pro
-/hxpro name:Prime player_type:pro
-/hxpro name:Pun1sher player_type:pro
-/hxpro name:Kunduz player_type:pro
-/hxpro name:Maynter player_type:pro
-/hxpro name:Jopa player_type:pro
-/hxpro name:NightSlayer player_type:pro
-/hxpro name:DenVoksne player_type:pro
-/hxpro name:SkewMond player_type:pro
-/hxpro name:Gakgos player_type:pro
-/hxpro name:Eckas player_type:pro
-/hxpro name:Escik player_type:pro
-/hxpro name:Unkn0wn player_type:pro
-/hxpro name:iLEVI player_type:pro
-/hxpro name:Shift player_type:pro
-/hxpro name:TAMA player_type:pro
-/hxpro name:Koldo player_type:pro
-/hxpro name:Boda player_type:pro
-/hxpro name:Thayger player_type:pro
-/hxpro name:adi1 player_type:pro
-/hxpro name:Lot player_type:pro
-/hxpro name:NoName player_type:pro
-/hxpro name:Soldier player_type:pro
-/hxpro name:ISMA player_type:pro
-/hxpro name:Seal player_type:pro
-/hxpro name:Ryuk player_type:pro
-/hxpro name:Backlund player_type:pro
-/hxpro name:Metroflox player_type:pro
-/hxpro name:Fresskowy player_type:pro
-/hxpro name:Facen player_type:pro
-/hxpro name:Carnage player_type:pro
-/hxpro name:Rozpier player_type:pro
-/hxpro name:Speedy1 player_type:pro
-/hxpro name:Blazteurs player_type:pro
-/hxpro name:Robenong player_type:pro
-/hxpro name:Velja player_type:pro
-/hxpro name:Suna player_type:pro
-/hxpro name:Serin player_type:pro
-/hxpro name:Keria Prime player_type:pro
-/hxpro name:CPM player_type:pro
-/hxpro name:Aymen player_type:pro
-/hxpro name:ardaffler player_type:pro
-/hxpro name:Mako player_type:pro
-/hxpro name:Creepano player_type:pro
-/hxpro name:Robertoos player_type:pro
-/hxpro name:Erdote player_type:pro
-/hxpro name:PropaPandah player_type:pro
-/hxpro name:Abner player_type:pro
-/hxpro name:nilsog player_type:pro
-/hxpro name:Rybson player_type:pro
-/hxpro name:Marbirius player_type:pro
-/hxpro name:Vizzpers player_type:pro
-/hxpro name:Numandiel player_type:pro
-/hxpro name:Sinmivak player_type:pro
-/hxpro name:Mahonix player_type:pro
-/hxpro name:Nawa player_type:pro
-/hxpro name:PiskHello player_type:pro
-/hxpro name:Satto player_type:pro
-/hxpro name:Peaker player_type:pro
-/hxpro name:Desti player_type:pro
-/hxpro name:Yen player_type:pro
-/hxpro name:Mita player_type:pro
-/hxpro name:JinXedd player_type:pro
-/hxpro name:Doki player_type:pro
-/hxpro name:Vander player_type:pro
-/hxpro name:MKL player_type:pro
-/hxpro name:Frost player_type:pro
-/hxpro name:Baus player_type:pro
-/hxpro name:Vetheo player_type:pro
-/hxpro name:Attila player_type:pro
-/hxpro name:Decay player_type:pro
+/hxpro name:Rekkles player_type:Pro Player
+/hxpro name:Nemesis player_type:Pro Player
+/hxpro name:Hans Sama player_type:Pro Player
+/hxpro name:Wunder player_type:Pro Player
+/hxpro name:Markoon player_type:Pro Player
+/hxpro name:UNF0RGIVEN player_type:Pro Player
+/hxpro name:Vladi player_type:Pro Player
+/hxpro name:Nisqy player_type:Pro Player
+/hxpro name:Vizicsacsi player_type:Pro Player
+/hxpro name:Steeelback player_type:Pro Player
+/hxpro name:Lyncas player_type:Pro Player
+/hxpro name:RoyalKanin player_type:Pro Player
+/hxpro name:Kenal player_type:Pro Player
+/hxpro name:Kozi player_type:Pro Player
+/hxpro name:Fleshy player_type:Pro Player
+/hxpro name:Gordinho player_type:Pro Player
+/hxpro name:Potent player_type:Pro Player
+/hxpro name:Prime player_type:Pro Player
+/hxpro name:Pun1sher player_type:Pro Player
+/hxpro name:Kunduz player_type:Pro Player
+/hxpro name:Maynter player_type:Pro Player
+/hxpro name:Jopa player_type:Pro Player
+/hxpro name:NightSlayer player_type:Pro Player
+/hxpro name:DenVoksne player_type:Pro Player
+/hxpro name:SkewMond player_type:Pro Player
+/hxpro name:Gakgos player_type:Pro Player
+/hxpro name:Eckas player_type:Pro Player
+/hxpro name:Escik player_type:Pro Player
+/hxpro name:Unkn0wn player_type:Pro Player
+/hxpro name:iLEVI player_type:Pro Player
+/hxpro name:Shift player_type:Pro Player
+/hxpro name:TAMA player_type:Pro Player
+/hxpro name:Koldo player_type:Pro Player
+/hxpro name:Boda player_type:Pro Player
+/hxpro name:Thayger player_type:Pro Player
+/hxpro name:adi1 player_type:Pro Player
+/hxpro name:Lot player_type:Pro Player
+/hxpro name:NoName player_type:Pro Player
+/hxpro name:Soldier player_type:Pro Player
+/hxpro name:ISMA player_type:Pro Player
+/hxpro name:Seal player_type:Pro Player
+/hxpro name:Ryuk player_type:Pro Player
+/hxpro name:Backlund player_type:Pro Player
+/hxpro name:Metroflox player_type:Pro Player
+/hxpro name:Fresskowy player_type:Pro Player
+/hxpro name:Facen player_type:Pro Player
+/hxpro name:Carnage player_type:Pro Player
+/hxpro name:Rozpier player_type:Pro Player
+/hxpro name:Speedy1 player_type:Pro Player
+/hxpro name:Blazteurs player_type:Pro Player
+/hxpro name:Robenong player_type:Pro Player
+/hxpro name:Velja player_type:Pro Player
+/hxpro name:Suna player_type:Pro Player
+/hxpro name:Serin player_type:Pro Player
+/hxpro name:Keria Prime player_type:Pro Player
+/hxpro name:CPM player_type:Pro Player
+/hxpro name:Aymen player_type:Pro Player
+/hxpro name:ardaffler player_type:Pro Player
+/hxpro name:Mako player_type:Pro Player
+/hxpro name:Creepano player_type:Pro Player
+/hxpro name:Robertoos player_type:Pro Player
+/hxpro name:Erdote player_type:Pro Player
+/hxpro name:PropaPandah player_type:Pro Player
+/hxpro name:Abner player_type:Pro Player
+/hxpro name:nilsog player_type:Pro Player
+/hxpro name:Rybson player_type:Pro Player
+/hxpro name:Marbirius player_type:Pro Player
+/hxpro name:Vizzpers player_type:Pro Player
+/hxpro name:Numandiel player_type:Pro Player
+/hxpro name:Sinmivak player_type:Pro Player
+/hxpro name:Mahonix player_type:Pro Player
+/hxpro name:Nawa player_type:Pro Player
+/hxpro name:PiskHello player_type:Pro Player
+/hxpro name:Satto player_type:Pro Player
+/hxpro name:Peaker player_type:Pro Player
+/hxpro name:Desti player_type:Pro Player
+/hxpro name:Yen player_type:Pro Player
+/hxpro name:Mita player_type:Pro Player
+/hxpro name:JinXedd player_type:Pro Player
+/hxpro name:Doki player_type:Pro Player
+/hxpro name:Vander player_type:Pro Player
+/hxpro name:MKL player_type:Pro Player
+/hxpro name:Frost player_type:Pro Player
+/hxpro name:Baus player_type:Pro Player
+/hxpro name:Vetheo player_type:Pro Player
+/hxpro name:Attila player_type:Pro Player
+/hxpro name:Decay player_type:Pro Player
 
 ========================================
 STREAMER PLAYERS (60)

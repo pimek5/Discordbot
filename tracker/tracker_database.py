@@ -698,20 +698,34 @@ class TrackerDatabase:
             self.return_connection(conn)
     
     def get_random_high_elo_puuids(self, region: str, limit: int = 50) -> List[tuple]:
-        """Get random PUUIDs from high-elo pool for a specific region
+        """Get random PUUIDs from high-elo pool for a specific region, weighted by priority_boost
         Returns list of (puuid, tier, lp) tuples
+        
+        Verified pro/streamer players have higher chance to appear (weighted selection)
         """
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
+                # Get all players with priority_boost column if it exists
                 cur.execute("""
-                    SELECT puuid, tier, lp 
+                    SELECT puuid, tier, lp, COALESCE(priority_boost, 1.0) as boost
                     FROM hexbet_high_elo_pool 
                     WHERE region = %s 
-                    ORDER BY RANDOM() 
-                    LIMIT %s
-                """, (region, limit))
-                return cur.fetchall()
+                """, (region,))
+                
+                all_players = cur.fetchall()
+                
+                if not all_players:
+                    return []
+                
+                # Weighted random selection using priority_boost
+                import random
+                weights = [p[3] for p in all_players]  # Extract boost values
+                
+                # Use random.choices with weights (Python 3.6+)
+                selected = random.choices(all_players, weights=weights, k=min(limit, len(all_players)))
+                
+                return selected
         finally:
             self.return_connection(conn)
     

@@ -2450,6 +2450,187 @@ class Hexbet(commands.Cog):
             logger.error(f"Error populating pool: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxpool_add_verified", description="(Admin) Add verified pro/streamer players to pool")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxpool_add_verified(self, interaction: discord.Interaction):
+        """Add all verified pro/streamer players to pool with priority boost"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # First, add priority_boost column if it doesn't exist
+            try:
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                
+                # Check if column exists
+                cur.execute("""
+                    SELECT column_name FROM information_schema.columns 
+                    WHERE table_name='hexbet_high_elo_pool' AND column_name='priority_boost'
+                """)
+                
+                if not cur.fetchone():
+                    logger.info("🔧 Adding priority_boost column...")
+                    cur.execute("""
+                        ALTER TABLE hexbet_high_elo_pool 
+                        ADD COLUMN priority_boost FLOAT DEFAULT 1.0
+                    """)
+                    conn.commit()
+                    logger.info("✅ Column added")
+                
+                cur.close()
+                self.db.return_connection(conn)
+            except Exception as e:
+                logger.warning(f"⚠️ Could not add column: {e}")
+            
+            # Get all verified players
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            
+            cur.execute("""
+                SELECT id, riot_id, player_name, player_type 
+                FROM hexbet_verified_players 
+                ORDER BY player_type DESC, player_name
+            """)
+            
+            verified_players = cur.fetchall()
+            cur.close()
+            self.db.return_connection(conn)
+            
+            logger.info(f"📊 Found {len(verified_players)} verified players")
+            
+            added = 0
+            failed = 0
+            
+            status_msg = await interaction.followup.send(f"⏳ Processing {len(verified_players)} verified players...", ephemeral=True)
+            
+            for idx, (player_id, riot_id, player_name, player_type) in enumerate(verified_players, 1):
+                if idx % 10 == 0:
+                    await asyncio.sleep(0.5)  # Rate limit
+                    await status_msg.edit(content=f"⏳ Processing {idx}/{len(verified_players)} players...")
+                
+                try:
+                    # Get PUUID from stats
+                    conn = self.db.get_connection()
+                    cur = conn.cursor()
+                    
+                    cur.execute("""
+                        SELECT DISTINCT riot_id FROM hexbet_pro_accounts 
+                        WHERE player_id = %s 
+                        LIMIT 1
+                    """, (player_id,))
+                    
+                    result = cur.fetchone()
+                    cur.close()
+                    self.db.return_connection(conn)
+                    
+                    if not result:
+                        logger.warning(f"⚠️ {player_name} ({riot_id}): No stats found")
+                        failed += 1
+                        continue
+                    
+                    account_riot_id = result[0]
+                    game_name, tag_line = account_riot_id.split('#', 1)
+                    
+                    # Get PUUID
+                    account_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+                    headers = {'X-Riot-Token': self.riot_api.api_key}
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(account_url, headers=headers) as resp:
+                            if resp.status != 200:
+                                logger.warning(f"⚠️ {player_name}: Failed to get PUUID ({resp.status})")
+                                failed += 1
+                                continue
+                            
+                            account_data = await resp.json()
+                            puuid = account_data.get('puuid')
+                    
+                    if not puuid:
+                        logger.warning(f"⚠️ {player_name}: No PUUID returned")
+                        failed += 1
+                        continue
+                    
+                    # Get summoner data
+                    region = 'euw'
+                    summoner_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(summoner_url, headers=headers) as resp:
+                            if resp.status != 200:
+                                logger.warning(f"⚠️ {player_name}: Failed to get summoner")
+                                failed += 1
+                                continue
+                            
+                            summoner_data = await resp.json()
+                    
+                    summoner_id = summoner_data.get('id')
+                    
+                    # Get ranked stats
+                    ranked_url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+                    stats = None
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(ranked_url, headers=headers) as resp:
+                            if resp.status == 200:
+                                stats_data = await resp.json()
+                                if stats_data:
+                                    ranked = [s for s in stats_data if s.get('queueType') == 'RANKED_SOLO_5x5']
+                                    stats = ranked[0] if ranked else stats_data[0]
+                    
+                    tier = stats.get('tier', 'DIAMOND') if stats else 'DIAMOND'
+                    lp = stats.get('leaguePoints', 0) if stats else 0
+                    
+                    # Calculate priority boost
+                    # PRO = +1% boost, STREAMER = +0.5% boost
+                    priority_boost = 1.01 if player_type == 'pro' else 1.005
+                    
+                    # Insert or update in pool
+                    conn = self.db.get_connection()
+                    cur = conn.cursor()
+                    
+                    cur.execute("""
+                        INSERT INTO hexbet_high_elo_pool (puuid, region, tier, lp, priority_boost)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (puuid) DO UPDATE SET
+                            tier = EXCLUDED.tier,
+                            lp = EXCLUDED.lp,
+                            priority_boost = EXCLUDED.priority_boost
+                    """, (puuid, region, tier, lp, priority_boost))
+                    conn.commit()
+                    cur.close()
+                    self.db.return_connection(conn)
+                    
+                    badge = "🎖️" if player_type == 'pro' else "📺"
+                    logger.info(f"✅ {idx}/{len(verified_players)} {badge} {player_name} ({tier} {lp}LP) - boost x{priority_boost}")
+                    added += 1
+                    
+                except Exception as e:
+                    logger.error(f"❌ {player_name}: {e}")
+                    failed += 1
+                    continue
+                
+                if idx % 30 == 0:
+                    await asyncio.sleep(1)  # Extra delay every 30 players to avoid rate limit
+            
+            summary = f"""✅ POOL UPDATE COMPLETE
+
+🎖️ PRO + 📺 STREAMER PLAYERS ADDED
+Added: {added}/{len(verified_players)}
+Failed: {failed}
+
+Priority Boost Applied:
+• 🎖️ PRO players: +1% boost
+• 📺 STREAMER players: +0.5% boost
+
+These players will now appear more frequently in betting matches!"""
+            
+            await status_msg.edit(content=summary)
+            logger.info(summary)
+            
+        except Exception as e:
+            logger.error(f"Error adding verified players: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="hxbalance", description="(Staff) Manage user balances")
     @app_commands.describe(
         action="Action: add, remove, set, check",
