@@ -1142,54 +1142,30 @@ class Hexbet(commands.Cog):
             if candidates:
                 # Take first candidate for this role
                 player = candidates[0]
-                p_copy = dict(player)
-                p_copy['role_name'] = ROLE_NAMES[role]
-                p_copy['role_emoji'] = ROLE_EMOJIS[role]
-                ordered.append(p_copy)
+                ordered.append(player)  # Don't assign role yet, just add to ordered list
                 # If multiple champions for same role, add extras to duplicates (end of queue)
                 if len(candidates) > 1:
                     duplicates.extend(candidates[1:])
         
         # Fill remaining empty role slots with unassigned players (champions without role mapping)
-        for role in ROLE_ORDER:
-            if len(ordered) >= 5:
-                break
-            # Check if this role slot is empty
-            if not any(p.get('role_name') == ROLE_NAMES[role] for p in ordered):
-                if unassigned:
-                    player = unassigned.pop(0)
-                    p_copy = dict(player)
-                    p_copy['role_name'] = ROLE_NAMES[role]
-                    p_copy['role_emoji'] = ROLE_EMOJIS[role]
-                    ordered.append(p_copy)
+        while len(ordered) < 5 and unassigned:
+            ordered.append(unassigned.pop(0))
         
         # Now add duplicate role players at the end (fill remaining empty slots)
-        for role in ROLE_ORDER:
-            if len(ordered) >= 5:
-                break
-            if not any(p.get('role_name') == ROLE_NAMES[role] for p in ordered):
-                if duplicates:
-                    player = duplicates.pop(0)
-                    p_copy = dict(player)
-                    p_copy['role_name'] = ROLE_NAMES[role]
-                    p_copy['role_emoji'] = ROLE_EMOJIS[role]
-                    ordered.append(p_copy)
+        while len(ordered) < 5 and duplicates:
+            ordered.append(duplicates.pop(0))
         
-        # Final fallback: if we still don't have 5, add any remaining players
-        all_remaining = unassigned + duplicates
-        while len(ordered) < len(players) and len(ordered) < 5:
-            if all_remaining:
-                player = all_remaining.pop(0)
-                p_copy = dict(player)
-                idx = len(ordered)
-                role_name, role_emoji = ROLE_LABELS[idx] if idx < len(ROLE_LABELS) else ("Player", "🎮")
-                p_copy['role_name'] = role_name
-                p_copy['role_emoji'] = role_emoji
-                ordered.append(p_copy)
-            else:
-                break
+        # Assign role names and emojis based on POSITION in ordered list (not champion role)
+        final_ordered = []
+        for idx, player in enumerate(ordered[:5]):  # Max 5 players
+            p_copy = dict(player)
+            # Position 0=TOP, 1=JUNGLE, 2=MID, 3=ADC, 4=SUPPORT
+            role = ROLE_ORDER[idx] if idx < len(ROLE_ORDER) else 'TOP'
+            p_copy['role_name'] = ROLE_NAMES[role]
+            p_copy['role_emoji'] = ROLE_EMOJIS[role]
+            final_ordered.append(p_copy)
         
-        return ordered
+        return final_ordered
 
     async def _enrich_players(self, players: List[dict], region: str):
         tasks_rank = []
