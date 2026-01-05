@@ -46,7 +46,7 @@ PLATFORM_ROUTES = {
 }
 
 # DDragon for champion data
-DDRAGON_VERSION = "15.1.1"  # Updated to include Zaahen (patch 15.1)
+DDRAGON_VERSION = "15.24.1"  # Updated to latest version with correct champion IDs
 DDRAGON_BASE = f"https://ddragon.leagueoflegends.com/cdn/{DDRAGON_VERSION}"
 
 # Champion ID to name mapping (loaded at startup)
@@ -74,9 +74,12 @@ async def load_champion_data():
                     if 950 not in CHAMPION_ID_TO_NAME:
                         CHAMPION_ID_TO_NAME[950] = "Mel"
                         logger.info("Added Mel (950) manually")
-                    if 999 not in CHAMPION_ID_TO_NAME:
-                        CHAMPION_ID_TO_NAME[999] = "Zaahen"
-                        logger.info("Added Zaahen (999) manually")
+                    if 804 not in CHAMPION_ID_TO_NAME:
+                        CHAMPION_ID_TO_NAME[804] = "Yunara"
+                        logger.info("Added Yunara (804) manually")
+                    if 904 not in CHAMPION_ID_TO_NAME:
+                        CHAMPION_ID_TO_NAME[904] = "Zaahen"
+                        logger.info("Added Zaahen (904) manually")
                 else:
                     logger.warning(f"DDragon returned status {response.status}")
     except asyncio.TimeoutError:

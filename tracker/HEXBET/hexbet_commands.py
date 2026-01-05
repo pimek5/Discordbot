@@ -1202,7 +1202,7 @@ class Hexbet(commands.Cog):
             if champ_name == 'Unknown':
                 logger.warning(f"⚠️ Unknown champion detected - championId: {champ_id} for player {p.get('riotIdGameName', 'N/A')}")
             # Log new champions for monitoring
-            if champ_id in [799, 950, 999]:
+            if champ_id in [799, 950, 1000, 1001]:
                 logger.info(f"✅ New champion detected - {champ_name} (ID: {champ_id}) played by {p.get('riotIdGameName', 'N/A')}")
             p['champ_name'] = champ_name
             # Use emoji if available, fallback to champion name
