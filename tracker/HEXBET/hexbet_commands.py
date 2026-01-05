@@ -1161,13 +1161,15 @@ class Hexbet(commands.Cog):
             # Load ProName from database if player is verified pro/streamer
             if riot_id:
                 try:
-                    cursor = self.db.conn.cursor()
+                    conn = self.db.get_connection()
+                    cursor = conn.cursor()
                     cursor.execute(
                         "SELECT player_name FROM hexbet_verified_players WHERE riot_id = %s",
                         (riot_id,)
                     )
                     result = cursor.fetchone()
                     cursor.close()
+                    self.db.return_connection(conn)
                     if result:
                         p['pro_name'] = result[0]
                 except Exception as e:
