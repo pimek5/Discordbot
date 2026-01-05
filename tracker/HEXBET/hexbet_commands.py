@@ -1404,9 +1404,9 @@ class Hexbet(commands.Cog):
                         if time_left > 0:
                             minutes_left = int(time_left / 60)
                             seconds_left = int(time_left % 60)
-                            desc += f"\n\n⏰ **Betting Closes In:** {minutes_left}m {seconds_left}s"
+                            desc += f"\n\n⏰ **Odliczanie:** {minutes_left:02d}:{seconds_left:02d}"
                         else:
-                            desc += f"\n\n🔒 **Betting Closed**"
+                            desc += f"\n\n🔒 **Zakłady zamknięte**"
                 self.db.return_connection(conn)
             except Exception as e:
                 logger.warning(f"Failed to get betting timer: {e}")
