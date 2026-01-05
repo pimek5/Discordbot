@@ -109,6 +109,8 @@ def rank_emoji(tier: str) -> str:
 
 
 class Hexbet(commands.Cog):
+    hxpro_group = app_commands.Group(name="hxpro", description="Pro player management")
+    
     def __init__(self, bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
         self.bot = bot
         self.riot_api = riot_api
@@ -3444,9 +3446,6 @@ class BetView(discord.ui.View):
             await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
 
-
-
-    hxpro_group = app_commands.Group(name="hxpro", description="Pro player management")
 
     @hxpro_group.command(name="add", description="Add a pro player to HEXBET")
     @app_commands.describe(
