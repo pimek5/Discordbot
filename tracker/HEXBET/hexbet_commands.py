@@ -1402,6 +1402,33 @@ class Hexbet(commands.Cog):
                 lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
         return "\n".join(lines)
 
+    async def _find_player_in_db(self, identifier: str):
+        """Helper to find player by display_name or riot_id"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        # Try display_name first
+        cursor.execute("""
+            SELECT id, player_name, riot_id, player_type 
+            FROM hexbet_verified_players 
+            WHERE LOWER(player_name) = LOWER(%s)
+        """, (identifier,))
+        
+        result = cursor.fetchone()
+        
+        # If not found, try riot_id
+        if not result:
+            cursor.execute("""
+                SELECT id, player_name, riot_id, player_type 
+                FROM hexbet_verified_players 
+                WHERE riot_id = %s
+            """, (identifier,))
+            result = cursor.fetchone()
+        
+        cursor.close()
+        self.db.return_connection(conn)
+        return result
+
     @app_commands.command(name="hxpro", description="Add a pro player or streamer to HEXBET")
     @app_commands.describe(
         name="Pro/Streamer name (will search DPM.LOL)",
@@ -1545,30 +1572,9 @@ class Hexbet(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            conn = self.db.get_connection()
-            cursor = conn.cursor()
-            
-            # Try to find by player_name first
-            cursor.execute("""
-                SELECT id, player_name, riot_id, player_type 
-                FROM hexbet_verified_players 
-                WHERE LOWER(player_name) = LOWER(%s)
-            """, (name,))
-            
-            result = cursor.fetchone()
-            
-            # If not found, try by riot_id
-            if not result:
-                cursor.execute("""
-                    SELECT id, player_name, riot_id, player_type 
-                    FROM hexbet_verified_players 
-                    WHERE riot_id = %s
-                """, (name,))
-                result = cursor.fetchone()
+            result = await self._find_player_in_db(name)
             
             if not result:
-                cursor.close()
-                self.db.return_connection(conn)
                 await interaction.followup.send(f"❌ Player `{name}` not found in database", ephemeral=True)
                 return
             
@@ -1612,29 +1618,9 @@ class Hexbet(commands.Cog):
             return
         
         try:
-            conn = self.db.get_connection()
-            cursor = conn.cursor()
-            
-            # Find player
-            cursor.execute("""
-                SELECT id, player_name, riot_id, player_type 
-                FROM hexbet_verified_players 
-                WHERE LOWER(player_name) = LOWER(%s)
-            """, (name,))
-            
-            result = cursor.fetchone()
+            result = await self._find_player_in_db(name)
             
             if not result:
-                cursor.execute("""
-                    SELECT id, player_name, riot_id, player_type 
-                    FROM hexbet_verified_players 
-                    WHERE riot_id = %s
-                """, (name,))
-                result = cursor.fetchone()
-            
-            if not result:
-                cursor.close()
-                self.db.return_connection(conn)
                 await interaction.followup.send(f"❌ Player `{name}` not found in database", ephemeral=True)
                 return
             
@@ -1654,6 +1640,8 @@ class Hexbet(commands.Cog):
             
             params.append(player_id)
             
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
             query = f"UPDATE hexbet_verified_players SET {', '.join(updates)} WHERE id = %s"
             cursor.execute(query, params)
             conn.commit()
@@ -1696,43 +1684,22 @@ class Hexbet(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            conn = self.db.get_connection()
-            cursor = conn.cursor()
-            
-            # First try to find by player_name (display name)
-            cursor.execute("""
-                SELECT id, player_name, player_type, riot_id 
-                FROM hexbet_verified_players 
-                WHERE LOWER(player_name) = LOWER(%s)
-            """, (name,))
-            
-            result = cursor.fetchone()
-            
-            # If not found by display name, try by riot_id
-            if not result:
-                cursor.execute("""
-                    SELECT id, player_name, player_type, riot_id 
-                    FROM hexbet_verified_players 
-                    WHERE riot_id = %s
-                """, (name,))
-                result = cursor.fetchone()
+            result = await self._find_player_in_db(name)
             
             if not result:
-                cursor.close()
-                self.db.return_connection(conn)
                 await interaction.followup.send(f"❌ Player `{name}` not found in database", ephemeral=True)
                 return
             
-            player_id, player_name, old_type, riot_id = result
+            player_id, player_name, riot_id, old_type = result
             
             if old_type == player_type:
-                cursor.close()
-                self.db.return_connection(conn)
                 type_label = "Pro Player" if player_type == "pro" else "Streamer"
                 await interaction.followup.send(f"ℹ️ **{player_name}** is already set as **{type_label}**", ephemeral=True)
                 return
             
             # Update player type
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
             cursor.execute("""
                 UPDATE hexbet_verified_players 
                 SET player_type = %s 
