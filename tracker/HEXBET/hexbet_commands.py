@@ -2305,12 +2305,36 @@ class Hexbet(commands.Cog):
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @app_commands.command(name="hxplayer", description="Check player profile and pro status")
-    @app_commands.describe(name="Player name (gameName#tagLine)", region="Region (euw, na, kr, etc.)")
+    @app_commands.describe(name="Player name (display name or gameName#tagLine)", region="Region (euw, na, kr, etc.)")
     async def hxplayer(self, interaction: discord.Interaction, name: str, region: str = "euw"):
-        """Check if a player is a pro and show their profile"""
+        """Check if a player is a pro/streamer and show their profile"""
         await interaction.response.defer(ephemeral=True)
         
         try:
+            # First check if name matches a player_name in database
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT riot_id, player_name, player_type 
+                FROM hexbet_verified_players 
+                WHERE LOWER(player_name) = LOWER(%s)
+            """, (name,))
+            
+            db_result = cursor.fetchone()
+            cursor.close()
+            self.db.return_connection(conn)
+            
+            if db_result:
+                # Found in database - use their riot_id
+                riot_id_to_search, display_name, player_type = db_result
+                name = riot_id_to_search  # Override name with riot_id from DB
+                player_type_label = "👑 Pro Player" if player_type == "pro" else "🎥 Streamer"
+            else:
+                # Not in database - treat as regular riot_id lookup
+                display_name = None
+                player_type = None
+                player_type_label = None
+            
             region = region.lower()
             platform_map = {
                 'euw': 'euw1', 'eune': 'eun1', 'na': 'na1', 'kr': 'kr',
@@ -2379,9 +2403,13 @@ class Hexbet(commands.Cog):
                     pass
                 
                 # Build embed
+                title_name = display_name if display_name else riot_id
+                embed_color = 0x00ff00 if (is_pro or player_type) else 0x3498DB
+                
                 embed = discord.Embed(
-                    title=f"{get_pro_emoji() + ' ' if is_pro else ''}{riot_id}",
-                    color=0x00ff00 if is_pro else 0x3498DB
+                    title=f"{get_pro_emoji() + ' ' if (is_pro or player_type == 'pro') else ''}{title_name}",
+                    description=f"RiotID: `{riot_id}`" if display_name else None,
+                    color=embed_color
                 )
                 
                 tier_emoji = rank_emoji(tier) if tier != 'UNRANKED' else ''
@@ -2391,7 +2419,12 @@ class Hexbet(commands.Cog):
                 embed.add_field(name="Region", value=region.upper(), inline=True)
                 embed.add_field(name="Win Rate", value=f"{wr:.1f}%", inline=True)
                 embed.add_field(name="W/L", value=f"{wins}W / {losses}L", inline=True)
-                embed.add_field(name="Pro Player", value="✅ Yes" if is_pro else "❌ No", inline=True)
+                
+                # Player Type field
+                if player_type_label:
+                    embed.add_field(name="Player Type", value=player_type_label, inline=True)
+                else:
+                    embed.add_field(name="Pro Player", value="✅ Yes" if is_pro else "❌ No", inline=True)
                 
                 # InGame Status
                 in_game_str = f"🎮 {queue_type}" if in_game else "⏹️ Not in game"
