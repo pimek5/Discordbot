@@ -2305,7 +2305,7 @@ class Hexbet(commands.Cog):
                     
                     # Send embed without content message
                     msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
-                    self.db.set_match_message(match_id, BET_CHANNEL_ID, msg.id)
+                    self.db.set_match_message(match_id, msg.id)
                     
                     logger.info(f"✅ Posted priority match {match_id} with {nickname}")
                     await interaction.followup.send(f"🎯 Priority game posted with **{nickname}**!")
