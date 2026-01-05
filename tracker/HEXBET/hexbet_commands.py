@@ -1675,12 +1675,12 @@ class Hexbet(commands.Cog):
                 await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` (checked all regions)", ephemeral=True)
                 return
             
-            # Get summoner data - try multiple regions (including Asian regions)
+            # Get summoner data - try all valid platform regions
             summoner_data = None
             summoner_id = None
             found_region = None
             
-            for region in ['euw1', 'kr', 'na1', 'eun1', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1', 'ph2', 'sg2', 'th2', 'tw2', 'vn2']:
+            for region in ['kr', 'jp1', 'na1', 'euw1', 'eun1', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru']:
                 summoner_url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
                 
                 async with aiohttp.ClientSession() as session:
