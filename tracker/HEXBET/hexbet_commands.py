@@ -2509,13 +2509,13 @@ class Hexbet(commands.Cog):
                     await status_msg.edit(content=f"⏳ Processing {idx}/{len(verified_players)} players...")
                 
                 try:
-                    # Get PUUID from stats
+                    # Get PUUID from stats - use pro_player_id from hexbet_pro_accounts
                     conn = self.db.get_connection()
                     cur = conn.cursor()
                     
                     cur.execute("""
                         SELECT DISTINCT riot_id FROM hexbet_pro_accounts 
-                        WHERE player_id = %s 
+                        WHERE pro_player_id = %s 
                         LIMIT 1
                     """, (player_id,))
                     
