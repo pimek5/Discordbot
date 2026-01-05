@@ -70,38 +70,54 @@ async def _fallback_scrape(player_name: str) -> List[Dict[str, any]]:
             logger.warning(f"❌ DPM.LOL returned non-200 for {player_name}")
             return []
         
-        # Debug: log sample
-        logger.info(f"📄 DPM.LOL HTML sample for {player_name} (first 2000 chars):\n{html[:2000]}")
+        # DPM.LOL uses Next.js - data is in __NEXT_DATA__ JSON
+        import json
+        next_data_pattern = r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>'
+        match = re.search(next_data_pattern, html, re.DOTALL)
         
-        # Parse accounts using regex
-        # Pattern: "gameName#tag RANK LP Wins-Losses (WR%)"
-        pattern = r'(\w+[\s\w]*#\w+)\s+(CHALLENGER|GRANDMASTER|MASTER|DIAMOND|PLATINUM|GOLD|SILVER|BRONZE|IRON)\s+(\d+)\s+LP\s+(\d+)W\s*-\s*(\d+)L\s*\((\d+(?:\.\d+)?)\%\)'
-        
-        matches = re.finditer(pattern, html)
-        match_count = 0
-        for match in matches:
-            match_count += 1
-            riot_id = match.group(1).strip()
-            rank = match.group(2)
-            lp = int(match.group(3))
-            wins = int(match.group(4))
-            losses = int(match.group(5))
-            wr = float(match.group(6))
+        if match:
+            try:
+                next_data = json.loads(match.group(1))
+                logger.info(f"✅ Found __NEXT_DATA__ for {player_name}")
+                
+                # Extract accounts from Next.js data structure
+                accounts = []
+                props = next_data.get('props', {}).get('pageProps', {})
+                
+                # Try to find accounts in various possible locations
+                player_data = props.get('player', {}) or props.get('data', {}) or props
+                accounts_data = player_data.get('accounts', []) or player_data.get('soloQueueAccounts', [])
+                
+                for acc in accounts_data:
+                    try:
+                        riot_id = f"{acc.get('gameName', 'Unknown')}#{acc.get('tagLine', 'NA1')}"
+                        rank = acc.get('tier', 'UNRANKED').upper()
+                        lp = acc.get('leaguePoints', 0)
+                        wins = acc.get('wins', 0)
+                        losses = acc.get('losses', 0)
+                        total = wins + losses
+                        wr = (wins / total * 100) if total > 0 else 0.0
+                        
+                        accounts.append({
+                            'riot_id': riot_id,
+                            'rank': rank,
+                            'lp': lp,
+                            'wins': wins,
+                            'losses': losses,
+                            'wr': wr
+                        })
+                    except Exception as e:
+                        logger.warning(f"Failed to parse account: {e}")
+                        continue
+                
+                logger.info(f"✅ Scraped {len(accounts)} accounts for {player_name} from __NEXT_DATA__")
+                return accounts
             
-            accounts.append({
-                'riot_id': riot_id,
-                'rank': rank,
-                'lp': lp,
-                'wins': wins,
-                'losses': losses,
-                'wr': wr
-            })
+            except Exception as e:
+                logger.error(f"Failed to parse __NEXT_DATA__: {e}")
         
-        if match_count == 0:
-            logger.warning(f"⚠️ No regex matches found for {player_name}. Pattern may need update.")
-        
-        logger.info(f"✅ Scraped {len(accounts)} accounts for {player_name} from DPM.LOL")
-        return accounts
+        logger.warning(f"⚠️ No __NEXT_DATA__ found for {player_name}, DPM.LOL may have changed structure")
+        return []
     
     except Exception as e:
         logger.error(f"❌ Error in fallback scrape for {player_name}: {e}")
