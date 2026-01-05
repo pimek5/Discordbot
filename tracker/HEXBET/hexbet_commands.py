@@ -1119,6 +1119,7 @@ class Hexbet(commands.Cog):
         # Assign predicted role to each player
         role_buckets = {role: [] for role in ROLE_ORDER}
         unassigned = []
+        duplicates = []  # Players with duplicate roles (2nd, 3rd on same role)
         
         for p in players:
             champ_id = p.get('championId', 0)
@@ -1134,7 +1135,7 @@ class Hexbet(commands.Cog):
             else:
                 unassigned.append(p)
         
-        # Build ordered list: fill each role slot
+        # Build ordered list: fill each role slot with first candidate
         ordered = []
         for role in ROLE_ORDER:
             candidates = role_buckets[role]
@@ -1145,11 +1146,11 @@ class Hexbet(commands.Cog):
                 p_copy['role_name'] = ROLE_NAMES[role]
                 p_copy['role_emoji'] = ROLE_EMOJIS[role]
                 ordered.append(p_copy)
-                # If multiple champions for same role, add extras to unassigned
+                # If multiple champions for same role, add extras to duplicates (end of queue)
                 if len(candidates) > 1:
-                    unassigned.extend(candidates[1:])
+                    duplicates.extend(candidates[1:])
         
-        # Fill remaining slots with unassigned players in order
+        # Fill remaining empty role slots with unassigned players (champions without role mapping)
         for role in ROLE_ORDER:
             if len(ordered) >= 5:
                 break
@@ -1162,10 +1163,23 @@ class Hexbet(commands.Cog):
                     p_copy['role_emoji'] = ROLE_EMOJIS[role]
                     ordered.append(p_copy)
         
-        # Fallback: if we don't have exactly 5, add remaining players
+        # Now add duplicate role players at the end (fill remaining empty slots)
+        for role in ROLE_ORDER:
+            if len(ordered) >= 5:
+                break
+            if not any(p.get('role_name') == ROLE_NAMES[role] for p in ordered):
+                if duplicates:
+                    player = duplicates.pop(0)
+                    p_copy = dict(player)
+                    p_copy['role_name'] = ROLE_NAMES[role]
+                    p_copy['role_emoji'] = ROLE_EMOJIS[role]
+                    ordered.append(p_copy)
+        
+        # Final fallback: if we still don't have 5, add any remaining players
+        all_remaining = unassigned + duplicates
         while len(ordered) < len(players) and len(ordered) < 5:
-            if unassigned:
-                player = unassigned.pop(0)
+            if all_remaining:
+                player = all_remaining.pop(0)
                 p_copy = dict(player)
                 idx = len(ordered)
                 role_name, role_emoji = ROLE_LABELS[idx] if idx < len(ROLE_LABELS) else ("Player", "🎮")
