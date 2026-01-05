@@ -1514,8 +1514,7 @@ class Hexbet(commands.Cog):
                         logger.warning(f"No ranked stats for {riot_id}")
                         continue
                     
-                    # Pick SOLOQ entry
-                    from HEXBET.pro_players import pick_rank_entry
+                    # Pick SOLOQ entry using local function
                     tier, division, wr = pick_rank_entry(stats)
                     
                     # Find SOLOQ entry for LP/wins/losses
@@ -1540,18 +1539,23 @@ class Hexbet(commands.Cog):
             logger.info(f"📊 Successfully fetched {len(accounts)}/{len(scraped_accounts)} accounts from Riot API")
             
             account_text = ""
+            highest_rank_account = None
             if accounts:
                 # Add accounts to database
                 count = self.db.add_pro_accounts(player_id, accounts)
                 logger.info(f"✅ Added {count} accounts for {name}")
                 
-                # Format account list
-                for acc in accounts[:5]:  # Show top 5
-                    account_text += f"\n  • `{acc['riot_id']}` - **{acc['rank']}** {acc['lp']} LP ({acc['wr']:.1f}% WR)"
-                if len(accounts) > 5:
-                    account_text += f"\n  ... and {len(accounts) - 5} more"
+                # Find highest rank account for display
+                rank_order = {'IRON': 1, 'BRONZE': 2, 'SILVER': 3, 'GOLD': 4, 'PLATINUM': 5, 'DIAMOND': 6, 'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9}
+                highest_rank_account = max(accounts, key=lambda x: (rank_order.get(x['rank'], 0), x['lp']))
+                
+                # Format display: show highest rank account
+                account_text = f"`{highest_rank_account['riot_id']}` - **{highest_rank_account['rank']}** {highest_rank_account['lp']} LP ({highest_rank_account['wr']:.1f}% WR)"
+                
+                if len(accounts) > 1:
+                    account_text += f"\n({len(accounts)} total accounts)"
             else:
-                account_text = "\n  ❌ No accounts found (try adding manually later)"
+                account_text = "❌ No accounts found (try adding manually later)"
             
             player_type_label = "👨‍💼 Pro" if player_type == "pro" else "📡 Streamer"
             embed = discord.Embed(
@@ -1562,7 +1566,7 @@ class Hexbet(commands.Cog):
             embed.add_field(name="Primary RiotID", value=primary_riot_id, inline=False)
             embed.add_field(name="Display Name", value=name, inline=False)
             embed.add_field(name="Type", value=player_type_label, inline=False)
-            embed.add_field(name=f"📊 SoloQ Accounts ({len(accounts)})", value=account_text or "None", inline=False)
+            embed.add_field(name=f"🏆 Highest Rank", value=account_text or "None", inline=False)
             await interaction.followup.send(embed=embed, ephemeral=True)
             logger.info(f"✅ Added pro player: {primary_riot_id} ({name}) with {len(accounts)} accounts")
         
