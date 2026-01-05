@@ -1153,7 +1153,7 @@ class Hexbet(commands.Cog):
             p['badge_emoji'] = badge
     
     def _apply_lobby_average(self, all_players: List[dict]):
-        """Apply lobby-wide average to streamer mode players (fairer distribution)"""
+        """Apply lobby-wide average to streamer mode players (balanced distribution)"""
         # Calculate average from ALL ranked players in lobby
         ranked_players = [p for p in all_players if not p.get('streamer_mode', False)]
         if not ranked_players:
@@ -1163,12 +1163,32 @@ class Hexbet(commands.Cog):
         avg_wr = sum(p['wr'] for p in ranked_players) / len(ranked_players)
         avg_lp = sum(p['lp'] for p in ranked_players) / len(ranked_players)
         
-        # Apply to ALL streamer mode players in lobby
+        # Convert tier score back to tier and division for streamers
+        # Round down to get tier, fractional part determines division
+        tier_base = int(avg_tier_score)
+        division_decimal = avg_tier_score - tier_base
+        
+        # Map tier score back to tier name
+        tier_map_reverse = {v: k for k, v in TIER_SCORE.items()}
+        avg_tier = tier_map_reverse.get(tier_base, 'DIAMOND')
+        
+        # Map division decimal to division (0.0-0.25=IV, 0.25-0.5=III, 0.5-0.75=II, 0.75-1.0=I)
+        if division_decimal < 0.15:
+            avg_division = 'IV'
+        elif division_decimal < 0.35:
+            avg_division = 'III'
+        elif division_decimal < 0.55:
+            avg_division = 'II'
+        else:
+            avg_division = 'I'
+        
+        # Apply to ALL streamer mode players in lobby (balanced to lobby average)
         for p in all_players:
             if p.get('streamer_mode', False):
                 p['wr'] = avg_wr
                 p['lp'] = int(avg_lp)
-                p['tier'] = 'MASTER'  # Use tier from average for consistency
+                p['tier'] = avg_tier
+                p['division'] = avg_division if avg_tier not in ['MASTER', 'GRANDMASTER', 'CHALLENGER'] else ''
 
     def _team_score(self, players: List[dict]) -> float:
         if not players:
