@@ -1283,6 +1283,8 @@ class Hexbet(commands.Cog):
             return True
         
         return False
+    
+    def _apply_lobby_average(self, all_players: List[dict]):
         """Apply lobby-wide average to streamer mode players (balanced distribution)"""
         # Calculate average from ALL ranked players in lobby
         ranked_players = [p for p in all_players if not p.get('streamer_mode', False)]
