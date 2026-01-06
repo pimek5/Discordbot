@@ -1113,8 +1113,14 @@ class Hexbet(commands.Cog):
     def _assign_roles(self, players: List[dict]) -> List[dict]:
         """
         Assign roles based on champion ID patterns and Smite spell.
-        If multiple champions fit same role, assign in order.
+        Each team is processed independently.
         """
+        # Log which team we're processing
+        team_name = "Team" if players else "Empty"
+        if players:
+            first_champ = players[0].get('championId', 'unknown')
+            logger.debug(f"🎯 Processing role assignment for team (first champ: {first_champ})")
+        
         # Champion role mappings (most common role for each champion)
         CHAMP_ROLES = {
             # TOP laners
