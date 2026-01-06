@@ -46,6 +46,7 @@ KNOWN_PRO_PLAYERS = {
     # Other notable
     'Rekkles', 'Perkz', 'Alphari', 'Jensen', 'PowerOfEvil', 'Svenskeren',
     'Agurin',  # EUW jungler/content creator
+    'Free palestine',  # Humzh's RiotID
 }
 
 async def load_pro_players_from_api():
