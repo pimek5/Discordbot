@@ -1138,7 +1138,7 @@ class Hexbet(commands.Cog):
             59: 'TOP',  # JarvanIV
             897: 'TOP',  # KSante
             240: 'TOP',  # Kled
-            62: 'TOP',  # MonkeyKing
+            62: 'TOP',  # Wukong
             75: 'TOP',  # Nasus
             2: 'TOP',  # Olaf
             516: 'TOP',  # Ornn
