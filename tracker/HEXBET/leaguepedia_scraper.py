@@ -63,6 +63,9 @@ STREAMER_ACCOUNTS = {
     'mollusca slime#yummy': {'name': 'Thebausffs', 'platform': 'Twitch'},
     'silly snail#öga': {'name': 'Thebausffs', 'platform': 'Twitch'},
     
+    # Humzh
+    'free palestine#humzh': {'name': 'Humzh', 'platform': 'Twitch'},
+    
     # Other verified streamers (add only with confirmed Riot IDs)
     # 'agurin#euw': {'name': 'Agurin', 'platform': 'Twitch'},  # Needs verification
     # 'drututt': {'name': 'Drututt', 'platform': 'Twitch'},     # Needs verification
