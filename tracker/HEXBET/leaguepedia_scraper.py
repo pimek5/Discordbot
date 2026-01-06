@@ -108,7 +108,7 @@ def get_player_badge(riot_id: str) -> Optional[str]:
     if is_verified_pro(riot_id):
         return "<:PRO:1457231609458851961>"
     elif is_verified_streamer(riot_id):
-        return "<:STRM:1457671230432743567>"
+        return "<:Streamer:1457699155689341044>"
     return None
 
 def get_player_info(riot_id: str) -> Optional[Dict]:

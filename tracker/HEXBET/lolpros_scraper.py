@@ -144,7 +144,7 @@ async def check_and_verify_player(riot_id: str, db) -> Optional[str]:
         if cached['player_type'] == 'pro':
             return "<:PRO:1457231609458851961>"
         elif cached['player_type'] == 'streamer':
-            return "<:STRM:1457671230432743567>"
+            return "<:Streamer:1457699155689341044>"
     
     # Check if recently checked (avoid spam)
     if cached and cached.get('last_checked'):
@@ -171,7 +171,7 @@ async def check_and_verify_player(riot_id: str, db) -> Optional[str]:
         if player_data['player_type'] == 'pro':
             return "<:PRO:1457231609458851961>"
         elif player_data['player_type'] == 'streamer':
-            return "<:STRM:1457671230432743567>"
+            return "<:Streamer:1457699155689341044>"
     
     # Mark as checked (even if not found)
     if cached:
