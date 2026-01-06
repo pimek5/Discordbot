@@ -6,6 +6,7 @@ import cloudscraper
 import asyncio
 import logging
 import re
+import urllib.parse
 from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,11 @@ def get_pro_accounts_from_dpmlol(pro_name: str) -> List[Dict[str, any]]:
                 
                 for acc in accounts_data:
                     try:
-                        riot_id = f"{acc.get('gameName', 'Unknown')}#{acc.get('tagLine', 'NA1')}"
+                        # Decode URL-encoded gameName (e.g., "FREE%20PALESTINE" → "FREE PALESTINE")
+                        game_name = urllib.parse.unquote(acc.get('gameName', 'Unknown'))
+                        tag_line = acc.get('tagLine', 'NA1')
+                        riot_id = f"{game_name}#{tag_line}"
+                        
                         rank = acc.get('tier', 'UNRANKED').upper()
                         lp = acc.get('leaguePoints', 0)
                         wins = acc.get('wins', 0)
