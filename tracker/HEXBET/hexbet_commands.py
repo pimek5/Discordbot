@@ -3044,8 +3044,10 @@ class Hexbet(commands.Cog):
                             all_players.append((summoner['puuid'], region, 'challenger', entry.get('leaguePoints', 0)))
                             total_fetched += 1
                             region_count += 1
+                        elif summoner:
+                            logger.warning(f"⚠️ {region} Challenger: Summoner {summoner_id} missing PUUID: {summoner}")
                         else:
-                            logger.debug(f"⚠️ Failed to get summoner data for ID {summoner_id}")
+                            logger.warning(f"⚠️ {region} Challenger: Failed to get summoner data for ID {summoner_id}")
                         
                         # Rate limit between individual summoner fetches
                         if idx % 10 == 0 and idx > 0:
