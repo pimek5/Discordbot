@@ -626,11 +626,17 @@ class RiotAPI:
                             continue
                         else:
                             logger.warning(f"⚠️ Failed to get summoner {summoner_id} from {platform}: HTTP {response.status}")
+                            if attempt < retries - 1:
+                                await asyncio.sleep(1)
+                                continue
+                            return None
             except Exception as e:
                 logger.warning(f"⚠️ Error getting summoner by ID {summoner_id}: {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
-                continue
+                    continue
+        
+        return None
         
         return None
     

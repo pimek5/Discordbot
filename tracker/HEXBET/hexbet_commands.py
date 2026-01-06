@@ -3060,10 +3060,10 @@ class Hexbet(commands.Cog):
                     else:
                         if idx < 3:  # Log first 3 failures
                             logger.warning(f"⚠️ {region} Challenger: Failed to get summoner data for ID {summoner_id}")
-                        
-                        # Rate limit between individual summoner fetches
-                        if idx % 10 == 0 and idx > 0:
-                            await asyncio.sleep(0.5)
+                    
+                    # Rate limit between individual summoner fetches
+                    if idx % 10 == 0 and idx > 0:
+                        await asyncio.sleep(0.5)
                 
                 logger.info(f"✅ {region} Challenger: fetched {region_count}/{len(sampled)} players")
             else:
