@@ -621,20 +621,13 @@ class RiotAPI:
                         if response.status == 200:
                             return await response.json()
                         elif response.status == 429:
-                            logger.warning(f"⚠️ Rate limited getting summoner {summoner_id} from {platform}")
                             await asyncio.sleep(2)
                             continue
-                        else:
-                            logger.warning(f"⚠️ Failed to get summoner {summoner_id} from {platform}: HTTP {response.status}")
-                            if attempt < retries - 1:
-                                await asyncio.sleep(1)
-                                continue
-                            return None
             except Exception as e:
-                logger.warning(f"⚠️ Error getting summoner by ID {summoner_id}: {e}")
+                logger.debug(f"Error getting summoner by ID: {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
-                    continue
+                continue
         
         return None
         
