@@ -1121,170 +1121,209 @@ class Hexbet(commands.Cog):
             first_champ = players[0].get('championId', 'unknown')
             logger.debug(f"🎯 Processing role assignment for team (first champ: {first_champ})")
         
-        # Champion role mappings (most common role for each champion)
+        # Champion role mappings (complete 172 champions from Data Dragon + manual overrides)
         CHAMP_ROLES = {
-            # TOP laners
-            1: 'TOP',    # Annie (can top)
-            86: 'TOP',   # Garen
+            # TOP (31 champions)
             266: 'TOP',  # Aatrox
-            23: 'TOP',   # Tryndamere
-            122: 'TOP',  # Darius
-            240: 'TOP',  # Kled
-            114: 'TOP',  # Fiora
-            420: 'TOP',  # Illaoi
-            39: 'TOP',   # Irelia
-            24: 'TOP',   # Jax
-            126: 'TOP',  # Jayce
-            59: 'TOP',   # Jarvan IV (can top)
-            85: 'TOP',   # Kennen
-            58: 'TOP',   # Renekton
-            92: 'TOP',   # Riven
-            98: 'TOP',   # Shen
-            27: 'TOP',   # Singed
-            516: 'TOP',  # Ornn
-            78: 'TOP',   # Poppy
-            106: 'TOP',  # Volibear
-            83: 'TOP',   # Yorick
-            50: 'TOP',   # Swain (can top)
-            8: 'TOP',    # Vladimir (can top)
-            14: 'TOP',   # Sion
-            80: 'TOP',   # Pantheon (can top)
-            68: 'TOP',   # Rumble
-            54: 'TOP',   # Malphite
-            36: 'TOP',   # Dr. Mundo
-            150: 'TOP',  # Gnar
-            164: 'TOP',  # Camille
-            875: 'TOP',  # Sett
-            887: 'TOP',  # Gwen
-            897: 'TOP',  # K'Sante
             799: 'TOP',  # Ambessa
-            
-            # JUNGLE (also check Smite spell ID 11)
-            11: 'JUNGLE',  # Master Yi
-            5: 'JUNGLE',   # Xin Zhao
-            64: 'JUNGLE',  # Lee Sin
+            164: 'TOP',  # Camille
+            122: 'TOP',  # Darius
+            36: 'TOP',  # DrMundo
+            41: 'TOP',  # Gangplank
+            86: 'TOP',  # Garen
+            150: 'TOP',  # Gnar
+            887: 'TOP',  # Gwen
+            120: 'TOP',  # Hecarim
+            420: 'TOP',  # Illaoi
+            59: 'TOP',  # JarvanIV
+            897: 'TOP',  # KSante
+            240: 'TOP',  # Kled
+            62: 'TOP',  # MonkeyKing
+            75: 'TOP',  # Nasus
+            2: 'TOP',  # Olaf
+            516: 'TOP',  # Ornn
+            78: 'TOP',  # Poppy
+            58: 'TOP',  # Renekton
+            113: 'TOP',  # Sejuani
+            875: 'TOP',  # Sett
+            98: 'TOP',  # Shen
+            14: 'TOP',  # Sion
+            72: 'TOP',  # Skarner
+            23: 'TOP',  # Tryndamere
+            6: 'TOP',  # Urgot
+            106: 'TOP',  # Volibear
+            19: 'TOP',  # Warwick
+            5: 'TOP',  # XinZhao
+            83: 'TOP',  # Yorick
+
+            # JUNGLE (28 champions)
+            200: 'JUNGLE',  # Belveth
+            233: 'JUNGLE',  # Briar
+            131: 'JUNGLE',  # Diana
+            245: 'JUNGLE',  # Ekko
             60: 'JUNGLE',  # Elise
             28: 'JUNGLE',  # Evelynn
-            9: 'JUNGLE',   # Fiddlesticks
-            79: 'JUNGLE',  # Gragas
-            121: 'JUNGLE', # Kha'Zix
-            127: 'JUNGLE', # Lissandra (can jg)
-            56: 'JUNGLE',  # Nocturne
-            154: 'JUNGLE', # Zac
-            107: 'JUNGLE', # Rengar
-            421: 'JUNGLE', # Rek'Sai
-            141: 'JUNGLE', # Kayn
-            120: 'JUNGLE', # Hecarim
-            102: 'JUNGLE', # Shyvana
-            113: 'JUNGLE', # Sejuani
+            9: 'JUNGLE',  # Fiddlesticks
+            104: 'JUNGLE',  # Graves
+            427: 'JUNGLE',  # Ivern
+            24: 'JUNGLE',  # Jax
+            30: 'JUNGLE',  # Karthus
+            121: 'JUNGLE',  # Khazix
+            203: 'JUNGLE',  # Kindred
+            64: 'JUNGLE',  # LeeSin
+            11: 'JUNGLE',  # MasterYi
+            76: 'JUNGLE',  # Nidalee
+            20: 'JUNGLE',  # Nunu
+            246: 'JUNGLE',  # Qiyana
+            33: 'JUNGLE',  # Rammus
+            421: 'JUNGLE',  # RekSai
+            102: 'JUNGLE',  # Shyvana
+            517: 'JUNGLE',  # Sylas
+            163: 'JUNGLE',  # Taliyah
+            91: 'JUNGLE',  # Talon
             48: 'JUNGLE',  # Trundle
             77: 'JUNGLE',  # Udyr
-            19: 'JUNGLE',  # Warwick
-            62: 'JUNGLE',  # Wukong
-            72: 'JUNGLE',  # Skarner
-            254: 'JUNGLE', # Vi
-            427: 'JUNGLE', # Ivern
-            876: 'JUNGLE', # Lillia
-            234: 'JUNGLE', # Viego
-            200: 'JUNGLE', # Bel'Veth
-            233: 'JUNGLE', # Briar
-            
-            # MID laners
+            234: 'JUNGLE',  # Viego
+            154: 'JUNGLE',  # Zac
+
+            # MID (43 champions)
             103: 'MID',  # Ahri
-            84: 'MID',   # Akali
-            34: 'MID',   # Anivia
-            136: 'MID',  # Aurelion Sol
-            268: 'MID',  # Azir
-            63: 'MID',   # Brand
-            69: 'MID',   # Cassiopeia
-            131: 'MID',  # Diana
-            245: 'MID',  # Ekko
+            84: 'MID',  # Akali
+            34: 'MID',  # Anivia
+            1: 'MID',  # Annie
+            136: 'MID',  # AurelionSol
+            893: 'MID',  # Aurora
+            69: 'MID',  # Cassiopeia
+            31: 'MID',  # Chogath
+            114: 'MID',  # Fiora
             105: 'MID',  # Fizz
-            910: 'MID',  # Hwei
-            38: 'MID',   # Kassadin
-            7: 'MID',    # LeBlanc
-            90: 'MID',   # Malzahar
-            61: 'MID',   # Orianna
-            74: 'MID',   # Heimerdinger
-            246: 'MID',  # Qiyana
-            13: 'MID',   # Ryze
-            517: 'MID',  # Sylas
-            134: 'MID',  # Syndra (duplicate check)
-            91: 'MID',   # Talon
-            163: 'MID',  # Taliyah
-            45: 'MID',   # Veigar
-            161: 'MID',  # Vel'Koz
+            3: 'MID',  # Galio
+            79: 'MID',  # Gragas
+            39: 'MID',  # Irelia
+            38: 'MID',  # Kassadin
+            55: 'MID',  # Katarina
+            141: 'MID',  # Kayn
+            85: 'MID',  # Kennen
+            7: 'MID',  # Leblanc
+            876: 'MID',  # Lillia
+            127: 'MID',  # Lissandra
+            54: 'MID',  # Malphite
+            90: 'MID',  # Malzahar
+            82: 'MID',  # Mordekaiser
+            950: 'MID',  # Naafiri
+            895: 'MID',  # Nilah
+            56: 'MID',  # Nocturne
+            107: 'MID',  # Rengar
+            92: 'MID',  # Riven
+            68: 'MID',  # Rumble
+            13: 'MID',  # Ryze
+            27: 'MID',  # Singed
+            134: 'MID',  # Syndra
+            45: 'MID',  # Veigar
+            711: 'MID',  # Vex
+            254: 'MID',  # Vi
             112: 'MID',  # Viktor
-            101: 'MID',  # Xerath
-            142: 'MID',  # Zoe
-            238: 'MID',  # Zed
+            8: 'MID',  # Vladimir
             157: 'MID',  # Yasuo
             777: 'MID',  # Yone
-            893: 'MID',  # Aurora
-            804: 'MID',  # Hwei (duplicate check)
-            800: 'MID',  # Smolder (can mid)
-            55: 'MID',   # Katarina
-            
-            # ADC (Bottom)
-            22: 'ADC',   # Ashe
-            51: 'ADC',   # Caitlyn
+            904: 'MID',  # Zaahen
+            238: 'MID',  # Zed
+            115: 'MID',  # Ziggs
+            142: 'MID',  # Zoe
+
+            # ADC (31 champions)
+            166: 'ADC',  # Akshan
+            523: 'ADC',  # Aphelios
+            22: 'ADC',  # Ashe
+            268: 'ADC',  # Azir
+            51: 'ADC',  # Caitlyn
+            42: 'ADC',  # Corki
             119: 'ADC',  # Draven
-            81: 'ADC',   # Ezreal
-            222: 'ADC',  # Jinx
+            81: 'ADC',  # Ezreal
+            126: 'ADC',  # Jayce
             202: 'ADC',  # Jhin
-            145: 'ADC',  # Kai'Sa
+            222: 'ADC',  # Jinx
+            145: 'ADC',  # Kaisa
             429: 'ADC',  # Kalista
-            96: 'ADC',   # Kog'Maw
-            21: 'ADC',   # Miss Fortune
-            15: 'ADC',   # Sivir
-            18: 'ADC',   # Tristana
+            10: 'ADC',  # Kayle
+            96: 'ADC',  # KogMaw
             236: 'ADC',  # Lucian
-            110: 'ADC',  # Varus
-            498: 'ADC',  # Xayah
-            221: 'ADC',  # Zeri
+            21: 'ADC',  # MissFortune
+            133: 'ADC',  # Quinn
             360: 'ADC',  # Samira
+            235: 'ADC',  # Senna
+            15: 'ADC',  # Sivir
             901: 'ADC',  # Smolder
-            29: 'ADC',   # Twitch
-            42: 'ADC',   # Corki
-            67: 'ADC',   # Vayne
-            104: 'ADC',  # Graves (can adc)
-            203: 'ADC',  # Kindred (can adc)
-            950: 'ADC',  # Nilah
-            
-            # SUPPORT (primary role for supports)
-            412: 'SUPPORT',  # Thresh
-            53: 'SUPPORT',   # Blitzcrank
-            89: 'SUPPORT',   # Leona
-            25: 'SUPPORT',   # Morgana
-            40: 'SUPPORT',   # Janna
-            37: 'SUPPORT',   # Sona
-            267: 'SUPPORT',  # Nami
-            16: 'SUPPORT',   # Soraka
-            43: 'SUPPORT',   # Karma
-            117: 'SUPPORT',  # Lulu
-            201: 'SUPPORT',  # Braum
+            17: 'ADC',  # Teemo
+            18: 'ADC',  # Tristana
+            4: 'ADC',  # TwistedFate
+            29: 'ADC',  # Twitch
+            110: 'ADC',  # Varus
+            67: 'ADC',  # Vayne
+            498: 'ADC',  # Xayah
+            804: 'ADC',  # Yunara
+            221: 'ADC',  # Zeri
+
+            # SUPPORT (39 champions)
+            12: 'SUPPORT',  # Alistar
+            32: 'SUPPORT',  # Amumu
             432: 'SUPPORT',  # Bard
-            223: 'SUPPORT',  # Tahm Kench
-            555: 'SUPPORT',  # Pyke
-            235: 'SUPPORT',  # Senna
-            350: 'SUPPORT',  # Yuumi
-            526: 'SUPPORT',  # Rell
-            497: 'SUPPORT',  # Rakan
-            147: 'SUPPORT',  # Seraphine
-            111: 'SUPPORT',  # Nautilus
-            12: 'SUPPORT',   # Alistar
-            44: 'SUPPORT',   # Taric
-            888: 'SUPPORT',  # Renata Glasc
+            53: 'SUPPORT',  # Blitzcrank
+            63: 'SUPPORT',  # Brand
+            201: 'SUPPORT',  # Braum
+            74: 'SUPPORT',  # Heimerdinger
+            910: 'SUPPORT',  # Hwei
+            40: 'SUPPORT',  # Janna
+            43: 'SUPPORT',  # Karma
+            89: 'SUPPORT',  # Leona
+            117: 'SUPPORT',  # Lulu
+            99: 'SUPPORT',  # Lux
+            57: 'SUPPORT',  # Maokai
+            800: 'SUPPORT',  # Mel
             902: 'SUPPORT',  # Milio
-            711: 'SUPPORT',  # Vex (can sup)
-            143: 'SUPPORT',  # Zyra (primary SUPPORT)
-            35: 'SUPPORT',   # Neeko (primary SUPPORT)
+            25: 'SUPPORT',  # Morgana
+            267: 'SUPPORT',  # Nami
+            111: 'SUPPORT',  # Nautilus
+            518: 'SUPPORT',  # Neeko
+            61: 'SUPPORT',  # Orianna
+            80: 'SUPPORT',  # Pantheon
+            555: 'SUPPORT',  # Pyke
+            497: 'SUPPORT',  # Rakan
+            526: 'SUPPORT',  # Rell
+            888: 'SUPPORT',  # Renata
+            147: 'SUPPORT',  # Seraphine
+            35: 'SUPPORT',  # Shaco
+            37: 'SUPPORT',  # Sona
+            16: 'SUPPORT',  # Soraka
+            50: 'SUPPORT',  # Swain
+            223: 'SUPPORT',  # TahmKench
+            44: 'SUPPORT',  # Taric
+            412: 'SUPPORT',  # Thresh
+            161: 'SUPPORT',  # Velkoz
+            101: 'SUPPORT',  # Xerath
+            350: 'SUPPORT',  # Yuumi
+            26: 'SUPPORT',  # Zilean
+            143: 'SUPPORT',  # Zyra
+
         }
         
         # Champions that can play multiple roles (secondary roles)
         CHAMP_CAN_FILL = {
-            143: ['SUPPORT', 'JUNGLE'],  # Zyra - can play JG or SUPPORT
-            35: ['SUPPORT', 'JUNGLE'],   # Neeko - can play JG or SUPPORT
+            143: ['SUPPORT', 'JUNGLE'],  # Zyra
+            518: ['SUPPORT', 'MID'],  # Neeko
+            10: ['TOP', 'MID'],  # Kayle
+            19: ['TOP', 'JUNGLE'],  # Warwick
+            50: ['SUPPORT', 'MID', 'ADC'],  # Swain
+            67: ['ADC', 'TOP'],  # Vayne
+            157: ['MID', 'ADC', 'TOP'],  # Yasuo
+            85: ['MID', 'TOP'],  # Kennen
+            54: ['MID', 'TOP', 'SUPPORT'],  # Malphite
+            133: ['TOP', 'MID'],  # Quinn
+            91: ['JUNGLE', 'MID'],  # Talon
+            131: ['JUNGLE', 'MID'],  # Diana
+            245: ['JUNGLE', 'MID'],  # Ekko
+            266: ['TOP', 'JUNGLE'],  # Aatrox
+            799: ['TOP', 'JUNGLE'],  # Ambessa
         }
         
         ROLE_ORDER = ['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT']

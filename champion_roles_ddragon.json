@@ -1,0 +1,1336 @@
+{
+  "266": {
+    "name": "Aatrox",
+    "tags": [
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "103": {
+    "name": "Ahri",
+    "tags": [
+      "Mage",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "84": {
+    "name": "Akali",
+    "tags": [
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "166": {
+    "name": "Akshan",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "primary_role": "ADC"
+  },
+  "12": {
+    "name": "Alistar",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "799": {
+    "name": "Ambessa",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "32": {
+    "name": "Amumu",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "34": {
+    "name": "Anivia",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "1": {
+    "name": "Annie",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "523": {
+    "name": "Aphelios",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "22": {
+    "name": "Ashe",
+    "tags": [
+      "Marksman",
+      "Support"
+    ],
+    "primary_role": "ADC"
+  },
+  "136": {
+    "name": "AurelionSol",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "893": {
+    "name": "Aurora",
+    "tags": [
+      "Mage",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "268": {
+    "name": "Azir",
+    "tags": [
+      "Mage",
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "432": {
+    "name": "Bard",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "200": {
+    "name": "Belveth",
+    "tags": [
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "53": {
+    "name": "Blitzcrank",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "63": {
+    "name": "Brand",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "201": {
+    "name": "Braum",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "233": {
+    "name": "Briar",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "51": {
+    "name": "Caitlyn",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "164": {
+    "name": "Camille",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "69": {
+    "name": "Cassiopeia",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "31": {
+    "name": "Chogath",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "42": {
+    "name": "Corki",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "primary_role": "ADC"
+  },
+  "122": {
+    "name": "Darius",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "131": {
+    "name": "Diana",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "119": {
+    "name": "Draven",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "36": {
+    "name": "DrMundo",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "245": {
+    "name": "Ekko",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "60": {
+    "name": "Elise",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "28": {
+    "name": "Evelynn",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "81": {
+    "name": "Ezreal",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "primary_role": "ADC"
+  },
+  "9": {
+    "name": "Fiddlesticks",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "114": {
+    "name": "Fiora",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "105": {
+    "name": "Fizz",
+    "tags": [
+      "Assassin",
+      "Fighter"
+    ],
+    "primary_role": "MID"
+  },
+  "3": {
+    "name": "Galio",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "41": {
+    "name": "Gangplank",
+    "tags": [
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "86": {
+    "name": "Garen",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "150": {
+    "name": "Gnar",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "79": {
+    "name": "Gragas",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "104": {
+    "name": "Graves",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "887": {
+    "name": "Gwen",
+    "tags": [
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "120": {
+    "name": "Hecarim",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "74": {
+    "name": "Heimerdinger",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "910": {
+    "name": "Hwei",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "420": {
+    "name": "Illaoi",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "39": {
+    "name": "Irelia",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "427": {
+    "name": "Ivern",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "40": {
+    "name": "Janna",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "59": {
+    "name": "JarvanIV",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "24": {
+    "name": "Jax",
+    "tags": [
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "126": {
+    "name": "Jayce",
+    "tags": [
+      "Fighter",
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "202": {
+    "name": "Jhin",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "primary_role": "ADC"
+  },
+  "222": {
+    "name": "Jinx",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "145": {
+    "name": "Kaisa",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "primary_role": "ADC"
+  },
+  "429": {
+    "name": "Kalista",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "43": {
+    "name": "Karma",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "30": {
+    "name": "Karthus",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "38": {
+    "name": "Kassadin",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "55": {
+    "name": "Katarina",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "10": {
+    "name": "Kayle",
+    "tags": [
+      "Mage",
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "141": {
+    "name": "Kayn",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "85": {
+    "name": "Kennen",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "121": {
+    "name": "Khazix",
+    "tags": [
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "203": {
+    "name": "Kindred",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "240": {
+    "name": "Kled",
+    "tags": [
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "96": {
+    "name": "KogMaw",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "primary_role": "ADC"
+  },
+  "897": {
+    "name": "KSante",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "7": {
+    "name": "Leblanc",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "64": {
+    "name": "LeeSin",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "89": {
+    "name": "Leona",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "876": {
+    "name": "Lillia",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "127": {
+    "name": "Lissandra",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "236": {
+    "name": "Lucian",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "primary_role": "ADC"
+  },
+  "117": {
+    "name": "Lulu",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "99": {
+    "name": "Lux",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "54": {
+    "name": "Malphite",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "90": {
+    "name": "Malzahar",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "57": {
+    "name": "Maokai",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "11": {
+    "name": "MasterYi",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "800": {
+    "name": "Mel",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "902": {
+    "name": "Milio",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "21": {
+    "name": "MissFortune",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "primary_role": "ADC"
+  },
+  "62": {
+    "name": "MonkeyKing",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "82": {
+    "name": "Mordekaiser",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "25": {
+    "name": "Morgana",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "950": {
+    "name": "Naafiri",
+    "tags": [
+      "Assassin",
+      "Fighter"
+    ],
+    "primary_role": "MID"
+  },
+  "267": {
+    "name": "Nami",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "75": {
+    "name": "Nasus",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "111": {
+    "name": "Nautilus",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "518": {
+    "name": "Neeko",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "76": {
+    "name": "Nidalee",
+    "tags": [
+      "Assassin",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "895": {
+    "name": "Nilah",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "56": {
+    "name": "Nocturne",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "20": {
+    "name": "Nunu",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "2": {
+    "name": "Olaf",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "61": {
+    "name": "Orianna",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "516": {
+    "name": "Ornn",
+    "tags": [
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "80": {
+    "name": "Pantheon",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "78": {
+    "name": "Poppy",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "555": {
+    "name": "Pyke",
+    "tags": [
+      "Support",
+      "Assassin"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "246": {
+    "name": "Qiyana",
+    "tags": [
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "133": {
+    "name": "Quinn",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "primary_role": "ADC"
+  },
+  "497": {
+    "name": "Rakan",
+    "tags": [
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "33": {
+    "name": "Rammus",
+    "tags": [
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "421": {
+    "name": "RekSai",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "526": {
+    "name": "Rell",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "888": {
+    "name": "Renata",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "58": {
+    "name": "Renekton",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "107": {
+    "name": "Rengar",
+    "tags": [
+      "Assassin",
+      "Fighter"
+    ],
+    "primary_role": "MID"
+  },
+  "92": {
+    "name": "Riven",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "68": {
+    "name": "Rumble",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "13": {
+    "name": "Ryze",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "360": {
+    "name": "Samira",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "primary_role": "ADC"
+  },
+  "113": {
+    "name": "Sejuani",
+    "tags": [
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "235": {
+    "name": "Senna",
+    "tags": [
+      "Support",
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "147": {
+    "name": "Seraphine",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "875": {
+    "name": "Sett",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "35": {
+    "name": "Shaco",
+    "tags": [
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "98": {
+    "name": "Shen",
+    "tags": [
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "102": {
+    "name": "Shyvana",
+    "tags": [
+      "Fighter",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "27": {
+    "name": "Singed",
+    "tags": [
+      "Tank",
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "14": {
+    "name": "Sion",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "15": {
+    "name": "Sivir",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "72": {
+    "name": "Skarner",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "901": {
+    "name": "Smolder",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "primary_role": "ADC"
+  },
+  "37": {
+    "name": "Sona",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "16": {
+    "name": "Soraka",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "50": {
+    "name": "Swain",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "517": {
+    "name": "Sylas",
+    "tags": [
+      "Mage",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "134": {
+    "name": "Syndra",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "223": {
+    "name": "TahmKench",
+    "tags": [
+      "Tank",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "163": {
+    "name": "Taliyah",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "91": {
+    "name": "Talon",
+    "tags": [
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "44": {
+    "name": "Taric",
+    "tags": [
+      "Support",
+      "Tank"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "17": {
+    "name": "Teemo",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "primary_role": "ADC"
+  },
+  "412": {
+    "name": "Thresh",
+    "tags": [
+      "Support",
+      "Tank"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "18": {
+    "name": "Tristana",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "primary_role": "ADC"
+  },
+  "48": {
+    "name": "Trundle",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "23": {
+    "name": "Tryndamere",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "4": {
+    "name": "TwistedFate",
+    "tags": [
+      "Mage",
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "29": {
+    "name": "Twitch",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "primary_role": "ADC"
+  },
+  "77": {
+    "name": "Udyr",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "6": {
+    "name": "Urgot",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "110": {
+    "name": "Varus",
+    "tags": [
+      "Marksman",
+      "Mage"
+    ],
+    "primary_role": "ADC"
+  },
+  "67": {
+    "name": "Vayne",
+    "tags": [
+      "Marksman",
+      "Assassin"
+    ],
+    "primary_role": "ADC"
+  },
+  "45": {
+    "name": "Veigar",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "161": {
+    "name": "Velkoz",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "711": {
+    "name": "Vex",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "254": {
+    "name": "Vi",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "234": {
+    "name": "Viego",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "112": {
+    "name": "Viktor",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "8": {
+    "name": "Vladimir",
+    "tags": [
+      "Mage",
+      "Fighter"
+    ],
+    "primary_role": "MID"
+  },
+  "106": {
+    "name": "Volibear",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "19": {
+    "name": "Warwick",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "498": {
+    "name": "Xayah",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "101": {
+    "name": "Xerath",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "5": {
+    "name": "XinZhao",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "157": {
+    "name": "Yasuo",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "777": {
+    "name": "Yone",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "83": {
+    "name": "Yorick",
+    "tags": [
+      "Fighter",
+      "Tank"
+    ],
+    "primary_role": "TOP"
+  },
+  "804": {
+    "name": "Yunara",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "350": {
+    "name": "Yuumi",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "904": {
+    "name": "Zaahen",
+    "tags": [
+      "Fighter",
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "154": {
+    "name": "Zac",
+    "tags": [
+      "Tank",
+      "Fighter"
+    ],
+    "primary_role": "TOP"
+  },
+  "238": {
+    "name": "Zed",
+    "tags": [
+      "Assassin"
+    ],
+    "primary_role": "MID"
+  },
+  "221": {
+    "name": "Zeri",
+    "tags": [
+      "Marksman"
+    ],
+    "primary_role": "ADC"
+  },
+  "115": {
+    "name": "Ziggs",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "26": {
+    "name": "Zilean",
+    "tags": [
+      "Support",
+      "Mage"
+    ],
+    "primary_role": "SUPPORT"
+  },
+  "142": {
+    "name": "Zoe",
+    "tags": [
+      "Mage"
+    ],
+    "primary_role": "MID"
+  },
+  "143": {
+    "name": "Zyra",
+    "tags": [
+      "Mage",
+      "Support"
+    ],
+    "primary_role": "SUPPORT"
+  }
+}
