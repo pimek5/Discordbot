@@ -3022,9 +3022,11 @@ class Hexbet(commands.Cog):
         summary_lines = []
         
         logger.info(f"🔄 Starting pool fetch: {len(regions)} regions, sample_size={sample_size}")
+        logger.info(f"📝 Regions will be processed sequentially to avoid rate limits")
         
-        for region in regions:
+        for idx, region in enumerate(regions, 1):
             region_count = 0
+            logger.info(f"🌍 Processing region {idx}/{len(regions)}: {region.upper()}")
             
             # Challenger
             logger.info(f"🔍 Fetching Challenger from {region}")
@@ -3136,6 +3138,10 @@ class Hexbet(commands.Cog):
                 logger.info(f"✅ {region.upper()} total: {region_count} players fetched")
             else:
                 logger.warning(f"⚠️ {region.upper()}: No players fetched")
+            
+            # Wait 3 seconds between regions to avoid rate limiting
+            logger.info(f"⏸️ Waiting 3s before next region...")
+            await asyncio.sleep(3)
         
         logger.info(f"📊 Fetch completed: {total_fetched} total players from {len(regions)} regions")
         
