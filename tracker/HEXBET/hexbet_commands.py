@@ -3036,17 +3036,29 @@ class Hexbet(commands.Cog):
                 sampled = random.sample(entries, min(sample_size, len(entries)))
                 logger.info(f"📊 {region} Challenger: got {len(entries)} entries, sampling {len(sampled)}")
                 
+                logger.info(f"🔄 Starting to fetch {len(sampled)} Challenger summoners...")
                 for idx, entry in enumerate(sampled):
                     summoner_id = entry.get('summonerId')
-                    if summoner_id:
-                        summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
-                        if summoner and summoner.get('puuid'):
-                            all_players.append((summoner['puuid'], region, 'challenger', entry.get('leaguePoints', 0)))
-                            total_fetched += 1
-                            region_count += 1
-                        elif summoner:
-                            logger.warning(f"⚠️ {region} Challenger: Summoner {summoner_id} missing PUUID: {summoner}")
-                        else:
+                    if not summoner_id:
+                        logger.warning(f"⚠️ {region} Challenger entry missing summonerId: {entry}")
+                        continue
+                    
+                    if idx == 0:
+                        logger.info(f"🔍 Fetching first summoner: {summoner_id}")
+                    
+                    summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                    
+                    if idx == 0:
+                        logger.info(f"📦 First summoner response: {summoner}")
+                    
+                    if summoner and summoner.get('puuid'):
+                        all_players.append((summoner['puuid'], region, 'challenger', entry.get('leaguePoints', 0)))
+                        total_fetched += 1
+                        region_count += 1
+                    elif summoner:
+                        logger.warning(f"⚠️ {region} Challenger: Summoner {summoner_id} missing PUUID: {summoner}")
+                    else:
+                        if idx < 3:  # Log first 3 failures
                             logger.warning(f"⚠️ {region} Challenger: Failed to get summoner data for ID {summoner_id}")
                         
                         # Rate limit between individual summoner fetches
