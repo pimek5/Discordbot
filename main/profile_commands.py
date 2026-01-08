@@ -1397,7 +1397,7 @@ class ProfileCommands(commands.Cog):
                         # Group by season
                         season_ranks = {}
                         for rank_data in all_ranked_stats:
-                            season = rank_data.get('season', '15')
+                            season = rank_data.get('season', '16')
                             if 'SOLO' in rank_data.get('queueType', ''):
                                 if season not in season_ranks:
                                     season_ranks[season] = rank_data
@@ -4068,7 +4068,7 @@ class ProfileView(discord.ui.View):
             # Group by season
             season_ranks = {}
             for rank_data in self.all_ranked_stats:
-                season = rank_data.get('season', '15')
+                season = rank_data.get('season', '16')
                 if 'SOLO' in rank_data.get('queueType', ''):
                     if season not in season_ranks:
                         season_ranks[season] = rank_data
