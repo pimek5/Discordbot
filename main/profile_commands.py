@@ -1373,7 +1373,7 @@ class ProfileCommands(commands.Cog):
                         days = account_age.days % 365
                         milestone_lines.append(f"**Account Age:** {years}y {days}d")
                 
-                    # Peak rank (from current rank data)
+                    # Peak rank with emoji, LP, and WR (from current rank data)
                     peak_rank_text = "Unranked"
                     if all_ranked_stats:
                         rank_order = {
@@ -1405,14 +1405,29 @@ class ProfileCommands(commands.Cog):
                                 rank_data = season_ranks[season]
                                 tier = rank_data.get('tier', 'UNRANKED')
                                 rank = rank_data.get('rank', '')
-                                rank_str = f"{tier} {rank}" if rank else tier
-                                peak_lines.append(f"S{season}: {rank_str}")
+                                lp = rank_data.get('leaguePoints', 0)
+                                wins = rank_data.get('wins', 0)
+                                losses = rank_data.get('losses', 0)
+                                total_games = wins + losses if wins > 0 or losses > 0 else 1
+                                wr = (wins / total_games * 100) if total_games > 0 else 0
+                                
+                                rank_emoji = get_rank_emoji(tier)
+                                rank_str = f"{rank}" if rank else ""
+                                peak_lines.append(f"S{season}: {rank_emoji} {tier} {rank_str} • {lp}LP • {wr:.0f}%")
                             peak_rank_text = "\n".join(peak_lines[:5])  # Show top 5 seasons
                         else:
                             highest = max(all_ranked_stats, key=get_rank_value)
                             tier = highest.get('tier', 'UNRANKED')
                             rank = highest.get('rank', '')
-                            peak_rank_text = f"{tier} {rank}" if rank else tier
+                            lp = highest.get('leaguePoints', 0)
+                            wins = highest.get('wins', 0)
+                            losses = highest.get('losses', 0)
+                            total_games = wins + losses if wins > 0 or losses > 0 else 1
+                            wr = (wins / total_games * 100) if total_games > 0 else 0
+                            
+                            rank_emoji = get_rank_emoji(tier)
+                            rank_str = f"{rank}" if rank else ""
+                            peak_rank_text = f"{rank_emoji} {tier} {rank_str} • {lp}LP • {wr:.0f}%"
                 
                     milestone_lines.append(f"**Peak Rank:**\n{peak_rank_text}")
                 
@@ -4054,16 +4069,29 @@ class ProfileView(discord.ui.View):
                     rank_data = season_ranks[season]
                     tier = rank_data.get('tier', 'UNRANKED')
                     rank = rank_data.get('rank', '')
+                    lp = rank_data.get('leaguePoints', 0)
+                    wins = rank_data.get('wins', 0)
+                    losses = rank_data.get('losses', 0)
+                    total_games = wins + losses if wins > 0 or losses > 0 else 1
+                    wr = (wins / total_games * 100) if total_games > 0 else 0
+                    
                     rank_emoji = get_rank_emoji(tier)
-                    rank_str = f"{rank_emoji} {tier} {rank}" if rank else f"{rank_emoji} {tier}"
-                    peak_lines.append(f"S{season}: {rank_str}")
+                    rank_str = f"{rank}" if rank else ""
+                    peak_lines.append(f"S{season}: {rank_emoji} {tier} {rank_str} • {lp}LP • {wr:.0f}%")
                 peak_rank_text = "\n".join(peak_lines[:5])  # Show top 5 seasons
             else:
                 highest = max(self.all_ranked_stats, key=get_rank_value)
                 tier = highest.get('tier', 'UNRANKED')
                 rank = highest.get('rank', '')
+                lp = highest.get('leaguePoints', 0)
+                wins = highest.get('wins', 0)
+                losses = highest.get('losses', 0)
+                total_games = wins + losses if wins > 0 or losses > 0 else 1
+                wr = (wins / total_games * 100) if total_games > 0 else 0
+                
                 rank_emoji = get_rank_emoji(tier)
-                peak_rank_text = f"{rank_emoji} {tier} {rank}" if rank else f"{rank_emoji} {tier}"
+                rank_str = f"{rank}" if rank else ""
+                peak_rank_text = f"{rank_emoji} {tier} {rank_str} • {lp}LP • {wr:.0f}%"
         
         milestone_lines.append(f"**Peak Rank:**\n{peak_rank_text}")
         
