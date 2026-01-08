@@ -1128,9 +1128,9 @@ async def before_auto_update_ranks():
 # ================================
 #   AUTOMATIC RANK STATS EMBED UPDATE
 # ================================
-@tasks.loop(minutes=10)
+@tasks.loop(minutes=5)
 async def update_rank_stats_embed():
-    """Update rank statistics embed every 10 minutes"""
+    """Update rank statistics embed every 5 minutes"""
     try:
         guild = bot.get_guild(GUILD_ID)
         if not guild:
@@ -1155,7 +1155,7 @@ async def update_rank_stats_embed():
 async def before_update_rank_stats_embed():
     """Wait for bot to be ready before starting the task"""
     await bot.wait_until_ready()
-    logger.info("✅ Rank stats embed update task started (updates every 10 minutes)")
+    logger.info("✅ Rank stats embed update task started (updates every 5 minutes)")
 
 # ================================
 #        CHANNEL COUNTER
