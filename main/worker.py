@@ -26,7 +26,7 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 RIOT_API_KEY = os.getenv('RIOT_API_KEY')
 
 # Current League of Legends season (update this when season changes)
-CURRENT_SEASON = '16'
+CURRENT_SEASON = '15'
 
 # Initialize
 db = None
@@ -110,9 +110,31 @@ async def update_user_ranks(user_id: int, account: dict):
             account['region']
         )
         
+        # Decide which season to write to. Default to CURRENT_SEASON (S15).
+        season_to_use = CURRENT_SEASON
+        try:
+            prev_ranks = db.get_user_ranks(user_id)
+            had_current_season_rank = any(
+                (r.get('season') == CURRENT_SEASON) and (r.get('tier') not in (None, '', 'UNRANKED'))
+                for r in prev_ranks
+            )
+        except Exception:
+            had_current_season_rank = False
+
+        # Riot returns no entries when a season resets and everyone is Unranked.
+        # If user had S15 rank before and now API returns none/unranked, start writing to S16.
+        is_now_unranked = (not ranked_stats) or all(
+            (q.get('tier') in (None, '', 'UNRANKED')) for q in (ranked_stats or [])
+        )
+        if had_current_season_rank and is_now_unranked:
+            try:
+                season_to_use = str(int(CURRENT_SEASON) + 1)  # '16'
+            except Exception:
+                season_to_use = '16'
+
         if not ranked_stats:
             return
-        
+
         for queue in ranked_stats:
             db.update_ranked_stats(
                 user_id,
@@ -125,7 +147,7 @@ async def update_user_ranks(user_id: int, account: dict):
                 queue.get('hotStreak', False),
                 queue.get('veteran', False),
                 queue.get('freshBlood', False),
-                season=CURRENT_SEASON
+                season=season_to_use
             )
         
         logger.info(f"✅ Updated ranks for user {user_id}")
