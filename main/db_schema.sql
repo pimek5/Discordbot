@@ -67,8 +67,9 @@ CREATE TABLE IF NOT EXISTS user_ranks (
     veteran BOOLEAN DEFAULT FALSE,
     fresh_blood BOOLEAN DEFAULT FALSE,
     inactive BOOLEAN DEFAULT FALSE,
+    season VARCHAR(10) DEFAULT '15',   -- Season identifier (e.g., '15', '16', etc)
     last_updated TIMESTAMP DEFAULT NOW(),
-    UNIQUE(user_id, queue)
+    UNIQUE(user_id, queue, season)
 );
 
 -- Guild membership tracking

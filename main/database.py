@@ -374,7 +374,7 @@ class Database:
     
     def update_ranked_stats(self, user_id: int, queue: str, tier: str, rank: str,
                            lp: int, wins: int, losses: int, hot_streak: bool = False,
-                           veteran: bool = False, fresh_blood: bool = False):
+                           veteran: bool = False, fresh_blood: bool = False, season: str = '15'):
         """Update ranked statistics"""
         conn = self.get_connection()
         try:
@@ -382,9 +382,9 @@ class Database:
                 cur.execute("""
                     INSERT INTO user_ranks 
                     (user_id, queue, tier, rank, league_points, wins, losses, 
-                     hot_streak, veteran, fresh_blood)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (user_id, queue) DO UPDATE SET
+                     hot_streak, veteran, fresh_blood, season)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id, queue, season) DO UPDATE SET
                         tier = EXCLUDED.tier,
                         rank = EXCLUDED.rank,
                         league_points = EXCLUDED.league_points,
@@ -394,7 +394,7 @@ class Database:
                         veteran = EXCLUDED.veteran,
                         fresh_blood = EXCLUDED.fresh_blood,
                         last_updated = NOW()
-                """, (user_id, queue, tier, rank, lp, wins, losses, hot_streak, veteran, fresh_blood))
+                """, (user_id, queue, tier, rank, lp, wins, losses, hot_streak, veteran, fresh_blood, season))
                 conn.commit()
         finally:
             self.return_connection(conn)

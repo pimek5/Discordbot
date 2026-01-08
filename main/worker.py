@@ -25,6 +25,9 @@ load_dotenv()
 DATABASE_URL = os.getenv('DATABASE_URL')
 RIOT_API_KEY = os.getenv('RIOT_API_KEY')
 
+# Current League of Legends season (update this when season changes)
+CURRENT_SEASON = '15'
+
 # Initialize
 db = None
 riot_api = None
@@ -121,7 +124,8 @@ async def update_user_ranks(user_id: int, account: dict):
                 queue.get('losses', 0),
                 queue.get('hotStreak', False),
                 queue.get('veteran', False),
-                queue.get('freshBlood', False)
+                queue.get('freshBlood', False),
+                season=CURRENT_SEASON
             )
         
         logger.info(f"✅ Updated ranks for user {user_id}")

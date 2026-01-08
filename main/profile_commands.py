@@ -1374,7 +1374,7 @@ class ProfileCommands(commands.Cog):
                         milestone_lines.append(f"**Account Age:** {years}y {days}d")
                 
                     # Peak rank (from current rank data)
-                    peak_rank = "Unranked"
+                    peak_rank_text = "Unranked"
                     if all_ranked_stats:
                         rank_order = {
                             'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
@@ -1387,12 +1387,34 @@ class ProfileCommands(commands.Cog):
                             rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
                             return tier_val * 4 + rank_val
                     
-                        highest = max(all_ranked_stats, key=get_rank_value)
-                        tier = highest.get('tier', 'UNRANKED')
-                        rank = highest.get('rank', '')
-                        peak_rank = f"{tier} {rank}" if rank else tier
+                        # Group by season
+                        season_ranks = {}
+                        for rank_data in all_ranked_stats:
+                            season = rank_data.get('season', '15')
+                            if 'SOLO' in rank_data.get('queueType', ''):
+                                if season not in season_ranks:
+                                    season_ranks[season] = rank_data
+                                else:
+                                    if get_rank_value(rank_data) > get_rank_value(season_ranks[season]):
+                                        season_ranks[season] = rank_data
+                        
+                        # Build peak rank text with seasons
+                        if season_ranks:
+                            peak_lines = []
+                            for season in sorted(season_ranks.keys(), reverse=True):
+                                rank_data = season_ranks[season]
+                                tier = rank_data.get('tier', 'UNRANKED')
+                                rank = rank_data.get('rank', '')
+                                rank_str = f"{tier} {rank}" if rank else tier
+                                peak_lines.append(f"S{season}: {rank_str}")
+                            peak_rank_text = "\n".join(peak_lines[:5])  # Show top 5 seasons
+                        else:
+                            highest = max(all_ranked_stats, key=get_rank_value)
+                            tier = highest.get('tier', 'UNRANKED')
+                            rank = highest.get('rank', '')
+                            peak_rank_text = f"{tier} {rank}" if rank else tier
                 
-                    milestone_lines.append(f"**Peak Rank:** {peak_rank}")
+                    milestone_lines.append(f"**Peak Rank:**\n{peak_rank_text}")
                 
                     embed.add_field(
                         name="🏅 Career Milestones",
@@ -4001,7 +4023,7 @@ class ProfileView(discord.ui.View):
             days = account_age.days % 365
             milestone_lines.append(f"**Account Age:** {years}y {days}d")
         
-        peak_rank = "Unranked"
+        peak_rank_text = "Unranked"
         if self.all_ranked_stats:
             rank_order = {
                 'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
@@ -4014,13 +4036,36 @@ class ProfileView(discord.ui.View):
                 rank_val = {'IV': 0, 'III': 1, 'II': 2, 'I': 3}.get(rank_data.get('rank', 'IV'), 0)
                 return tier_val * 4 + rank_val
             
-            highest = max(self.all_ranked_stats, key=get_rank_value)
-            tier = highest.get('tier', 'UNRANKED')
-            rank = highest.get('rank', '')
-            rank_emoji = get_rank_emoji(tier)
-            peak_rank = f"{rank_emoji} {tier} {rank}" if rank else f"{rank_emoji} {tier}"
+            # Group by season
+            season_ranks = {}
+            for rank_data in self.all_ranked_stats:
+                season = rank_data.get('season', '15')
+                if 'SOLO' in rank_data.get('queueType', ''):
+                    if season not in season_ranks:
+                        season_ranks[season] = rank_data
+                    else:
+                        if get_rank_value(rank_data) > get_rank_value(season_ranks[season]):
+                            season_ranks[season] = rank_data
+            
+            # Build peak rank text with seasons
+            if season_ranks:
+                peak_lines = []
+                for season in sorted(season_ranks.keys(), reverse=True):
+                    rank_data = season_ranks[season]
+                    tier = rank_data.get('tier', 'UNRANKED')
+                    rank = rank_data.get('rank', '')
+                    rank_emoji = get_rank_emoji(tier)
+                    rank_str = f"{rank_emoji} {tier} {rank}" if rank else f"{rank_emoji} {tier}"
+                    peak_lines.append(f"S{season}: {rank_str}")
+                peak_rank_text = "\n".join(peak_lines[:5])  # Show top 5 seasons
+            else:
+                highest = max(self.all_ranked_stats, key=get_rank_value)
+                tier = highest.get('tier', 'UNRANKED')
+                rank = highest.get('rank', '')
+                rank_emoji = get_rank_emoji(tier)
+                peak_rank_text = f"{rank_emoji} {tier} {rank}" if rank else f"{rank_emoji} {tier}"
         
-        milestone_lines.append(f"**Peak Rank:** {peak_rank}")
+        milestone_lines.append(f"**Peak Rank:**\n{peak_rank_text}")
         
         embed.add_field(name="🏅 **Career Milestones**", value="\n".join(milestone_lines), inline=True)
         
