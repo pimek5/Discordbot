@@ -68,12 +68,12 @@ async def load_champion_roles_from_ddragon():
         return False
 
 BET_CHANNEL_ID = 1398977064261910580
-LEADERBOARD_CHANNEL_ID = 1398985421014306856
+LEADERBOARD_CHANNEL_ID = 1169498094308704286
 BET_LOGS_CHANNEL_ID = 1398986567988674704
 
 # Task intervals
 FEATURED_INTERVAL = 5  # minutes - how often to check for and post new matches (faster to maintain 3 slots)
-LEADERBOARD_INTERVAL = 10  # minutes - how often to refresh leaderboard
+LEADERBOARD_INTERVAL = 5  # minutes - how often to refresh leaderboard
 SETTLE_CHECK_SECONDS = 120  # 2 minutes - how often to check if matches are ready to settle
 CLEANUP_INTERVAL = 1  # minute - how often to delete old settled bets
 MIN_MINUTES_BEFORE_SETTLE = 12  # 12 minutes - minimum game duration before settlement check
