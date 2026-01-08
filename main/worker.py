@@ -26,7 +26,7 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 RIOT_API_KEY = os.getenv('RIOT_API_KEY')
 
 # Current League of Legends season (update this when season changes)
-CURRENT_SEASON = '15'
+CURRENT_SEASON = '16'
 
 # Initialize
 db = None
