@@ -1350,6 +1350,13 @@ class ProfileCommands(commands.Cog):
                     # 5. GAME MODES
                     if combined_stats.get('game_modes'):
                         mode_lines = []
+                        # Overall totals across all modes
+                        _total_games_modes = sum(m.get('games', 0) for m in combined_stats['game_modes'].values())
+                        _total_wins_modes = sum(m.get('wins', 0) for m in combined_stats['game_modes'].values())
+                        _overall_wr = (_total_wins_modes / _total_games_modes * 100) if _total_games_modes > 0 else 0
+                        mode_lines.append(f"**Total:** {_total_games_modes} games ({_overall_wr:.0f}% WR)")
+
+                        # Per-mode breakdown
                         for mode, mode_data in combined_stats['game_modes'].items():
                             games = mode_data['games']
                             wins = mode_data['wins']
@@ -4019,6 +4026,13 @@ class ProfileView(discord.ui.View):
         mode_text = ""
         if self.combined_stats.get('game_modes'):
             mode_lines = []
+            # Overall totals across all modes
+            _total_games_modes = sum(m.get('games', 0) for m in self.combined_stats['game_modes'].values())
+            _total_wins_modes = sum(m.get('wins', 0) for m in self.combined_stats['game_modes'].values())
+            _overall_wr = (_total_wins_modes / _total_games_modes * 100) if _total_games_modes > 0 else 0
+            mode_lines.append(f"• Total: {_total_games_modes}G ({_overall_wr:.0f}% WR)")
+
+            # Per-mode breakdown
             for mode, mode_data in self.combined_stats['game_modes'].items():
                 games = mode_data['games']
                 wins = mode_data['wins']
