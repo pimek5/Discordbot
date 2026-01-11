@@ -347,6 +347,12 @@ class CreatorBot(commands.Bot):
     async def check_runeforge_updates(self, creator_id: int, profile_url: str, discord_user_id: int):
         try:
             username = profile_url.split('/users/')[-1].strip('/')
+            
+            # Validate username (skip malformed URLs)
+            if not username or '/' in username or '?' in username:
+                logger.warning("⚠️ Skipping malformed profile URL: %s", profile_url)
+                return
+            
             mods = await self.runeforge_scraper.get_user_mods(username)
             
             db = get_creator_db()
@@ -417,6 +423,12 @@ class CreatorBot(commands.Bot):
         """[Not working for now] - DivineSkins requires JavaScript execution (CSR)"""
         try:
             username = profile_url.rstrip('/').split('/')[-1]
+            
+            # Validate username (skip malformed URLs)
+            if not username or '/' in username or '?' in username:
+                logger.warning("⚠️ Skipping malformed profile URL: %s", profile_url)
+                return
+            
             skins = await self.divineskins_scraper.get_user_skins(username)
             
             db = get_creator_db()
@@ -515,6 +527,7 @@ class CreatorBot(commands.Bot):
             }
             
             # Send to all active webhooks
+            webhook_count = 0
             async with aiohttp.ClientSession() as session:
                 for webhook in all_webhooks:
                     if not webhook.get('active', True):
@@ -526,6 +539,7 @@ class CreatorBot(commands.Bot):
                     if not webhook_url:
                         continue
                     
+                    webhook_count += 1
                     try:
                         async with session.post(
                             webhook_url,
@@ -533,13 +547,18 @@ class CreatorBot(commands.Bot):
                             timeout=aiohttp.ClientTimeout(total=10)
                         ) as response:
                             if response.status == 200:
-                                logger.info("✅ Webhook sent to guild %s: %s (%s)", guild_id, mod_name, event_type)
+                                logger.info("🪝 Webhook sent to guild %s: %s (%s)", guild_id, mod_name, event_type)
                             else:
                                 logger.warning("⚠️ Webhook failed for guild %s (status: %s)", guild_id, response.status)
                     except asyncio.TimeoutError:
                         logger.warning("⚠️ Webhook timeout for guild %s", guild_id)
                     except Exception as e:
                         logger.warning("⚠️ Error sending webhook to guild %s: %s", guild_id, e)
+            
+            if webhook_count > 0:
+                logger.info("✅ Webhook notifications sent: %d guild(s) notified", webhook_count)
+            else:
+                logger.debug("ℹ️ No active webhooks to notify for %s", event_type)
         
         except Exception as e:
             logger.error("❌ Error sending webhook notifications: %s", e)
