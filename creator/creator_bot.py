@@ -13,7 +13,6 @@ from datetime import datetime
 # Local modules (same folder)
 from creator_database import get_creator_db
 from creator_scraper import RuneForgeScraper, DivineSkinsScraper
-import config_commands
 
 # Logging setup
 logging.basicConfig(
@@ -49,10 +48,7 @@ class CreatorBot(commands.Bot):
         """Setup hook called when bot is starting"""
         # Load commands from local module
         await self.load_extension('creator_commands')
-        
-        # Add config commands
-        await config_commands.setup(self)
-        logger.info("✅ ConfigCommands loaded")
+        logger.info("✅ Commands loaded")
         
         # Sync commands to a single guild if provided
         if GUILD_ID:
