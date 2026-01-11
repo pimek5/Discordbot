@@ -125,7 +125,7 @@ class CreatorDatabase:
                         guild_id BIGINT REFERENCES guild_config(guild_id) ON DELETE CASCADE,
                         user_id BIGINT NOT NULL,
                         key_hash TEXT UNIQUE NOT NULL,
-                        key_prefix VARCHAR(10) NOT NULL,
+                        key_prefix VARCHAR(50) NOT NULL,
                         active BOOLEAN DEFAULT TRUE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         last_used TIMESTAMP,
@@ -158,6 +158,7 @@ class CreatorDatabase:
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS include_creator_nickname BOOLEAN DEFAULT TRUE",
                     "ALTER TABLE webhooks ADD COLUMN IF NOT EXISTS include_creator_avatar BOOLEAN DEFAULT TRUE",
                     "ALTER TABLE webhooks ADD COLUMN IF NOT EXISTS include_creator_nickname BOOLEAN DEFAULT TRUE",
+                    "ALTER TABLE api_keys ALTER COLUMN key_prefix TYPE VARCHAR(50)",
                 ]
                 
                 for query in migration_queries:
@@ -172,7 +173,6 @@ class CreatorDatabase:
         except Exception as e:
             logger.warning("⚠️ Migration error (non-critical): %s", e)
             self.conn.rollback()
-    
     # ==================== CREATORS ====================
     def add_creator(self, discord_user_id: int, platform: str, profile_url: str, profile_data: dict):
         try:
