@@ -791,9 +791,9 @@ class CreatorCommands(commands.Cog):
 
     # ==================== CONFIG COMMANDS ====================
     
-    @config_group.command(name="dashboard", description="Interactive configuration dashboard")
-    async def config_dashboard(self, interaction: discord.Interaction):
-        """View and edit server configuration via interactive embed"""
+    @config_group.command(name="main", description="Interactive configuration dashboard")
+    async def config_main(self, interaction: discord.Interaction):
+        """Interactive config dashboard with buttons to edit all settings"""
         if not has_admin_permissions(interaction):
             await interaction.response.send_message(
                 "❌ Only administrators can configure server settings!",
@@ -807,263 +807,156 @@ class CreatorCommands(commands.Cog):
             guild_id = interaction.guild_id if interaction.guild else 0
             config = db.get_guild_config(guild_id) or {}
             
-            # Create comprehensive config embed
+            # Create embed
             embed = discord.Embed(
                 title="⚙️ Creator Bot Configuration",
-                description="Manage all settings for this server",
+                description="Click buttons below to edit settings",
                 color=discord.Color.blue()
             )
             
-            # Notification Settings
-            embed.add_field(
-                name="📢 Notification Channel",
-                value=f"<#{config.get('notification_channel_id')}>" if config.get('notification_channel_id') else "Not set - Use `/config set-channel`",
-                inline=False
-            )
+            # Notification Channel
+            channel_text = f"<#{config.get('notification_channel_id')}>" if config.get('notification_channel_id') else "❌ Not set"
+            embed.add_field(name="📢 Notification Channel", value=channel_text, inline=False)
             
-            # Webhook Settings
-            webhook_display = "Configured ✅" if config.get('webhook_url') else "Not set - Use `/config set-webhook`"
-            webhook_url_display = f"`{config['webhook_url'][:30]}...`" if config.get('webhook_url') and len(config['webhook_url']) > 30 else config.get('webhook_url', '')
-            embed.add_field(
-                name="🪝 Webhook Endpoint",
-                value=f"{webhook_display}\n{webhook_url_display}" if config.get('webhook_url') else webhook_display,
-                inline=False
-            )
+            # Webhook
+            webhook_text = f"✅ Configured" if config.get('webhook_url') else "❌ Not set"
+            embed.add_field(name="🪝 Webhook", value=webhook_text, inline=False)
             
-            # Notification Preferences
-            prefs = []
-            if config.get('notify_new_mods', True):
-                prefs.append("✅ New Mods")
-            else:
-                prefs.append("❌ New Mods")
-            if config.get('notify_updated_mods', True):
-                prefs.append("✅ Updated Mods")
-            else:
-                prefs.append("❌ Updated Mods")
-            if config.get('notify_new_skins', True):
-                prefs.append("✅ New Skins")
-            else:
-                prefs.append("❌ New Skins")
-            if config.get('notify_updated_skins', True):
-                prefs.append("✅ Updated Skins")
-            else:
-                prefs.append("❌ Updated Skins")
-            
+            # Notification Types
+            notif_status = []
+            notif_status.append("✅" if config.get('notify_new_mods', True) else "❌")
+            notif_status.append("✅" if config.get('notify_updated_mods', True) else "❌")
+            notif_status.append("✅" if config.get('notify_new_skins', True) else "❌")
+            notif_status.append("✅" if config.get('notify_updated_skins', True) else "❌")
             embed.add_field(
-                name="🔔 Notification Types",
-                value=" | ".join(prefs),
+                name="🔔 Notifications",
+                value=f"New Mods: {notif_status[0]} | Updated Mods: {notif_status[1]} | New Skins: {notif_status[2]} | Updated Skins: {notif_status[3]}",
                 inline=False
             )
             
             # Webhook Features
-            features = []
-            if config.get('include_creator_avatar', True):
-                features.append("✅ Creator Avatar")
-            else:
-                features.append("❌ Creator Avatar")
-            if config.get('include_creator_nickname', True):
-                features.append("✅ Creator Nickname")
-            else:
-                features.append("❌ Creator Nickname")
-            
+            feature_status = []
+            feature_status.append("✅" if config.get('include_creator_avatar', True) else "❌")
+            feature_status.append("✅" if config.get('include_creator_nickname', True) else "❌")
             embed.add_field(
                 name="👤 Webhook Features",
-                value=" | ".join(features),
+                value=f"Avatar: {feature_status[0]} | Nickname: {feature_status[1]}",
                 inline=False
             )
             
-            # Quick Links
-            embed.add_field(
-                name="⚡ Quick Actions",
-                value="Use these commands to modify settings:\n"
-                      "`/config set-channel` - Change notification channel\n"
-                      "`/config set-webhook` - Set webhook URL\n"
-                      "`/config notifications` - Toggle notification types\n"
-                      "`/config features` - Toggle webhook features",
-                inline=False
-            )
+            # View with buttons
+            class ConfigView(discord.ui.View):
+                def __init__(self, db_obj, gid, cfg):
+                    super().__init__()
+                    self.db = db_obj
+                    self.guild_id = gid
+                    self.cfg = cfg
+                
+                @discord.ui.button(label="📢 Set Channel", style=discord.ButtonStyle.primary)
+                async def set_channel(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                    # Show channel picker modal - for simplicity, ask for input
+                    class ChannelModal(discord.ui.Modal, title="Set Notification Channel"):
+                        channel_id = discord.ui.TextInput(label="Channel ID", placeholder="Paste channel ID here", required=True)
+                        
+                        async def on_submit(self, modal_interaction: discord.Interaction):
+                            try:
+                                ch_id = int(self.channel_id.value)
+                                self.db.set_guild_config(self.guild_id, notification_channel_id=ch_id)
+                                await modal_interaction.response.send_message(f"✅ Channel set to <#{ch_id}>", ephemeral=True)
+                            except ValueError:
+                                await modal_interaction.response.send_message("❌ Invalid channel ID", ephemeral=True)
+                    
+                    modal = ChannelModal()
+                    modal.db = self.db
+                    modal.guild_id = self.guild_id
+                    await btn_interaction.response.send_modal(modal)
+                
+                @discord.ui.button(label="🪝 Manage Webhooks", style=discord.ButtonStyle.primary)
+                async def manage_webhooks(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                    await btn_interaction.response.send_message(
+                        "Use `/webhooks` command to manage webhooks",
+                        ephemeral=True
+                    )
+                
+                @discord.ui.button(label="🔔 Notifications", style=discord.ButtonStyle.secondary)
+                async def toggle_notifications(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                    class NotifView(discord.ui.View):
+                        def __init__(self, db_obj, gid, cfg):
+                            super().__init__()
+                            self.db = db_obj
+                            self.guild_id = gid
+                            self.cfg = cfg
+                        
+                        @discord.ui.button(label="New Mods", style=discord.ButtonStyle.primary if self.cfg.get('notify_new_mods', True) else discord.ButtonStyle.secondary)
+                        async def toggle_new_mods(self, btn_int: discord.Interaction, btn: discord.ui.Button):
+                            current = self.cfg.get('notify_new_mods', True)
+                            self.db.set_guild_config(self.guild_id, notify_new_mods=not current)
+                            await btn_int.response.defer()
+                            await btn_int.followup.send("✅ Updated", ephemeral=True)
+                        
+                        @discord.ui.button(label="Updated Mods", style=discord.ButtonStyle.primary if self.cfg.get('notify_updated_mods', True) else discord.ButtonStyle.secondary)
+                        async def toggle_updated_mods(self, btn_int: discord.Interaction, btn: discord.ui.Button):
+                            current = self.cfg.get('notify_updated_mods', True)
+                            self.db.set_guild_config(self.guild_id, notify_updated_mods=not current)
+                            await btn_int.response.defer()
+                            await btn_int.followup.send("✅ Updated", ephemeral=True)
+                        
+                        @discord.ui.button(label="New Skins", style=discord.ButtonStyle.primary if self.cfg.get('notify_new_skins', True) else discord.ButtonStyle.secondary)
+                        async def toggle_new_skins(self, btn_int: discord.Interaction, btn: discord.ui.Button):
+                            current = self.cfg.get('notify_new_skins', True)
+                            self.db.set_guild_config(self.guild_id, notify_new_skins=not current)
+                            await btn_int.response.defer()
+                            await btn_int.followup.send("✅ Updated", ephemeral=True)
+                        
+                        @discord.ui.button(label="Updated Skins", style=discord.ButtonStyle.primary if self.cfg.get('notify_updated_skins', True) else discord.ButtonStyle.secondary)
+                        async def toggle_updated_skins(self, btn_int: discord.Interaction, btn: discord.ui.Button):
+                            current = self.cfg.get('notify_updated_skins', True)
+                            self.db.set_guild_config(self.guild_id, notify_updated_skins=not current)
+                            await btn_int.response.defer()
+                            await btn_int.followup.send("✅ Updated", ephemeral=True)
+                    
+                    notif_embed = discord.Embed(
+                        title="🔔 Notification Types",
+                        description="Click to toggle",
+                        color=discord.Color.blue()
+                    )
+                    await btn_interaction.response.send_message(embed=notif_embed, view=NotifView(self.db, self.guild_id, self.cfg), ephemeral=True)
+                
+                @discord.ui.button(label="👤 Features", style=discord.ButtonStyle.secondary)
+                async def toggle_features(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                    class FeatView(discord.ui.View):
+                        def __init__(self, db_obj, gid, cfg):
+                            super().__init__()
+                            self.db = db_obj
+                            self.guild_id = gid
+                            self.cfg = cfg
+                        
+                        @discord.ui.button(label="Avatar", style=discord.ButtonStyle.primary if self.cfg.get('include_creator_avatar', True) else discord.ButtonStyle.secondary)
+                        async def toggle_avatar(self, btn_int: discord.Interaction, btn: discord.ui.Button):
+                            current = self.cfg.get('include_creator_avatar', True)
+                            self.db.set_guild_config(self.guild_id, include_creator_avatar=not current)
+                            await btn_int.response.defer()
+                            await btn_int.followup.send("✅ Updated", ephemeral=True)
+                        
+                        @discord.ui.button(label="Nickname", style=discord.ButtonStyle.primary if self.cfg.get('include_creator_nickname', True) else discord.ButtonStyle.secondary)
+                        async def toggle_nickname(self, btn_int: discord.Interaction, btn: discord.ui.Button):
+                            current = self.cfg.get('include_creator_nickname', True)
+                            self.db.set_guild_config(self.guild_id, include_creator_nickname=not current)
+                            await btn_int.response.defer()
+                            await btn_int.followup.send("✅ Updated", ephemeral=True)
+                    
+                    feat_embed = discord.Embed(
+                        title="👤 Webhook Features",
+                        description="Click to toggle creator info in webhooks",
+                        color=discord.Color.blue()
+                    )
+                    await btn_interaction.response.send_message(embed=feat_embed, view=FeatView(self.db, self.guild_id, self.cfg), ephemeral=True)
             
-            embed.set_footer(text=f"Guild ID: {guild_id}")
+            await interaction.followup.send(embed=embed, view=ConfigView(db, guild_id, config), ephemeral=True)
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
-            logger.error("❌ Config dashboard error: %s", e)
+            logger.error("❌ Config error: %s", e)
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
-    
-    @config_group.command(name="set-channel", description="Set notification channel")
-    @app_commands.describe(channel="Discord channel for notifications")
-    async def config_set_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        """Set the notification channel for this server"""
-        if not has_admin_permissions(interaction):
-            await interaction.response.send_message(
-                "❌ Only administrators can configure server settings!",
-                ephemeral=True
-            )
-            return
-        
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
-        
-        if db.set_guild_config(guild_id, notification_channel_id=channel.id):
-            embed = discord.Embed(
-                title="✅ Notification Channel Updated",
-                description=f"Notifications will be sent to {channel.mention}",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="Channel", value=f"{channel.mention} ({channel.id})", inline=False)
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            logger.info("✅ Guild %s: notification channel set to %s", guild_id, channel.name)
-        else:
-            await interaction.response.send_message("❌ Failed to save configuration", ephemeral=True)
-    
-    @config_group.command(name="set-webhook", description="Set webhook URL for external integrations")
-    @app_commands.describe(webhook_url="Discord webhook URL or custom endpoint")
-    async def config_set_webhook(self, interaction: discord.Interaction, webhook_url: str):
-        """Set a webhook URL for receiving mod notifications"""
-        if not has_admin_permissions(interaction):
-            await interaction.response.send_message(
-                "❌ Only administrators can configure server settings!",
-                ephemeral=True
-            )
-            return
-        
-        # Basic validation
-        if not (webhook_url.startswith('http://') or webhook_url.startswith('https://')):
-            await interaction.response.send_message(
-                "❌ Invalid webhook URL. Must start with http:// or https://",
-                ephemeral=True
-            )
-            return
-        
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
-        
-        if db.set_guild_config(guild_id, webhook_url=webhook_url):
-            masked_url = webhook_url[:40] + "..." if len(webhook_url) > 40 else webhook_url
-            embed = discord.Embed(
-                title="✅ Webhook Configured",
-                description="Webhook URL has been saved",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="Endpoint", value=f"`{masked_url}`", inline=False)
-            embed.add_field(name="Status", value="🟢 Ready to receive notifications", inline=False)
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            logger.info("✅ Guild %s: webhook URL configured", guild_id)
-        else:
-            await interaction.response.send_message("❌ Failed to save webhook configuration", ephemeral=True)
-    
-    @config_group.command(name="notifications", description="Toggle notification types")
-    async def config_notifications(self, interaction: discord.Interaction):
-        """Toggle which events trigger notifications"""
-        if not has_admin_permissions(interaction):
-            await interaction.response.send_message(
-                "❌ Only administrators can configure server settings!",
-                ephemeral=True
-            )
-            return
-        
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
-        config = db.get_guild_config(guild_id) or {}
-        
-        # Create view with toggle buttons
-        class NotificationToggle(discord.ui.View):
-            def __init__(self, db_obj, gid, cfg):
-                super().__init__()
-                self.db = db_obj
-                self.guild_id = gid
-                self.config = cfg
-            
-            @discord.ui.button(label="New Mods", style=discord.ButtonStyle.primary if self.config.get('notify_new_mods', True) else discord.ButtonStyle.secondary)
-            async def toggle_new_mods(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
-                current = self.config.get('notify_new_mods', True)
-                self.db.set_guild_config(self.guild_id, notify_new_mods=not current)
-                await btn_interaction.response.defer()
-            
-            @discord.ui.button(label="Updated Mods", style=discord.ButtonStyle.primary if self.config.get('notify_updated_mods', True) else discord.ButtonStyle.secondary)
-            async def toggle_updated_mods(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
-                current = self.config.get('notify_updated_mods', True)
-                self.db.set_guild_config(self.guild_id, notify_updated_mods=not current)
-                await btn_interaction.response.defer()
-            
-            @discord.ui.button(label="New Skins", style=discord.ButtonStyle.primary if self.config.get('notify_new_skins', True) else discord.ButtonStyle.secondary)
-            async def toggle_new_skins(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
-                current = self.config.get('notify_new_skins', True)
-                self.db.set_guild_config(self.guild_id, notify_new_skins=not current)
-                await btn_interaction.response.defer()
-            
-            @discord.ui.button(label="Updated Skins", style=discord.ButtonStyle.primary if self.config.get('notify_updated_skins', True) else discord.ButtonStyle.secondary)
-            async def toggle_updated_skins(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
-                current = self.config.get('notify_updated_skins', True)
-                self.db.set_guild_config(self.guild_id, notify_updated_skins=not current)
-                await btn_interaction.response.defer()
-        
-        embed = discord.Embed(
-            title="🔔 Notification Preferences",
-            description="Click buttons to toggle notification types",
-            color=discord.Color.blue()
-        )
-        
-        status = []
-        status.append(f"{'✅' if config.get('notify_new_mods', True) else '❌'} New Mods")
-        status.append(f"{'✅' if config.get('notify_updated_mods', True) else '❌'} Updated Mods")
-        status.append(f"{'✅' if config.get('notify_new_skins', True) else '❌'} New Skins")
-        status.append(f"{'✅' if config.get('notify_updated_skins', True) else '❌'} Updated Skins")
-        
-        embed.add_field(name="Current Status", value=" | ".join(status), inline=False)
-        
-        await interaction.response.send_message(embed=embed, view=NotificationToggle(db, guild_id, config), ephemeral=True)
-    
-    @config_group.command(name="features", description="Toggle webhook features")
-    async def config_features(self, interaction: discord.Interaction):
-        """Toggle webhook features like creator avatar and nickname"""
-        if not has_admin_permissions(interaction):
-            await interaction.response.send_message(
-                "❌ Only administrators can configure server settings!",
-                ephemeral=True
-            )
-            return
-        
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
-        config = db.get_guild_config(guild_id) or {}
-        
-        # Create view with toggle buttons
-        class FeatureToggle(discord.ui.View):
-            def __init__(self, db_obj, gid, cfg):
-                super().__init__()
-                self.db = db_obj
-                self.guild_id = gid
-                self.config = cfg
-            
-            @discord.ui.button(label="Creator Avatar", style=discord.ButtonStyle.primary if self.config.get('include_creator_avatar', True) else discord.ButtonStyle.secondary)
-            async def toggle_avatar(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
-                current = self.config.get('include_creator_avatar', True)
-                self.db.set_guild_config(self.guild_id, include_creator_avatar=not current)
-                await btn_interaction.response.defer()
-            
-            @discord.ui.button(label="Creator Nickname", style=discord.ButtonStyle.primary if self.config.get('include_creator_nickname', True) else discord.ButtonStyle.secondary)
-            async def toggle_nickname(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
-                current = self.config.get('include_creator_nickname', True)
-                self.db.set_guild_config(self.guild_id, include_creator_nickname=not current)
-                await btn_interaction.response.defer()
-        
-        embed = discord.Embed(
-            title="👤 Webhook Features",
-            description="Toggle what creator info is included in webhooks",
-            color=discord.Color.blue()
-        )
-        
-        status = []
-        status.append(f"{'✅' if config.get('include_creator_avatar', True) else '❌'} Creator Avatar")
-        status.append(f"{'✅' if config.get('include_creator_nickname', True) else '❌'} Creator Nickname")
-        
-        embed.add_field(name="Current Status", value=" | ".join(status), inline=False)
-        embed.add_field(name="Note", value="These settings apply to webhook payloads. Webhooks will include creator information when enabled.", inline=False)
-        
-        await interaction.response.send_message(embed=embed, view=FeatureToggle(db, guild_id, config), ephemeral=True)
     
     @config_group.command(name="view", description="View current server configuration")
     async def config_view(self, interaction: discord.Interaction):
@@ -1075,46 +968,132 @@ class CreatorCommands(commands.Cog):
         
         if not config:
             await interaction.response.send_message(
-                "ℹ️ No configuration set yet. Use `/config dashboard` to get started.",
+                "ℹ️ No configuration set yet. Use `/config main` to get started.",
                 ephemeral=True
             )
             return
         
         embed = discord.Embed(
-            title="🔧 Server Configuration",
+            title="🔧 Current Configuration",
             color=discord.Color.blue()
         )
         
         if config.get('notification_channel_id'):
-            embed.add_field(
-                name="📢 Notification Channel",
-                value=f"<#{config['notification_channel_id']}>",
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="📢 Notification Channel",
-                value="Not configured",
-                inline=False
-            )
+            embed.add_field(name="📢 Notification Channel", value=f"<#{config['notification_channel_id']}>", inline=False)
         
         if config.get('webhook_url'):
             masked_url = config['webhook_url'][:20] + "..." if len(config['webhook_url']) > 20 else config['webhook_url']
-            embed.add_field(
-                name="🪝 Webhook URL",
-                value=f"`{masked_url}`",
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="🪝 Webhook URL",
-                value="Not configured",
-                inline=False
-            )
+            embed.add_field(name="🪝 Webhook", value=f"`{masked_url}`", inline=False)
         
         embed.set_footer(text=f"Created: {config.get('created_at')}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # ==================== WEBHOOKS COMMANDS ====================
+    webhooks_group = app_commands.Group(name="webhooks", description="Manage webhook integrations")
+    
+    @webhooks_group.command(name="add", description="Add a webhook endpoint")
+    @app_commands.describe(webhook_url="Webhook URL (http:// or https://)")
+    async def webhooks_add(self, interaction: discord.Interaction, webhook_url: str):
+        """Add a new webhook for this server"""
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message("❌ Only administrators can manage webhooks!", ephemeral=True)
+            return
+        
+        if not (webhook_url.startswith('http://') or webhook_url.startswith('https://')):
+            await interaction.response.send_message("❌ Invalid URL. Must start with http:// or https://", ephemeral=True)
+            return
+        
+        db = get_creator_db()
+        guild_id = interaction.guild_id if interaction.guild else 0
+        
+        try:
+            result = db.add_webhook(guild_id, webhook_url)
+            if result:
+                embed = discord.Embed(
+                    title="✅ Webhook Added",
+                    description="Webhook is now active and will receive notifications",
+                    color=discord.Color.green()
+                )
+                masked = webhook_url[:30] + "..." if len(webhook_url) > 30 else webhook_url
+                embed.add_field(name="URL", value=f"`{masked}`", inline=False)
+                embed.add_field(name="Features", value="Avatar: ✅ | Nickname: ✅", inline=False)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                logger.info("✅ Webhook added to guild %s", guild_id)
+            else:
+                await interaction.response.send_message("❌ Failed to add webhook", ephemeral=True)
+        except Exception as e:
+            logger.error("❌ Error adding webhook: %s", e)
+            await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
+    
+    @webhooks_group.command(name="list", description="View all active webhooks")
+    async def webhooks_list(self, interaction: discord.Interaction):
+        """List all webhooks for this server"""
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message("❌ Only administrators can manage webhooks!", ephemeral=True)
+            return
+        
+        db = get_creator_db()
+        guild_id = interaction.guild_id if interaction.guild else 0
+        
+        webhooks = db.get_guild_webhooks(guild_id)
+        
+        if not webhooks:
+            await interaction.response.send_message("ℹ️ No webhooks configured. Use `/webhooks add` to add one.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="🪝 Active Webhooks",
+            description=f"Total: {len(webhooks)}",
+            color=discord.Color.blue()
+        )
+        
+        for i, webhook in enumerate(webhooks, 1):
+            if not webhook.get('active', True):
+                continue
+            url = webhook.get('webhook_url', '')
+            masked = url[:25] + "..." if len(url) > 25 else url
+            created = webhook.get('created_at', 'N/A')
+            embed.add_field(
+                name=f"Webhook #{i}",
+                value=f"`{masked}`\nCreated: {created}",
+                inline=False
+            )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @webhooks_group.command(name="remove", description="Remove a webhook")
+    @app_commands.describe(webhook_id="Webhook ID or URL to remove")
+    async def webhooks_remove(self, interaction: discord.Interaction, webhook_id: str):
+        """Remove a webhook by ID"""
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message("❌ Only administrators can manage webhooks!", ephemeral=True)
+            return
+        
+        db = get_creator_db()
+        guild_id = interaction.guild_id if interaction.guild else 0
+        
+        try:
+            # Try parsing as ID first
+            try:
+                wh_id = int(webhook_id)
+                result = db.deactivate_webhook(wh_id)
+            except ValueError:
+                # Try by URL
+                webhooks = db.get_guild_webhooks(guild_id)
+                result = False
+                for wh in webhooks:
+                    if webhook_id in wh.get('webhook_url', ''):
+                        result = db.deactivate_webhook(wh['id'])
+                        break
+            
+            if result:
+                await interaction.response.send_message("✅ Webhook removed", ephemeral=True)
+                logger.info("✅ Webhook removed from guild %s", guild_id)
+            else:
+                await interaction.response.send_message("❌ Webhook not found", ephemeral=True)
+        except Exception as e:
+            logger.error("❌ Error removing webhook: %s", e)
+            await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
     
     # ==================== API KEY COMMANDS ====================
     api_group = app_commands.Group(name="api", description="Manage API keys")
