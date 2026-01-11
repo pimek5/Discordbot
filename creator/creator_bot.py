@@ -671,12 +671,14 @@ class CreatorBot(commands.Bot):
             # Set main image
             if final_image:
                 embed.set_image(url=final_image)
+            
+            # Set thumbnail to bot avatar if available
+            if bot_avatar:
+                embed.set_thumbnail(url=bot_avatar)
 
-            # Author info with avatar
-            author_icon = bot_avatar if bot_avatar else (user.display_avatar.url if user else None)
+            # Author info
             embed.set_author(
-                name=f"By {username}",
-                icon_url=author_icon
+                name=f"By {username}"
             )
 
             # Stats fields (show views/likes only)
@@ -704,7 +706,7 @@ class CreatorBot(commands.Bot):
             # Footer
             embed.set_footer(
                 text=f"Posted on {platform_name}",
-                icon_url=bot_avatar if bot_avatar else ("https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png" if platform == 'runeforge' else "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png")
+                icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png" if platform == 'runeforge' else "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png"
             )
 
             # Send embed only (no author mention to avoid pings)
