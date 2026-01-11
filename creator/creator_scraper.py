@@ -3,6 +3,7 @@ Web Scrapers for RuneForge and Divine Skins
 Extracts profile and mod information
 """
 
+import asyncio
 import aiohttp
 from bs4 import BeautifulSoup
 import logging
@@ -154,71 +155,102 @@ class RuneForgeScraper:
                      url = f"{self.BASE_URL}/users/{username}/mods?page={page}"
                      logger.info("🔄 Fetching RuneForge mods page %s for %s", page, username)
                      
-                     async with session.get(url) as response:
-                         if response.status != 200:
-                             logger.error("❌ Failed to fetch mods page %s: %s", page, url)
-                             break
-                         
-                         html = await response.text()
-                         soup = BeautifulSoup(html, 'html.parser')
-                         
-                         # Find all links with /mods/ in href
-                         mod_links = soup.find_all('a', href=lambda x: x and '/mods/' in x and x != '/mods')
-                         
-                         page_mods = 0
-                         for link in mod_links:
-                             try:
-                                 mod_url = link.get('href', '')
-                                 if not mod_url or mod_url in seen_urls:
-                                     continue
-                                 if not mod_url.startswith('http'):
-                                     mod_url = f"{self.BASE_URL}{mod_url}"
-                                 seen_urls.add(mod_url)
-                                 
-                                 mod_id = mod_url.rstrip('/').split('/')[-1]
-                                 mod_name = link.get_text(strip=True)
-                                 if not mod_name:
-                                     continue
-                                 
-                                 # Try to find stats in parent or sibling elements
-                                 parent = link.find_parent()
-                                 views = 0
-                                 downloads = 0
-                                 updated_at = ''
-                                 if parent:
-                                     # Look for time element
-                                     time_el = parent.find('time')
-                                     if time_el:
-                                         updated_at = time_el.get('datetime', '')
-                                     # Look for stats text
-                                     stats_text = parent.get_text()
-                                     views_match = re.search(r'([\d,\.]+)\s*k?\s*views?', stats_text, re.I)
-                                     downloads_match = re.search(r'([\d,\.]+)\s*k?\s*downloads?', stats_text, re.I)
-                                     if views_match:
-                                         views = self._parse_number(views_match.group(1))
-                                     if downloads_match:
-                                         downloads = self._parse_number(downloads_match.group(1))
-                                 
-                                 all_mods.append({
-                                     'id': mod_id, 
-                                     'name': mod_name, 
-                                     'url': mod_url, 
-                                     'updated_at': updated_at, 
-                                     'views': views, 
-                                     'downloads': downloads
-                                 })
-                                 page_mods += 1
-                             except Exception as e:
-                                 logger.error("❌ Error parsing mod link: %s", e)
-                                 continue
-                         
-                         # If no new mods found on this page, we're done
-                         if page_mods == 0:
-                             logger.info("📋 No more mods found at page %s, stopping pagination", page)
-                             break
-                         
-                         logger.info("✅ Page %s: found %s new mods", page, page_mods)
-                         page += 1
+                     retry_count = 0
+                     max_retries = 1
+                     response_ok = False
+                     
+                     while retry_count <= max_retries and not response_ok:
+                         try:
+                             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                                 if response.status == 200:
+                                     response_ok = True
+                                     html = await response.text()
+                                     soup = BeautifulSoup(html, 'html.parser')
+                                     
+                                     # Find all links with /mods/ in href
+                                     mod_links = soup.find_all('a', href=lambda x: x and '/mods/' in x and x != '/mods')
+                                     
+                                     page_mods = 0
+                                     for link in mod_links:
+                                         try:
+                                             mod_url = link.get('href', '')
+                                             if not mod_url or mod_url in seen_urls:
+                                                 continue
+                                             if not mod_url.startswith('http'):
+                                                 mod_url = f"{self.BASE_URL}{mod_url}"
+                                             seen_urls.add(mod_url)
+                                             
+                                             mod_id = mod_url.rstrip('/').split('/')[-1]
+                                             mod_name = link.get_text(strip=True)
+                                             if not mod_name:
+                                                 continue
+                                             
+                                             # Try to find stats in parent or sibling elements
+                                             parent = link.find_parent()
+                                             views = 0
+                                             downloads = 0
+                                             updated_at = ''
+                                             if parent:
+                                                 # Look for time element
+                                                 time_el = parent.find('time')
+                                                 if time_el:
+                                                     updated_at = time_el.get('datetime', '')
+                                                 # Look for stats text
+                                                 stats_text = parent.get_text()
+                                                 views_match = re.search(r'([\d,\.]+)\s*k?\s*views?', stats_text, re.I)
+                                                 downloads_match = re.search(r'([\d,\.]+)\s*k?\s*downloads?', stats_text, re.I)
+                                                 if views_match:
+                                                     views = self._parse_number(views_match.group(1))
+                                                 if downloads_match:
+                                                     downloads = self._parse_number(downloads_match.group(1))
+                                             
+                                             all_mods.append({
+                                                 'id': mod_id, 
+                                                 'name': mod_name, 
+                                                 'url': mod_url, 
+                                                 'updated_at': updated_at, 
+                                                 'views': views, 
+                                                 'downloads': downloads
+                                             })
+                                             page_mods += 1
+                                         except Exception as e:
+                                             logger.error("❌ Error parsing mod link: %s", e)
+                                             continue
+                                     
+                                     # If no new mods found on this page, we're done
+                                     if page_mods == 0:
+                                         logger.info("📋 No more mods found at page %s, stopping pagination", page)
+                                         return all_mods
+                                     
+                                     logger.info("✅ Page %s: found %s new mods", page, page_mods)
+                                 else:
+                                     if retry_count < max_retries:
+                                         logger.warning("⚠️ Page %s returned %s, retrying...", page, response.status)
+                                         retry_count += 1
+                                         await asyncio.sleep(2)
+                                     else:
+                                         logger.warning("⚠️ Page %s failed with status %s, skipping...", page, response.status)
+                                         response_ok = True  # Exit retry loop
+                         except asyncio.TimeoutError:
+                             if retry_count < max_retries:
+                                 logger.warning("⚠️ Page %s timeout, retrying...", page)
+                                 retry_count += 1
+                                 await asyncio.sleep(2)
+                             else:
+                                 logger.warning("⚠️ Page %s timeout (no retries left), skipping...", page)
+                                 response_ok = True  # Exit retry loop
+                         except Exception as e:
+                             if retry_count < max_retries:
+                                 logger.warning("⚠️ Error fetching page %s: %s, retrying...", page, e)
+                                 retry_count += 1
+                                 await asyncio.sleep(2)
+                             else:
+                                 logger.warning("⚠️ Error fetching page %s: %s, skipping...", page, e)
+                                 response_ok = True  # Exit retry loop
+                     
+                     # Delay between pages to avoid rate limiting
+                     await asyncio.sleep(1)
+                     page += 1
              
              logger.info("✅ Total: found %s mods for %s on RuneForge (scanned %s pages)", len(all_mods), username, page)
              return all_mods
