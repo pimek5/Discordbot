@@ -88,6 +88,12 @@ class CreatorDatabase:
                         guild_id BIGINT UNIQUE NOT NULL,
                         notification_channel_id BIGINT,
                         webhook_url TEXT,
+                        notify_new_mods BOOLEAN DEFAULT TRUE,
+                        notify_updated_mods BOOLEAN DEFAULT TRUE,
+                        notify_new_skins BOOLEAN DEFAULT TRUE,
+                        notify_updated_skins BOOLEAN DEFAULT TRUE,
+                        include_creator_avatar BOOLEAN DEFAULT TRUE,
+                        include_creator_nickname BOOLEAN DEFAULT TRUE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
@@ -101,6 +107,8 @@ class CreatorDatabase:
                         guild_id BIGINT REFERENCES guild_config(guild_id) ON DELETE CASCADE,
                         webhook_url TEXT NOT NULL,
                         webhook_secret TEXT,
+                        include_creator_avatar BOOLEAN DEFAULT TRUE,
+                        include_creator_nickname BOOLEAN DEFAULT TRUE,
                         active BOOLEAN DEFAULT TRUE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         last_used TIMESTAMP
@@ -125,8 +133,40 @@ class CreatorDatabase:
                 )
                 self.conn.commit()
                 logger.info("✅ Database tables created/verified")
+                
+                # Run migrations
+                self._migrate_database()
         except Exception as e:
             logger.error("❌ Error creating tables: %s", e)
+            self.conn.rollback()
+    
+    def _migrate_database(self):
+        """Apply database migrations for new columns"""
+        try:
+            with self.conn.cursor() as cur:
+                # Add missing columns to guild_config if they don't exist
+                migration_queries = [
+                    "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_new_mods BOOLEAN DEFAULT TRUE",
+                    "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_updated_mods BOOLEAN DEFAULT TRUE",
+                    "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_new_skins BOOLEAN DEFAULT TRUE",
+                    "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_updated_skins BOOLEAN DEFAULT TRUE",
+                    "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS include_creator_avatar BOOLEAN DEFAULT TRUE",
+                    "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS include_creator_nickname BOOLEAN DEFAULT TRUE",
+                    "ALTER TABLE webhooks ADD COLUMN IF NOT EXISTS include_creator_avatar BOOLEAN DEFAULT TRUE",
+                    "ALTER TABLE webhooks ADD COLUMN IF NOT EXISTS include_creator_nickname BOOLEAN DEFAULT TRUE",
+                ]
+                
+                for query in migration_queries:
+                    try:
+                        cur.execute(query)
+                    except Exception as e:
+                        if "already exists" not in str(e).lower():
+                            logger.warning("⚠️ Migration warning: %s", e)
+                
+                self.conn.commit()
+                logger.info("✅ Database migrations applied")
+        except Exception as e:
+            logger.warning("⚠️ Migration error (non-critical): %s", e)
             self.conn.rollback()
     
     # ==================== CREATORS ====================
@@ -184,6 +224,16 @@ class CreatorDatabase:
                 return cur.fetchone()
         except Exception as e:
             logger.error("❌ Error getting creator: %s", e)
+            return None
+    
+    def get_creator_by_id(self, creator_id: int):
+        """Get creator by ID"""
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM creators WHERE id = %s", (creator_id,))
+                return cur.fetchone()
+        except Exception as e:
+            logger.error("❌ Error getting creator by ID: %s", e)
             return None
     
     def get_all_creators(self):

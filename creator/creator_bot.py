@@ -496,7 +496,7 @@ class CreatorBot(commands.Bot):
             logger.error("❌ Error checking Divine Skins for %s: %s", profile_url, e)
     
     async def send_webhook_notification(self, creator_id: int, username: str, event_type: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
-        """Send webhook notifications to all configured guild webhooks"""
+        """Send webhook notifications to all configured guild webhooks with creator info"""
         try:
             db = get_creator_db()
             
@@ -507,12 +507,28 @@ class CreatorBot(commands.Bot):
                 logger.debug("ℹ️ No webhooks configured for any guild")
                 return
             
-            # Prepare payload
+            # Fetch creator profile for avatar and additional info
+            creator_avatar = None
+            creator_info = db.get_creator_by_id(creator_id)
+            if creator_info:
+                try:
+                    platform_type = creator_info.get('platform', platform)
+                    if platform_type == 'runeforge':
+                        profile_data = await self.runeforge_scraper.get_profile_data(username)
+                    else:
+                        profile_data = await self.divineskins_scraper.get_profile_data(username)
+                    if profile_data:
+                        creator_avatar = profile_data.get('avatar_url')
+                except Exception as e:
+                    logger.warning("⚠️ Could not fetch creator profile for avatar: %s", e)
+            
+            # Prepare payload with creator info
             payload = {
                 "event": event_type,
                 "creator": {
                     "id": creator_id,
-                    "username": username
+                    "username": username,
+                    "avatar": creator_avatar
                 },
                 "content": {
                     "name": mod_name,
