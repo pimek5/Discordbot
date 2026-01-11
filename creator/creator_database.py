@@ -363,20 +363,22 @@ class CreatorDatabase:
             return None
     
     # ==================== GUILD CONFIG ====================
-    def set_guild_config(self, guild_id: int, notification_channel_id: int = None, webhook_url: str = None):
+    def set_guild_config(self, guild_id: int, notification_channel_id: int = None, webhook_url: str = None, random_mod_channel_id: int = None, new_mod_channel_id: int = None):
         """Set or update guild configuration"""
         try:
             with self.conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO guild_config (guild_id, notification_channel_id, webhook_url)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO guild_config (guild_id, notification_channel_id, webhook_url, random_mod_channel_id, new_mod_channel_id)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (guild_id) DO UPDATE SET
                         notification_channel_id = COALESCE(EXCLUDED.notification_channel_id, guild_config.notification_channel_id),
                         webhook_url = COALESCE(EXCLUDED.webhook_url, guild_config.webhook_url),
+                        random_mod_channel_id = COALESCE(EXCLUDED.random_mod_channel_id, guild_config.random_mod_channel_id),
+                        new_mod_channel_id = COALESCE(EXCLUDED.new_mod_channel_id, guild_config.new_mod_channel_id),
                         updated_at = CURRENT_TIMESTAMP
                     """,
-                    (guild_id, notification_channel_id, webhook_url),
+                    (guild_id, notification_channel_id, webhook_url, random_mod_channel_id, new_mod_channel_id),
                 )
                 self.conn.commit()
                 logger.info("✅ Guild config updated: %s", guild_id)
