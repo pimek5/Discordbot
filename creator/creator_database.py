@@ -87,6 +87,8 @@ class CreatorDatabase:
                         id SERIAL PRIMARY KEY,
                         guild_id BIGINT UNIQUE NOT NULL,
                         notification_channel_id BIGINT,
+                        random_mod_channel_id BIGINT,
+                        new_mod_channel_id BIGINT,
                         webhook_url TEXT,
                         notify_new_mods BOOLEAN DEFAULT TRUE,
                         notify_updated_mods BOOLEAN DEFAULT TRUE,
@@ -146,6 +148,8 @@ class CreatorDatabase:
             with self.conn.cursor() as cur:
                 # Add missing columns to guild_config if they don't exist
                 migration_queries = [
+                    "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS random_mod_channel_id BIGINT",
+                    "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS new_mod_channel_id BIGINT",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_new_mods BOOLEAN DEFAULT TRUE",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_updated_mods BOOLEAN DEFAULT TRUE",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_new_skins BOOLEAN DEFAULT TRUE",

@@ -123,9 +123,21 @@ class CreatorBot(commands.Bot):
                 logger.warning("⚠️ No mods found from subscribed creators")
                 return
             
-            channel = self.get_channel(HOURLY_MOD_CHANNEL_ID)
+            # Get guild and config for channel selection
+            guild = None
+            if self.guilds:
+                guild = self.guilds[0]
+            
+            if not guild:
+                logger.warning("⚠️ Bot not in any guild, using fallback channel")
+                channel = self.get_channel(HOURLY_MOD_CHANNEL_ID)
+            else:
+                config = db.get_guild_config(guild.id) or {}
+                channel_id = config.get('random_mod_channel_id') or HOURLY_MOD_CHANNEL_ID
+                channel = self.get_channel(channel_id)
+            
             if not channel:
-                logger.error("❌ Random mod channel %s not found", HOURLY_MOD_CHANNEL_ID)
+                logger.error("❌ Random mod channel not found")
                 return
             
             # Extract mod details
@@ -581,9 +593,29 @@ class CreatorBot(commands.Bot):
     
     async def send_notification(self, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
         try:
-            channel = self.get_channel(NOTIFICATION_CHANNEL_ID)
+            db = get_creator_db()
+            
+            # Get guild from bot - use first guild or default
+            guild = None
+            if self.guilds:
+                guild = self.guilds[0]
+            
+            if not guild:
+                logger.error("❌ Bot not in any guild")
+                return
+            
+            # Determine which channel to use based on action
+            config = db.get_guild_config(guild.id) or {}
+            is_new_mod = 'posted new' in action.lower()
+            
+            if is_new_mod:
+                channel_id = config.get('new_mod_channel_id') or NOTIFICATION_CHANNEL_ID
+            else:
+                channel_id = config.get('notification_channel_id') or NOTIFICATION_CHANNEL_ID
+            
+            channel = self.get_channel(channel_id)
             if not channel:
-                logger.error("❌ Notification channel %s not found", NOTIFICATION_CHANNEL_ID)
+                logger.error("❌ Notification channel %s not found", channel_id)
                 return
 
             user = self.get_user(discord_user_id)

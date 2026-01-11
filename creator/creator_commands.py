@@ -814,9 +814,11 @@ class CreatorCommands(commands.Cog):
                 color=discord.Color.blue()
             )
             
-            # Notification Channel
-            channel_text = f"<#{config.get('notification_channel_id')}>" if config.get('notification_channel_id') else "❌ Not set"
-            embed.add_field(name="📢 Notification Channel", value=channel_text, inline=False)
+            # Notification Channels
+            random_channel_text = f"<#{config.get('random_mod_channel_id')}>" if config.get('random_mod_channel_id') else "❌ Not set"
+            new_channel_text = f"<#{config.get('new_mod_channel_id')}>" if config.get('new_mod_channel_id') else "❌ Not set"
+            embed.add_field(name="🎲 Random Mod Channel", value=random_channel_text, inline=True)
+            embed.add_field(name="📥 New Mod Channel", value=new_channel_text, inline=True)
             
             # Webhook
             webhook_text = f"✅ Configured" if config.get('webhook_url') else "❌ Not set"
@@ -852,17 +854,34 @@ class CreatorCommands(commands.Cog):
                     self.guild_id = gid
                     self.cfg = cfg
                 
-                @discord.ui.button(label="📢 Set Channel", style=discord.ButtonStyle.primary)
-                async def set_channel(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
-                    # Show channel picker modal - for simplicity, ask for input
-                    class ChannelModal(discord.ui.Modal, title="Set Notification Channel"):
+                @discord.ui.button(label="🎲 Random Mod Ch.", style=discord.ButtonStyle.primary)
+                async def set_random_channel(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                    class ChannelModal(discord.ui.Modal, title="Set Random Mod Channel"):
                         channel_id = discord.ui.TextInput(label="Channel ID", placeholder="Paste channel ID here", required=True)
                         
                         async def on_submit(self, modal_interaction: discord.Interaction):
                             try:
                                 ch_id = int(self.channel_id.value)
-                                self.db.set_guild_config(self.guild_id, notification_channel_id=ch_id)
-                                await modal_interaction.response.send_message(f"✅ Channel set to <#{ch_id}>", ephemeral=True)
+                                self.db.set_guild_config(self.guild_id, random_mod_channel_id=ch_id)
+                                await modal_interaction.response.send_message(f"✅ Random mod channel set to <#{ch_id}>", ephemeral=True)
+                            except ValueError:
+                                await modal_interaction.response.send_message("❌ Invalid channel ID", ephemeral=True)
+                    
+                    modal = ChannelModal()
+                    modal.db = self.db
+                    modal.guild_id = self.guild_id
+                    await btn_interaction.response.send_modal(modal)
+                
+                @discord.ui.button(label="📥 New Mod Ch.", style=discord.ButtonStyle.primary)
+                async def set_new_channel(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                    class ChannelModal(discord.ui.Modal, title="Set New Mod Channel"):
+                        channel_id = discord.ui.TextInput(label="Channel ID", placeholder="Paste channel ID here", required=True)
+                        
+                        async def on_submit(self, modal_interaction: discord.Interaction):
+                            try:
+                                ch_id = int(self.channel_id.value)
+                                self.db.set_guild_config(self.guild_id, new_mod_channel_id=ch_id)
+                                await modal_interaction.response.send_message(f"✅ New mod channel set to <#{ch_id}>", ephemeral=True)
                             except ValueError:
                                 await modal_interaction.response.send_message("❌ Invalid channel ID", ephemeral=True)
                     
