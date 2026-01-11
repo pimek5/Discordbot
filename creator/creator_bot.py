@@ -671,11 +671,14 @@ class CreatorBot(commands.Bot):
             # Set main image
             if final_image:
                 embed.set_image(url=final_image)
+            
+            # Set thumbnail to bot avatar if available
+            if bot_avatar:
+                embed.set_thumbnail(url=bot_avatar)
 
             # Author info
             embed.set_author(
-                name=f"By {username}",
-                icon_url=bot_avatar if bot_avatar else (user.display_avatar.url if user else None)
+                name=f"By {username}"
             )
 
             # Stats fields (show views/likes only)
