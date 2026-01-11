@@ -619,6 +619,9 @@ class CreatorBot(commands.Bot):
                 return
 
             user = self.get_user(discord_user_id)
+            
+            # Get bot avatar from config (for embeds)
+            bot_avatar = config.get('bot_avatar_url')
 
             platform_emoji = "🔧" if platform == 'runeforge' else "✨"
             platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
@@ -672,7 +675,7 @@ class CreatorBot(commands.Bot):
             # Author info
             embed.set_author(
                 name=f"By {username}",
-                icon_url=user.display_avatar.url if user else None
+                icon_url=bot_avatar if bot_avatar else (user.display_avatar.url if user else None)
             )
 
             # Stats fields (show views/likes only)
