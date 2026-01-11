@@ -545,14 +545,26 @@ class CreatorDatabase:
             logger.error("❌ Error validating API key: %s", e)
             return None
     
-    def revoke_api_key(self, api_key_id: int):
-        """Revoke an API key"""
+    def revoke_api_key(self, api_key_id: int = None, key_prefix: str = None):
+        """Revoke an API key by ID or prefix"""
         try:
             with self.conn.cursor() as cur:
-                cur.execute("UPDATE api_keys SET active = FALSE WHERE id = %s", (api_key_id,))
+                if api_key_id:
+                    cur.execute("UPDATE api_keys SET active = FALSE WHERE id = %s RETURNING id", (api_key_id,))
+                elif key_prefix:
+                    cur.execute("UPDATE api_keys SET active = FALSE WHERE key_prefix = %s RETURNING id", (key_prefix,))
+                else:
+                    return False
+                
+                result = cur.fetchone()
                 self.conn.commit()
-                logger.info("✅ API key revoked: %s", api_key_id)
-                return True
+                
+                if result:
+                    logger.info("✅ API key revoked: %s", api_key_id or key_prefix)
+                    return True
+                else:
+                    logger.warning("⚠️ API key not found: %s", api_key_id or key_prefix)
+                    return False
         except Exception as e:
             logger.error("❌ Error revoking API key: %s", e)
             self.conn.rollback()

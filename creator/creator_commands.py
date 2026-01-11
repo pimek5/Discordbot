@@ -1257,9 +1257,9 @@ class CreatorCommands(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @api_group.command(name="revoke-key", description="Revoke an API key")
-    @app_commands.describe(key_id="The ID of the key to revoke")
-    async def api_revoke_key(self, interaction: discord.Interaction, key_id: int):
-        """Revoke an API key by ID"""
+    @app_commands.describe(key_identifier="The ID (number) or prefix (ck_...) of the key to revoke")
+    async def api_revoke_key(self, interaction: discord.Interaction, key_identifier: str):
+        """Revoke an API key by ID or prefix"""
         if not CreatorCommands._has_creator_role(interaction):
             await interaction.response.send_message(
                 "❌ Only administrators and Creator role members can revoke API keys!",
@@ -1269,15 +1269,34 @@ class CreatorCommands(commands.Cog):
         
         db = get_creator_db()
         
-        if db.revoke_api_key(key_id):
+        # Determine if it's an ID or prefix
+        api_key_id = None
+        key_prefix = None
+        
+        try:
+            # Try to parse as ID first
+            api_key_id = int(key_identifier)
+        except ValueError:
+            # Not an ID, treat as prefix
+            if key_identifier.startswith('ck_'):
+                key_prefix = key_identifier
+            else:
+                await interaction.response.send_message(
+                    "❌ Invalid key identifier. Use key ID (number) or prefix (ck_...)",
+                    ephemeral=True
+                )
+                return
+        
+        if db.revoke_api_key(api_key_id=api_key_id, key_prefix=key_prefix):
+            identifier_str = key_identifier if key_prefix else f"#{api_key_id}"
             await interaction.response.send_message(
-                f"✅ API key #{key_id} has been revoked.",
+                f"✅ API key {identifier_str} has been revoked.",
                 ephemeral=True
             )
-            logger.info("✅ API key %d revoked by user %s", key_id, interaction.user.id)
+            logger.info("✅ API key %s revoked by user %s", key_identifier, interaction.user.id)
         else:
             await interaction.response.send_message(
-                f"❌ Failed to revoke API key #{key_id}",
+                f"❌ Failed to revoke API key or key not found: {key_identifier}",
                 ephemeral=True
             )
 
