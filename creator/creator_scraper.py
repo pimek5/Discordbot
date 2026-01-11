@@ -149,6 +149,7 @@ class RuneForgeScraper:
              seen_urls = set()
              page = 0
              max_pages = 50  # Safety limit
+             error_500_count = 0  # Track server errors
              
              async with aiohttp.ClientSession() as session:
                  while page < max_pages:
@@ -164,6 +165,7 @@ class RuneForgeScraper:
                              async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                                  if response.status == 200:
                                      response_ok = True
+                                     error_500_count = 0  # Reset error counter on success
                                      html = await response.text()
                                      soup = BeautifulSoup(html, 'html.parser')
                                      
@@ -224,6 +226,14 @@ class RuneForgeScraper:
                                      
                                      logger.info("✅ Page %s: found %s new mods", page, page_mods)
                                  else:
+                                     # Check for 500 errors
+                                     if response.status >= 500:
+                                         error_500_count += 1
+                                         logger.error("❌ Server error %s on page %s (count: %s)", response.status, page, error_500_count)
+                                         if error_500_count > 2:
+                                             logger.error("❌ Too many server errors (%s), stopping pagination", error_500_count)
+                                             return all_mods
+                                     
                                      if retry_count < max_retries:
                                          logger.warning("⚠️ Page %s returned %s, retrying...", page, response.status)
                                          retry_count += 1
