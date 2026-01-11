@@ -1129,6 +1129,7 @@ class CreatorCommands(commands.Cog):
     # ==================== API KEY COMMANDS ====================
     api_group = app_commands.Group(name="api", description="Manage API keys")
     
+    @staticmethod
     def _has_creator_role(interaction: discord.Interaction) -> bool:
         """Check if user has admin or Creator role"""
         if not interaction.guild:
@@ -1152,7 +1153,7 @@ class CreatorCommands(commands.Cog):
     @api_group.command(name="generate-key", description="Generate a new API key")
     async def api_generate_key(self, interaction: discord.Interaction):
         """Generate a new API key for external integrations"""
-        if not self._has_creator_role(interaction):
+        if not CreatorCommands._has_creator_role(interaction):
             await interaction.response.send_message(
                 "❌ Only administrators and Creator role members can generate API keys!",
                 ephemeral=True
@@ -1215,7 +1216,7 @@ class CreatorCommands(commands.Cog):
     @api_group.command(name="list-keys", description="List your API keys")
     async def api_list_keys(self, interaction: discord.Interaction):
         """List all your active API keys"""
-        if not self._has_creator_role(interaction):
+        if not CreatorCommands._has_creator_role(interaction):
             await interaction.response.send_message(
                 "❌ Only administrators and Creator role members can view API keys!",
                 ephemeral=True
@@ -1259,7 +1260,7 @@ class CreatorCommands(commands.Cog):
     @app_commands.describe(key_id="The ID of the key to revoke")
     async def api_revoke_key(self, interaction: discord.Interaction, key_id: int):
         """Revoke an API key by ID"""
-        if not self._has_creator_role(interaction):
+        if not CreatorCommands._has_creator_role(interaction):
             await interaction.response.send_message(
                 "❌ Only administrators and Creator role members can revoke API keys!",
                 ephemeral=True
