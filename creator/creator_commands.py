@@ -29,6 +29,7 @@ class CreatorCommands(commands.Cog):
         self.divineskins_scraper = DivineSkinsScraper()
     
     creator_group = app_commands.Group(name="creator", description="Manage creator tracking")
+    config_group = app_commands.Group(name="config", description="Configure server settings")
     
     @creator_group.command(name="add", description="Add a creator to track for new mods/skins")
     @app_commands.describe(
@@ -789,7 +790,6 @@ class CreatorCommands(commands.Cog):
                 pass
 
     # ==================== CONFIG COMMANDS ====================
-    config_group = app_commands.Group(name="config", description="Configure server settings", parent=creator_group)
     
     @config_group.command(name="set-channel", description="Set notification channel for creator updates")
     @app_commands.describe(channel="Discord channel for notifications")
@@ -904,7 +904,7 @@ class CreatorCommands(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     # ==================== API KEY COMMANDS ====================
-    api_group = app_commands.Group(name="api", description="Manage API keys", parent=creator_group)
+    api_group = app_commands.Group(name="api", description="Manage API keys")
     
     def _has_creator_role(interaction: discord.Interaction) -> bool:
         """Check if user has admin or Creator role"""
