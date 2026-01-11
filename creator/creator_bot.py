@@ -377,6 +377,18 @@ class CreatorBot(commands.Bot):
                         downloads
                     )
                     db.add_mod(creator_id, mod_id, mod_name, mod_url, updated_at, 'runeforge')
+                    
+                    # Send webhook notification for new mod
+                    await self.send_webhook_notification(
+                        creator_id,
+                        username,
+                        'new_mod',
+                        mod_name,
+                        mod_url,
+                        'runeforge',
+                        views,
+                        downloads
+                    )
                 elif existing['updated_at'] != updated_at:
                     await self.send_notification(
                         discord_user_id,
@@ -389,6 +401,18 @@ class CreatorBot(commands.Bot):
                         downloads
                     )
                     db.update_mod(mod_id, updated_at, 'runeforge')
+                    
+                    # Send webhook notification for updated mod
+                    await self.send_webhook_notification(
+                        creator_id,
+                        username,
+                        'updated_mod',
+                        mod_name,
+                        mod_url,
+                        'runeforge',
+                        views,
+                        downloads
+                    )
                     
         except Exception as e:
             logger.error("❌ Error checking RuneForge for %s: %s", profile_url, e)
@@ -423,6 +447,18 @@ class CreatorBot(commands.Bot):
                         downloads
                     )
                     db.add_mod(creator_id, skin_id, skin_name, skin_url, updated_at, 'divineskins')
+                    
+                    # Send webhook notification for new skin
+                    await self.send_webhook_notification(
+                        creator_id,
+                        username,
+                        'new_skin',
+                        skin_name,
+                        skin_url,
+                        'divineskins',
+                        views,
+                        downloads
+                    )
                 elif existing['updated_at'] != updated_at:
                     await self.send_notification(
                         discord_user_id,
@@ -436,8 +472,81 @@ class CreatorBot(commands.Bot):
                     )
                     db.update_mod(skin_id, updated_at, 'divineskins')
                     
+                    # Send webhook notification for updated skin
+                    await self.send_webhook_notification(
+                        creator_id,
+                        username,
+                        'updated_skin',
+                        skin_name,
+                        skin_url,
+                        'divineskins',
+                        views,
+                        downloads
+                    )
+                    
         except Exception as e:
             logger.error("❌ Error checking Divine Skins for %s: %s", profile_url, e)
+    
+    async def send_webhook_notification(self, creator_id: int, username: str, event_type: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
+        """Send webhook notifications to all configured guild webhooks"""
+        try:
+            db = get_creator_db()
+            
+            # Get all guild webhooks
+            all_webhooks = db.get_all_guild_webhooks()
+            
+            if not all_webhooks:
+                logger.debug("ℹ️ No webhooks configured for any guild")
+                return
+            
+            # Prepare payload
+            payload = {
+                "event": event_type,
+                "creator": {
+                    "id": creator_id,
+                    "username": username
+                },
+                "content": {
+                    "name": mod_name,
+                    "url": mod_url,
+                    "platform": platform,
+                    "stats": {
+                        "views": views,
+                        "downloads": downloads
+                    }
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Send to all active webhooks
+            async with aiohttp.ClientSession() as session:
+                for webhook in all_webhooks:
+                    if not webhook.get('active', True):
+                        continue
+                    
+                    webhook_url = webhook.get('webhook_url')
+                    guild_id = webhook.get('guild_id')
+                    
+                    if not webhook_url:
+                        continue
+                    
+                    try:
+                        async with session.post(
+                            webhook_url,
+                            json=payload,
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        ) as response:
+                            if response.status == 200:
+                                logger.info("✅ Webhook sent to guild %s: %s (%s)", guild_id, mod_name, event_type)
+                            else:
+                                logger.warning("⚠️ Webhook failed for guild %s (status: %s)", guild_id, response.status)
+                    except asyncio.TimeoutError:
+                        logger.warning("⚠️ Webhook timeout for guild %s", guild_id)
+                    except Exception as e:
+                        logger.warning("⚠️ Error sending webhook to guild %s: %s", guild_id, e)
+        
+        except Exception as e:
+            logger.error("❌ Error sending webhook notifications: %s", e)
     
     async def send_notification(self, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
         try:

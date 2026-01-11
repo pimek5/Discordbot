@@ -392,6 +392,18 @@ class CreatorDatabase:
             self.conn.rollback()
             return False
     
+    def get_all_guild_webhooks(self):
+        """Get all active webhooks from all guilds (for broadcasting mod updates)"""
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT id, guild_id, webhook_url, active FROM webhooks WHERE active = TRUE"
+                )
+                return cur.fetchall()
+        except Exception as e:
+            logger.error("❌ Error getting all guild webhooks: %s", e)
+            return []
+    
     # ==================== API KEYS ====================
     @staticmethod
     def hash_api_key(key: str) -> str:
