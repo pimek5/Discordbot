@@ -815,8 +815,10 @@ class CreatorCommands(commands.Cog):
             )
             
             # Notification Channels
+            update_channel_text = f"<#{config.get('notification_channel_id')}>" if config.get('notification_channel_id') else "❌ Not set"
             random_channel_text = f"<#{config.get('random_mod_channel_id')}>" if config.get('random_mod_channel_id') else "❌ Not set"
             new_channel_text = f"<#{config.get('new_mod_channel_id')}>" if config.get('new_mod_channel_id') else "❌ Not set"
+            embed.add_field(name="📢 Update Channel", value=update_channel_text, inline=True)
             embed.add_field(name="🎲 Random Mod Channel", value=random_channel_text, inline=True)
             embed.add_field(name="📥 New Mod Channel", value=new_channel_text, inline=True)
             
@@ -853,6 +855,24 @@ class CreatorCommands(commands.Cog):
                     self.db = db_obj
                     self.guild_id = gid
                     self.cfg = cfg
+                
+                @discord.ui.button(label="📢 Update Ch.", style=discord.ButtonStyle.primary)
+                async def set_update_channel(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                    class ChannelModal(discord.ui.Modal, title="Set Update Channel"):
+                        channel_id = discord.ui.TextInput(label="Channel ID", placeholder="Paste channel ID here", required=True)
+                        
+                        async def on_submit(self, modal_interaction: discord.Interaction):
+                            try:
+                                ch_id = int(self.channel_id.value)
+                                self.db.set_guild_config(self.guild_id, notification_channel_id=ch_id)
+                                await modal_interaction.response.send_message(f"✅ Update channel set to <#{ch_id}>", ephemeral=True)
+                            except ValueError:
+                                await modal_interaction.response.send_message("❌ Invalid channel ID", ephemeral=True)
+                    
+                    modal = ChannelModal()
+                    modal.db = self.db
+                    modal.guild_id = self.guild_id
+                    await btn_interaction.response.send_modal(modal)
                 
                 @discord.ui.button(label="🎲 Random Mod Ch.", style=discord.ButtonStyle.primary)
                 async def set_random_channel(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
