@@ -998,7 +998,19 @@ class CreatorCommands(commands.Cog):
         )
         
         if config.get('notification_channel_id'):
-            embed.add_field(name="📢 Notification Channel", value=f"<#{config['notification_channel_id']}>", inline=False)
+            embed.add_field(name="📢 Update Channel", value=f"<#{config['notification_channel_id']}>", inline=False)
+        else:
+            embed.add_field(name="📢 Update Channel", value="❌ Not set", inline=False)
+        
+        if config.get('new_mod_channel_id'):
+            embed.add_field(name="📥 New Mod Channel", value=f"<#{config['new_mod_channel_id']}>", inline=False)
+        else:
+            embed.add_field(name="📥 New Mod Channel", value="❌ Not set", inline=False)
+        
+        if config.get('random_mod_channel_id'):
+            embed.add_field(name="🎲 Random Mod Channel", value=f"<#{config['random_mod_channel_id']}>", inline=False)
+        else:
+            embed.add_field(name="🎲 Random Mod Channel", value="❌ Not set", inline=False)
         
         if config.get('webhook_url'):
             masked_url = config['webhook_url'][:20] + "..." if len(config['webhook_url']) > 20 else config['webhook_url']
