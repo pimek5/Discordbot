@@ -26,6 +26,8 @@ DISCORD_TOKEN = os.getenv('CREATOR_BOT_TOKEN')
 GUILD_ID = int(os.getenv('GUILD_ID', '0'))
 NOTIFICATION_CHANNEL_ID = int(os.getenv('CREATOR_NOTIFICATION_CHANNEL_ID', '0'))
 HOURLY_MOD_CHANNEL_ID = 1450391066330005586  # Kanał dla losowych modów co godzinę
+CREATOR_GUIDE_CHANNEL_ID = 1459967029036453980  # Kanał na stały embed z komendami i guide
+CREATOR_GUIDE_MARKER = "CREATOR_GUIDE_V1"
 
 # Bot intents
 intents = discord.Intents.default()
@@ -76,6 +78,96 @@ class CreatorBot(commands.Bot):
                 name="Monitoring Runeforge & DivineSkins"
             )
         )
+        await self.ensure_creator_guide_message()
+
+    async def ensure_creator_guide_message(self):
+        """Post (or refresh) a single pinned guide/embed in the configured channel."""
+        channel = self.get_channel(CREATOR_GUIDE_CHANNEL_ID)
+        if not channel:
+            logger.warning("⚠️ Guide channel %s not found", CREATOR_GUIDE_CHANNEL_ID)
+            return
+
+        embed = discord.Embed(
+            title="📘 Creator Bot – Commands & Guide",
+            description=(
+                "Persistent guide for creators and server admins. "
+                "This embed is updated instead of posting duplicates."
+            ),
+            color=0x5865F2,
+            timestamp=datetime.now()
+        )
+
+        embed.add_field(
+            name="Key Commands",
+            value="\n".join([
+                "• `/creator add <platform> <username> [discord_user]` – start tracking (RuneForge / DivineSkins)",
+                "• `/creator profile <username> [platform]` – view creator profile",
+                "• `/creator remove <username> [platform]` – stop tracking",
+                "• `/creator refresh <username>` – manual refresh (admin)",
+                "• `/randommod` – random mod from tracked creators",
+            ]),
+            inline=False
+        )
+
+        embed.add_field(
+            name="Server Configuration",
+            value="\n".join([
+                "• `/config main` – channel & notifications panel",
+                "• `/config view` – view current settings",
+                "• `/webhooks add|list|remove` – webhook integrations",
+                "• `/api generate-key|list-keys|revoke-key` – API keys for integrations",
+            ]),
+            inline=False
+        )
+
+        embed.add_field(
+            name="Creator Guide",
+            value="\n".join([
+                "1) Make sure your RuneForge/DivineSkins profile is public.",
+                "2) Ask to be added via `/creator add` or ping an admin.",
+                "3) New mods/updates will go to the server's notification channel.",
+                "4) If updates stall, use `/creator refresh` or contact an admin.",
+            ]),
+            inline=False
+        )
+
+        embed.set_footer(text=f"{CREATOR_GUIDE_MARKER} • Do not remove")
+
+        guide_messages = []
+        try:
+            async for msg in channel.history(limit=200):
+                if msg.author.id == self.user.id and msg.embeds:
+                    footer_text = msg.embeds[0].footer.text or ""
+                    if CREATOR_GUIDE_MARKER in footer_text:
+                        guide_messages.append(msg)
+        except Exception as e:
+            logger.error("❌ Error scanning guide message: %s", e)
+
+        try:
+            target_message = None
+
+            if guide_messages:
+                keeper = guide_messages[0]
+                await keeper.edit(embed=embed)
+                target_message = keeper
+                # Remove duplicates beyond the first one
+                for dup in guide_messages[1:]:
+                    try:
+                        await dup.delete()
+                    except Exception:
+                        pass
+                logger.info("✅ Updated existing creator guide embed (deduped)")
+            else:
+                target_message = await channel.send(embed=embed)
+                logger.info("✅ Sent new creator guide embed")
+
+            if not target_message.pinned:
+                try:
+                    await target_message.pin(reason="Creator guide – keep visible")
+                except discord.HTTPException:
+                    logger.warning("⚠️ Could not pin creator guide message")
+        except Exception as e:
+            logger.error("❌ Error updating/sending guide embed: %s", e)
     
     @tasks.loop(minutes=5)
     async def monitor_creators(self):
