@@ -822,6 +822,10 @@ class CreatorCommands(commands.Cog):
             embed.add_field(name="🎲 Random Mod Channel", value=random_channel_text, inline=True)
             embed.add_field(name="📥 New Mod Channel", value=new_channel_text, inline=True)
             
+            # Bot Avatar
+            avatar_status = "✅ Custom" if config.get('bot_avatar_url') else "❌ Default"
+            embed.add_field(name="🖼️ Bot Avatar", value=avatar_status, inline=False)
+            
             # Webhook
             webhook_text = f"✅ Configured" if config.get('webhook_url') else "❌ Not set"
             embed.add_field(name="🪝 Webhook", value=webhook_text, inline=False)
@@ -917,7 +921,29 @@ class CreatorCommands(commands.Cog):
                         ephemeral=True
                     )
                 
-                @discord.ui.button(label="🔔 Notifications", style=discord.ButtonStyle.secondary)
+                @discord.ui.button(label="�️ Bot Avatar", style=discord.ButtonStyle.primary)
+                async def set_bot_avatar(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                    class AvatarModal(discord.ui.Modal, title="Set Bot Avatar URL"):
+                        avatar_url = discord.ui.TextInput(label="Avatar URL", placeholder="https://example.com/avatar.png", required=True)
+                        
+                        async def on_submit(self, modal_interaction: discord.Interaction):
+                            try:
+                                url = self.avatar_url.value.strip()
+                                # Basic URL validation
+                                if not (url.startswith('http://') or url.startswith('https://')):
+                                    await modal_interaction.response.send_message("❌ Invalid URL. Must start with http:// or https://", ephemeral=True)
+                                    return
+                                self.db.set_guild_config(self.guild_id, bot_avatar_url=url)
+                                await modal_interaction.response.send_message(f"✅ Bot avatar set successfully", ephemeral=True)
+                            except Exception as e:
+                                await modal_interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
+                    
+                    modal = AvatarModal()
+                    modal.db = self.db
+                    modal.guild_id = self.guild_id
+                    await btn_interaction.response.send_modal(modal)
+                
+                @discord.ui.button(label="�🔔 Notifications", style=discord.ButtonStyle.secondary)
                 async def toggle_notifications(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
                     class NotifView(discord.ui.View):
                         def __init__(self, db_obj, gid, cfg):
@@ -1035,6 +1061,12 @@ class CreatorCommands(commands.Cog):
         if config.get('webhook_url'):
             masked_url = config['webhook_url'][:20] + "..." if len(config['webhook_url']) > 20 else config['webhook_url']
             embed.add_field(name="🪝 Webhook", value=f"`{masked_url}`", inline=False)
+        
+        if config.get('bot_avatar_url'):
+            masked_url = config['bot_avatar_url'][:30] + "..." if len(config['bot_avatar_url']) > 30 else config['bot_avatar_url']
+            embed.add_field(name="🖼️ Bot Avatar", value=f"`{masked_url}`", inline=False)
+        else:
+            embed.add_field(name="🖼️ Bot Avatar", value="❌ Using default", inline=False)
         
         embed.set_footer(text=f"Created: {config.get('created_at')}")
         await interaction.response.send_message(embed=embed, ephemeral=True)

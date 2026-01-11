@@ -90,6 +90,7 @@ class CreatorDatabase:
                         random_mod_channel_id BIGINT,
                         new_mod_channel_id BIGINT,
                         webhook_url TEXT,
+                        bot_avatar_url TEXT,
                         notify_new_mods BOOLEAN DEFAULT TRUE,
                         notify_updated_mods BOOLEAN DEFAULT TRUE,
                         notify_new_skins BOOLEAN DEFAULT TRUE,
@@ -150,6 +151,7 @@ class CreatorDatabase:
                 migration_queries = [
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS random_mod_channel_id BIGINT",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS new_mod_channel_id BIGINT",
+                    "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS bot_avatar_url TEXT",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_new_mods BOOLEAN DEFAULT TRUE",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_updated_mods BOOLEAN DEFAULT TRUE",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS notify_new_skins BOOLEAN DEFAULT TRUE",
@@ -363,22 +365,23 @@ class CreatorDatabase:
             return None
     
     # ==================== GUILD CONFIG ====================
-    def set_guild_config(self, guild_id: int, notification_channel_id: int = None, webhook_url: str = None, random_mod_channel_id: int = None, new_mod_channel_id: int = None):
+    def set_guild_config(self, guild_id: int, notification_channel_id: int = None, webhook_url: str = None, random_mod_channel_id: int = None, new_mod_channel_id: int = None, bot_avatar_url: str = None):
         """Set or update guild configuration"""
         try:
             with self.conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO guild_config (guild_id, notification_channel_id, webhook_url, random_mod_channel_id, new_mod_channel_id)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO guild_config (guild_id, notification_channel_id, webhook_url, random_mod_channel_id, new_mod_channel_id, bot_avatar_url)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (guild_id) DO UPDATE SET
                         notification_channel_id = COALESCE(EXCLUDED.notification_channel_id, guild_config.notification_channel_id),
                         webhook_url = COALESCE(EXCLUDED.webhook_url, guild_config.webhook_url),
                         random_mod_channel_id = COALESCE(EXCLUDED.random_mod_channel_id, guild_config.random_mod_channel_id),
                         new_mod_channel_id = COALESCE(EXCLUDED.new_mod_channel_id, guild_config.new_mod_channel_id),
+                        bot_avatar_url = COALESCE(EXCLUDED.bot_avatar_url, guild_config.bot_avatar_url),
                         updated_at = CURRENT_TIMESTAMP
                     """,
-                    (guild_id, notification_channel_id, webhook_url, random_mod_channel_id, new_mod_channel_id),
+                    (guild_id, notification_channel_id, webhook_url, random_mod_channel_id, new_mod_channel_id, bot_avatar_url),
                 )
                 self.conn.commit()
                 logger.info("✅ Guild config updated: %s", guild_id)
