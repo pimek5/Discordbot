@@ -100,7 +100,7 @@ class CreatorBot(commands.Bot):
         embed.add_field(
             name="Key Commands",
             value="\n".join([
-                "• `/creator add <platform> <username> [discord_user]` – start tracking (RuneForge / DivineSkins)",
+                "• `/creator add <platform> <username> [discord_user]` – start tracking (RuneForge / DivineSkins); anyone with <@1432859206142394452> can add themselves",
                 "• `/creator profile <username> [platform]` – view creator profile",
                 "• `/creator remove <username> [platform]` – stop tracking",
                 "• `/creator refresh <username>` – manual refresh (admin)",

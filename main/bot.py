@@ -208,7 +208,6 @@ RUNEFORGE_CHECK_INTERVAL = 3600  # Check every hour (3600 seconds) - RuneForge m
 
 # Multiple channels with their own onRuneforge tags
 RUNEFORGE_CHANNELS = {
-    1279916286612078665: 1435096925144748062,  # Channel 1 -> Tag 1
     1272565735595573248: 1436897685444497558,  # Channel 2 -> Tag 2
 }
 
