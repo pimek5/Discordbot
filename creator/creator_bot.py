@@ -712,8 +712,17 @@ class CreatorBot(commands.Bot):
 
             user = self.get_user(discord_user_id)
             
-            # Get bot avatar from config (for embeds)
-            bot_avatar = config.get('bot_avatar_url')
+            # Fetch creator's profile avatar from RuneForge/DivineSkins
+            creator_avatar = None
+            try:
+                if platform == 'runeforge':
+                    profile_data = await self.runeforge_scraper.get_profile_data(username)
+                else:
+                    profile_data = await self.divineskins_scraper.get_profile_data(username)
+                if profile_data:
+                    creator_avatar = profile_data.get('avatar_url')
+            except Exception as e:
+                logger.warning("⚠️ Could not fetch creator avatar: %s", e)
 
             platform_emoji = "🔧" if platform == 'runeforge' else "✨"
             platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
@@ -764,9 +773,9 @@ class CreatorBot(commands.Bot):
             if final_image:
                 embed.set_image(url=final_image)
             
-            # Set thumbnail to bot avatar if available
-            if bot_avatar:
-                embed.set_thumbnail(url=bot_avatar)
+            # Set thumbnail to creator's avatar
+            if creator_avatar:
+                embed.set_thumbnail(url=creator_avatar)
 
             # Author info
             embed.set_author(
