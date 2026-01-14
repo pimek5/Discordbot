@@ -373,31 +373,29 @@ class Hexbet(commands.Cog):
         """Check if featured embed exists on channel, if not post new game. Also update game time."""
         try:
             logger.info("🔍 Checking if featured embed exists...")
-            # Get open matches on BET_CHANNEL_ID (use higher limit to include all)
+            # Get open matches (use higher limit to include all)
             open_matches = self.db.get_open_matches(limit=10)
             logger.info(f"📊 Found {len(open_matches)} open matches total")
             
-            # Process matches per guild
+            for m in open_matches:
+                logger.info(f"  - Match {m.get('id')}: game_id={m.get('game_id')}, channel_id={m.get('channel_id')}, special_bet={m.get('special_bet', False)}")
+            
+            # If no matches, post new game (will be posted to all guilds)
+            if not open_matches:
+                logger.info("⚠️ No featured matches found, posting new game...")
+                await self.post_random_featured_game(force=False)
+                return
+            
+            # Update embeds on all guilds
             for guild in self.bot.guilds:
                 bet_channel_id = self._get_channel_id(guild.id, 'bet')
-                
-                for m in open_matches:
-                    logger.info(f"  - Match {m.get('id')}: game_id={m.get('game_id')}, channel_id={m.get('channel_id')}, special_bet={m.get('special_bet', False)}")
-                featured_matches = [m for m in open_matches if m.get('channel_id') == bet_channel_id]
-                logger.info(f"📊 {len(featured_matches)} matches on guild {guild.name} BET channel ({bet_channel_id})")
-                
-                if not featured_matches:
-                    logger.info(f"⚠️ No featured match found for guild {guild.name}, posting new game...")
-                    await self.post_random_featured_game(force=False, guild_id=guild.id)
-                    continue
-                
-                # Check if message still exists and update time
                 channel = self.bot.get_channel(bet_channel_id)
                 if not channel:
                     logger.warning(f"⚠️ Featured channel {bet_channel_id} not found for guild {guild.name}")
                     continue
                 
-                for match in featured_matches:
+                # Update each match embed on this guild's channel
+                for match in open_matches:
                     message_id = match.get('message_id')
                     if message_id:
                         try:
@@ -664,27 +662,24 @@ class Hexbet(commands.Cog):
                     self.db.increment_high_elo_featured(puuid)
                     view = BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered)
                     
-                    logger.info(f"📤 Sending bet message to channel...")
-                    msg = await channel.send(embed=embed, view=view)
-                    self.db.set_match_message(match_id, msg.id)
-                    logger.info(f"✅ Posted bet for game {game_id} with match_id {match_id}")
+                    # Post to all guilds with configured bet channels
+                    posted_count = 0
+                    for guild in self.bot.guilds:
+                        try:
+                            guild_bet_channel_id = self._get_channel_id(guild.id, 'bet')
+                            guild_channel = self.bot.get_channel(guild_bet_channel_id)
+                            
+                            if guild_channel:
+                                msg = await guild_channel.send(embed=embed, view=view)
+                                # Only store message_id for first guild (for tracking)
+                                if posted_count == 0:
+                                    self.db.set_match_message(match_id, msg.id)
+                                posted_count += 1
+                                logger.info(f"✅ Posted bet to guild {guild.name} (channel {guild_bet_channel_id})")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to post bet to guild {guild.name}: {e}")
                     
-                    # Send webhook notification for new bet
-                    try:
-                        match_data = {
-                            'game_id': game_id,
-                            'platform': platform,
-                            'blue_team': blue_ordered,
-                            'red_team': red_ordered,
-                            'odds_blue': odds_blue,
-                            'odds_red': odds_red,
-                            'special_bet': is_special_bet
-                        }
-                        game_mode = 'ranked_solo' if platform in ['euw1', 'na1', 'kr'] else 'custom'
-                        await self.webhook_manager.send_new_bet_notification(match_id, match_data, game_mode)
-                        logger.info(f"📡 Webhook notification sent for new bet {match_id}")
-                    except Exception as webhook_err:
-                        logger.warning(f"⚠️ Failed to send webhook notification: {webhook_err}")
+                    logger.info(f"✅ Posted bet for game {game_id} with match_id {match_id} to {posted_count} guild(s)")
                     
                     return
                 
