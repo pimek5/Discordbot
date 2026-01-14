@@ -3971,7 +3971,7 @@ These players will now appear more frequently in betting matches!"""
                 
                 # Get open match details
                 cur.execute("""
-                    SELECT match_id, game_id, platform, created_at, updated_at 
+                    SELECT id, game_id, platform, created_at, updated_at 
                     FROM hexbet_matches 
                     WHERE status = 'open' 
                     ORDER BY created_at DESC 
