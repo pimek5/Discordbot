@@ -5115,6 +5115,63 @@ class BetView(discord.ui.View):
             logger.error(f"Error generating OP.GG link: {e}", exc_info=True)
             await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxinvite", description="Get bot invite link for other servers")
+    async def invite_link(self, interaction: discord.Interaction):
+        """Generate OAuth2 invite link for HEXBET bot"""
+        try:
+            # Required permissions for HEXBET:
+            # - Send Messages (2048)
+            # - Embed Links (16384)
+            # - Add Reactions (64)
+            # - Use Slash Commands (applications.commands scope)
+            # - Read Message History (65536)
+            # - View Channels (1024)
+            # Total: 2048 + 16384 + 64 + 65536 + 1024 = 85056
+            
+            permissions = discord.Permissions(
+                send_messages=True,
+                embed_links=True,
+                add_reactions=True,
+                read_message_history=True,
+                view_channel=True,
+                use_application_commands=True
+            )
+            
+            # Generate invite URL
+            invite_url = discord.utils.oauth_url(
+                self.bot.user.id,
+                permissions=permissions,
+                scopes=["bot", "applications.commands"]
+            )
+            
+            embed = discord.Embed(
+                title="🎮 Invite HEXBET Bot",
+                description=f"Click the link below to add this bot to your server!",
+                color=0xF1C40F
+            )
+            embed.add_field(
+                name="📋 Required Permissions",
+                value="• Send Messages\n• Embed Links\n• Add Reactions\n• Read Message History\n• View Channels\n• Use Slash Commands",
+                inline=False
+            )
+            embed.add_field(
+                name="🔗 Invite Link",
+                value=f"[Click here to invite]({invite_url})",
+                inline=False
+            )
+            embed.add_field(
+                name="⚙️ Setup After Invite",
+                value="Use `/hexconfig setup` to configure channels on your server",
+                inline=False
+            )
+            embed.set_footer(text=f"Bot ID: {self.bot.user.id}")
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error generating invite link: {e}", exc_info=True)
+            await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
     cog = Hexbet(bot, riot_api, db)
