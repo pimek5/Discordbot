@@ -35,7 +35,7 @@ class HexbetWebhookManager:
                 logger.debug("No webhooks configured for new bet notifications")
                 return
             
-            # Prepare payload
+            # Prepare payload - simplified to avoid serialization issues
             payload = {
                 "event": "new_bet",
                 "match_id": match_id,
@@ -43,13 +43,11 @@ class HexbetWebhookManager:
                 "data": {
                     "platform": match_data.get('platform'),
                     "game_id": match_data.get('game_id'),
-                    "blue_team": match_data.get('blue_team', {}),
-                    "red_team": match_data.get('red_team', {}),
                     "odds": {
-                        "blue": match_data.get('blue_team', {}).get('odds'),
-                        "red": match_data.get('red_team', {}).get('odds')
+                        "blue": match_data.get('odds_blue', 1.5),
+                        "red": match_data.get('odds_red', 1.5)
                     },
-                    "betting_closes_at": match_data.get('betting_closes_at'),
+                    "special_bet": match_data.get('special_bet', False),
                     "posted_at": datetime.now().isoformat()
                 },
                 "timestamp": datetime.now().isoformat()
@@ -84,13 +82,13 @@ class HexbetWebhookManager:
                 "data": {
                     "platform": match_data.get('platform'),
                     "game_id": match_data.get('game_id'),
-                    "blue_team": match_data.get('blue_team', {}),
-                    "red_team": match_data.get('red_team', {}),
                     "final_odds": {
-                        "blue": match_data.get('blue_team', {}).get('odds'),
-                        "red": match_data.get('red_team', {}).get('odds')
+                        "blue": match_data.get('blue_team', {}).get('odds', 1.5),
+                        "red": match_data.get('red_team', {}).get('odds', 1.5)
                     },
-                    "total_bets": match_data.get('total_bets', 0),
+                    "payouts_count": len(match_data.get('payouts', [])),
+                    "total_payout": sum(p['payout'] for p in match_data.get('payouts', [])),
+                    "winners_count": sum(1 for p in match_data.get('payouts', []) if p['won']),
                     "settled_at": datetime.now().isoformat()
                 },
                 "timestamp": datetime.now().isoformat()
@@ -195,7 +193,8 @@ class HexbetWebhookManager:
                         if response.status == 200:
                             logger.info(f"🪝 Webhook sent to guild {guild_id}: {event_name}")
                         else:
-                            logger.warning(f"⚠️ Webhook failed for guild {guild_id} (status: {response.status})")
+                            response_text = await response.text()
+                            logger.warning(f"⚠️ Webhook failed for guild {guild_id} (status: {response.status}): {response_text[:200]}")
                 except asyncio.TimeoutError:
                     logger.warning(f"⚠️ Webhook timeout for guild {guild_id}")
                 except Exception as e:
