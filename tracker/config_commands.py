@@ -544,13 +544,9 @@ class ChannelsConfigView(BaseConfigView):
 
 async def setup(bot: commands.Bot):
     """Setup configuration commands"""
-    
-    @bot.tree.command(name="config", description="⚙️ Configure bot features for your server")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def config(interaction: discord.Interaction):
-        """Open configuration panel"""
-        view = ConfigView(interaction.guild_id)
-        embed = view.create_main_embed()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-    
-    logger.info("✅ Configuration commands loaded")
+    # /config command removed - bots now have their own config systems
+    # - HEXBET: /hexconfig setup, /hexconfig view
+    # - Tracker: tracker_commands.py
+    # - Main: main/config_commands.py
+    # - Creator: creator_commands.py
+    logger.info("✅ Configuration setup completed (using bot-specific configs)")
