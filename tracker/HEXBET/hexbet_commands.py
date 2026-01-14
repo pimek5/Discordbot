@@ -4223,13 +4223,13 @@ These players will now appear more frequently in betting matches!"""
         try:
             conn = self.db.get_connection()
             with conn.cursor() as cur:
-                # Get all open matches
-                cur.execute("SELECT id FROM hexbet_matches WHERE status = 'open';")
+                # Get all open matches with their message IDs and channel IDs
+                cur.execute("SELECT id, message_id, channel_id FROM hexbet_matches WHERE status = 'open';")
                 matches = cur.fetchall()
                 
                 if matches:
-                    match_ids = [m[0] for m in matches]
-                    for match_id in match_ids:
+                    deleted_embeds = 0
+                    for match_id, message_id, channel_id in matches:
                         # Close match
                         cur.execute(
                             "UPDATE hexbet_matches SET status = 'settled', winner = 'draw', updated_at = NOW() WHERE id = %s;",
@@ -4246,9 +4246,23 @@ These players will now appear more frequently in betting matches!"""
                             SET balance = balance + (SELECT COALESCE(SUM(amount), 0) FROM hexbet_bets WHERE match_id = %s AND settled = TRUE AND won IS NULL)
                             WHERE discord_id IN (SELECT user_id FROM hexbet_bets WHERE match_id = %s);
                         """, (match_id, match_id))
+                        
+                        # Delete the bet embed from Discord
+                        if message_id and channel_id:
+                            try:
+                                channel = self.bot.get_channel(channel_id)
+                                if channel:
+                                    message = await channel.fetch_message(message_id)
+                                    await message.delete()
+                                    deleted_embeds += 1
+                                    logger.info(f"🗑️ Deleted bet embed for match {match_id}")
+                            except discord.NotFound:
+                                logger.warning(f"⚠️ Bet embed for match {match_id} not found (already deleted?)")
+                            except Exception as e:
+                                logger.warning(f"⚠️ Failed to delete bet embed for match {match_id}: {e}")
                     
                     conn.commit()
-                    await interaction.followup.send(f"✅ Closed {len(match_ids)} open matches", ephemeral=True)
+                    await interaction.followup.send(f"✅ Closed {len(matches)} open matches and deleted {deleted_embeds} bet embeds", ephemeral=True)
                 else:
                     await interaction.followup.send("ℹ️ No open matches to close", ephemeral=True)
             
