@@ -1134,20 +1134,6 @@ class Hexbet(commands.Cog):
                 await existing.edit(embed=embed, view=view)
             else:
                 await channel.send(embed=embed, view=view)
-            
-            # Send webhook notification for leaderboard update
-            try:
-                leaderboard_data = {
-                    'top_players': [{'discord_id': p['discord_id'], 'balance': p['balance'], 'total_won': p['total_won'], 'win_rate': p['win_rate']} for p in page_players],
-                    'total_players': total_players,
-                    'page': page,
-                    'total_pages': total_pages,
-                    'sort_by': sort_by
-                }
-                await self.webhook_manager.send_leaderboard_update(leaderboard_data, 'periodic')
-                logger.info(f"📡 Webhook notification sent for leaderboard update")
-            except Exception as webhook_err:
-                logger.warning(f"⚠️ Failed to send webhook notification: {webhook_err}")
         except Exception as e:
             logger.error(f"Error refreshing leaderboard: {e}", exc_info=True)
 
