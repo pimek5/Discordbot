@@ -25,6 +25,8 @@ from HEXBET.pro_players import (
 )
 from HEXBET.lolpros_scraper import check_and_verify_player
 from HEXBET.dpm_scraper import scrape_dpm_pro_accounts
+from HEXBET.hexbet_config_database import get_hexbet_config_db
+from HEXBET.hexbet_webhooks import get_webhook_manager
 
 logger = logging.getLogger('hexbet')
 
@@ -67,9 +69,10 @@ async def load_champion_roles_from_ddragon():
         logger.error(f"❌ Failed to load champion data from ddragon: {e}")
         return False
 
-BET_CHANNEL_ID = 1398977064261910580
-LEADERBOARD_CHANNEL_ID = 1398985421014306856
-BET_LOGS_CHANNEL_ID = 1398986567988674704
+# Default fallback channel IDs (used if guild not configured)
+DEFAULT_BET_CHANNEL_ID = 1398977064261910580
+DEFAULT_LEADERBOARD_CHANNEL_ID = 1398985421014306856
+DEFAULT_BET_LOGS_CHANNEL_ID = 1398986567988674704
 
 # Task intervals
 FEATURED_INTERVAL = 5  # minutes - how often to check for and post new matches (faster to maintain 3 slots)
@@ -155,6 +158,8 @@ class Hexbet(commands.Cog):
         self.bot = bot
         self.riot_api = riot_api
         self.db = db
+        self.config_db = get_hexbet_config_db()
+        self.webhook_manager = get_webhook_manager()
         self.db.ensure_hexbet_tables()
         self.featured_task.start()
         self.leaderboard_task.start()
@@ -214,6 +219,25 @@ class Hexbet(commands.Cog):
             logger.info("✅ Loaded champion roles from ddragon")
         except Exception as e:
             logger.warning(f"⚠️ Could not load champion roles: {e}")
+    
+    def _get_channel_id(self, guild_id: int, channel_type: str) -> int:
+        """Get channel ID from config or fallback to default"""
+        config = self.config_db.get_guild_config(guild_id)
+        if config:
+            if channel_type == 'bet':
+                return config.get('bet_channel_id') or DEFAULT_BET_CHANNEL_ID
+            elif channel_type == 'leaderboard':
+                return config.get('leaderboard_channel_id') or DEFAULT_LEADERBOARD_CHANNEL_ID
+            elif channel_type == 'logs':
+                return config.get('bet_logs_channel_id') or DEFAULT_BET_LOGS_CHANNEL_ID
+        # Fallback to defaults
+        if channel_type == 'bet':
+            return DEFAULT_BET_CHANNEL_ID
+        elif channel_type == 'leaderboard':
+            return DEFAULT_LEADERBOARD_CHANNEL_ID
+        elif channel_type == 'logs':
+            return DEFAULT_BET_LOGS_CHANNEL_ID
+        return DEFAULT_BET_CHANNEL_ID
 
     async def cleanup_old_bets(self):
         """Delete settled matches and their bets immediately"""
@@ -352,78 +376,83 @@ class Hexbet(commands.Cog):
             # Get open matches on BET_CHANNEL_ID (use higher limit to include all)
             open_matches = self.db.get_open_matches(limit=10)
             logger.info(f"📊 Found {len(open_matches)} open matches total")
-            for m in open_matches:
-                logger.info(f"  - Match {m.get('id')}: game_id={m.get('game_id')}, channel_id={m.get('channel_id')}, special_bet={m.get('special_bet', False)}")
-            featured_matches = [m for m in open_matches if m.get('channel_id') == BET_CHANNEL_ID]
-            logger.info(f"📊 {len(featured_matches)} matches on BET_CHANNEL_ID ({BET_CHANNEL_ID})")
             
-            if not featured_matches:
-                logger.info("⚠️ No featured match found, posting new game...")
-                await self.post_random_featured_game(force=False)
-                return
-            
-            # Check if message still exists and update time
-            channel = self.bot.get_channel(BET_CHANNEL_ID)
-            if not channel:
-                logger.warning(f"⚠️ Featured channel {BET_CHANNEL_ID} not found")
-                return
-            
-            for match in featured_matches:
-                message_id = match.get('message_id')
-                if message_id:
-                    try:
-                        msg = await channel.fetch_message(message_id)
-                        logger.info(f"✅ Featured embed {message_id} exists on channel")
-                        
-                        # Update game time in embed
-                        if msg.embeds:
-                            old_embed = msg.embeds[0]
-                            game_id = match['game_id']
-                            platform = match['platform']
-                            blue_team = match.get('blue_team', {})
-                            red_team = match.get('red_team', {})
+            # Process matches per guild
+            for guild in self.bot.guilds:
+                bet_channel_id = self._get_channel_id(guild.id, 'bet')
+                
+                for m in open_matches:
+                    logger.info(f"  - Match {m.get('id')}: game_id={m.get('game_id')}, channel_id={m.get('channel_id')}, special_bet={m.get('special_bet', False)}")
+                featured_matches = [m for m in open_matches if m.get('channel_id') == bet_channel_id]
+                logger.info(f"📊 {len(featured_matches)} matches on guild {guild.name} BET channel ({bet_channel_id})")
+                
+                if not featured_matches:
+                    logger.info(f"⚠️ No featured match found for guild {guild.name}, posting new game...")
+                    await self.post_random_featured_game(force=False, guild_id=guild.id)
+                    continue
+                
+                # Check if message still exists and update time
+                channel = self.bot.get_channel(bet_channel_id)
+                if not channel:
+                    logger.warning(f"⚠️ Featured channel {bet_channel_id} not found for guild {guild.name}")
+                    continue
+                
+                for match in featured_matches:
+                    message_id = match.get('message_id')
+                    if message_id:
+                        try:
+                            msg = await channel.fetch_message(message_id)
+                            logger.info(f"✅ Featured embed {message_id} exists on channel")
                             
-                            if isinstance(blue_team, dict) and isinstance(red_team, dict):
-                                blue_players = blue_team.get('players', [])
-                                red_players = red_team.get('players', [])
+                            # Update game time in embed
+                            if msg.embeds:
+                                old_embed = msg.embeds[0]
+                                game_id = match['game_id']
+                                platform = match['platform']
+                                blue_team = match.get('blue_team', {})
+                                red_team = match.get('red_team', {})
                                 
-                                # Re-detect streamer mode based on RiotID presence
-                                all_players = blue_players + red_players
-                                for p in all_players:
-                                    riot_id_name = p.get('riotIdGameName', '').strip()
-                                    riot_id_tag = p.get('riotIdTagline', '').strip()
-                                    riot_id_combined = p.get('riotId', '').strip()
+                                if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                                    blue_players = blue_team.get('players', [])
+                                    red_players = red_team.get('players', [])
                                     
-                                    # Check if player has visible riot ID (either split or combined format)
-                                    has_riot_id = bool(riot_id_name and riot_id_tag) or bool(riot_id_combined and '#' in riot_id_combined)
-                                    p['streamer_mode'] = not has_riot_id
-                                
-                                odds_blue = blue_team.get('odds', 1.5)
-                                odds_red = red_team.get('odds', 1.5)
-                                
-                                chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
-                                chance_red = round(100 - chance_blue, 1)
-                                
-                                is_special_bet = match.get('special_bet', False)
-                                featured = "special" if is_special_bet else ""
-                                game_start_at = match.get('game_start_at')
-                                
-                                new_embed = self._build_embed(
-                                    game_id, platform, blue_players, red_players,
-                                    odds_blue, odds_red, chance_blue, chance_red,
-                                    featured, match['id'], game_start_at
-                                )
-                                
-                                await msg.edit(embed=new_embed)
-                                logger.info(f"🕐 Updated game time for match {match['id']}" + (f" (SPECIAL BET)" if is_special_bet else ""))
+                                    # Re-detect streamer mode based on RiotID presence
+                                    all_players = blue_players + red_players
+                                    for p in all_players:
+                                        riot_id_name = p.get('riotIdGameName', '').strip()
+                                        riot_id_tag = p.get('riotIdTagline', '').strip()
+                                        riot_id_combined = p.get('riotId', '').strip()
+                                        
+                                        # Check if player has visible riot ID (either split or combined format)
+                                        has_riot_id = bool(riot_id_name and riot_id_tag) or bool(riot_id_combined and '#' in riot_id_combined)
+                                        p['streamer_mode'] = not has_riot_id
+                                    
+                                    odds_blue = blue_team.get('odds', 1.5)
+                                    odds_red = red_team.get('odds', 1.5)
+                                    
+                                    chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                                    chance_red = round(100 - chance_blue, 1)
+                                    
+                                    is_special_bet = match.get('special_bet', False)
+                                    featured = "special" if is_special_bet else ""
+                                    game_start_at = match.get('game_start_at')
+                                    
+                                    new_embed = self._build_embed(
+                                        game_id, platform, blue_players, red_players,
+                                        odds_blue, odds_red, chance_blue, chance_red,
+                                        featured, match['id'], game_start_at
+                                    )
+                                    
+                                    await msg.edit(embed=new_embed)
+                                    logger.info(f"🕐 Updated game time for match {match['id']}" + (f" (SPECIAL BET)" if is_special_bet else ""))
                         
-                    except discord.NotFound:
-                        logger.warning(f"⚠️ Featured embed {message_id} not found, posting new game...")
-                        # Mark as settled and post new game
-                        self.db.settle_match(match['id'], winner='cancel')
-                        await self.post_random_featured_game(force=False)
-                    except Exception as e:
-                        logger.error(f"❌ Error checking message {message_id}: {e}")
+                        except discord.NotFound:
+                            logger.warning(f"⚠️ Featured embed {message_id} not found, posting new game...")
+                            # Mark as settled and post new game
+                            self.db.settle_match(match['id'], winner='cancel')
+                            await self.post_random_featured_game(force=False)
+                        except Exception as e:
+                            logger.error(f"❌ Error checking message {message_id}: {e}")
         except Exception as e:
             logger.error(f"❌ Error in check_embed_task: {e}", exc_info=True)
 
@@ -465,10 +494,17 @@ class Hexbet(commands.Cog):
     async def before_live_score_update(self):
         await self.bot.wait_until_ready()
 
-    async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None):
+    async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None, guild_id: Optional[int] = None):
         """Find and post a high-elo game by scanning active players from pool"""
         try:
             logger.info("🎮 post_random_featured_game called")
+            
+            # If no guild_id provided, use first guild
+            if not guild_id and self.bot.guilds:
+                guild_id = self.bot.guilds[0].id
+            
+            bet_channel_id = self._get_channel_id(guild_id, 'bet')
+            
             # Check if we already have 3 active matches
             open_count = self.db.count_open_matches()
             logger.info(f"📊 Current open matches: {open_count}/3")
@@ -553,9 +589,9 @@ class Hexbet(commands.Cog):
                     
                     logger.info(f"✅ Found active game: {game_id} ({tier} {lp} LP player)")
                     
-                    channel = self.bot.get_channel(BET_CHANNEL_ID)
+                    channel = self.bot.get_channel(bet_channel_id)
                     if not channel:
-                        logger.error("❌ Bet channel not found!")
+                        logger.error(f"❌ Bet channel {bet_channel_id} not found for guild {guild_id}!")
                         return
 
                     blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
@@ -603,11 +639,12 @@ class Hexbet(commands.Cog):
                     match_id = self.db.create_hexbet_match(
                         game_id,
                         platform,
-                        BET_CHANNEL_ID,
+                        bet_channel_id,
                         {'players': blue_ordered, 'odds': odds_blue},
                         {'players': red_ordered, 'odds': odds_red},
                         game_data.get('gameStartTime', 0),
-                        special_bet=is_special_bet  # Special if avg LP > 1000
+                        special_bet=is_special_bet,  # Special if avg LP > 1000
+                        guild_id=guild_id
                     )
                     if not match_id and not force:
                         logger.warning(f"⚠️ Match already exists for game {game_id}, skipping...")
@@ -631,6 +668,24 @@ class Hexbet(commands.Cog):
                     msg = await channel.send(embed=embed, view=view)
                     self.db.set_match_message(match_id, msg.id)
                     logger.info(f"✅ Posted bet for game {game_id} with match_id {match_id}")
+                    
+                    # Send webhook notification for new bet
+                    try:
+                        match_data = {
+                            'game_id': game_id,
+                            'platform': platform,
+                            'blue_team': blue_ordered,
+                            'red_team': red_ordered,
+                            'odds_blue': odds_blue,
+                            'odds_red': odds_red,
+                            'special_bet': is_special_bet
+                        }
+                        game_mode = 'ranked_solo' if platform in ['euw1', 'na1', 'kr'] else 'custom'
+                        await self.webhook_manager.send_new_bet_notification(match_id, match_data, game_mode)
+                        logger.info(f"📡 Webhook notification sent for new bet {match_id}")
+                    except Exception as webhook_err:
+                        logger.warning(f"⚠️ Failed to send webhook notification: {webhook_err}")
+                    
                     return
                 
                 await asyncio.sleep(0.1)  # Small delay between checks
@@ -686,7 +741,8 @@ class Hexbet(commands.Cog):
                 
                 # Log refund to bet logs channel
                 try:
-                    log_channel = self.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                    bet_logs_channel_id = self._get_channel_id(match.get('guild_id'), 'logs') if match.get('guild_id') else DEFAULT_BET_LOGS_CHANNEL_ID
+                    log_channel = self.bot.get_channel(bet_logs_channel_id)
                     if log_channel:
                         log_embed = discord.Embed(
                             title="🔄 Match Refunded (Remake)",
@@ -726,9 +782,25 @@ class Hexbet(commands.Cog):
             await self._update_match_message(match, winner, payouts)
             logger.info(f"✅ Settled match {match['game_id']} - Winner: {winner.upper()}")
             
+            # Send webhook notification for bet result
+            try:
+                match_data = {
+                    'game_id': match['game_id'],
+                    'platform': match.get('platform'),
+                    'blue_team': match.get('blue_team', {}),
+                    'red_team': match.get('red_team', {}),
+                    'winner': winner,
+                    'payouts': [{'user_id': uid, 'bet': amt, 'payout': pay, 'won': w} for uid, amt, pay, w in payouts]
+                }
+                await self.webhook_manager.send_bet_result_notification(match['id'], winner, match_data)
+                logger.info(f"📡 Webhook notification sent for bet result {match['id']}")
+            except Exception as webhook_err:
+                logger.warning(f"⚠️ Failed to send webhook notification: {webhook_err}")
+            
             # Log settlement to bet logs channel
             try:
-                log_channel = self.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                bet_logs_channel_id = self._get_channel_id(match.get('guild_id'), 'logs') if match.get('guild_id') else DEFAULT_BET_LOGS_CHANNEL_ID
+                log_channel = self.bot.get_channel(bet_logs_channel_id)
                 if log_channel:
                     log_embed = discord.Embed(
                         title="🏁 Match Settled",
@@ -990,7 +1062,11 @@ class Hexbet(commands.Cog):
 
     async def refresh_leaderboard_embed(self, page: int = 1, sort_by: str = 'balance'):
         try:
-            channel = self.bot.get_channel(LEADERBOARD_CHANNEL_ID)
+            # Use first guild for default behavior
+            guild_id = self.bot.guilds[0].id if self.bot.guilds else None
+            leaderboard_channel_id = self._get_channel_id(guild_id, 'leaderboard') if guild_id else DEFAULT_LEADERBOARD_CHANNEL_ID
+            
+            channel = self.bot.get_channel(leaderboard_channel_id)
             if not channel:
                 return
             
@@ -1058,6 +1134,20 @@ class Hexbet(commands.Cog):
                 await existing.edit(embed=embed, view=view)
             else:
                 await channel.send(embed=embed, view=view)
+            
+            # Send webhook notification for leaderboard update
+            try:
+                leaderboard_data = {
+                    'top_players': [{'discord_id': p['discord_id'], 'balance': p['balance'], 'total_won': p['total_won'], 'win_rate': p['win_rate']} for p in page_players],
+                    'total_players': total_players,
+                    'page': page,
+                    'total_pages': total_pages,
+                    'sort_by': sort_by
+                }
+                await self.webhook_manager.send_leaderboard_update(leaderboard_data, 'periodic')
+                logger.info(f"📡 Webhook notification sent for leaderboard update")
+            except Exception as webhook_err:
+                logger.warning(f"⚠️ Failed to send webhook notification: {webhook_err}")
         except Exception as e:
             logger.error(f"Error refreshing leaderboard: {e}", exc_info=True)
 
@@ -2638,9 +2728,10 @@ class Hexbet(commands.Cog):
                     elif player_type == 'streamer':
                         pro_status = f" {get_streamer_emoji()}"
                 
-                channel = self.bot.get_channel(BET_CHANNEL_ID)
+                bet_channel_id = self._get_channel_id(interaction.guild_id, 'bet')
+                channel = self.bot.get_channel(bet_channel_id)
                 if not channel:
-                    await interaction.followup.send("❌ Bet channel not found!", ephemeral=True)
+                    await interaction.followup.send(f"❌ Bet channel {bet_channel_id} not found!", ephemeral=True)
                     return
                 
                 # Build match from the player's game directly
@@ -2665,7 +2756,7 @@ class Hexbet(commands.Cog):
                     
                     # Check if special bet already exists
                     open_matches = self.db.get_open_matches()
-                    special_exists = any(m.get('special_bet', False) and m.get('channel_id') == BET_CHANNEL_ID for m in open_matches)
+                    special_exists = any(m.get('special_bet', False) and m.get('channel_id') == bet_channel_id for m in open_matches)
                     if special_exists:
                         await interaction.followup.send("⚠️ A special bet is already active. Wait for it to finish first.", ephemeral=True)
                         return
@@ -2675,15 +2766,16 @@ class Hexbet(commands.Cog):
                     chance_red = 100 - chance_blue
                     
                     game_id = game_data.get('gameId')
-                    logger.info(f"🎯 Creating SPECIAL BET for game {game_id} on channel {BET_CHANNEL_ID}")
+                    logger.info(f"🎯 Creating SPECIAL BET for game {game_id} on channel {bet_channel_id}")
                     match_id = self.db.create_hexbet_match(
                         game_id,
                         platform,
-                        BET_CHANNEL_ID,
+                        bet_channel_id,
                         {'players': blue_ordered, 'odds': odds_blue},
                         {'players': red_ordered, 'odds': odds_red},
                         game_data.get('gameStartTime', 0),
-                        special_bet=True
+                        special_bet=True,
+                        guild_id=interaction.guild_id
                     )
                     
                     if not match_id:
@@ -2691,7 +2783,7 @@ class Hexbet(commands.Cog):
                         await interaction.followup.send("❌ Failed to create match", ephemeral=True)
                         return
                     
-                    logger.info(f"✅ SPECIAL BET created with match_id={match_id}, special_bet=True, channel_id={BET_CHANNEL_ID}")
+                    logger.info(f"✅ SPECIAL BET created with match_id={match_id}, special_bet=True, channel_id={bet_channel_id}")
                     
                     embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player="special", match_id=match_id, game_start_at=game_data.get('gameStartTime'))
                     
@@ -2935,7 +3027,8 @@ class Hexbet(commands.Cog):
                 
                 # Log cancellation to bet logs channel
                 try:
-                    log_channel = self.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                    bet_logs_channel_id = self._get_channel_id(interaction.guild_id, 'logs')
+                    log_channel = self.bot.get_channel(bet_logs_channel_id)
                     if log_channel:
                         log_embed = discord.Embed(
                             title="❌ Match Cancelled",
@@ -4370,7 +4463,8 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
             logger.info(f"✅ Found valid ranked game {game_id} for {player_name}")
             
             # Build match embed
-            channel = self.cog.bot.get_channel(BET_CHANNEL_ID)
+            bet_channel_id = self.cog._get_channel_id(interaction.guild_id, 'bet')
+            channel = self.cog.bot.get_channel(bet_channel_id)
             if not channel:
                 await interaction.followup.send(
                     "❌ Bet channel not found. Contact an admin.",
@@ -4403,11 +4497,12 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
             match_id = self.cog.db.create_hexbet_match(
                 game_id,
                 platform,
-                BET_CHANNEL_ID,
+                bet_channel_id,
                 {'players': blue_ordered, 'odds': odds_blue},
                 {'players': red_ordered, 'odds': odds_red},
                 game_data.get('gameStartTime', 0),
-                special_bet=True  # Always special for /hxspecial
+                special_bet=True,  # Always special for /hxspecial
+                guild_id=interaction.guild_id
             )
             
             if not match_id:
@@ -4443,7 +4538,7 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
                     f"Player: **{player_name}**\n"
                     f"Cost: **1000 tokens**\n"
                     f"New balance: **{new_balance}**\n\n"
-                    f"Match posted in <#{BET_CHANNEL_ID}>",
+                    f"Match posted in <#{bet_channel_id}>",
                     ephemeral=True
                 )
                 
@@ -4523,7 +4618,8 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
             
             # Log to bet logs channel
             try:
-                log_channel = self.cog.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                bet_logs_channel_id = self.cog._get_channel_id(interaction.guild_id, 'logs')
+                log_channel = self.cog.bot.get_channel(bet_logs_channel_id)
                 if log_channel:
                     log_embed = discord.Embed(
                         title="📊 New Bet",
@@ -4619,7 +4715,8 @@ class BetOUModal(discord.ui.Modal, title='Game Length: Over/Under 22.5 min'):
             
             # Log to bet logs channel
             try:
-                log_channel = self.cog.bot.get_channel(BET_LOGS_CHANNEL_ID)
+                bet_logs_channel_id = self.cog._get_channel_id(interaction.guild_id, 'logs')
+                log_channel = self.cog.bot.get_channel(bet_logs_channel_id)
                 if log_channel:
                     log_embed = discord.Embed(
                         title="⏱️ O/U Bet",

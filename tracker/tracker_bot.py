@@ -18,6 +18,7 @@ from tracker_database import get_tracker_db
 from riot_api import RiotAPI
 from tracker_commands_v3 import TrackerCommandsV3
 from HEXBET.hexbet_commands import setup as setup_hexbet
+from HEXBET.hexbet_config_commands import setup as setup_hexbet_config
 import config_commands
 
 # Load environment variables
@@ -74,6 +75,10 @@ class TrackerBot(commands.Bot):
         # Add HEXBET commands
         await setup_hexbet(self, self.riot_api, self.db)
         logger.info("✅ HEXBET loaded")
+        
+        # Add HEXBET config commands
+        await setup_hexbet_config(self)
+        logger.info("✅ HEXBET Config commands loaded")
         
         # Log available commands
         commands_list = [cmd.name for cmd in self.tree.get_commands()]

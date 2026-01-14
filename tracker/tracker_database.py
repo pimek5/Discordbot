@@ -190,6 +190,16 @@ class TrackerDatabase:
                         logger.warning(f"Migration note: {e}")
                     cur = conn.cursor()
                 
+                # Migration: add guild_id column for multi-server support
+                try:
+                    cur.execute("ALTER TABLE hexbet_matches ADD COLUMN IF NOT EXISTS guild_id BIGINT")
+                    logger.info("✅ Migrated: guild_id column added to hexbet_matches")
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    if "already exists" not in str(e):
+                        logger.warning(f"Migration note: {e}")
+                    cur = conn.cursor()
+                
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS hexbet_leaderboard_cache (
                         id SERIAL PRIMARY KEY,
@@ -364,7 +374,7 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False, betting_window_minutes: int = 2) -> int:
+    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False, betting_window_minutes: int = 2, guild_id: int = None) -> int:
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
@@ -378,11 +388,11 @@ class TrackerDatabase:
                 # Try to insert, if exists do nothing
                 # betting_closes_at is set automatically by database: NOW() + betting_window_minutes
                 cur.execute("""
-                    INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at, betting_closes_at, special_bet)
-                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s), NOW() + INTERVAL '%s minutes', %s)
+                    INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at, betting_closes_at, special_bet, guild_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s), NOW() + INTERVAL '%s minutes', %s, %s)
                     ON CONFLICT (game_id) DO NOTHING
                     RETURNING id
-                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at, betting_window_minutes, special_bet))
+                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at, betting_window_minutes, special_bet, guild_id))
                 row = cur.fetchone()
                 conn.commit()
                 
