@@ -2454,6 +2454,66 @@ class Hexbet(commands.Cog):
             logger.error(f"Error in hxprotype command: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
+    @app_commands.command(name="hxaccounts", description="(Admin) View accounts for a verified player")
+    @app_commands.describe(player="Player name (display name or gameName#tagLine)")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxaccounts(self, interaction: discord.Interaction, player: str):
+        """Manage accounts for a verified player"""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            result = await self._find_player_in_db(player)
+
+            if not result:
+                await interaction.followup.send(f"❌ Player `{player}` not found in database", ephemeral=True)
+                return
+
+            player_id, player_name, primary_riot_id, player_type = result
+
+            # Get all accounts for this player
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, riot_id, rank, lp, wins, losses, wr
+                FROM hexbet_pro_accounts
+                WHERE pro_player_id = %s
+                ORDER BY lp DESC
+            """, (player_id,))
+            accounts = cursor.fetchall()
+            cursor.close()
+            self.db.return_connection(conn)
+
+            # Build embed
+            player_type_label = "🎖️ Pro" if player_type == "pro" else "📺 Streamer"
+
+            embed = discord.Embed(
+                title=f"{player_type_label} {player_name}",
+                description=f"**Primary RiotID:** {primary_riot_id}\n**Total Accounts:** {len(accounts)}",
+                color=0x3498DB
+            )
+
+            if accounts:
+                account_list = []
+                for acc_id, riot_id, rank, lp, wins, losses, wr in accounts:
+                    rank_text = f"{rank or 'UNRANKED'}"
+                    lp_text = f"{lp or 0} LP" if rank and rank != 'UNRANKED' else ""
+                    wr_text = f"({wr:.1f}% WR)" if wr else ""
+                    account_list.append(f"• `{riot_id}` - **{rank_text}** {lp_text} {wr_text}")
+
+                # Show first 25 accounts (Discord embed field limit)
+                embed.add_field(name="📋 Accounts", value="\n".join(account_list[:25]), inline=False)
+                if len(accounts) > 25:
+                    embed.add_field(name="", value=f"... and {len(accounts) - 25} more", inline=False)
+            else:
+                embed.add_field(name="📋 Accounts", value="No additional accounts found", inline=False)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ {interaction.user} viewed accounts for {player_name}")
+
+        except Exception as e:
+            logger.error(f"Error in hxaccounts command: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
     @app_commands.command(name="hxhelp", description="Show all HEXBET commands")
     async def hxhelp(self, interaction: discord.Interaction):
         """Display help for all HEXBET commands"""
