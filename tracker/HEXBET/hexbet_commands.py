@@ -445,10 +445,32 @@ class Hexbet(commands.Cog):
                                     logger.info(f"🕐 Updated game time for match {match['id']}" + (f" (SPECIAL BET)" if is_special_bet else ""))
                         
                         except discord.NotFound:
-                            logger.warning(f"⚠️ Featured embed {message_id} not found, posting new game...")
-                            # Mark as settled and post new game
-                            self.db.settle_match(match['id'], winner='cancel')
-                            await self.post_random_featured_game(force=False)
+                            logger.warning(f"⚠️ Featured embed {message_id} not found")
+                            
+                            # Before canceling, verify if game is actually still ongoing
+                            try:
+                                game_id = match['game_id']
+                                platform = match['platform']
+                                region = platform_to_region(platform)
+                                match_ref = f"{platform.upper()}_{game_id}"
+                                
+                                # Try to get match details - if game ended, this will return data
+                                match_data = await self.riot_api.get_match_details(match_ref, region)
+                                
+                                if match_data and 'info' in match_data:
+                                    # Game has ended - safe to cancel and settle
+                                    logger.info(f"✅ Game {game_id} has ended, canceling match {match['id']}")
+                                    self.db.settle_match(match['id'], winner='cancel')
+                                    await self.post_random_featured_game(force=False)
+                                else:
+                                    # Game still ongoing or can't verify - DON'T cancel, just repost embed
+                                    logger.warning(f"⚠️ Game {game_id} status unknown, reposting embed instead of canceling")
+                                    await self.post_random_featured_game(force=False)
+                            except Exception as verify_error:
+                                # Can't verify game status - safer to NOT cancel
+                                logger.warning(f"⚠️ Could not verify game {game_id} status: {verify_error}. NOT canceling.")
+                                # Just try to post a new game without canceling
+                                await self.post_random_featured_game(force=False)
                         except Exception as e:
                             logger.error(f"❌ Error checking message {message_id}: {e}")
         except Exception as e:
