@@ -54,9 +54,9 @@ class HexbetConfig(commands.Cog):
         else:
             embed.add_field(name="Status", value="❌ Not configured yet", inline=False)
         
-        embed.set_footer(text="Use the buttons below to configure")
+        embed.set_footer(text="Use the dropdowns below to select channels")
         
-        view = ConfigView(guild_id, self.config_db)
+        view = ConfigView(guild_id, self.config_db, interaction.guild)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     
     @config_group.command(name="view", description="View current HEXBET configuration")
@@ -212,82 +212,82 @@ class HexbetConfig(commands.Cog):
 class ConfigView(discord.ui.View):
     """Interactive configuration view"""
     
-    def __init__(self, guild_id: int, config_db):
-        super().__init__(timeout=None)
+    def __init__(self, guild_id: int, config_db, guild: discord.Guild):
+        super().__init__(timeout=300)
         self.guild_id = guild_id
         self.db = config_db
+        self.guild = guild
+        
+        # Add channel selects for each setting
+        self.add_item(BetChannelSelect(guild, config_db, guild_id))
+        self.add_item(LeaderboardChannelSelect(guild, config_db, guild_id))
+        self.add_item(LogsChannelSelect(guild, config_db, guild_id))
+
+
+class BetChannelSelect(discord.ui.ChannelSelect):
+    """Select for betting channel"""
+    def __init__(self, guild: discord.Guild, db, guild_id: int):
+        super().__init__(
+            placeholder="🎲 Select Betting Channel",
+            min_values=1,
+            max_values=1,
+            channel_types=[discord.ChannelType.text]
+        )
+        self.db = db
+        self.guild_id = guild_id
     
-    @discord.ui.button(label="🎲 Bet Channel", style=discord.ButtonStyle.primary)
-    async def set_bet_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = ChannelModal("Bet Channel", "bet_channel_id", self.db, self.guild_id)
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="🏆 Leaderboard Channel", style=discord.ButtonStyle.primary)
-    async def set_leaderboard_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = ChannelModal("Leaderboard Channel", "leaderboard_channel_id", self.db, self.guild_id)
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="📋 Logs Channel", style=discord.ButtonStyle.primary)
-    async def set_logs_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = ChannelModal("Bet Logs Channel", "bet_logs_channel_id", self.db, self.guild_id)
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="🪝 Manage Webhooks", style=discord.ButtonStyle.secondary)
-    async def manage_webhooks(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def callback(self, interaction: discord.Interaction):
+        channel = self.values[0]
+        self.db.set_guild_config(self.guild_id, bet_channel_id=channel.id)
         await interaction.response.send_message(
-            "Use `/hexwebhooks` commands to manage webhooks",
+            f"✅ Betting channel set to {channel.mention}",
             ephemeral=True
         )
 
 
-class ChannelModal(discord.ui.Modal):
-    """Modal for setting channel ID"""
-    
-    def __init__(self, title: str, field_name: str, db, guild_id: int):
-        super().__init__(title=f"Set {title}")
-        self.field_name = field_name
+class LeaderboardChannelSelect(discord.ui.ChannelSelect):
+    """Select for leaderboard channel"""
+    def __init__(self, guild: discord.Guild, db, guild_id: int):
+        super().__init__(
+            placeholder="🏆 Select Leaderboard Channel",
+            min_values=1,
+            max_values=1,
+            channel_types=[discord.ChannelType.text]
+        )
         self.db = db
         self.guild_id = guild_id
-        
-        self.channel_input = discord.ui.TextInput(
-            label="Channel ID",
-            placeholder="Enter channel ID (numbers only)",
-            required=True
-        )
-        self.add_item(self.channel_input)
     
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            channel_id = int(self.channel_input.value.strip())
-            
-            # Verify channel exists
-            channel = interaction.guild.get_channel(channel_id)
-            if not channel:
-                await interaction.response.send_message(
-                    "❌ Channel not found in this server!",
-                    ephemeral=True
-                )
-                return
-            
-            # Update config
-            kwargs = {self.field_name: channel_id}
-            self.db.set_guild_config(self.guild_id, **kwargs)
-            
-            await interaction.response.send_message(
-                f"✅ {self.title} set to <#{channel_id}>",
-                ephemeral=True
-            )
-        except ValueError:
-            await interaction.response.send_message(
-                "❌ Invalid channel ID! Must be numbers only.",
-                ephemeral=True
-            )
-        except Exception as e:
-            logger.error(f"Error setting channel: {e}")
-            await interaction.response.send_message(
-                f"❌ Error: {str(e)}",
-                ephemeral=True
-            )
+    async def callback(self, interaction: discord.Interaction):
+        channel = self.values[0]
+        self.db.set_guild_config(self.guild_id, leaderboard_channel_id=channel.id)
+        await interaction.response.send_message(
+            f"✅ Leaderboard channel set to {channel.mention}",
+            ephemeral=True
+        )
+
+
+class LogsChannelSelect(discord.ui.ChannelSelect):
+    """Select for logs channel"""
+    def __init__(self, guild: discord.Guild, db, guild_id: int):
+        super().__init__(
+            placeholder="📋 Select Bet Logs Channel",
+            min_values=1,
+            max_values=1,
+            channel_types=[discord.ChannelType.text]
+        )
+        self.db = db
+        self.guild_id = guild_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        channel = self.values[0]
+        self.db.set_guild_config(self.guild_id, bet_logs_channel_id=channel.id)
+        await interaction.response.send_message(
+            f"✅ Bet logs channel set to {channel.mention}",
+            ephemeral=True
+        )
+
+
+
 
 
 async def setup(bot: commands.Bot):

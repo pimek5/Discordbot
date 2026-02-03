@@ -4446,6 +4446,11 @@ These players will now appear more frequently in betting matches!"""
         except Exception as e:
             logger.error(f"Error generating invite link: {e}", exc_info=True)
             await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+    
+    @app_commands.command(name="invite", description="Get bot invite link")
+    async def invite_alias(self, interaction: discord.Interaction):
+        """Alias for hxinvite - Generate OAuth2 invite link"""
+        await self.invite_link(interaction)
 
 
 class ManualGameModal(discord.ui.Modal, title='✏️ Add Custom/Manual Game'):

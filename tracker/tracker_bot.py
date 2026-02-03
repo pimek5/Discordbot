@@ -85,11 +85,8 @@ class TrackerBot(commands.Bot):
         logger.info(f"📋 Available commands in tree: {commands_list}")
         logger.info(f"📊 Total commands: {len(commands_list)}")
         
-        # Copy commands to guild for faster sync
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            logger.info(f"📋 Commands copied to guild {GUILD_ID}")
+        # Don't copy to guild - we want global sync for all servers
+        logger.info("📋 Commands will be synced globally on_ready")
 
 bot = TrackerBot()
 
@@ -107,13 +104,10 @@ async def on_ready():
     
     # Sync commands NOW (after bot is ready)
     try:
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            synced = await bot.tree.sync(guild=guild)
-            logger.info(f"✅ Commands synced to guild {GUILD_ID}: {[cmd.name for cmd in synced]}")
-        else:
-            synced = await bot.tree.sync()
-            logger.info(f"✅ Commands synced globally: {[cmd.name for cmd in synced]}")
+        # Sync globally to all servers
+        synced = await bot.tree.sync()
+        logger.info(f"✅ Commands synced globally to ALL servers: {[cmd.name for cmd in synced]}")
+        logger.info(f"📊 Total synced: {len(synced)} commands")
     except Exception as e:
         logger.error(f"❌ Error syncing commands: {e}")
         import traceback
