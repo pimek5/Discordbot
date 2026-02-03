@@ -54,7 +54,7 @@ class HexbetConfig(commands.Cog):
         else:
             embed.add_field(name="Status", value="❌ Not configured yet", inline=False)
         
-        embed.set_footer(text="Use the dropdowns below to select channels")
+        embed.set_footer(text="Click buttons below to create channels automatically")
         
         view = ConfigView(guild_id, self.config_db, interaction.guild)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
@@ -217,74 +217,102 @@ class ConfigView(discord.ui.View):
         self.guild_id = guild_id
         self.db = config_db
         self.guild = guild
+    
+    @discord.ui.button(label="🎲 Add Betting Channel", style=discord.ButtonStyle.primary, row=0)
+    async def create_bet_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Create betting channel"""
+        await interaction.response.defer(ephemeral=True)
         
-        # Add channel selects for each setting
-        self.add_item(BetChannelSelect(guild, config_db, guild_id))
-        self.add_item(LeaderboardChannelSelect(guild, config_db, guild_id))
-        self.add_item(LogsChannelSelect(guild, config_db, guild_id))
-
-
-class BetChannelSelect(discord.ui.ChannelSelect):
-    """Select for betting channel"""
-    def __init__(self, guild: discord.Guild, db, guild_id: int):
-        super().__init__(
-            placeholder="🎲 Select Betting Channel",
-            min_values=1,
-            max_values=1,
-            channel_types=[discord.ChannelType.text]
-        )
-        self.db = db
-        self.guild_id = guild_id
+        try:
+            # Create channel
+            channel = await interaction.guild.create_text_channel(
+                name="betting",
+                topic="🎮 HEXBET - Place your bets on live games here!",
+                reason="HEXBET Setup - Betting Channel"
+            )
+            
+            # Save to config
+            self.db.set_guild_config(self.guild_id, bet_channel_id=channel.id)
+            
+            await interaction.followup.send(
+                f"✅ Created betting channel: {channel.mention}",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ I don't have permission to create channels!",
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"Error creating betting channel: {e}")
+            await interaction.followup.send(
+                f"❌ Error: {str(e)}",
+                ephemeral=True
+            )
     
-    async def callback(self, interaction: discord.Interaction):
-        channel = self.values[0]
-        self.db.set_guild_config(self.guild_id, bet_channel_id=channel.id)
-        await interaction.response.send_message(
-            f"✅ Betting channel set to {channel.mention}",
-            ephemeral=True
-        )
-
-
-class LeaderboardChannelSelect(discord.ui.ChannelSelect):
-    """Select for leaderboard channel"""
-    def __init__(self, guild: discord.Guild, db, guild_id: int):
-        super().__init__(
-            placeholder="🏆 Select Leaderboard Channel",
-            min_values=1,
-            max_values=1,
-            channel_types=[discord.ChannelType.text]
-        )
-        self.db = db
-        self.guild_id = guild_id
+    @discord.ui.button(label="🏆 Add Betting Leaderboard", style=discord.ButtonStyle.primary, row=1)
+    async def create_leaderboard_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Create leaderboard channel"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Create channel
+            channel = await interaction.guild.create_text_channel(
+                name="leaderboard",
+                topic="🏆 HEXBET - Top bettors leaderboard",
+                reason="HEXBET Setup - Leaderboard Channel"
+            )
+            
+            # Save to config
+            self.db.set_guild_config(self.guild_id, leaderboard_channel_id=channel.id)
+            
+            await interaction.followup.send(
+                f"✅ Created leaderboard channel: {channel.mention}",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ I don't have permission to create channels!",
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"Error creating leaderboard channel: {e}")
+            await interaction.followup.send(
+                f"❌ Error: {str(e)}",
+                ephemeral=True
+            )
     
-    async def callback(self, interaction: discord.Interaction):
-        channel = self.values[0]
-        self.db.set_guild_config(self.guild_id, leaderboard_channel_id=channel.id)
-        await interaction.response.send_message(
-            f"✅ Leaderboard channel set to {channel.mention}",
-            ephemeral=True
-        )
-
-
-class LogsChannelSelect(discord.ui.ChannelSelect):
-    """Select for logs channel"""
-    def __init__(self, guild: discord.Guild, db, guild_id: int):
-        super().__init__(
-            placeholder="📋 Select Bet Logs Channel",
-            min_values=1,
-            max_values=1,
-            channel_types=[discord.ChannelType.text]
-        )
-        self.db = db
-        self.guild_id = guild_id
-    
-    async def callback(self, interaction: discord.Interaction):
-        channel = self.values[0]
-        self.db.set_guild_config(self.guild_id, bet_logs_channel_id=channel.id)
-        await interaction.response.send_message(
-            f"✅ Bet logs channel set to {channel.mention}",
-            ephemeral=True
-        )
+    @discord.ui.button(label="📋 Add Betting Logs", style=discord.ButtonStyle.primary, row=2)
+    async def create_logs_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Create logs channel"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Create channel
+            channel = await interaction.guild.create_text_channel(
+                name="bet-logs",
+                topic="📋 HEXBET - Betting history and logs",
+                reason="HEXBET Setup - Logs Channel"
+            )
+            
+            # Save to config
+            self.db.set_guild_config(self.guild_id, bet_logs_channel_id=channel.id)
+            
+            await interaction.followup.send(
+                f"✅ Created logs channel: {channel.mention}",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ I don't have permission to create channels!",
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"Error creating logs channel: {e}")
+            await interaction.followup.send(
+                f"❌ Error: {str(e)}",
+                ephemeral=True
+            )
 
 
 
