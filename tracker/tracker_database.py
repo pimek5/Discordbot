@@ -200,6 +200,20 @@ class TrackerDatabase:
                         logger.warning(f"Migration note: {e}")
                     cur = conn.cursor()
                 
+                # Create hexbet_match_messages table for multi-guild support
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS hexbet_match_messages (
+                        id SERIAL PRIMARY KEY,
+                        match_id INTEGER NOT NULL REFERENCES hexbet_matches(id) ON DELETE CASCADE,
+                        guild_id BIGINT NOT NULL,
+                        channel_id BIGINT NOT NULL,
+                        message_id BIGINT NOT NULL,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        UNIQUE(match_id, guild_id)
+                    );
+                """)
+                logger.info("✅ Migrated: hexbet_match_messages table created")
+                
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS hexbet_leaderboard_cache (
                         id SERIAL PRIMARY KEY,
@@ -413,6 +427,35 @@ class TrackerDatabase:
             with conn.cursor() as cur:
                 cur.execute("UPDATE hexbet_matches SET message_id = %s WHERE id = %s", (message_id, match_id))
                 conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def add_match_message(self, match_id: int, guild_id: int, channel_id: int, message_id: int):
+        """Add a message_id for a specific guild for multi-guild support"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO hexbet_match_messages (match_id, guild_id, channel_id, message_id)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (match_id, guild_id) DO UPDATE 
+                    SET channel_id = EXCLUDED.channel_id, message_id = EXCLUDED.message_id
+                """, (match_id, guild_id, channel_id, message_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+    
+    def get_match_messages(self, match_id: int):
+        """Get all message_ids for a match across all guilds"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT guild_id, channel_id, message_id 
+                    FROM hexbet_match_messages 
+                    WHERE match_id = %s
+                """, (match_id,))
+                return cur.fetchall()
         finally:
             self.return_connection(conn)
 

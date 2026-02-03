@@ -278,18 +278,36 @@ class Hexbet(commands.Cog):
                         should_delete = True
                     
                     if should_delete and channel_id and message_id:
-                        try:
-                            channel = self.bot.get_channel(channel_id)
-                            if channel:
-                                message = await channel.fetch_message(message_id)
-                                await message.delete()
-                                logger.info(f"✅ Deleted {winner} match message {message_id} after {time_since_settlement:.1f} minutes")
-                            else:
-                                logger.warning(f"⚠️ Channel {channel_id} not found")
-                        except discord.NotFound:
-                            logger.info(f"ℹ️ Message {message_id} already deleted")
-                        except Exception as e:
-                            logger.error(f"❌ Failed to delete message {message_id}: {e}")
+                        # Delete from all guilds (multi-guild support)
+                        match_messages = self.db.get_match_messages(match_id)
+                        if match_messages:
+                            for guild_id, ch_id, msg_id in match_messages:
+                                try:
+                                    channel = self.bot.get_channel(ch_id)
+                                    if channel:
+                                        message = await channel.fetch_message(msg_id)
+                                        await message.delete()
+                                        logger.info(f"✅ Deleted {winner} match message {msg_id} in guild {guild_id} after {time_since_settlement:.1f} minutes")
+                                    else:
+                                        logger.warning(f"⚠️ Channel {ch_id} not found in guild {guild_id}")
+                                except discord.NotFound:
+                                    logger.info(f"ℹ️ Message {msg_id} already deleted in guild {guild_id}")
+                                except Exception as e:
+                                    logger.error(f"❌ Failed to delete message {msg_id} in guild {guild_id}: {e}")
+                        else:
+                            # Fallback to old single message_id system
+                            try:
+                                channel = self.bot.get_channel(channel_id)
+                                if channel:
+                                    message = await channel.fetch_message(message_id)
+                                    await message.delete()
+                                    logger.info(f"✅ Deleted {winner} match message {message_id} after {time_since_settlement:.1f} minutes")
+                                else:
+                                    logger.warning(f"⚠️ Channel {channel_id} not found")
+                            except discord.NotFound:
+                                logger.info(f"ℹ️ Message {message_id} already deleted")
+                            except Exception as e:
+                                logger.error(f"❌ Failed to delete message {message_id}: {e}")
                     else:
                         if not should_delete:
                             logger.info(f"ℹ️ Keeping message for match {match_id} (winner: {winner}, age: {time_since_settlement:.1f} min)")
@@ -387,20 +405,21 @@ class Hexbet(commands.Cog):
                 return
             
             # Update embeds on all guilds
-            for guild in self.bot.guilds:
-                bet_channel_id = self._get_channel_id(guild.id, 'bet')
-                channel = self.bot.get_channel(bet_channel_id)
-                if not channel:
-                    logger.warning(f"⚠️ Featured channel {bet_channel_id} not found for guild {guild.name}")
-                    continue
+            for match in open_matches:
+                # Get all message_ids for this match across guilds
+                match_messages = self.db.get_match_messages(match['id'])
                 
-                # Update each match embed on this guild's channel
-                for match in open_matches:
-                    message_id = match.get('message_id')
-                    if message_id:
+                if match_messages:
+                    # Multi-guild support: update each guild's message
+                    for guild_id, channel_id, message_id in match_messages:
                         try:
+                            channel = self.bot.get_channel(channel_id)
+                            if not channel:
+                                logger.warning(f"⚠️ Channel {channel_id} not found for guild {guild_id}")
+                                continue
+                            
                             msg = await channel.fetch_message(message_id)
-                            logger.info(f"✅ Featured embed {message_id} exists on channel")
+                            logger.info(f"✅ Featured embed {message_id} exists in guild {guild_id}")
                             
                             # Update game time in embed
                             if msg.embeds:
@@ -442,10 +461,27 @@ class Hexbet(commands.Cog):
                                     )
                                     
                                     await msg.edit(embed=new_embed)
-                                    logger.info(f"🕐 Updated game time for match {match['id']}" + (f" (SPECIAL BET)" if is_special_bet else ""))
+                                    logger.info(f"🕐 Updated game time for match {match['id']} in guild {guild_id}" + (f" (SPECIAL BET)" if is_special_bet else ""))
                         
                         except discord.NotFound:
-                            logger.warning(f"⚠️ Featured embed {message_id} not found")
+                            logger.warning(f"⚠️ Featured embed {message_id} not found in guild {guild_id}")
+                            # Note: Don't cancel immediately, check all guilds first
+                        except Exception as e:
+                            logger.error(f"❌ Error checking message {message_id} in guild {guild_id}: {e}")
+                else:
+                    # Fallback to old single message_id system
+                    message_id = match.get('message_id')
+                    channel_id = match.get('channel_id')
+                    if message_id and channel_id:
+                        try:
+                            channel = self.bot.get_channel(channel_id)
+                            if channel:
+                                msg = await channel.fetch_message(message_id)
+                                logger.info(f"✅ Featured embed {message_id} exists on channel (legacy)")
+                                # Same update logic as above...
+                            
+                        except discord.NotFound:
+                            logger.warning(f"⚠️ Featured embed {message_id} not found (legacy)")
                             
                             # Before canceling, verify if game is actually still ongoing
                             try:
@@ -693,11 +729,13 @@ class Hexbet(commands.Cog):
                             
                             if guild_channel:
                                 msg = await guild_channel.send(embed=embed, view=view)
-                                # Only store message_id for first guild (for tracking)
+                                # Store message_id for this guild (multi-guild support)
+                                self.db.add_match_message(match_id, guild.id, guild_bet_channel_id, msg.id)
+                                # Also store in old system for backward compatibility (first guild only)
                                 if posted_count == 0:
                                     self.db.set_match_message(match_id, msg.id)
                                 posted_count += 1
-                                logger.info(f"✅ Posted bet to guild {guild.name} (channel {guild_bet_channel_id})")
+                                logger.info(f"✅ Posted bet to guild {guild.name} (channel {guild_bet_channel_id}, msg {msg.id})")
                         except Exception as e:
                             logger.warning(f"⚠️ Failed to post bet to guild {guild.name}: {e}")
                     
