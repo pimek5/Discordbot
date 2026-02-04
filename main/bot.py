@@ -653,12 +653,20 @@ class MyBot(commands.Bot):
         )
         self.status_index = 0
         self.status_messages = [
-            ("playing", "League of Legends"),
-            ("watching", "{members} members"),
-            ("playing", "🎮 /loldle"),
-            ("watching", "pro games"),
-            ("playing", "with champion data"),
-            ("watching", "{guilds} servers"),
+            ("playing", "League of Legends 🎮"),
+            ("watching", "{members} summoners"),
+            ("playing", "🎯 /loldle daily"),
+            ("watching", "LEC & LCS games"),
+            ("playing", "with 169 champions"),
+            ("listening", "pentakill screams"),
+            ("watching", "{guilds} rifts"),
+            ("playing", "🔮 /trivia"),
+            ("watching", "challenger promos"),
+            ("playing", "Nexus defense simulator"),
+            ("listening", "???? pings"),
+            ("playing", "👑 /prostats"),
+            ("watching", "your LP vanish"),
+            ("playing", "mid or feed"),
         ]
         print("🤖 Bot instance created with extended timeouts for Railway")
 
