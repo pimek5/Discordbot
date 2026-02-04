@@ -970,23 +970,18 @@ class Hexbet(commands.Cog):
                     name=f"🏆 Winners ({len(winners)})",
                     value="\n".join(winner_lines),
                     inline=False
-                        )
-                    
-                    if losers:
-                        loser_lines = [f"<@{uid}>: -{amount}" for uid, amount in losers[:15]]
-                        notif_embed.add_field(
-                            name=f"❌ Lost ({len(losers)})",
-                            value="\n".join(loser_lines),
-                            inline=False
-                        )
-                    
-                    await notif_channel.send(embed=notif_embed, delete_after=180)  # Auto-delete after 3 minutes
-                    logger.info(f"📬 Sent bet notifications for match {game_id} (auto-delete in 3min)")
-        
-        except discord.NotFound:
-            logger.warning(f"Match message {message_id} not found (deleted)")
-        except Exception as e:
-            logger.warning(f"Failed to update match message: {e}")
+                )
+            
+            if losers:
+                loser_lines = [f"<@{uid}>: -{amount}" for uid, amount in losers[:15]]
+                notif_embed.add_field(
+                    name=f"❌ Lost ({len(losers)})",
+                    value="\n".join(loser_lines),
+                    inline=False
+                )
+            
+            await notif_channel.send(embed=notif_embed, delete_after=180)  # Auto-delete after 3 minutes
+            logger.info(f"📬 Sent bet notifications for match {game_id} (auto-delete in 3min)")
     
     async def _refresh_match_embed(self, match_id: int):
         """Refresh a match embed with current bet totals"""
