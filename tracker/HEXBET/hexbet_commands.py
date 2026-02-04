@@ -783,16 +783,19 @@ class Hexbet(commands.Cog):
                 logger.info(f"🔄 Game {match['game_id']} is a REMAKE ({game_duration}s < 3min) - refunding all bets")
                 refunds = self.db.refund_match(match['id'])
                 
-                # Delete match message
-                channel = self.bot.get_channel(match.get('channel_id'))
-                message_id = match.get('message_id')
-                if channel and message_id:
+                # Delete match messages from ALL guilds
+                match_messages = self.db.get_match_messages(match['id'])
+                for guild_id, channel_id, message_id in match_messages:
                     try:
-                        msg = await channel.fetch_message(message_id)
-                        await msg.delete()
-                        logger.info(f"🗑️ Deleted remake match message {message_id}")
+                        channel = self.bot.get_channel(channel_id)
+                        if channel:
+                            msg = await channel.fetch_message(message_id)
+                            await msg.delete()
+                            logger.info(f"🗑️ Deleted remake match message {message_id} in guild {guild_id}")
+                    except discord.NotFound:
+                        logger.info(f"Message {message_id} in guild {guild_id} already deleted")
                     except Exception as e:
-                        logger.warning(f"Failed to delete remake message: {e}")
+                        logger.warning(f"Failed to delete remake message {message_id} in guild {guild_id}: {e}")
                 
                 # Log refund to bet logs channel
                 try:
@@ -882,72 +885,91 @@ class Hexbet(commands.Cog):
 
     async def _update_match_message(self, match: dict, winner: str, payouts: List[tuple]):
         """Update match message to show final result and send notifications"""
-        channel = self.bot.get_channel(match.get('channel_id'))
-        message_id = match.get('message_id')
-        if not channel or not message_id:
+        # Get all guild messages for this match
+        match_messages = self.db.get_match_messages(match['id'])
+        
+        if not match_messages:
+            logger.warning(f"No messages found for match {match['id']}")
             return
         
-        try:
-            msg = await channel.fetch_message(message_id)
-            
-            # Get existing embed and add winner badge
-            if msg.embeds:
-                embed = msg.embeds[0]
-                winner_emoji = "<:BlueSide:1457209225976484014>" if winner == 'blue' else "<:RedSide:1457209221031395472>"
-                embed.title = f"{winner_emoji} {embed.title} - {winner.upper()} WON!"
-                embed.color = 0x2C2F33  # Dark gray/black color
+        # Calculate bet statistics once
+        winners = [(uid, payout) for uid, _, payout, won in payouts if won]
+        losers = [(uid, amount) for uid, amount, _, won in payouts if not won]
+        total_wagered = sum(amount for _, amount, _, _ in payouts)
+        total_payout = sum(payout for _, _, payout, won in payouts if won)
+        
+        # Update and delete message in EACH guild
+        for guild_id, channel_id, message_id in match_messages:
+            try:
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    logger.warning(f"Channel {channel_id} not found for match {match['id']}")
+                    continue
                 
-                # Calculate bet statistics
-                winners = [(uid, payout) for uid, _, payout, won in payouts if won]
-                losers = [(uid, amount) for uid, amount, _, won in payouts if not won]
-                total_wagered = sum(amount for _, amount, _, _ in payouts)
-                total_payout = sum(payout for _, _, payout, won in payouts if won)
+                msg = await channel.fetch_message(message_id)
                 
-                # Add results field to embed
-                results_text = (
-                    f"**Total Bets:** {len(payouts)}\n"
-                    f"**Winners:** {len(winners)} | **Losers:** {len(losers)}\n"
-                    f"**Total Wagered:** {total_wagered}\n"
-                    f"**Total Payout:** {total_payout}"
-                )
-                embed.add_field(name="📊 Bet Results", value=results_text, inline=False)
-                
-                # Remove betting view
-                await msg.edit(embed=embed, view=None)
-                logger.info(f"✅ Updated match message {message_id} with winner: {winner.upper()}")
-                
-                # Delete the match embed after 30 seconds
-                await asyncio.sleep(30)
-                try:
-                    await msg.delete()
-                    logger.info(f"🗑️ Auto-deleted winner embed {message_id} after 30 seconds")
-                except discord.NotFound:
-                    logger.info(f"Winner embed {message_id} already deleted")
-                except Exception as e:
-                    logger.warning(f"Failed to delete winner embed {message_id}: {e}")
-                
-                # Send notifications to betting notifications channel
-                notif_channel = self.bot.get_channel(1398985421014306856)
-                if notif_channel and payouts:
-                    game_id = match.get('game_id', 'Unknown')
+                # Get existing embed and add winner badge
+                if msg.embeds:
+                    embed = msg.embeds[0]
+                    winner_emoji = "<:BlueSide:1457209225976484014>" if winner == 'blue' else "<:RedSide:1457209221031395472>"
+                    embed.title = f"{winner_emoji} {embed.title} - {winner.upper()} WON!"
+                    embed.color = 0x2C2F33  # Dark gray/black color
                     
-                    # Build notification embed
-                    notif_embed = discord.Embed(
-                        title=f"{winner_emoji} Match Settled - {winner.upper()} Won!",
-                        description=f"Game ID: {game_id}",
-                        color=0x2ECC71,
-                        timestamp=discord.utils.utcnow()
+                    # Add results field to embed
+                    results_text = (
+                        f"**Total Bets:** {len(payouts)}\n"
+                        f"**Winners:** {len(winners)} | **Losers:** {len(losers)}\n"
+                        f"**Total Wagered:** {total_wagered}\n"
+                        f"**Total Payout:** {total_payout}"
                     )
+                    embed.add_field(name="📊 Bet Results", value=results_text, inline=False)
                     
-                    winners = [(uid, payout) for uid, _, payout, won in payouts if won]
-                    losers = [(uid, amount) for uid, amount, _, won in payouts if not won]
+                    # Remove betting view
+                    await msg.edit(embed=embed, view=None)
+                    logger.info(f"✅ Updated match message {message_id} in guild {guild_id} with winner: {winner.upper()}")
                     
-                    if winners:
-                        winner_lines = [f"<@{uid}>: **+{payout}** 🎉" for uid, payout in winners[:15]]
-                        notif_embed.add_field(
-                            name=f"🏆 Winners ({len(winners)})",
-                            value="\n".join(winner_lines),
-                            inline=False
+            except discord.NotFound:
+                logger.info(f"Message {message_id} in guild {guild_id} already deleted")
+            except Exception as e:
+                logger.error(f"Failed to update message {message_id} in guild {guild_id}: {e}")
+        
+        # Wait 30 seconds then delete all embeds
+        await asyncio.sleep(30)
+        
+        for guild_id, channel_id, message_id in match_messages:
+            try:
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    continue
+                    
+                msg = await channel.fetch_message(message_id)
+                await msg.delete()
+                logger.info(f"🗑️ Auto-deleted winner embed {message_id} in guild {guild_id} after 30 seconds")
+            except discord.NotFound:
+                logger.info(f"Winner embed {message_id} in guild {guild_id} already deleted")
+            except Exception as e:
+                logger.warning(f"Failed to delete winner embed {message_id} in guild {guild_id}: {e}")
+        
+        # Send notifications to betting notifications channel (only once, not per guild)
+        notif_channel = self.bot.get_channel(1398985421014306856)
+        if notif_channel and payouts:
+            game_id = match.get('game_id', 'Unknown')
+            winner_emoji = "<:BlueSide:1457209225976484014>" if winner == 'blue' else "<:RedSide:1457209221031395472>"
+            
+            # Build notification embed
+            notif_embed = discord.Embed(
+                title=f"{winner_emoji} Match Settled - {winner.upper()} Won!",
+                description=f"Game ID: {game_id}",
+                color=0x2ECC71,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            if winners:
+                winner_lines = [f"<@{uid}>: **+{payout}** 🎉" for uid, payout in winners[:15]]
+                notif_embed.add_field(
+                    name=f"🏆 Winners ({len(winners)})",
+                    value="\n".join(winner_lines),
+                    inline=False
                         )
                     
                     if losers:
