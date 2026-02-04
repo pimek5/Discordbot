@@ -651,6 +651,15 @@ class MyBot(commands.Bot):
             intents=intents,
             timeout=aiohttp.ClientTimeout(total=120, connect=60, sock_read=60)  # Bardzo długie timeouty dla Railway
         )
+        self.status_index = 0
+        self.status_messages = [
+            ("playing", "League of Legends"),
+            ("watching", "{members} members"),
+            ("playing", "🎮 /loldle"),
+            ("watching", "pro games"),
+            ("playing", "with champion data"),
+            ("watching", "{guilds} servers"),
+        ]
         print("🤖 Bot instance created with extended timeouts for Railway")
 
     async def on_ready(self):
@@ -658,6 +667,11 @@ class MyBot(commands.Bot):
         print(f"✅ Bot connected as {self.user.name} (ID: {self.user.id})")
         print(f"✅ Connected to {len(self.guilds)} servers")
         print(f"✅ Bot is ready and online!")
+        
+        # Start dynamic status rotation
+        if not change_status.is_running():
+            change_status.start()
+            print("✅ Dynamic status rotation started")
         
         # Start automatic rank update task
         if not auto_update_ranks.is_running():
@@ -1035,6 +1049,46 @@ async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
 # ================================
 #   AUTOMATIC RANK/REGION UPDATE
 # ================================
+@tasks.loop(seconds=30)
+async def change_status():
+    """Rotate bot status every 30 seconds"""
+    try:
+        status_type, status_text = bot.status_messages[bot.status_index]
+        
+        # Replace placeholders
+        if "{guilds}" in status_text:
+            status_text = status_text.replace("{guilds}", str(len(bot.guilds)))
+        
+        if "{members}" in status_text:
+            try:
+                total_members = sum(guild.member_count for guild in bot.guilds)
+                status_text = status_text.replace("{members}", str(total_members))
+            except:
+                status_text = status_text.replace("{members}", "0")
+        
+        # Set activity based on type
+        if status_type == "playing":
+            activity = discord.Game(name=status_text)
+        elif status_type == "watching":
+            activity = discord.Activity(type=discord.ActivityType.watching, name=status_text)
+        elif status_type == "listening":
+            activity = discord.Activity(type=discord.ActivityType.listening, name=status_text)
+        else:
+            activity = discord.Game(name=status_text)
+        
+        await bot.change_presence(activity=activity)
+        
+        # Move to next status
+        bot.status_index = (bot.status_index + 1) % len(bot.status_messages)
+        
+    except Exception as e:
+        print(f"Error changing status: {e}")
+
+@change_status.before_loop
+async def before_change_status():
+    """Wait until bot is ready before starting status rotation"""
+    await bot.wait_until_ready()
+
 @tasks.loop(hours=2)
 async def auto_update_ranks():
     """Automatically update all members' rank and region roles every 2 hours"""
