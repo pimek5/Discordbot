@@ -664,7 +664,7 @@ class MyBot(commands.Bot):
             ("watching", "challenger promos"),
             ("playing", "Nexus defense simulator"),
             ("listening", "???? pings"),
-            ("playing", "👑 /prostats"),
+            ("playing", "👑 /profile"),
             ("watching", "your LP vanish"),
             ("playing", "mid or feed"),
         ]
