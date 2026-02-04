@@ -34,6 +34,9 @@ logger = logging.getLogger('DJSona')
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
+YTDL_COOKIES_FILE = os.getenv('YTDL_COOKIES_FILE')
+YTDL_COOKIES_FROM_BROWSER = os.getenv('YTDL_COOKIES_FROM_BROWSER')
+YTDL_COOKIES_PROFILE = os.getenv('YTDL_COOKIES_PROFILE')
 
 # Konfiguracja yt-dlp
 YTDL_FORMAT_OPTIONS = {
@@ -73,6 +76,18 @@ YTDL_FORMAT_OPTIONS = {
         'Cache-Control': 'max-age=0',
     },
 }
+
+def apply_cookies_to_ytdl_options(options: Dict) -> Dict:
+    """Apply cookie settings to yt-dlp options if configured via env."""
+    opts = options.copy()
+    if YTDL_COOKIES_FILE:
+        opts['cookiefile'] = YTDL_COOKIES_FILE
+    if YTDL_COOKIES_FROM_BROWSER:
+        if YTDL_COOKIES_PROFILE:
+            opts['cookiesfrombrowser'] = (YTDL_COOKIES_FROM_BROWSER, YTDL_COOKIES_PROFILE)
+        else:
+            opts['cookiesfrombrowser'] = YTDL_COOKIES_FROM_BROWSER
+    return opts
 
 FFMPEG_OPTIONS = {
     'options': '-vn -loglevel warning'
@@ -178,7 +193,7 @@ def check_channel(interaction: discord.Interaction) -> bool:
         return False
     return True
 
-ytdl = yt_dlp.YoutubeDL(YTDL_FORMAT_OPTIONS)
+ytdl = yt_dlp.YoutubeDL(apply_cookies_to_ytdl_options(YTDL_FORMAT_OPTIONS))
 
 
 # Database for statistics
@@ -1197,7 +1212,7 @@ async def play(interaction: discord.Interaction, url: str):
             logger.info(f"🎵 Single video mode | URL: {url[:100]}...")
         
         # Create temporary ytdl instance with appropriate options
-        temp_ytdl = yt_dlp.YoutubeDL(ytdl_opts)
+        temp_ytdl = yt_dlp.YoutubeDL(apply_cookies_to_ytdl_options(ytdl_opts))
         
         # Extract info to check if it's a playlist
         loop = bot.loop or asyncio.get_event_loop()
@@ -1482,7 +1497,14 @@ async def play(interaction: discord.Interaction, url: str):
             
     except Exception as e:
         logger.error(f"Error during playback: {e}")
-        await interaction.followup.send(f"❌ An error occurred during playback: {str(e)}")
+        error_text = str(e)
+        if 'Sign in to confirm' in error_text or 'cookies' in error_text:
+            await interaction.followup.send(
+                "❌ YouTube wymaga uwierzytelnienia. Ustaw `YTDL_COOKIES_FILE` lub "
+                "`YTDL_COOKIES_FROM_BROWSER` w środowisku bota i spróbuj ponownie."
+            )
+        else:
+            await interaction.followup.send(f"❌ An error occurred during playback: {error_text}")
 
 
 def cleanup_audio_file(filename):
@@ -2798,7 +2820,7 @@ async def _ask_songquiz_question(interaction: discord.Interaction, session: Song
         search_query = f"ytsearch1:{correct_title}"
         data = await loop.run_in_executor(
             None, 
-            lambda: yt_dlp.YoutubeDL(ydl_audio_options).extract_info(search_query, download=False)
+            lambda: yt_dlp.YoutubeDL(apply_cookies_to_ytdl_options(ydl_audio_options)).extract_info(search_query, download=False)
         )
         
         if data and 'entries' in data and data['entries']:
