@@ -104,10 +104,9 @@ class TrackerBot(commands.Bot):
         try:
             status_type, status_text = self.status_messages[self.status_index]
             
-       tart dynamic status rotation
-    if not bot.change_status.is_running():
-        bot.change_status.start()
-        logger.info("✅ Dynamic status rotation startedtus_text.replace("{guilds}", str(len(self.guilds)))
+            # Replace placeholders
+            if "{guilds}" in status_text:
+                status_text = status_text.replace("{guilds}", str(len(self.guilds)))
             
             if "{active_bets}" in status_text:
                 try:
