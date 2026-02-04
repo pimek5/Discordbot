@@ -6,9 +6,10 @@ Version: 2.0 (Updated 2026-01-04)
 import os
 import sys
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import logging
 from dotenv import load_dotenv
+import asyncio
 
 # Add repo root and tracker dir to path so local packages (HEXBET, etc.) resolve
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -56,6 +57,15 @@ class TrackerBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix='!', intents=intents)
         self.riot_api = None
+        self.status_index = 0
+        self.status_messages = [
+            ("playing", "💰 HEXBET"),
+            ("watching", "live pro games"),
+            ("playing", "with your money 💸"),
+            ("watching", "{guilds} servers"),
+            ("playing", "🎲 /hexbet"),
+            ("watching", "{active_bets} active bets"),
+        ]
     
     async def setup_hook(self):
         """Setup hook called before bot starts - load cogs here"""
@@ -87,6 +97,51 @@ class TrackerBot(commands.Bot):
         
         # Don't copy to guild - we want global sync for all servers
         logger.info("📋 Commands will be synced globally on_ready")
+    
+    @tasks.loop(seconds=30)
+    async def change_status(self):
+        """Rotate bot status every 30 seconds"""
+        try:
+            status_type, status_text = self.status_messages[self.status_index]
+            
+       tart dynamic status rotation
+    if not bot.change_status.is_running():
+        bot.change_status.start()
+        logger.info("✅ Dynamic status rotation startedtus_text.replace("{guilds}", str(len(self.guilds)))
+            
+            if "{active_bets}" in status_text:
+                try:
+                    # Count active bets from database
+                    result = self.db.execute_query(
+                        "SELECT COUNT(*) as count FROM hexbet_bets WHERE status = 'pending'"
+                    )
+                    active_count = result[0]['count'] if result else 0
+                    status_text = status_text.replace("{active_bets}", str(active_count))
+                except:
+                    status_text = status_text.replace("{active_bets}", "0")
+            
+            # Set activity based on type
+            if status_type == "playing":
+                activity = discord.Game(name=status_text)
+            elif status_type == "watching":
+                activity = discord.Activity(type=discord.ActivityType.watching, name=status_text)
+            elif status_type == "listening":
+                activity = discord.Activity(type=discord.ActivityType.listening, name=status_text)
+            else:
+                activity = discord.Game(name=status_text)
+            
+            await self.change_presence(activity=activity)
+            
+            # Move to next status
+            self.status_index = (self.status_index + 1) % len(self.status_messages)
+            
+        except Exception as e:
+            logger.error(f"Error changing status: {e}")
+    
+    @change_status.before_loop
+    async def before_change_status(self):
+        """Wait until bot is ready before starting status rotation"""
+        await self.wait_until_ready()
 
 bot = TrackerBot()
 
