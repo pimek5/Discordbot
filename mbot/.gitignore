@@ -1,5 +1,6 @@
 # Environment variables
 .env
+cookies.txt
 
 # Python
 __pycache__/
