@@ -1,7 +1,7 @@
 import os
 import logging
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 HELPER_FORUM_ID = 1464368533088768124  # Support forum channel ID
 SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
@@ -135,12 +135,40 @@ def create_bot():
     intents = discord.Intents.default()
     intents.guilds = True
     bot = commands.Bot(command_prefix="!", intents=intents)
+    bot.status_index = 0
+    bot.status_messages = [
+        ("playing", "🧩 /help"),
+        ("listening", "support requests"),
+        ("playing", "✅ solved threads"),
+        ("listening", "error reports"),
+        ("playing", "📌 forum triage"),
+    ]
 
     @bot.event
     async def on_ready():
         logger.info("Helper bot ready as %s", bot.user)
-        activity = discord.Activity(type=discord.ActivityType.watching, name="ℹ️ꜱᴋɪɴ-ʜᴇʟᴘɪɴɢ")
-        await bot.change_presence(activity=activity, status=discord.Status.online)
+        if not change_status.is_running():
+            change_status.start()
+
+    @tasks.loop(minutes=5)
+    async def change_status():
+        """Rotate bot status every 5 minutes"""
+        try:
+            status_type, status_text = bot.status_messages[bot.status_index]
+            if "{guilds}" in status_text:
+                status_text = status_text.replace("{guilds}", str(len(bot.guilds)))
+            if status_type == "listening":
+                activity = discord.Activity(type=discord.ActivityType.listening, name=status_text)
+            else:
+                activity = discord.Game(name=status_text)
+            await bot.change_presence(activity=activity, status=discord.Status.online)
+            bot.status_index = (bot.status_index + 1) % len(bot.status_messages)
+        except Exception as e:
+            logger.warning("Failed to update status: %s", e)
+
+    @change_status.before_loop
+    async def before_change_status():
+        await bot.wait_until_ready()
 
     @bot.event
     async def on_thread_create(thread: discord.Thread):

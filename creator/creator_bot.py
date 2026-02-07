@@ -45,6 +45,15 @@ class CreatorBot(commands.Bot):
         )
         self.runeforge_scraper = RuneForgeScraper()
         self.divineskins_scraper = DivineSkinsScraper()
+        self.status_index = 0
+        self.status_messages = [
+            ("playing", "✨ /creator add"),
+            ("listening", "new mod releases"),
+            ("playing", "🔔 creator alerts"),
+            ("listening", "skin updates"),
+            ("playing", "RuneForge & DivineSkins"),
+            ("listening", "creator profiles"),
+        ]
         
     async def setup_hook(self):
         """Setup hook called when bot is starting"""
@@ -72,13 +81,29 @@ class CreatorBot(commands.Bot):
     async def on_ready(self):
         logger.info('✅ Creator Bot logged in as %s', self.user)
         logger.info('📊 Guilds: %s', len(self.guilds))
-        await self.change_presence(
-            activity=discord.Activity(
-                type=discord.ActivityType.watching,
-                name="Monitoring Runeforge & DivineSkins"
-            )
-        )
+        if not self.update_status.is_running():
+            self.update_status.start()
         await self.ensure_creator_guide_message()
+
+    @tasks.loop(minutes=5)
+    async def update_status(self):
+        """Rotate bot status every 5 minutes"""
+        try:
+            status_type, status_text = self.status_messages[self.status_index]
+            if "{guilds}" in status_text:
+                status_text = status_text.replace("{guilds}", str(len(self.guilds)))
+            if status_type == "listening":
+                activity = discord.Activity(type=discord.ActivityType.listening, name=status_text)
+            else:
+                activity = discord.Game(name=status_text)
+            await self.change_presence(activity=activity)
+            self.status_index = (self.status_index + 1) % len(self.status_messages)
+        except Exception as e:
+            logger.warning("Failed to update status: %s", e)
+
+    @update_status.before_loop
+    async def before_update_status(self):
+        await self.wait_until_ready()
 
     async def ensure_creator_guide_message(self):
         """Post (or refresh) a single pinned guide/embed in the configured channel."""

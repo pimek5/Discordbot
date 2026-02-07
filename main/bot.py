@@ -653,20 +653,12 @@ class MyBot(commands.Bot):
         )
         self.status_index = 0
         self.status_messages = [
-            ("playing", "League of Legends 🎮"),
-            ("watching", "{members} summoners"),
-            ("playing", "🎯 /loldle daily"),
-            ("watching", "LEC & LCS games"),
-            ("playing", "with 169 champions"),
-            ("listening", "pentakill screams"),
-            ("watching", "{guilds} rifts"),
-            ("playing", "🔮 /trivia"),
-            ("watching", "challenger promos"),
-            ("playing", "Nexus defense simulator"),
-            ("listening", "???? pings"),
             ("playing", "👑 /profile"),
-            ("watching", "your LP vanish"),
-            ("playing", "mid or feed"),
+            ("listening", "/profile commands"),
+            ("playing", "🪪 /setmain"),
+            ("listening", "/accounts"),
+            ("playing", "🧾 profile stats"),
+            ("listening", "profile updates"),
         ]
         print("🤖 Bot instance created with extended timeouts for Railway")
 
@@ -1057,9 +1049,9 @@ async def update_user_rank_roles(user_id: int, guild_id: int = GUILD_ID):
 # ================================
 #   AUTOMATIC RANK/REGION UPDATE
 # ================================
-@tasks.loop(seconds=30)
+@tasks.loop(minutes=5)
 async def change_status():
-    """Rotate bot status every 30 seconds"""
+    """Rotate bot status every 5 minutes"""
     try:
         status_type, status_text = bot.status_messages[bot.status_index]
         

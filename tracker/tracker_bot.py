@@ -60,11 +60,12 @@ class TrackerBot(commands.Bot):
         self.status_index = 0
         self.status_messages = [
             ("playing", "💰 HEXBET"),
-            ("watching", "live pro games"),
-            ("playing", "with your money 💸"),
-            ("watching", "{guilds} servers"),
+            ("listening", "live pro games"),
+            ("listening", "{guilds} servers"),
             ("playing", "🎲 /hexbet"),
-            ("watching", "{active_bets} active bets"),
+            ("listening", "{active_bets} active bets"),
+            ("playing", "🧾 bet slips"),
+            ("listening", "live odds"),
         ]
     
     async def setup_hook(self):
@@ -98,9 +99,9 @@ class TrackerBot(commands.Bot):
         # Don't copy to guild - we want global sync for all servers
         logger.info("📋 Commands will be synced globally on_ready")
     
-    @tasks.loop(seconds=30)
+    @tasks.loop(minutes=5)
     async def change_status(self):
-        """Rotate bot status every 30 seconds"""
+        """Rotate bot status every 5 minutes"""
         try:
             status_type, status_text = self.status_messages[self.status_index]
             
@@ -148,9 +149,10 @@ bot = TrackerBot()
 async def on_ready():
     logger.info(f'✅ Tracker Bot logged in as {bot.user.name} (ID: {bot.user.id})')
     
-    # Set bot status
-    await bot.change_presence(activity=discord.Game(name="Betting at HEXRTBRXENCHROMAS"))
-    logger.info("✅ Bot status set")
+    # Start dynamic status rotation
+    if not bot.change_status.is_running():
+        bot.change_status.start()
+        logger.info("✅ Dynamic status rotation started")
     
     # Initialize database
     db = get_tracker_db()
