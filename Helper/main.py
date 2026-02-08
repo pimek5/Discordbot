@@ -7,6 +7,7 @@ HELPER_FORUM_ID = 1464368533088768124  # Support forum channel ID
 SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
 UNSOLVED_TAG_ID = 1464379721272787069  # Tag applied when thread is unsolved/created
 STREAM_ROLE_ID = 1470171489096564736  # Role granted while streaming
+STREAM_LIST_CHANNEL_ID = 1470173597157818559  # Channel for streaming roster embed
 GUILD_ID = os.getenv("HELPER_GUILD_ID")
 TOKEN = os.getenv("HELPER_TOKEN")
 
@@ -139,6 +140,7 @@ def create_bot():
     intents.presences = True
     bot = commands.Bot(command_prefix="!", intents=intents)
     bot.status_index = 0
+    bot.streaming_embed_message_id = None
     bot.status_messages = [
         ("playing", "🧩 /help"),
         ("listening", "support requests"),
@@ -146,6 +148,71 @@ def create_bot():
         ("listening", "error reports"),
         ("playing", "📌 forum triage"),
     ]
+
+    async def update_streaming_embed(guild: discord.Guild):
+        channel = guild.get_channel(STREAM_LIST_CHANNEL_ID)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return
+
+        role = guild.get_role(STREAM_ROLE_ID)
+        if not role:
+            return
+
+        members = [m for m in role.members if not m.bot]
+        members.sort(key=lambda m: m.display_name.lower())
+
+        if members:
+            lines = []
+            for member in members:
+                stream_url = None
+                for activity in member.activities:
+                    if activity and activity.type == discord.ActivityType.streaming:
+                        stream_url = getattr(activity, "url", None)
+                        if stream_url:
+                            break
+
+                if stream_url:
+                    lines.append(f"• {member.mention} [click]({stream_url})")
+                else:
+                    lines.append(f"• {member.mention}")
+
+            description = "\n".join(lines)
+        else:
+            description = "*No one is streaming right now.*"
+
+        embed = discord.Embed(
+            title="📺 Live Streams",
+            description=description,
+            color=discord.Color.from_rgb(88, 101, 242)
+        )
+        embed.set_footer(text="Auto-updated by Helper")
+
+        message = None
+        if bot.streaming_embed_message_id:
+            try:
+                message = await channel.fetch_message(bot.streaming_embed_message_id)
+            except Exception:
+                message = None
+
+        if not message:
+            try:
+                async for msg in channel.history(limit=20):
+                    if msg.author.id == bot.user.id and msg.embeds:
+                        if msg.embeds[0].title == embed.title:
+                            message = msg
+                            bot.streaming_embed_message_id = msg.id
+                            break
+            except Exception as e:
+                logger.warning("Failed to search streaming embed message: %s", e)
+
+        try:
+            if message:
+                await message.edit(embed=embed)
+            else:
+                sent = await channel.send(embed=embed)
+                bot.streaming_embed_message_id = sent.id
+        except Exception as e:
+            logger.warning("Failed to update streaming embed: %s", e)
 
     async def sync_streaming_roles(guild: discord.Guild):
         role = guild.get_role(STREAM_ROLE_ID)
@@ -173,6 +240,8 @@ def create_bot():
                     await member.remove_roles(role, reason="Streaming status ended (startup sync)")
             except Exception as e:
                 logger.warning("Failed to sync streaming role for %s: %s", member.id, e)
+
+        await update_streaming_embed(guild)
 
     @tasks.loop(minutes=5)
     async def sync_streaming_roles_loop():
@@ -263,6 +332,8 @@ def create_bot():
                 await after.remove_roles(role, reason="Streaming status ended")
         except Exception as e:
             logger.warning("Failed to update streaming role: %s", e)
+
+        await update_streaming_embed(after.guild)
 
     @bot.event
     async def setup_hook():
