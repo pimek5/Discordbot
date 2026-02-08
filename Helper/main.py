@@ -161,6 +161,8 @@ def create_bot():
         members = [m for m in role.members if not m.bot]
         members.sort(key=lambda m: m.display_name.lower())
 
+        embeds = []
+
         if members:
             lines = []
             for member in members:
@@ -176,16 +178,30 @@ def create_bot():
                 else:
                     lines.append(f"• {member.mention}")
 
-            description = "\n".join(lines)
-        else:
-            description = "*No one is streaming right now.*"
+            chunk_size = 20
+            chunks = [lines[i:i + chunk_size] for i in range(0, len(lines), chunk_size)]
+            total_pages = len(chunks)
+            max_pages = 10
+            for idx, chunk in enumerate(chunks[:max_pages]):
+                title = f"📺 Live Streams ({idx + 1}/{total_pages})"
+                embed = discord.Embed(
+                    title=title,
+                    description="\n".join(chunk),
+                    color=discord.Color.from_rgb(88, 101, 242)
+                )
+                embed.set_footer(text="Auto-updated by Helper")
+                embeds.append(embed)
 
-        embed = discord.Embed(
-            title="📺 Live Streams",
-            description=description,
-            color=discord.Color.from_rgb(88, 101, 242)
-        )
-        embed.set_footer(text="Auto-updated by Helper")
+            if total_pages > max_pages:
+                embeds[-1].set_footer(text="Auto-updated by Helper • List truncated")
+        else:
+            embed = discord.Embed(
+                title="📺 Live Streams",
+                description="*No one is streaming right now.*",
+                color=discord.Color.from_rgb(88, 101, 242)
+            )
+            embed.set_footer(text="Auto-updated by Helper")
+            embeds.append(embed)
 
         message = None
         if bot.streaming_embed_message_id:
@@ -197,8 +213,9 @@ def create_bot():
         if not message:
             try:
                 async for msg in channel.history(limit=20):
-                    if msg.author.id == bot.user.id and msg.embeds:
-                        if msg.embeds[0].title == embed.title:
+                        if msg.author.id == bot.user.id and msg.embeds:
+                            title = msg.embeds[0].title or ""
+                            if title.startswith("📺 Live Streams"):
                             message = msg
                             bot.streaming_embed_message_id = msg.id
                             break
@@ -207,9 +224,9 @@ def create_bot():
 
         try:
             if message:
-                await message.edit(embed=embed)
+                await message.edit(embeds=embeds)
             else:
-                sent = await channel.send(embed=embed)
+                sent = await channel.send(embeds=embeds)
                 bot.streaming_embed_message_id = sent.id
         except Exception as e:
             logger.warning("Failed to update streaming embed: %s", e)
