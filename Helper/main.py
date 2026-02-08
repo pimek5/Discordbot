@@ -6,6 +6,7 @@ from discord.ext import commands, tasks
 HELPER_FORUM_ID = 1464368533088768124  # Support forum channel ID
 SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
 UNSOLVED_TAG_ID = 1464379721272787069  # Tag applied when thread is unsolved/created
+STREAM_ROLE_ID = 1470171489096564736  # Role granted while streaming
 GUILD_ID = os.getenv("HELPER_GUILD_ID")
 TOKEN = os.getenv("HELPER_TOKEN")
 
@@ -134,6 +135,8 @@ class HelperView(discord.ui.View):
 def create_bot():
     intents = discord.Intents.default()
     intents.guilds = True
+    intents.members = True
+    intents.presences = True
     bot = commands.Bot(command_prefix="!", intents=intents)
     bot.status_index = 0
     bot.status_messages = [
@@ -144,11 +147,57 @@ def create_bot():
         ("playing", "📌 forum triage"),
     ]
 
+    async def sync_streaming_roles(guild: discord.Guild):
+        role = guild.get_role(STREAM_ROLE_ID)
+        if not role:
+            return
+
+        try:
+            await guild.chunk(cache=True)
+        except Exception as e:
+            logger.warning("Failed to chunk guild members: %s", e)
+
+        for member in list(guild.members):
+            if member.bot:
+                continue
+
+            is_streaming = any(
+                activity and activity.type == discord.ActivityType.streaming
+                for activity in member.activities
+            )
+
+            try:
+                if is_streaming and role not in member.roles:
+                    await member.add_roles(role, reason="Streaming status detected (startup sync)")
+                elif not is_streaming and role in member.roles:
+                    await member.remove_roles(role, reason="Streaming status ended (startup sync)")
+            except Exception as e:
+                logger.warning("Failed to sync streaming role for %s: %s", member.id, e)
+
+    @tasks.loop(minutes=5)
+    async def sync_streaming_roles_loop():
+        if not GUILD_ID:
+            return
+        guild = bot.get_guild(int(GUILD_ID))
+        if not guild:
+            return
+        await sync_streaming_roles(guild)
+
+    @sync_streaming_roles_loop.before_loop
+    async def before_sync_streaming_roles_loop():
+        await bot.wait_until_ready()
+
     @bot.event
     async def on_ready():
         logger.info("Helper bot ready as %s", bot.user)
         if not change_status.is_running():
             change_status.start()
+        if not sync_streaming_roles_loop.is_running():
+            sync_streaming_roles_loop.start()
+        if GUILD_ID:
+            guild = bot.get_guild(int(GUILD_ID))
+            if guild:
+                await sync_streaming_roles(guild)
 
     @tasks.loop(minutes=5)
     async def change_status():
@@ -189,6 +238,31 @@ def create_bot():
             logger.info("Posted helper embed in thread %s", thread.id)
         except Exception as e:
             logger.error("Failed to post helper embed: %s", e)
+
+    @bot.event
+    async def on_presence_update(before: discord.Member, after: discord.Member):
+        if after.bot:
+            return
+
+        if GUILD_ID and str(after.guild.id) != str(GUILD_ID):
+            return
+
+        role = after.guild.get_role(STREAM_ROLE_ID)
+        if not role:
+            return
+
+        is_streaming = any(
+            activity and activity.type == discord.ActivityType.streaming
+            for activity in after.activities
+        )
+
+        try:
+            if is_streaming and role not in after.roles:
+                await after.add_roles(role, reason="Streaming status detected")
+            elif not is_streaming and role in after.roles:
+                await after.remove_roles(role, reason="Streaming status ended")
+        except Exception as e:
+            logger.warning("Failed to update streaming role: %s", e)
 
     @bot.event
     async def setup_hook():

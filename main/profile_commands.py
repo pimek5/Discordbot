@@ -9,7 +9,7 @@ from discord.ext import commands
 import random
 import string
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import logging
 import asyncio
 import io
@@ -1132,7 +1132,7 @@ class ProfileCommands(commands.Cog):
                 title=f"**{target.display_name}'s Profile**",
                 color=0x2B2D31  # Discord dark theme color
             )
-        
+
             # Top Champions section (only top 3)
             if champ_stats and len(champ_stats) > 0:
                 top_champs = sorted(champ_stats, key=lambda x: x['score'], reverse=True)[:3]
@@ -1206,7 +1206,7 @@ class ProfileCommands(commands.Cog):
                         value="No recent games",
                         inline=True
                     )
-            
+
                 # === NEW STATISTICS SECTIONS ===
             
                 # 1. RECENT PERFORMANCE (KDA, CS, Vision)
@@ -1526,7 +1526,7 @@ class ProfileCommands(commands.Cog):
         finally:
             # Cancel keep-alive task once we've sent the final response
             keep_alive_task.cancel()
-    
+
     @app_commands.command(name="unlink", description="Unlink your Riot account")
     async def unlink(self, interaction: discord.Interaction):
         """Unlink Riot account"""
@@ -4533,7 +4533,7 @@ class ProfileView(discord.ui.View):
         else:
             embed.description = "No chart data available. Play some games first!"
             return embed, None
-    
+
     @discord.ui.button(label="Profile", style=discord.ButtonStyle.primary, emoji="👤", row=0)
     async def profile_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to profile view"""
@@ -4570,18 +4570,6 @@ class ProfileView(discord.ui.View):
         embed = await self.create_matches_embed()
         await interaction.response.edit_message(embed=embed, view=self, attachments=[])
     
-    @discord.ui.button(label="LP", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="LP", id=1436591112025407590), row=0)
-    async def lp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Switch to LP balance view"""
-        if self.current_view == "lp":
-            await interaction.response.defer()
-            return
-        
-        self.current_view = "lp"
-        self.update_navigation_buttons()
-        embed = await self.create_lp_embed()
-        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
-
     @discord.ui.button(label="Ranks", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="Challenger", id=1439080558029443082), row=0)
     async def ranks_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to ranks view showing all accounts"""
@@ -4594,7 +4582,19 @@ class ProfileView(discord.ui.View):
         self.update_navigation_buttons()  # Update button visibility
         embed = await self.create_ranks_embed()
         await interaction.response.edit_message(embed=embed, view=self, attachments=[])
-    
+
+    @discord.ui.button(label="LP", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="LP", id=1436591112025407590), row=2)
+    async def lp_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Switch to LP balance view"""
+        if self.current_view == "lp":
+            await interaction.response.defer()
+            return
+        
+        self.current_view = "lp"
+        self.update_navigation_buttons()
+        embed = await self.create_lp_embed()
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
+
     @discord.ui.button(label="Graphs", style=discord.ButtonStyle.secondary, emoji="📊", row=1)
     async def graphs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to graphs view containing all charts in one embed"""

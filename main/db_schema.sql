@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS user_ranks (
     UNIQUE(user_id, queue, season)
 );
 
+
 -- Guild membership tracking
 CREATE TABLE IF NOT EXISTS guild_members (
     guild_id BIGINT NOT NULL,

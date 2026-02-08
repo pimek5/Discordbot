@@ -79,7 +79,7 @@ class Database:
                 except Exception as migration_error:
                     logger.warning(f"⚠️ Migration already applied or error: {migration_error}")
                     conn.rollback()
-                    
+
         except Exception as e:
             conn.rollback()
             logger.error(f"❌ Error creating tables: {e}")
@@ -115,7 +115,7 @@ class Database:
                 return cur.fetchone()
         finally:
             self.return_connection(conn)
-    
+
     # ==================== LEAGUE ACCOUNT OPERATIONS ====================
     
     def add_league_account(self, user_id: int, region: str, game_name: str, 
