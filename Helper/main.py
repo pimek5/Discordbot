@@ -213,9 +213,9 @@ def create_bot():
         if not message:
             try:
                 async for msg in channel.history(limit=20):
-                        if msg.author.id == bot.user.id and msg.embeds:
-                            title = msg.embeds[0].title or ""
-                            if title.startswith("📺 Live Streams"):
+                    if msg.author.id == bot.user.id and msg.embeds:
+                        title = msg.embeds[0].title or ""
+                        if title.startswith("📺 Live Streams"):
                             message = msg
                             bot.streaming_embed_message_id = msg.id
                             break
