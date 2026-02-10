@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands, tasks
 
@@ -141,6 +142,8 @@ def create_bot():
     bot = commands.Bot(command_prefix="!", intents=intents)
     bot.status_index = 0
     bot.streaming_embed_message_id = None
+    bot.streaming_embed_signature = None
+    bot.streaming_embed_last_update = None
     bot.status_messages = [
         ("playing", "🧩 /help"),
         ("listening", "support requests"),
@@ -162,6 +165,7 @@ def create_bot():
         members.sort(key=lambda m: m.display_name.lower())
 
         embeds = []
+        signature_lines = []
 
         if members:
             lines = []
@@ -174,9 +178,13 @@ def create_bot():
                             break
 
                 if stream_url:
-                    lines.append(f"• {member.mention} [click]({stream_url})")
+                    entry = f"• {member.mention} [click]({stream_url})"
+                    lines.append(entry)
+                    signature_lines.append(f"{member.id}:{stream_url}")
                 else:
-                    lines.append(f"• {member.mention}")
+                    entry = f"• {member.mention}"
+                    lines.append(entry)
+                    signature_lines.append(f"{member.id}:")
 
             chunk_size = 20
             chunks = [lines[i:i + chunk_size] for i in range(0, len(lines), chunk_size)]
@@ -203,6 +211,15 @@ def create_bot():
             embed.set_footer(text="Auto-updated by Helper")
             embeds.append(embed)
 
+        now = datetime.now(timezone.utc)
+        signature = "\n".join(signature_lines) if members else "empty"
+        if bot.streaming_embed_signature == signature:
+            # Avoid editing when content did not change
+            return
+        if bot.streaming_embed_last_update and now - bot.streaming_embed_last_update < timedelta(seconds=60):
+            # Debounce frequent updates triggered by presence changes
+            return
+
         message = None
         if bot.streaming_embed_message_id:
             try:
@@ -224,11 +241,26 @@ def create_bot():
 
         try:
             if message:
-                await message.edit(embeds=embeds)
+                if now - message.created_at > timedelta(hours=1):
+                    sent = await channel.send(embeds=embeds)
+                    bot.streaming_embed_message_id = sent.id
+                else:
+                    await message.edit(embeds=embeds)
             else:
                 sent = await channel.send(embeds=embeds)
                 bot.streaming_embed_message_id = sent.id
-        except Exception as e:
+            bot.streaming_embed_signature = signature
+            bot.streaming_embed_last_update = now
+        except discord.HTTPException as e:
+            if e.code == 30046:
+                try:
+                    sent = await channel.send(embeds=embeds)
+                    bot.streaming_embed_message_id = sent.id
+                    bot.streaming_embed_signature = signature
+                    bot.streaming_embed_last_update = now
+                    return
+                except Exception as inner:
+                    logger.warning("Failed to rotate streaming embed: %s", inner)
             logger.warning("Failed to update streaming embed: %s", e)
 
     async def sync_streaming_roles(guild: discord.Guild):
