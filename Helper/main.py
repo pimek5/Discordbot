@@ -144,6 +144,7 @@ def create_bot():
     bot.streaming_embed_message_id = None
     bot.streaming_embed_signature = None
     bot.streaming_embed_last_update = None
+    bot.streaming_embed_cleanup_done = False
     bot.status_messages = [
         ("playing", "🧩 /help"),
         ("listening", "support requests"),
@@ -213,13 +214,6 @@ def create_bot():
 
         now = datetime.now(timezone.utc)
         signature = "\n".join(signature_lines) if members else "empty"
-        if bot.streaming_embed_signature == signature:
-            # Avoid editing when content did not change
-            return
-        if bot.streaming_embed_last_update and now - bot.streaming_embed_last_update < timedelta(seconds=60):
-            # Debounce frequent updates triggered by presence changes
-            return
-
         message = None
         if bot.streaming_embed_message_id:
             try:
@@ -239,13 +233,33 @@ def create_bot():
             except Exception as e:
                 logger.warning("Failed to search streaming embed message: %s", e)
 
+        if message and not bot.streaming_embed_cleanup_done:
+            try:
+                async for msg in channel.history(limit=50):
+                    if msg.id == message.id:
+                        continue
+                    if msg.author.id != bot.user.id or not msg.embeds:
+                        continue
+                    title = msg.embeds[0].title or ""
+                    if title.startswith("📺 Live Streams"):
+                        try:
+                            await msg.delete()
+                        except Exception as e:
+                            logger.warning("Failed to delete old streaming embed: %s", e)
+            except Exception as e:
+                logger.warning("Failed to cleanup streaming embeds: %s", e)
+            bot.streaming_embed_cleanup_done = True
+
+        if message and bot.streaming_embed_signature == signature:
+            # Avoid editing when content did not change
+            return
+        if bot.streaming_embed_last_update and now - bot.streaming_embed_last_update < timedelta(seconds=60):
+            # Debounce frequent updates triggered by presence changes
+            return
+
         try:
             if message:
-                if now - message.created_at > timedelta(hours=1):
-                    sent = await channel.send(embeds=embeds)
-                    bot.streaming_embed_message_id = sent.id
-                else:
-                    await message.edit(embeds=embeds)
+                await message.edit(embeds=embeds)
             else:
                 sent = await channel.send(embeds=embeds)
                 bot.streaming_embed_message_id = sent.id
@@ -258,6 +272,11 @@ def create_bot():
                     bot.streaming_embed_message_id = sent.id
                     bot.streaming_embed_signature = signature
                     bot.streaming_embed_last_update = now
+                    if message:
+                        try:
+                            await message.delete()
+                        except Exception as inner:
+                            logger.warning("Failed to delete rotated streaming embed: %s", inner)
                     return
                 except Exception as inner:
                     logger.warning("Failed to rotate streaming embed: %s", inner)
