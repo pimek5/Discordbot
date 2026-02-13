@@ -427,7 +427,9 @@ class DivineSkinsScraper:
             import json
             m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
             if not m:
-                return None
+                m = re.search(r'__NEXT_DATA__\s*=\s*(\{.*?\})\s*;\s*</script>', html, re.DOTALL)
+                if not m:
+                    return None
             return json.loads(m.group(1))
         except Exception:
             return None
@@ -452,6 +454,8 @@ class DivineSkinsScraper:
                 data['followers'] = int(pick(user, ['followers', 'followersCount'], 0) or 0)
                 data['following'] = int(pick(user, ['following', 'followingCount'], 0) or 0)
                 data['joined_date'] = pick(user, ['joinedAt', 'createdAt'], '')
+                data['avatar_url'] = pick(user, ['avatar', 'image', 'avatarUrl', 'profileImage'], '')
+                data['banner_url'] = pick(user, ['banner', 'background', 'headerImage'], '')
         except Exception:
             pass
         return data
@@ -757,10 +761,15 @@ class DivineSkinsScraper:
     
     async def get_profile_data(self, username: str) -> dict | None:
         try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9'
+            }
             # Try API first
             api_url = f"{self.API_URL}/users/{username}"
             async with aiohttp.ClientSession() as session:
-                async with session.get(api_url) as response:
+                async with session.get(api_url, headers=headers) as response:
                     if response.status == 200:
                         try:
                             json_data = await response.json()
@@ -771,34 +780,18 @@ class DivineSkinsScraper:
             # Fallback to HTML
             url = f"{self.BASE_URL}/{username}"
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(url, headers=headers) as response:
                     if response.status != 200:
                         logger.error("❌ Failed to fetch Divine Skins profile: %s (Status: %s)", url, response.status)
                         return None
                     html = await response.text()
                     data = {'username': username, 'platform': 'divineskins', 'profile_url': url}
-                    # Parse embedded __NEXT_DATA__ if present
-                    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
-                    if m:
-                        try:
-                            import json
-                            next_json = json.loads(m.group(1))
-                            props = next_json.get('props', {}).get('pageProps', {})
-                            user = props.get('user') or props.get('creator') or {}
-                            if user:
-                                data['rank'] = user.get('rank')
-                                data['total_mods'] = user.get('worksCount') or user.get('skinsCount') or user.get('modsCount')
-                                data['total_downloads'] = user.get('downloads') or user.get('downloadCount')
-                                data['total_views'] = user.get('views') or user.get('viewCount')
-                                data['followers'] = user.get('followers') or user.get('followersCount')
-                                data['following'] = user.get('following') or user.get('followingCount')
-                                data['joined_date'] = user.get('joinedAt') or user.get('createdAt')
-                                data['avatar_url'] = user.get('avatar') or user.get('image')
-                                data['banner_url'] = user.get('banner') or user.get('background')
-                                logger.info("✅ Divine Skins profile fetched via __NEXT_DATA__: %s", username)
-                                return data
-                        except Exception as e:
-                            logger.warning("⚠️ Failed parsing __NEXT_DATA__ for Divine Skins: %s", e)
+                    next_json = self._extract_next_data(html)
+                    if next_json:
+                        parsed = self._parse_next_profile(next_json)
+                        data.update({k: v for k, v in parsed.items() if v not in (None, '')})
+                        logger.info("✅ Divine Skins profile fetched via __NEXT_DATA__: %s", username)
+                        return data
                     # Minimal fallback
                     soup = BeautifulSoup(html, 'html.parser')
                     avatar = soup.find('img', class_=re.compile('avatar|profile', re.I))
