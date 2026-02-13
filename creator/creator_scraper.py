@@ -434,6 +434,16 @@ class DivineSkinsScraper:
         except Exception:
             return None
 
+    def _extract_next_build_id(self, html: str) -> str | None:
+        """Extract Next.js buildId from script URLs."""
+        m = re.search(r'/_next/static/([^/]+)/_buildManifest\.js', html)
+        if m:
+            return m.group(1)
+        m = re.search(r'/_next/static/([^/]+)/', html)
+        if m:
+            return m.group(1)
+        return None
+
     def _parse_next_profile(self, next_json: dict) -> dict:
         """Parse profile stats from Next.js payload."""
         data = {}
@@ -766,10 +776,14 @@ class DivineSkinsScraper:
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9'
             }
+            json_headers = {
+                **headers,
+                'Accept': 'application/json, text/plain, */*'
+            }
             # Try API first
             api_url = f"{self.API_URL}/users/{username}"
             async with aiohttp.ClientSession() as session:
-                async with session.get(api_url, headers=headers) as response:
+                async with session.get(api_url, headers=json_headers) as response:
                     if response.status == 200:
                         try:
                             json_data = await response.json()
@@ -792,6 +806,19 @@ class DivineSkinsScraper:
                         data.update({k: v for k, v in parsed.items() if v not in (None, '')})
                         logger.info("✅ Divine Skins profile fetched via __NEXT_DATA__: %s", username)
                         return data
+                    build_id = self._extract_next_build_id(html)
+                    if build_id:
+                        data_url = f"{self.BASE_URL}/_next/data/{build_id}/{username}.json"
+                        try:
+                            async with session.get(data_url, headers=json_headers) as data_resp:
+                                if data_resp.status == 200:
+                                    next_json = await data_resp.json()
+                                    parsed = self._parse_next_profile(next_json)
+                                    data.update({k: v for k, v in parsed.items() if v not in (None, '')})
+                                    logger.info("✅ Divine Skins profile fetched via buildId JSON: %s", username)
+                                    return data
+                        except Exception as e:
+                            logger.warning("⚠️ Failed fetching buildId JSON for Divine Skins: %s", e)
                     # Minimal fallback
                     soup = BeautifulSoup(html, 'html.parser')
                     avatar = soup.find('img', class_=re.compile('avatar|profile', re.I))
@@ -841,10 +868,14 @@ class DivineSkinsScraper:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
+            json_headers = {
+                **headers,
+                'Accept': 'application/json, text/plain, */*'
+            }
             # Try API first
             api_url = f"{self.API_URL}/users/{username}/skins"
             async with aiohttp.ClientSession() as session:
-                async with session.get(api_url, headers=headers) as response:
+                async with session.get(api_url, headers=json_headers) as response:
                     if response.status == 200:
                         try:
                             json_data = await response.json()
@@ -938,6 +969,20 @@ class DivineSkinsScraper:
                                     logger.info("✅ Parsed %s skins from __NEXT_DATA__ for %s", len(skins), username)
                                     return skins
                                 # If works list was found but empty, don't return early - try other methods
+                        if len(skins) == 0:
+                            build_id = self._extract_next_build_id(html)
+                            if build_id:
+                                data_url = f"{self.BASE_URL}/_next/data/{build_id}/{username}.json"
+                                try:
+                                    async with session.get(data_url, headers=json_headers) as data_resp:
+                                        if data_resp.status == 200:
+                                            next_json = await data_resp.json()
+                                            items = self._parse_next_works(next_json)
+                                            if items:
+                                                logger.info("✅ Parsed %s skins from buildId JSON for %s", len(items), username)
+                                                return items
+                                except Exception as e:
+                                    logger.warning("⚠️ Failed fetching buildId JSON works: %s", e)
                             # If not in common shapes, recursively scan pageProps for candidate items
                             if len(skins) == 0:  # Only do recursive if we haven't found any yet
                                 def _collect_candidates(node, results: list):
