@@ -28,15 +28,16 @@ class CreatorCommands(commands.Cog):
         self.runeforge_scraper = RuneForgeScraper()
         self.divineskins_scraper = DivineSkinsScraper()
 
+    def _get_display_name(self, user: discord.abc.User) -> str:
+        return getattr(user, "display_name", None) or getattr(user, "global_name", None) or user.name
+
     async def _resolve_target_user(
         self,
         interaction: discord.Interaction,
         user_input: str | None
-    ) -> discord.Member | None:
+    ) -> discord.abc.User | None:
         if not user_input:
             return interaction.user
-        if not interaction.guild:
-            return None
 
         raw = user_input.strip()
         if raw.startswith("<@") and raw.endswith(">"):
@@ -44,13 +45,21 @@ class CreatorCommands(commands.Cog):
 
         if raw.isdigit():
             user_id = int(raw)
-            member = interaction.guild.get_member(user_id)
-            if member:
-                return member
+            if interaction.guild:
+                member = interaction.guild.get_member(user_id)
+                if member:
+                    return member
+                try:
+                    return await interaction.guild.fetch_member(user_id)
+                except Exception:
+                    pass
             try:
-                return await interaction.guild.fetch_member(user_id)
+                return await interaction.client.fetch_user(user_id)
             except Exception:
                 return None
+
+        if not interaction.guild:
+            return None
 
         try:
             await interaction.guild.chunk(cache=True)
@@ -234,7 +243,7 @@ class CreatorCommands(commands.Cog):
                 color=0x1F8EFA if platform == 'runeforge' else 0x9B59B6,
                 url=creator['profile_url']
             )
-            embed.set_author(name=target_user.display_name, icon_url=target_user.display_avatar.url)
+            embed.set_author(name=self._get_display_name(target_user), icon_url=target_user.display_avatar.url)
             if profile_data.get('avatar_url'):
                 embed.set_thumbnail(url=profile_data['avatar_url'])
             if profile_data.get('banner_url'):
