@@ -1,0 +1,8 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Helper/Dockerfile"
+
+[deploy]
+startCommand = "python Helper/main.py"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
