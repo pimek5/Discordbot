@@ -311,18 +311,11 @@ class VoteCommands(commands.Cog):
         
         # Unblock channel (allow sending messages) - only modify send_messages, preserve visibility
         try:
-            # Get existing overwrites and modify send_messages
-            existing_overwrite = channel.overwrites.get(interaction.guild.default_role)
-            if existing_overwrite:
-                # Modify existing overwrite
-                await existing_overwrite.update(send_messages=True)
-            else:
-                # Create new overwrite with send_messages=True
-                await channel.set_permissions(
-                    interaction.guild.default_role,
-                    send_messages=True,
-                    reason="Voting session started"
-                )
+            await channel.set_permissions(
+                interaction.guild.default_role,
+                send_messages=True,
+                reason="Voting session started"
+            )
         except Exception as e:
             logger.error(f"Failed to unblock voting channel: {e}")
             await interaction.response.send_message(
@@ -408,18 +401,11 @@ class VoteCommands(commands.Cog):
         
         # Block channel (no one can send messages) - only modify send_messages, preserve visibility
         try:
-            # Get existing overwrites and modify send_messages
-            existing_overwrite = channel.overwrites.get(interaction.guild.default_role)
-            if existing_overwrite:
-                # Modify existing overwrite
-                await existing_overwrite.update(send_messages=False)
-            else:
-                # Create new overwrite with send_messages=False
-                await channel.set_permissions(
-                    interaction.guild.default_role,
-                    send_messages=False,
-                    reason="Voting session ended"
-                )
+            await channel.set_permissions(
+                interaction.guild.default_role,
+                send_messages=False,
+                reason="Voting session ended"
+            )
         except Exception as e:
             logger.error(f"Failed to block voting channel: {e}")
         
