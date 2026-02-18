@@ -170,7 +170,17 @@ class VoteCommands(commands.Cog):
         
         session = db.get_active_voting_session(guild_id)
         if not session:
-            await message.delete()
+            # Inform user that voting is not active
+            try:
+                await message.delete()
+                embed = discord.Embed(
+                    title="⏸️ Voting Not Active",
+                    description="There is no active voting session. Wait for an admin to use `/votestart`!",
+                    color=0xffa500
+                )
+                await message.channel.send(f"{message.author.mention}", embed=embed, delete_after=10)
+            except Exception as e:
+                logger.error(f"Failed to send no-session message: {e}")
             return False
         
         # Parse champion names from message

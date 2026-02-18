@@ -796,8 +796,8 @@ class MyBot(commands.Bot):
                 print("🔄 Loading VoteCommands...")
                 from vote_commands import VoteCommands
                 vote_cog = VoteCommands(self)
-                await self.add_cog(vote_cog, guild=primary_guild)
-                print("  ✅ VoteCommands loaded (guild-specific)")
+                await self.add_cog(vote_cog)
+                print("  ✅ VoteCommands loaded")
                 
                 # Load help commands
                 print("🔄 Loading help commands...")
