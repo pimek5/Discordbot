@@ -1,2 +1,11 @@
 discord.py>=2.3.0
-python-dotenv>=1.0.0
+python-dotenv>=1.0.0aiohttp
+requests
+py-cord==2.6.1
+tweepy
+beautifulsoup4
+lxml
+psycopg2-binary
+matplotlib
+pillow
+ntscraper
