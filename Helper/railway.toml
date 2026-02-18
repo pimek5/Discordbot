@@ -1,7 +1,8 @@
 [build]
-builder = "nixpacks"
+builder = "DOCKERFILE"
+dockerfilePath = "Helper/Dockerfile"
 
 [deploy]
-startCommand = "python main.py"
+startCommand = "python Helper/main.py"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
