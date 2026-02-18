@@ -87,9 +87,11 @@ class VoteCommands(commands.Cog):
         """Create the voting results embed with top 5 and others"""
         embed = discord.Embed(
             title="🗳️ Champion Voting - Live Results",
-            description="**How to vote:** Just type champion names separated by spaces (1-5 champions)\n"
-                       "Examples: `Asol Yasuo Ahri` or `Aurelion Sol Lee Sin`\n"
-                       "💎 Server Boosters get 2 points per champion!",
+            description="**How to vote:** Write one champion name per message\n"
+                       "You can vote up to 5 times for different champions\n"
+                       "Examples: `Ahri` | `Yasuo` | `Lee Sin` (then repeat up to 5 times)\n"
+                       "💎 Server Boosters get 2 points per champion!\n"
+                       "No duplicates - each champion only counts once",
             color=0x0099ff
         )
         
@@ -196,43 +198,58 @@ class VoteCommands(commands.Cog):
         champion_names = [c.strip() for c in text.split() if c.strip()]
         print(f"[VOTE] Parsed champion names: {champion_names}")
         
-        if not champion_names:
-            print(f"[VOTE] ❌ No champion names found, returning")
-            await message.delete()
-            return False
-        
-        # Validate champions
-        excluded = session.get('excluded_champions') or []
-        is_valid, error_msg, normalized_names = self.validate_champions(champion_names, excluded)
-        print(f"[VOTE] Validation - Valid: {is_valid}, Normalized: {normalized_names}, Error: {error_msg}")
-        
-        if not is_valid:
+        # Allow only 1 champion per message (cumulative voting)
+        if len(champion_names) != 1:
+            print(f"[VOTE] ❌ Wrong count of champions ({len(champion_names)}), need exactly 1")
             try:
                 await message.delete()
-                embed = discord.Embed(title="❌ Invalid Vote", description=error_msg, color=0xff0000)
+                embed = discord.Embed(
+                    title="❌ One Champion Only",
+                    description="Write **one champion name per message**.\nYou can vote up to 5 times (for 5 different champions) in this session!",
+                    color=0xff0000
+                )
                 await message.channel.send(f"{message.author.mention}", embed=embed, delete_after=5)
             except Exception as e:
                 logger.error(f"Failed to send error message: {e}")
             return False
         
+        champion_name = champion_names[0]
+        
+        # Validate single champion
+        excluded = session.get('excluded_champions') or []
+        is_valid, error_msg, normalized_names = self.validate_champions([champion_name], excluded)
+        print(f"[VOTE] Validation - Valid: {is_valid}, Normalized: {normalized_names}, Error: {error_msg}")
+        
+        if not is_valid:
+            try:
+                await message.delete()
+                embed = discord.Embed(title="❌ Invalid Champion", description=error_msg, color=0xff0000)
+                await message.channel.send(f"{message.author.mention}", embed=embed, delete_after=5)
+            except Exception as e:
+                logger.error(f"Failed to send error message: {e}")
+            return False
+        
+        normalized_champion = normalized_names[0]
+        
         # Get points multiplier
         points = 2 if await self.is_user_booster(message.guild, message.author.id) else 1
         is_booster = points == 2
         
-        # Add votes to database
-        success = db.add_vote(session['id'], message.author.id, normalized_names, points)
+        # Add cumulative vote
+        result = db.add_vote_cumulative(session['id'], message.author.id, normalized_champion, points)
+        print(f"[VOTE] add_vote_cumulative result: {result}")
         
-        if not success:
+        if not result['success']:
             try:
                 await message.delete()
                 embed = discord.Embed(
-                    title="❌ Already Voted",
-                    description="You've already voted in this session! You can only vote once per voting session.",
-                    color=0xff0000
+                    title="⚠️ Vote Not Recorded",
+                    description=result['message'],
+                    color=0xffa500
                 )
                 await message.channel.send(f"{message.author.mention}", embed=embed, delete_after=5)
             except Exception as e:
-                logger.error(f"Failed to send already-voted message: {e}")
+                logger.error(f"Failed to send vote error message: {e}")
             return False
         
         # Delete user's message
@@ -262,7 +279,7 @@ class VoteCommands(commands.Cog):
         booster_text = " (💎 x2 points as Server Booster!)" if is_booster else ""
         confirm_embed = discord.Embed(
             title="✅ Vote Recorded",
-            description=f"**Your picks:** {', '.join(normalized_names)}{booster_text}",
+            description=f"**Voted for:** {normalized_champion}\n**Your votes:** {result['current_count']}/5{booster_text}",
             color=0x00ff00
         )
         try:

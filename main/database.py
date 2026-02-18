@@ -772,6 +772,50 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    def add_vote_cumulative(self, session_id: int, user_id: int, champion_name: str, points: int) -> dict:
+        """
+        Add a single champion vote cumulatively (up to 5 per user per session).
+        Returns: {'success': bool, 'message': str, 'current_count': int}
+        """
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Check if user already voted for this champion
+                cur.execute("""
+                    SELECT COUNT(*) as count FROM voting_votes
+                    WHERE session_id = %s AND user_id = %s AND champion_name = %s
+                """, (session_id, user_id, champion_name))
+                result = cur.fetchone()
+                if result[0] > 0:
+                    return {'success': False, 'message': f'🔄 You already voted for **{champion_name}** in this session!', 'current_count': None}
+                
+                # Count current votes for this user
+                cur.execute("""
+                    SELECT COUNT(DISTINCT champion_name) as count FROM voting_votes
+                    WHERE session_id = %s AND user_id = %s
+                """, (session_id, user_id))
+                result = cur.fetchone()
+                current_count = result[0] if result else 0
+                
+                # Check if user reached limit (5 champions)
+                if current_count >= 5:
+                    return {'success': False, 'message': f'⛔ You already voted for 5 champions! This is the maximum per session.', 'current_count': current_count}
+                
+                # Add the new vote
+                cur.execute("""
+                    INSERT INTO voting_votes (session_id, user_id, champion_name, rank_position, points)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (session_id, user_id, champion_name, current_count + 1, points))
+                
+                conn.commit()
+                return {'success': True, 'message': f'✅ Voted for **{champion_name}** ({current_count + 1}/5)', 'current_count': current_count + 1}
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error adding cumulative vote: {e}")
+            return {'success': False, 'message': f'❌ Error recording vote: {e}', 'current_count': None}
+        finally:
+            self.return_connection(conn)
+    
     def get_voting_results(self, session_id: int) -> List[Dict]:
         """Get aggregated voting results for a session"""
         conn = self.get_connection()
