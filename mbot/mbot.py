@@ -193,6 +193,26 @@ def check_channel(interaction: discord.Interaction) -> bool:
         return False
     return True
 
+async def safe_defer(interaction: discord.Interaction) -> None:
+    """Safely defer interaction responses, handling rate limits."""
+    if interaction.response.is_done():
+        return
+
+    try:
+        await interaction.response.defer()
+    except discord.InteractionResponded:
+        return
+    except discord.HTTPException as e:
+        if e.status == 429:
+            await asyncio.sleep(1.5)
+            if not interaction.response.is_done():
+                try:
+                    await interaction.response.defer()
+                except Exception as retry_error:
+                    logger.warning("Failed to defer after retry: %s", retry_error)
+        else:
+            logger.warning("Failed to defer interaction: %s", e)
+
 ytdl = yt_dlp.YoutubeDL(apply_cookies_to_ytdl_options(YTDL_FORMAT_OPTIONS))
 
 
@@ -893,7 +913,7 @@ class QueuePaginationView(View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.pages[self.current_page], view=self)
         else:
-            await interaction.response.defer()
+            await safe_defer(interaction)
     
     @discord.ui.button(emoji="➡️", style=discord.ButtonStyle.primary, custom_id="next_page")
     async def next_page_btn(self, interaction: discord.Interaction, button: Button):
@@ -902,7 +922,7 @@ class QueuePaginationView(View):
             self.update_buttons()
             await interaction.response.edit_message(embed=self.pages[self.current_page], view=self)
         else:
-            await interaction.response.defer()
+            await safe_defer(interaction)
 
 
 class MusicControlView(View):
@@ -1094,7 +1114,7 @@ async def play(interaction: discord.Interaction, url: str):
     if not check_channel(interaction):
         await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
         return
-    await interaction.response.defer()
+    await safe_defer(interaction)
     
     # Check if user is in voice channel
     if not interaction.user.voice:
@@ -1902,7 +1922,7 @@ async def nowplaying(interaction: discord.Interaction):
     view = MusicControlView(interaction.guild.id)
     
     # Wyślij embed na kanale i zapisz ID (przywrócenie embeda)
-    await interaction.response.defer()
+    await safe_defer(interaction)
     
     # Usuń starą wiadomość now playing jeśli istnieje
     if interaction.guild.id in main_control_messages:
@@ -2222,7 +2242,7 @@ async def search(interaction: discord.Interaction, query: str):
     if not check_channel(interaction):
         await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
         return
-    await interaction.response.defer()
+    await safe_defer(interaction)
     
     try:
         # Handle Spotify URL
@@ -2948,7 +2968,7 @@ async def wrapped(interaction: discord.Interaction, scope: str = "user", year: i
     if not check_channel(interaction):
         await interaction.response.send_message(f"❌ This command can only be used in <#{ALLOWED_CHANNEL_ID}>!", ephemeral=True)
         return
-    await interaction.response.defer()
+    await safe_defer(interaction)
     
     if scope == "user":
         # User Wrapped

@@ -325,6 +325,28 @@ def create_bot():
         await bot.wait_until_ready()
 
     @bot.event
+    async def on_message(message):
+        """Handle voting channel messages"""
+        # Ignore bot messages
+        if message.author.bot:
+            return
+        
+        # Handle voting channel messages (if active voting session exists)
+        if message.channel.id == 1473497433336975573:  # VOTING_CHANNEL_ID
+            vote_cog = bot.get_cog("VoteCommands")
+            if vote_cog:
+                try:
+                    await vote_cog.process_vote_message(message)
+                    return
+                except Exception as e:
+                    logger.error(f"Error processing vote message: {e}")
+                    import traceback
+                    traceback.print_exc()
+        
+        # Process commands as usual
+        await bot.process_commands(message)
+
+    @bot.event
     async def on_ready():
         logger.info("Helper bot ready as %s", bot.user)
         if not change_status.is_running():
@@ -406,6 +428,16 @@ def create_bot():
     @bot.event
     async def setup_hook():
         bot.add_view(HelperView())
+        
+        # Load voting commands
+        try:
+            from vote_commands import VoteCommands
+            await bot.add_cog(VoteCommands(bot))
+            logger.info("✅ VoteCommands loaded")
+        except Exception as e:
+            logger.error(f"Failed to load VoteCommands: {e}")
+            import traceback
+            traceback.print_exc()
 
     return bot
 
