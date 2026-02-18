@@ -1,12 +1,13 @@
 FROM python:3.12-slim
 
+# Set working directory
 WORKDIR /app
 
-# Copy everything from build context
+# Copy entire project
 COPY . .
 
-# Install Helper dependencies (also installs discord.py for main imports)
-RUN pip install --no-cache-dir -r Helper/requirements.txt
+# Install dependencies from Helper/requirements.txt
+RUN python -m pip install --no-cache-dir -r Helper/requirements.txt
 
 # Run Helper bot
 CMD ["python", "Helper/main.py"]
