@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands, tasks
 
+# Deployment: 2026-02-18 03:20
 HELPER_FORUM_ID = 1464368533088768124  # Support forum channel ID
 SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
 UNSOLVED_TAG_ID = 1464379721272787069  # Tag applied when thread is unsolved/created
