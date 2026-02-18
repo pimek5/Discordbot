@@ -2,11 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copy entire project
-COPY . .
+# Copy entire repo structure needed
+COPY Helper ./Helper
+COPY main ./main
 
-# Install dependencies from Helper
-RUN pip install --no-cache-dir -r Helper/requirements.txt
+# Install dependencies
+RUN pip install --no-cache-dir -r ./Helper/requirements.txt
 
 # Run Helper bot
 CMD ["python", "Helper/main.py"]
