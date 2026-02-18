@@ -153,29 +153,36 @@ class VoteCommands(commands.Cog):
     
     async def process_vote_message(self, message: discord.Message) -> bool:
         """Process a vote message in the voting channel. Returns True if valid vote."""
-        print(f"[process_vote_message] START - Message: '{message.content}'")
+        print(f"\n[VOTE] ===== START process_vote_message() =====")
+        print(f"[VOTE] Message: '{message.content}' from {message.author}")
+        print(f"[VOTE] Channel ID: {message.channel.id} (expecting 1473497433336975573)")
+        
         if not self.is_voting_channel(message.channel.id):
-            print(f"[process_vote_message] Not voting channel: {message.channel.id}")
+            print(f"[VOTE] ❌ Not voting channel, returning")
             return False
         if message.author.bot:
-            print(f"[process_vote_message] Bot message, ignoring")
+            print(f"[VOTE] ❌ Bot message, returning")
             return False
         
         # Don't process messages from admins
         if message.guild:
             member = message.guild.get_member(message.author.id)
             if member and any(role.id == ADMIN_ROLE_ID for role in member.roles):
-                print(f"[process_vote_message] Admin message, ignoring")
+                print(f"[VOTE] ❌ Admin message, returning")
                 return False
+        
         db = get_db()
         guild_id = message.guild.id if message.guild else None
+        print(f"[VOTE] Guild ID: {guild_id}")
+        
         if not guild_id:
-            print(f"[process_vote_message] No guild")
+            print(f"[VOTE] ❌ No guild, returning")
             return False
         
         session = db.get_active_voting_session(guild_id)
-        print(f"[process_vote_message] Active session: {session is not None}")
+        print(f"[VOTE] Active session exists: {session is not None}")
         if not session:
+            print(f"[VOTE] No session - sending notification")
             # Inform user that voting is not active
             try:
                 await message.delete()
@@ -189,19 +196,22 @@ class VoteCommands(commands.Cog):
                 logger.error(f"Failed to send no-session message: {e}")
             return False
         
+        print(f"[VOTE] ✅ Session found, ID: {session['id']}")
+        
         # Parse champion names from message
         text = message.content.strip()
         champion_names = [c.strip() for c in text.split() if c.strip()]
-        print(f"[process_vote_message] Parsed champion names: {champion_names}")
+        print(f"[VOTE] Parsed champion names: {champion_names}")
         
         if not champion_names:
+            print(f"[VOTE] ❌ No champion names found, returning")
             await message.delete()
             return False
         
         # Validate champions
         excluded = session.get('excluded_champions') or []
         is_valid, error_msg, normalized_names = self.validate_champions(champion_names, excluded)
-        print(f"[process_vote_message] Validation result: is_valid={is_valid}, normalized={normalized_names}")
+        print(f"[VOTE] Validation - Valid: {is_valid}, Normalized: {normalized_names}, Error: {error_msg}")
         
         if not is_valid:
             try:
