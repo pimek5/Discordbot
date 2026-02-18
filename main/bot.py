@@ -5592,15 +5592,22 @@ async def on_message(message):
     
     # Handle voting channel messages (if active voting session exists)
     if message.channel.id == 1473497433336975573:  # VOTING_CHANNEL_ID
+        print(f"🗳️ [VOTING] Message in voting channel from {message.author}: {message.content}")
         vote_cog = bot.get_cog("VoteCommands")
         if vote_cog:
+            print(f"✅ [VOTING] VoteCommands cog found, processing...")
             try:
-                await vote_cog.process_vote_message(message)
+                result = await vote_cog.process_vote_message(message)
+                print(f"✅ [VOTING] process_vote_message returned: {result}")
                 return
             except Exception as e:
-                print(f"Error processing vote message: {e}")
+                print(f"❌ [VOTING] Error processing vote message: {e}")
                 import traceback
                 traceback.print_exc()
+        else:
+            print(f"❌ [VOTING] VoteCommands cog NOT found!")
+            available_cogs = bot.cogs
+            print(f"📋 Available cogs: {list(available_cogs.keys())}")
     
     # Handle fixes-posts channel FIRST (before DM check)
     if message.channel.id == FIXES_CHANNEL_ID and re.search(r'\bfixed\b', message.content, re.IGNORECASE):

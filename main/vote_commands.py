@@ -153,22 +153,28 @@ class VoteCommands(commands.Cog):
     
     async def process_vote_message(self, message: discord.Message) -> bool:
         """Process a vote message in the voting channel. Returns True if valid vote."""
+        print(f"[process_vote_message] START - Message: '{message.content}'")
         if not self.is_voting_channel(message.channel.id):
+            print(f"[process_vote_message] Not voting channel: {message.channel.id}")
             return False
         if message.author.bot:
+            print(f"[process_vote_message] Bot message, ignoring")
             return False
         
         # Don't process messages from admins
         if message.guild:
             member = message.guild.get_member(message.author.id)
             if member and any(role.id == ADMIN_ROLE_ID for role in member.roles):
+                print(f"[process_vote_message] Admin message, ignoring")
                 return False
         db = get_db()
         guild_id = message.guild.id if message.guild else None
         if not guild_id:
+            print(f"[process_vote_message] No guild")
             return False
         
         session = db.get_active_voting_session(guild_id)
+        print(f"[process_vote_message] Active session: {session is not None}")
         if not session:
             # Inform user that voting is not active
             try:
@@ -186,6 +192,7 @@ class VoteCommands(commands.Cog):
         # Parse champion names from message
         text = message.content.strip()
         champion_names = [c.strip() for c in text.split() if c.strip()]
+        print(f"[process_vote_message] Parsed champion names: {champion_names}")
         
         if not champion_names:
             await message.delete()
@@ -194,6 +201,7 @@ class VoteCommands(commands.Cog):
         # Validate champions
         excluded = session.get('excluded_champions') or []
         is_valid, error_msg, normalized_names = self.validate_champions(champion_names, excluded)
+        print(f"[process_vote_message] Validation result: is_valid={is_valid}, normalized={normalized_names}")
         
         if not is_valid:
             try:
