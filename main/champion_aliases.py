@@ -1,6 +1,6 @@
 """
 Champion name aliases for better recognition
-Auto-generated from DDragon 14.21.1 (168 champions) + custom abbreviations
+Auto-generated from DDragon 14.21.1 (169 champions) + custom abbreviations
 """
 
 # All 168 champions with common aliases
@@ -46,7 +46,7 @@ CHAMPION_ALIASES = {
     'vi': 'Vi', 'viego': 'Viego', 'viktor': 'Viktor', 'vladimir': 'Vladimir',
     'volibear': 'Volibear', 'warwick': 'Warwick', 'xayah': 'Xayah', 'xerath': 'Xerath',
     'xinzhao': 'XinZhao', 'yasuo': 'Yasuo', 'yone': 'Yone', 'yorick': 'Yorick',
-    'yuumi': 'Yuumi', 'zac': 'Zac', 'zed': 'Zed', 'zeri': 'Zeri',
+    'yuumi': 'Yuumi', 'zac': 'Zac', 'zaahen': 'Zaahen', 'zed': 'Zed', 'zeri': 'Zeri',
     'ziggs': 'Ziggs', 'zilean': 'Zilean', 'zoe': 'Zoe', 'zyra': 'Zyra',
     
     # Popular abbreviations
