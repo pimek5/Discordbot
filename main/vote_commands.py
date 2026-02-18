@@ -279,7 +279,7 @@ class VoteCommands(commands.Cog):
     
     @app_commands.command(name="votestart", description="[ADMIN] Start a new voting session")
     async def vote_start(self, interaction: discord.Interaction):
-        """Start a new voting session (admin only) - unlocks channel"""
+        """Start a new voting session (admin only) - blocks writing"""
         # Check admin permissions
         if not self.has_admin_role(interaction):
             await interaction.response.send_message(
@@ -309,18 +309,24 @@ class VoteCommands(commands.Cog):
             )
             return
         
-        # Unlock channel (everyone can send messages)
+        # Unblock channel (allow sending messages) - only modify send_messages, preserve visibility
         try:
-            await channel.edit(
-                overwrites={
-                    interaction.guild.default_role: discord.PermissionOverwrite(send_messages=True)
-                },
-                reason="Voting session started"
-            )
+            # Get existing overwrites and modify send_messages
+            existing_overwrite = channel.overwrites.get(interaction.guild.default_role)
+            if existing_overwrite:
+                # Modify existing overwrite
+                await existing_overwrite.update(send_messages=True)
+            else:
+                # Create new overwrite with send_messages=True
+                await channel.set_permissions(
+                    interaction.guild.default_role,
+                    send_messages=True,
+                    reason="Voting session started"
+                )
         except Exception as e:
-            logger.error(f"Failed to unlock voting channel: {e}")
+            logger.error(f"Failed to unblock voting channel: {e}")
             await interaction.response.send_message(
-                f"❌ Failed to unlock voting channel: {e}",
+                f"❌ Failed to unblock voting channel: {e}",
                 ephemeral=True
             )
             return
@@ -362,7 +368,7 @@ class VoteCommands(commands.Cog):
             pass
         
         await interaction.response.send_message(
-            f"✅ Voting session started and channel unlocked!" +
+            f"✅ Voting session started - channel unblocked!" +
             (f"\n🚫 Auto-excluded: {', '.join(previous_winners)}" if previous_winners else ""),
             ephemeral=True
         )
@@ -371,7 +377,7 @@ class VoteCommands(commands.Cog):
     
     @app_commands.command(name="votestop", description="[ADMIN] Stop the current voting session")
     async def vote_stop(self, interaction: discord.Interaction):
-        """Stop the current voting session (admin only) - locks channel"""
+        """Stop the current voting session (admin only) - blocks writing"""
         # Check admin permissions
         if not self.has_admin_role(interaction):
             await interaction.response.send_message(
@@ -400,16 +406,22 @@ class VoteCommands(commands.Cog):
             )
             return
         
-        # Lock channel (no one can send messages)
+        # Block channel (no one can send messages) - only modify send_messages, preserve visibility
         try:
-            await channel.edit(
-                overwrites={
-                    interaction.guild.default_role: discord.PermissionOverwrite(send_messages=False)
-                },
-                reason="Voting session ended"
-            )
+            # Get existing overwrites and modify send_messages
+            existing_overwrite = channel.overwrites.get(interaction.guild.default_role)
+            if existing_overwrite:
+                # Modify existing overwrite
+                await existing_overwrite.update(send_messages=False)
+            else:
+                # Create new overwrite with send_messages=False
+                await channel.set_permissions(
+                    interaction.guild.default_role,
+                    send_messages=False,
+                    reason="Voting session ended"
+                )
         except Exception as e:
-            logger.error(f"Failed to lock voting channel: {e}")
+            logger.error(f"Failed to block voting channel: {e}")
         
         # End the session
         db.end_voting_session(session['id'])
@@ -480,7 +492,7 @@ class VoteCommands(commands.Cog):
             pass
         
         await interaction.response.send_message(
-            f"✅ Voting session ended and channel locked!\\nTotal champions: **{len(results)}**",
+            f"✅ Voting session ended - channel blocked!\nTotal champions: **{len(results)}**",
             ephemeral=True
         )
         
