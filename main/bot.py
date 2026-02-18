@@ -5585,10 +5585,22 @@ async def activity(interaction: discord.Interaction, user: Optional[discord.User
 # ================================
 @bot.event
 async def on_message(message):
-    """Monitor message frequency, apply auto-slowmode, and handle fixes-posts"""
+    """Monitor message frequency, apply auto-slowmode, handle fixes-posts, and voting"""
     # Ignore bot messages
     if message.author.bot:
         return
+    
+    # Handle voting channel messages (if active voting session exists)
+    if message.channel.id == 1473497433336975573:  # VOTING_CHANNEL_ID
+        vote_cog = bot.get_cog("VoteCommands")
+        if vote_cog:
+            try:
+                await vote_cog.process_vote_message(message)
+                return
+            except Exception as e:
+                print(f"Error processing vote message: {e}")
+                import traceback
+                traceback.print_exc()
     
     # Handle fixes-posts channel FIRST (before DM check)
     if message.channel.id == FIXES_CHANNEL_ID and re.search(r'\bfixed\b', message.content, re.IGNORECASE):

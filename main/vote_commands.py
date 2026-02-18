@@ -16,17 +16,17 @@ from champion_aliases import normalize_champion_name
 logger = logging.getLogger('vote_commands')
 
 # Configuration
-VOTING_THREAD_ID = 1331546029023166464
+VOTING_CHANNEL_ID = 1473497433336975573
 ADMIN_ROLE_ID = 1153030265782927501
-BOOSTER_ROLE_ID = 1168616737692991499
+BOOSTER_ROLE_IDS = [1168616737692991499, 1173564965152637018]  # Server Boosters, Elite
 
 class VoteCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    def is_voting_thread(self, interaction: discord.Interaction) -> bool:
-        """Check if command is used in the voting thread"""
-        return interaction.channel_id == VOTING_THREAD_ID
+    def is_voting_channel(self, channel_id: int) -> bool:
+        """Check if channel is the voting channel"""
+        return channel_id == VOTING_CHANNEL_ID
     
     def has_admin_role(self, interaction: discord.Interaction) -> bool:
         """Check if user has admin role"""
@@ -44,7 +44,7 @@ class VoteCommands(commands.Cog):
         member = interaction.guild.get_member(interaction.user.id)
         if not member:
             return False
-        return any(role.id == BOOSTER_ROLE_ID for role in member.roles)
+        return any(role.id in BOOSTER_ROLE_IDS for role in member.roles)
     
     def get_points_multiplier(self, interaction: discord.Interaction) -> int:
         """Get points multiplier based on user roles (2 for boosters, 1 for others)"""
@@ -87,8 +87,9 @@ class VoteCommands(commands.Cog):
         """Create the voting results embed with top 5 and others"""
         embed = discord.Embed(
             title="🗳️ Champion Voting - Live Results",
-            description="Vote with `/vote [champion1] [champion2] ... [champion5]` (1-5 champions)\n"
-                       "Server Boosters get 2 points per champion! 💎",
+            description="**How to vote:** Just type champion names separated by spaces (1-5 champions)\n"
+                       "Examples: `Asol Yasuo Ahri` or `Aurelion Sol Lee Sin`\n"
+                       "💎 Server Boosters get 2 points per champion!",
             color=0x0099ff
         )
         
@@ -147,69 +148,77 @@ class VoteCommands(commands.Cog):
                 inline=False
             )
         
-        embed.set_footer(text=f"Session ID: {session_id} • Use /vote stop to end voting")
+        embed.set_footer(text=f"Session ID: {session_id} • Voting in progress")
         return embed
     
-    @app_commands.command(name="vote", description="Vote for 1-5 champions")
-    @app_commands.describe(
-        champion1="Your #1 pick",
-        champion2="Your #2 pick",
-        champion3="Your #3 pick",
-        champion4="Your #4 pick",
-        champion5="Your #5 pick"
-    )
-    async def vote(
-        self,
-        interaction: discord.Interaction,
-        champion1: str,
-        champion2: Optional[str] = None,
-        champion3: Optional[str] = None,
-        champion4: Optional[str] = None,
-        champion5: Optional[str] = None
-    ):
-        """Vote for 1-5 champions in the current voting session"""
-        # Check if command is used in voting thread
-        if not self.is_voting_thread(interaction):
-            await interaction.response.send_message(
-                f"❌ This command can only be used in <#{VOTING_THREAD_ID}>!",
-                ephemeral=True
-            )
-            return
+    async def process_vote_message(self, message: discord.Message) -> bool:
+        """Process a vote message in the voting channel. Returns True if valid vote."""
+        if not self.is_voting_channel(message.channel.id):
+            return False
+        if message.author.bot:
+            return False
         
-        # Check if there's an active voting session
+        # Don't process messages from admins
+        if message.guild:
+            member = message.guild.get_member(message.author.id)
+            if member and any(role.id == ADMIN_ROLE_ID for role in member.roles):
+                return False
         db = get_db()
-        session = db.get_active_voting_session(interaction.guild_id)
+        guild_id = message.guild.id if message.guild else None
+        if not guild_id:
+            return False
         
+        session = db.get_active_voting_session(guild_id)
         if not session:
-            await interaction.response.send_message(
-                "❌ There is no active voting session!\n"
-                "An admin must use `/votestart` to begin voting.",
-                ephemeral=True
-            )
-            return
+            await message.delete()
+            return False
         
-        # Validate champions (with exclusions)
-        champion_names = [c for c in [champion1, champion2, champion3, champion4, champion5] if c]
+        # Parse champion names from message
+        text = message.content.strip()
+        champion_names = [c.strip() for c in text.split() if c.strip()]
+        
+        if not champion_names:
+            await message.delete()
+            return False
+        
+        # Validate champions
         excluded = session.get('excluded_champions') or []
         is_valid, error_msg, normalized_names = self.validate_champions(champion_names, excluded)
         
         if not is_valid:
-            await interaction.response.send_message(error_msg, ephemeral=True)
-            return
+            try:
+                await message.delete()
+                embed = discord.Embed(title="❌ Invalid Vote", description=error_msg, color=0xff0000)
+                await message.channel.send(f"{message.author.mention}", embed=embed, delete_after=5)
+            except Exception as e:
+                logger.error(f"Failed to send error message: {e}")
+            return False
         
         # Get points multiplier
-        points = self.get_points_multiplier(interaction)
+        points = 2 if await self.is_user_booster(message.guild, message.author.id) else 1
         is_booster = points == 2
         
         # Add votes to database
-        success = db.add_vote(session['id'], interaction.user.id, normalized_names, points)
+        success = db.add_vote(session['id'], message.author.id, normalized_names, points)
         
         if not success:
-            await interaction.response.send_message(
-                "❌ Failed to record your vote. Please try again!",
-                ephemeral=True
-            )
-            return
+            try:
+                await message.delete()
+                embed = discord.Embed(
+                    title="❌ Already Voted",
+                    description="You've already voted in this session! You can only vote once per voting session.",
+                    color=0xff0000
+                )
+                await message.channel.send(f"{message.author.mention}", embed=embed, delete_after=5)
+            except Exception as e:
+                logger.error(f"Failed to send already-voted message: {e}")
+            return False
+        
+        # Delete user's message
+        try:
+            await message.delete()
+        except:
+            pass
         
         # Get updated results
         results = db.get_voting_results(session['id'])
@@ -223,32 +232,36 @@ class VoteCommands(commands.Cog):
             if session['message_id']:
                 channel = self.bot.get_channel(session['channel_id'])
                 if channel:
-                    message = await channel.fetch_message(session['message_id'])
-                    await message.edit(embed=embed)
+                    message_obj = await channel.fetch_message(session['message_id'])
+                    await message_obj.edit(embed=embed)
         except Exception as e:
             logger.error(f"Failed to update voting embed: {e}")
         
-        # Send confirmation
+        # Send confirmation (via channel, ephemeral-like with auto-delete)
         booster_text = " (💎 x2 points as Server Booster!)" if is_booster else ""
-        await interaction.response.send_message(
-            f"✅ Your vote has been recorded!{booster_text}\n"
-            f"**Your picks:** {', '.join(normalized_names)}",
-            ephemeral=True
+        confirm_embed = discord.Embed(
+            title="✅ Vote Recorded",
+            description=f"**Your picks:** {', '.join(normalized_names)}{booster_text}",
+            color=0x00ff00
         )
+        try:
+            await message.channel.send(f"{message.author.mention}", embed=confirm_embed, delete_after=5)
+        except:
+            pass
         
-        logger.info(f"Vote recorded: {interaction.user.name} voted for {normalized_names} ({points} points each)")
+        logger.info(f"Vote recorded: {message.author.name} voted for {normalized_names} ({points} points each)")
+        return True
+    
+    async def is_user_booster(self, guild: discord.Guild, user_id: int) -> bool:
+        """Check if user is a server booster (async version)"""
+        member = guild.get_member(user_id)
+        if not member:
+            return False
+        return any(role.id in BOOSTER_ROLE_IDS for role in member.roles)
     
     @app_commands.command(name="votestart", description="[ADMIN] Start a new voting session")
     async def vote_start(self, interaction: discord.Interaction):
-        """Start a new voting session (admin only)"""
-        # Check if command is used in voting thread
-        if not self.is_voting_thread(interaction):
-            await interaction.response.send_message(
-                f"❌ This command can only be used in <#{VOTING_THREAD_ID}>!",
-                ephemeral=True
-            )
-            return
-        
+        """Start a new voting session (admin only) - unlocks channel"""
         # Check admin permissions
         if not self.has_admin_role(interaction):
             await interaction.response.send_message(
@@ -269,13 +282,38 @@ class VoteCommands(commands.Cog):
             )
             return
         
+        # Get voting channel
+        channel = self.bot.get_channel(VOTING_CHANNEL_ID)
+        if not channel:
+            await interaction.response.send_message(
+                f"❌ Voting channel <#{VOTING_CHANNEL_ID}> not found!",
+                ephemeral=True
+            )
+            return
+        
+        # Unlock channel (everyone can send messages)
+        try:
+            await channel.edit(
+                overwrites={
+                    interaction.guild.default_role: discord.PermissionOverwrite(send_messages=True)
+                },
+                reason="Voting session started"
+            )
+        except Exception as e:
+            logger.error(f"Failed to unlock voting channel: {e}")
+            await interaction.response.send_message(
+                f"❌ Failed to unlock voting channel: {e}",
+                ephemeral=True
+            )
+            return
+        
         # Get winners from previous session to auto-exclude
         previous_winners = db.get_previous_session_winners(interaction.guild_id, limit=5)
         
         # Create new voting session with exclusions
         session_id = db.create_voting_session(
             interaction.guild_id,
-            interaction.channel_id,
+            VOTING_CHANNEL_ID,
             interaction.user.id,
             excluded_champions=previous_winners
         )
@@ -283,38 +321,39 @@ class VoteCommands(commands.Cog):
         # Create initial embed
         embed = self.create_voting_embed([], session_id, previous_winners)
         
-        # Send confirmation and embed
-        if previous_winners:
-            confirmation_msg = (
-                f"✅ Voting session started!\n"
-                f"🚫 Auto-excluded top 5 from last session: {', '.join(previous_winners)}"
-            )
-        else:
-            confirmation_msg = "✅ Voting session started!"
-        
-        # Send the confirmation first
-        await interaction.response.send_message(confirmation_msg, ephemeral=True)
-        
         # Send the embed to the channel
-        channel = self.bot.get_channel(interaction.channel_id)
         message = await channel.send(embed=embed)
         
         # Store message ID
         db.update_voting_message_id(session_id, message.id)
         
-        logger.info(f"Voting session {session_id} started by {interaction.user.name} with {len(previous_winners)} exclusions")
+        # Ping notification roles
+        pings = []
+        for role_id in BOOSTER_ROLE_IDS:
+            role = interaction.guild.get_role(role_id)
+            if role:
+                pings.append(role.mention)
+        
+        ping_text = f"🗳️ **Voting session started!** {' '.join(pings)}\nHead over to <#{VOTING_CHANNEL_ID}> to vote!"
+        if previous_winners:
+            ping_text += f"\n🚫 Auto-excluded top 5 from last session: {', '.join(previous_winners)}"
+        
+        try:
+            await channel.send(ping_text)
+        except:
+            pass
+        
+        await interaction.response.send_message(
+            f"✅ Voting session started and channel unlocked!" +
+            (f"\n🚫 Auto-excluded: {', '.join(previous_winners)}" if previous_winners else ""),
+            ephemeral=True
+        )
+        
+        logger.info(f"Voting session {session_id} started by {interaction.user.name}")
     
     @app_commands.command(name="votestop", description="[ADMIN] Stop the current voting session")
     async def vote_stop(self, interaction: discord.Interaction):
-        """Stop the current voting session (admin only)"""
-        # Check if command is used in voting thread
-        if not self.is_voting_thread(interaction):
-            await interaction.response.send_message(
-                f"❌ This command can only be used in <#{VOTING_THREAD_ID}>!",
-                ephemeral=True
-            )
-            return
-        
+        """Stop the current voting session (admin only) - locks channel"""
         # Check admin permissions
         if not self.has_admin_role(interaction):
             await interaction.response.send_message(
@@ -334,6 +373,26 @@ class VoteCommands(commands.Cog):
             )
             return
         
+        # Get voting channel
+        channel = self.bot.get_channel(VOTING_CHANNEL_ID)
+        if not channel:
+            await interaction.response.send_message(
+                f"❌ Voting channel <#{VOTING_CHANNEL_ID}> not found!",
+                ephemeral=True
+            )
+            return
+        
+        # Lock channel (no one can send messages)
+        try:
+            await channel.edit(
+                overwrites={
+                    interaction.guild.default_role: discord.PermissionOverwrite(send_messages=False)
+                },
+                reason="Voting session ended"
+            )
+        except Exception as e:
+            logger.error(f"Failed to lock voting channel: {e}")
+        
         # End the session
         db.end_voting_session(session['id'])
         
@@ -342,8 +401,8 @@ class VoteCommands(commands.Cog):
         
         # Create final embed
         embed = discord.Embed(
-            title="🏁 Voting Session Ended - Final Results",
-            description="Thank you for participating!",
+            title="🏁 Voting Ended",
+            description="Voting session has concluded!",
             color=0x00ff00
         )
         
@@ -361,13 +420,13 @@ class VoteCommands(commands.Cog):
         
         if podium_text:
             embed.add_field(
-                name="🏆 Final Top 5",
+                name="🏆 Results",
                 value="\n".join(podium_text),
                 inline=False
             )
         else:
             embed.add_field(
-                name="🏆 Final Top 5",
+                name="🏆 Results",
                 value="*No votes were cast*",
                 inline=False
             )
@@ -376,11 +435,14 @@ class VoteCommands(commands.Cog):
         others = results[5:]
         if others:
             others_text = []
-            for result in others:
+            for result in others[:15]:
                 champion = result['champion_name']
                 points = result['total_points']
                 votes = result['vote_count']
                 others_text.append(f"• **{champion}** - {points} points ({votes} votes)")
+            
+            if len(others) > 15:
+                others_text.append(f"*...and {len(others) - 15} more*")
             
             embed.add_field(
                 name="📊 Other Champions",
@@ -388,20 +450,19 @@ class VoteCommands(commands.Cog):
                 inline=False
             )
         
-        embed.set_footer(text=f"Session ID: {session['id']} • Ended by {interaction.user.name}")
+        # Get unique voter count
+        voting_records = db.get_voting_results(session['id'])
         
-        # Update the original message with final results
+        embed.set_footer(text=f"Total participants: {len(set(v['user_id'] for v in voting_records))}")
+        
+        # Send results in channel
         try:
-            if session['message_id']:
-                channel = self.bot.get_channel(session['channel_id'])
-                if channel:
-                    message = await channel.fetch_message(session['message_id'])
-                    await message.edit(embed=embed)
-        except Exception as e:
-            logger.error(f"Failed to update final voting embed: {e}")
+            await channel.send(embed=embed)
+        except:
+            pass
         
         await interaction.response.send_message(
-            f"✅ Voting session ended!\nTotal champions voted for: **{len(results)}**",
+            f"✅ Voting session ended and channel locked!\\nTotal champions: **{len(results)}**",
             ephemeral=True
         )
         
@@ -413,14 +474,6 @@ class VoteCommands(commands.Cog):
     )
     async def vote_exclude(self, interaction: discord.Interaction, champions: str):
         """Exclude champions from current voting session (admin only)"""
-        # Check if command is used in voting thread
-        if not self.is_voting_thread(interaction):
-            await interaction.response.send_message(
-                f"❌ This command can only be used in <#{VOTING_THREAD_ID}>!",
-                ephemeral=True
-            )
-            return
-        
         # Check admin permissions
         if not self.has_admin_role(interaction):
             await interaction.response.send_message(
@@ -494,14 +547,6 @@ class VoteCommands(commands.Cog):
     )
     async def vote_include(self, interaction: discord.Interaction, champion: str):
         """Remove a champion from the exclusion list (admin only)"""
-        # Check if command is used in voting thread
-        if not self.is_voting_thread(interaction):
-            await interaction.response.send_message(
-                f"❌ This command can only be used in <#{VOTING_THREAD_ID}>!",
-                ephemeral=True
-            )
-            return
-        
         # Check admin permissions
         if not self.has_admin_role(interaction):
             await interaction.response.send_message(
