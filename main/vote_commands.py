@@ -164,13 +164,6 @@ class VoteCommands(commands.Cog):
             print(f"[VOTE] ❌ Bot message, returning")
             return False
         
-        # Don't process messages from admins
-        if message.guild:
-            member = message.guild.get_member(message.author.id)
-            if member and any(role.id == ADMIN_ROLE_ID for role in member.roles):
-                print(f"[VOTE] ❌ Admin message, returning")
-                return False
-        
         db = get_db()
         guild_id = message.guild.id if message.guild else None
         print(f"[VOTE] Guild ID: {guild_id}")
