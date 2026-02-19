@@ -816,6 +816,21 @@ class Database:
         finally:
             self.return_connection(conn)
     
+    def get_unique_voter_count(self, session_id: int) -> int:
+        """Count unique users who voted in this session"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COUNT(DISTINCT user_id) as count
+                    FROM voting_votes
+                    WHERE session_id = %s
+                """, (session_id,))
+                result = cur.fetchone()
+                return result[0] if result else 0
+        finally:
+            self.return_connection(conn)
+    
     def get_voting_results(self, session_id: int) -> List[Dict]:
         """Get aggregated voting results for a session"""
         conn = self.get_connection()

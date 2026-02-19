@@ -85,13 +85,16 @@ class VoteCommands(commands.Cog):
     
     def create_voting_embed(self, results: List[dict], session_id: int, excluded_champions: List[str] = None) -> discord.Embed:
         """Create the voting results embed with top 5 and others"""
+        db = get_db()
+        unique_voters = db.get_unique_voter_count(session_id)
+        
         embed = discord.Embed(
             title="🗳️ Champion Voting - Live Results",
             description="**How to vote:** Write one champion name per message\n"
                        "You can vote up to 5 times for different champions\n"
                        "Examples: `Ahri` | `Yasuo` | `Lee Sin` (then repeat up to 5 times)\n"
-                       "💎 Server Boosters get 2 points per champion!\n"
-                       "No duplicates - each champion only counts once",
+                       "💎 **Server Boosters:** Count as **1 vote but give 2 points**\n"
+                       "🚫 No duplicates - each champion only counts once",
             color=0x0099ff
         )
         
@@ -150,7 +153,7 @@ class VoteCommands(commands.Cog):
                 inline=False
             )
         
-        embed.set_footer(text=f"Session ID: {session_id} • Voting in progress")
+        embed.set_footer(text=f"📊 {unique_voters} user{'s' if unique_voters != 1 else ''} participated • Voting in progress")
         return embed
     
     async def process_vote_message(self, message: discord.Message) -> bool:
@@ -487,9 +490,9 @@ class VoteCommands(commands.Cog):
             )
         
         # Get unique voter count
-        voting_records = db.get_voting_results(session['id'])
+        unique_voters = db.get_unique_voter_count(session['id'])
         
-        embed.set_footer(text=f"Total participants: {len(set(v['user_id'] for v in voting_records))}")
+        embed.set_footer(text=f"📊 Final: {unique_voters} user{'s' if unique_voters != 1 else ''} participated")
         
         # Send results in channel
         try:
