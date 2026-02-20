@@ -542,75 +542,53 @@ class StatsCommands(commands.Cog):
             )
             return
 
-        # Prefer verified accounts; we may fetch live mastery if DB is empty
-        accounts = db.get_user_accounts(db_user['id'])
-        verified_accounts = [a for a in accounts if a.get('verified')]
-        if not verified_accounts:
+        # Use only visible + verified accounts (same source scope as /profile)
+        visible_accounts = db.get_visible_user_accounts(db_user['id'])
+        verified_visible_accounts = [a for a in visible_accounts if a.get('verified')]
+
+        if not verified_visible_accounts:
             await interaction.followup.send(
-                f"❌ {target.mention} has no verified League account!",
+                f"❌ {target.mention} has no visible verified League account!",
                 ephemeral=True
             )
             return
-        
-        # Get TOP 10 masteries summed across all accounts
-        conn = db.get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT 
-                        ucs.champion_id,
-                        SUM(ucs.score) as total_points,
-                        MAX(ucs.level) as max_level,
-                        SUM(CASE WHEN ucs.chest_granted THEN 1 ELSE 0 END) as chests_earned
-                    FROM user_champion_stats ucs
-                    WHERE ucs.user_id = %s
-                    GROUP BY ucs.champion_id
-                    ORDER BY total_points DESC
-                    LIMIT 10
-                """, (db_user['id'],))
-                masteries = cur.fetchall()
-        finally:
-            db.return_connection(conn)
 
-        # If no cached data, pull live mastery once and cache it
-        if not masteries:
-            for acc in verified_accounts:
-                try:
-                    mastery_data = await self.riot_api.get_champion_mastery(acc['puuid'], acc['region'], 200)
-                    if not mastery_data:
-                        continue
-                    for champ in mastery_data:
-                        db.update_champion_mastery(
-                            db_user['id'],
-                            champ['championId'],
-                            champ['championPoints'],
-                            champ['championLevel'],
-                            champ.get('chestGranted', False),
-                            champ.get('tokensEarned', 0),
-                            champ.get('lastPlayTime')
-                        )
-                except Exception as fetch_err:
-                    logger.warning("⚠️ Live mastery fetch failed for %s: %s", acc.get('puuid'), fetch_err)
-
-            # Re-run aggregation after caching
-            conn = db.get_connection()
+        # Fetch fresh mastery for each visible verified account and aggregate
+        aggregated = {}
+        for acc in verified_visible_accounts:
             try:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT 
-                            ucs.champion_id,
-                            SUM(ucs.score) as total_points,
-                            MAX(ucs.level) as max_level,
-                            SUM(CASE WHEN ucs.chest_granted THEN 1 ELSE 0 END) as chests_earned
-                        FROM user_champion_stats ucs
-                        WHERE ucs.user_id = %s
-                        GROUP BY ucs.champion_id
-                        ORDER BY total_points DESC
-                        LIMIT 10
-                    """, (db_user['id'],))
-                    masteries = cur.fetchall()
-            finally:
-                db.return_connection(conn)
+                mastery_data = await self.riot_api.get_champion_mastery(acc['puuid'], acc['region'], 200)
+                if not mastery_data:
+                    continue
+
+                for champ in mastery_data:
+                    champion_id = champ.get('championId')
+                    if champion_id is None:
+                        continue
+
+                    if champion_id not in aggregated:
+                        aggregated[champion_id] = {
+                            'total_points': 0,
+                            'max_level': 0,
+                            'chests_earned': 0,
+                        }
+
+                    aggregated[champion_id]['total_points'] += champ.get('championPoints', 0)
+                    aggregated[champion_id]['max_level'] = max(
+                        aggregated[champion_id]['max_level'],
+                        champ.get('championLevel', 0)
+                    )
+                    if champ.get('chestGranted', False):
+                        aggregated[champion_id]['chests_earned'] += 1
+            except Exception as fetch_err:
+                logger.warning("⚠️ Live mastery fetch failed for %s: %s", acc.get('puuid'), fetch_err)
+
+        masteries = [
+            (champion_id, data['total_points'], data['max_level'], data['chests_earned'])
+            for champion_id, data in aggregated.items()
+        ]
+        masteries.sort(key=lambda m: m[1], reverse=True)
+        masteries = masteries[:10]
         
         if not masteries:
             embed = discord.Embed(
@@ -631,7 +609,7 @@ class StatsCommands(commands.Cog):
         # Build embed
         embed = discord.Embed(
             title=f"📊 {target.display_name}'s TOP 10 Masteries",
-            description=f"Combined mastery across all linked accounts",
+            description=f"Combined mastery across all visible linked accounts ({len(verified_visible_accounts)} account{'s' if len(verified_visible_accounts) != 1 else ''})",
             color=0x00D4FF
         )
         
