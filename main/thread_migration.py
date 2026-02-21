@@ -247,23 +247,33 @@ async def migrate_thread(thread: discord.Thread, target_channel_id: int, champio
                 if embed.thumbnail:
                     image_urls.append(embed.thumbnail.url)
         
-        # Create new thread in target channel
-        new_thread = await target_channel.create_thread(
-            name=thread.name,
-            auto_archive_duration=10080,  # 7 days
-            reason=f"Migrated from custom-skins by /migrate command"
-        )
-        
-        # Post content
         content_parts = [f"📋 **Migrated from custom-skins**"]
         content_parts.append(f"🔗 Original thread: {thread.jump_url}")
+        initial_content = '\n'.join(content_parts)
+
+        # Create new thread in target channel.
+        # Forum channels require initial message content in create_thread().
+        if isinstance(target_channel, discord.ForumChannel):
+            created = await target_channel.create_thread(
+                name=thread.name,
+                content=initial_content,
+                auto_archive_duration=10080,  # 7 days
+                reason=f"Migrated from custom-skins by /migrate command"
+            )
+            new_thread = created.thread if hasattr(created, 'thread') else created
+        else:
+            new_thread = await target_channel.create_thread(
+                name=thread.name,
+                auto_archive_duration=10080,  # 7 days
+                reason=f"Migrated from custom-skins by /migrate command"
+            )
+            await new_thread.send(initial_content)
         
         if image_urls:
-            content_parts.append(f"\n📸 **Images from original thread:**")
+            image_lines = ["📸 **Images from original thread:**"]
             for i, url in enumerate(image_urls[:10], 1):  # Limit to 10 images
-                content_parts.append(f"[Image {i}]({url})")
-        
-        await new_thread.send('\n'.join(content_parts))
+                image_lines.append(f"[Image {i}]({url})")
+            await new_thread.send('\n'.join(image_lines))
         
         logger.info(f"✅ Migrated thread '{thread.name}' to {champion_name} channel")
         return True
