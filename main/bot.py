@@ -778,8 +778,8 @@ class MyBot(commands.Bot):
 
                 # Load thread migration commands
                 print("🔄 Loading ThreadMigrationCommands...")
-                await self.add_cog(thread_migration.ThreadMigrationCommands(self))
-                print("  ✅ ThreadMigrationCommands loaded")
+                await self.add_cog(thread_migration.ThreadMigrationCommands(self), guild=primary_guild)
+                print("  ✅ ThreadMigrationCommands loaded (guild-specific)")
                 
                 # Load pro stats commands
                 print("🔄 Loading ProStatsCommands...")
