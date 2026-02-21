@@ -128,6 +128,7 @@ from riot_api import RiotAPI, load_champion_data
 from permissions import has_admin_permissions
 import profile_commands
 import stats_commands
+import thread_migration
 
 # Utility: normalize various DB-stored guess formats into a Python list
 def normalize_guesses(raw):
@@ -774,6 +775,11 @@ class MyBot(commands.Bot):
                 print("  ✅ StatsCommands loaded")
                 await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
                 print("  ✅ LeaderboardCommands loaded")
+
+                # Load thread migration commands
+                print("🔄 Loading ThreadMigrationCommands...")
+                await self.add_cog(thread_migration.ThreadMigrationCommands(self))
+                print("  ✅ ThreadMigrationCommands loaded")
                 
                 # Load pro stats commands
                 print("🔄 Loading ProStatsCommands...")
