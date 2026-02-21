@@ -209,6 +209,38 @@ def extract_champion_from_title(title: str) -> Optional[str]:
     return None
 
 
+async def build_migrated_source_url_index(target_channel: discord.abc.GuildChannel) -> set[str]:
+    """Build a set of original source thread URLs already migrated into target channel threads."""
+    migrated_urls = set()
+
+    threads = []
+    if hasattr(target_channel, 'threads'):
+        threads.extend(list(target_channel.threads))
+
+    if hasattr(target_channel, 'archived_threads'):
+        try:
+            async for archived in target_channel.archived_threads(limit=None):
+                threads.append(archived)
+        except Exception as e:
+            logger.warning(f"Could not read archived threads for channel {getattr(target_channel, 'id', 'unknown')}: {e}")
+
+    for existing_thread in threads:
+        try:
+            async for first_msg in existing_thread.history(limit=1, oldest_first=True):
+                content = first_msg.content or ""
+                if "Migrated from custom-skins" not in content:
+                    break
+
+                match = re.search(r"https://discord\.com/channels/\d+/\d+/\d+", content)
+                if match:
+                    migrated_urls.add(match.group(0))
+                break
+        except Exception:
+            continue
+
+    return migrated_urls
+
+
 async def migrate_thread(thread: discord.Thread, target_channel_id: int, champion_name: str) -> bool:
     """Migrate a thread to target champion channel.
     
@@ -319,7 +351,11 @@ class ThreadMigrationCommands(commands.Cog):
             # Process threads
             migrated = 0
             skipped = 0
+            already_migrated = 0
             errors = 0
+
+            # Per-target-channel cache: channel_id -> set(source_thread_urls_already_migrated)
+            migrated_url_cache: Dict[int, set[str]] = {}
             
             status_msg = await interaction.followup.send(f"🔄 Processing {len(threads)} threads...")
             
@@ -336,23 +372,40 @@ class ThreadMigrationCommands(commands.Cog):
                     skipped += 1
                     logger.warning(f"⏭️ Skipped '{thread.name}' - no channel for {champion}")
                     continue
+
+                target_channel = guild.get_channel(target_channel_id)
+                if not target_channel:
+                    skipped += 1
+                    logger.warning(f"⏭️ Skipped '{thread.name}' - target channel not found for {champion}")
+                    continue
+
+                # Build index once per target channel and skip already-migrated source threads
+                if target_channel_id not in migrated_url_cache:
+                    migrated_url_cache[target_channel_id] = await build_migrated_source_url_index(target_channel)
+
+                if thread.jump_url in migrated_url_cache[target_channel_id]:
+                    already_migrated += 1
+                    logger.info(f"⏭️ Skipped '{thread.name}' - already migrated")
+                    continue
                 
                 success = await migrate_thread(thread, target_channel_id, champion)
                 
                 if success:
                     migrated += 1
+                    migrated_url_cache[target_channel_id].add(thread.jump_url)
                 else:
                     errors += 1
                 
                 # Update status every 10 threads
-                if (migrated + skipped + errors) % 10 == 0:
-                    await status_msg.edit(content=f"🔄 Progress: {migrated} migrated, {skipped} skipped, {errors} errors...")
+                if (migrated + skipped + already_migrated + errors) % 10 == 0:
+                    await status_msg.edit(content=f"🔄 Progress: {migrated} migrated, {already_migrated} already, {skipped} skipped, {errors} errors...")
             
             # Final summary
             summary = (
                 f"✅ **Migration Complete!**\n\n"
                 f"📊 **Summary:**\n"
                 f"✅ Migrated: {migrated}\n"
+                f"♻️ Already migrated: {already_migrated}\n"
                 f"⏭️ Skipped: {skipped}\n"
                 f"❌ Errors: {errors}\n"
                 f"📋 Total: {len(threads)}"
