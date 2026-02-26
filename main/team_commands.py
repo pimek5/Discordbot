@@ -76,18 +76,20 @@ class TeamCommands(commands.Cog):
         if not ranks:
             return {"display": "Unranked", "rank_score": None, "wr_pct": None}
 
-        best = None
-        best_key = (-1, -1, -1)
+        solo_queues = [rank_data for rank_data in ranks if "SOLO" in (rank_data.get("queueType", "") or "").upper()]
+        flex_queues = [rank_data for rank_data in ranks if "FLEX" in (rank_data.get("queueType", "") or "").upper()]
 
-        for rank_data in ranks:
+        def rank_key(rank_data: dict):
             tier = rank_data.get("tier")
             division = rank_data.get("rank")
             lp = rank_data.get("league_points", 0)
+            return (self._tier_score(tier), self._division_score(division), int(lp or 0))
 
-            key = (self._tier_score(tier), self._division_score(division), int(lp or 0))
-            if key > best_key:
-                best_key = key
-                best = rank_data
+        highest_solo = max(solo_queues, key=rank_key) if solo_queues else None
+        highest_flex = max(flex_queues, key=rank_key) if flex_queues else None
+
+        best = highest_solo or highest_flex
+        best_key = rank_key(best) if best else (-1, -1, -1)
 
         if not best or best_key[0] <= 0:
             return {"display": "Unranked", "rank_score": None, "wr_pct": None}
