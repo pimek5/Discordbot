@@ -39,9 +39,39 @@ class TeamCommands(commands.Cog):
         order = {"IV": 1, "III": 2, "II": 3, "I": 4}
         return order.get((division or "").upper(), 0)
 
-    def _best_rank_display(self, ranks: list) -> str:
-        if not ranks:
+    def _format_rank_from_score(self, score: float) -> str:
+        tier_names = {
+            1: "Iron",
+            2: "Bronze",
+            3: "Silver",
+            4: "Gold",
+            5: "Platinum",
+            6: "Emerald",
+            7: "Diamond",
+            8: "Master",
+            9: "Grandmaster",
+            10: "Challenger",
+        }
+        division_names = {1: "IV", 2: "III", 3: "II", 4: "I"}
+
+        tier_score = int(score // 10000)
+        if tier_score <= 0:
             return "Unranked"
+
+        remainder = score - (tier_score * 10000)
+        division_score = int(remainder // 1000)
+        lp = max(0, int(round(remainder - (division_score * 1000))))
+
+        tier = tier_names.get(tier_score, "Unranked")
+        if tier_score >= 8:
+            return f"{tier} • {lp} LP"
+
+        division = division_names.get(max(1, min(4, division_score)), "IV")
+        return f"{tier} {division} • {lp} LP"
+
+    def _best_rank_stats(self, ranks: list) -> dict:
+        if not ranks:
+            return {"display": "Unranked", "rank_score": None, "wr_pct": None}
 
         best = None
         best_key = (-1, -1, -1)
@@ -57,7 +87,7 @@ class TeamCommands(commands.Cog):
                 best = rank_data
 
         if not best or best_key[0] <= 0:
-            return "Unranked"
+            return {"display": "Unranked", "rank_score": None, "wr_pct": None}
 
         tier = (best.get("tier") or "").title()
         division = best.get("rank") or ""
@@ -65,9 +95,15 @@ class TeamCommands(commands.Cog):
         wins = int(best.get("wins", 0) or 0)
         losses = int(best.get("losses", 0) or 0)
         total = wins + losses
-        wr = f"{(wins / total * 100):.0f}%" if total > 0 else "--"
+        wr_pct = (wins / total * 100) if total > 0 else None
+        wr = f"{wr_pct:.0f}%" if wr_pct is not None else "--"
 
-        return f"{tier} {division} • {lp} LP • {wr} WR"
+        display = f"{tier} {division} • {lp} LP • {wr} WR"
+        rank_score = best_key[0] * 10000 + best_key[1] * 1000 + lp
+        return {"display": display, "rank_score": rank_score, "wr_pct": wr_pct}
+
+    def _best_rank_display(self, ranks: list) -> str:
+        return self._best_rank_stats(ranks)["display"]
 
     @team.command(name="create", description="Create a new team")
     @app_commands.describe(name="Team name")
@@ -258,15 +294,30 @@ class TeamCommands(commands.Cog):
         if name is None and tag is None:
             members = db.get_team_members(actor_team["id"])
             member_lines = []
+            rank_scores = []
+            wr_values = []
             for member in members:
                 prefix = "👑" if member.get("role") == "captain" else "•"
-                rank_display = self._best_rank_display(db.get_user_ranks(member["user_id"]))
+                rank_stats = self._best_rank_stats(db.get_user_ranks(member["user_id"]))
+                rank_display = rank_stats["display"]
                 member_lines.append(f"{prefix} <@{member['snowflake']}> — {rank_display}")
+
+                if rank_stats["rank_score"] is not None:
+                    rank_scores.append(rank_stats["rank_score"])
+                if rank_stats["wr_pct"] is not None:
+                    wr_values.append(rank_stats["wr_pct"])
 
             member_mentions = "\n".join(member_lines) if member_lines else "No members"
             embed = discord.Embed(title=f"⚙️ Team Config: {actor_team['name']}")
             embed.add_field(name="Tag", value=actor_team.get("tag") or "(none)", inline=False)
             embed.add_field(name="Members", value=member_mentions[:1024], inline=False)
+            avg_rank = self._format_rank_from_score(sum(rank_scores) / len(rank_scores)) if rank_scores else "Unranked"
+            avg_wr = f"{(sum(wr_values) / len(wr_values)):.1f}%" if wr_values else "--"
+            embed.add_field(
+                name="Averages",
+                value=f"• Rank: **{avg_rank}**\n• WR: **{avg_wr} WR**",
+                inline=False,
+            )
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
