@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from database import get_db
+from emoji_dict import get_rank_emoji
 
 logger = logging.getLogger("team_commands")
 
@@ -63,11 +64,13 @@ class TeamCommands(commands.Cog):
         lp = max(0, int(round(remainder - (division_score * 1000))))
 
         tier = tier_names.get(tier_score, "Unranked")
+        rank_emoji = get_rank_emoji(tier.upper()) if tier != "Unranked" else ""
+        emoji_prefix = f"{rank_emoji} " if rank_emoji else ""
         if tier_score >= 8:
-            return f"{tier} • {lp} LP"
+            return f"{emoji_prefix}{tier} • {lp} LP"
 
         division = division_names.get(max(1, min(4, division_score)), "IV")
-        return f"{tier} {division} • {lp} LP"
+        return f"{emoji_prefix}{tier} {division} • {lp} LP"
 
     def _best_rank_stats(self, ranks: list) -> dict:
         if not ranks:
@@ -98,7 +101,9 @@ class TeamCommands(commands.Cog):
         wr_pct = (wins / total * 100) if total > 0 else None
         wr = f"{wr_pct:.0f}%" if wr_pct is not None else "--"
 
-        display = f"{tier} {division} • {lp} LP • {wr} WR"
+        rank_emoji = get_rank_emoji((best.get("tier") or "").upper())
+        emoji_prefix = f"{rank_emoji} " if rank_emoji else ""
+        display = f"{emoji_prefix}{tier} {division} • {lp} LP • {wr} WR"
         rank_score = best_key[0] * 10000 + best_key[1] * 1000 + lp
         return {"display": display, "rank_score": rank_score, "wr_pct": wr_pct}
 
