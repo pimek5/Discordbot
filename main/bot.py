@@ -129,6 +129,7 @@ from permissions import has_admin_permissions
 import profile_commands
 import stats_commands
 import thread_migration
+import team_commands
 
 # Utility: normalize various DB-stored guess formats into a Python list
 def normalize_guesses(raw):
@@ -797,6 +798,11 @@ class MyBot(commands.Bot):
                 settings_cog = SettingsCommands(self)
                 await self.add_cog(settings_cog, guild=primary_guild)
                 print("  ✅ SettingsCommands loaded (guild-specific)")
+
+                # Load team commands (guild-specific)
+                print("🔄 Loading TeamCommands...")
+                await self.add_cog(team_commands.TeamCommands(self), guild=primary_guild)
+                print("  ✅ TeamCommands loaded (guild-specific)")
                 
                 # Load voting commands (guild-specific)
                 print("🔄 Loading VoteCommands...")

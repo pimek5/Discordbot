@@ -80,6 +80,38 @@ class Database:
                     logger.warning(f"⚠️ Migration already applied or error: {migration_error}")
                     conn.rollback()
 
+                # Run team system migration
+                try:
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS teams (
+                            id SERIAL PRIMARY KEY,
+                            guild_id BIGINT NOT NULL,
+                            name VARCHAR(50) NOT NULL,
+                            tag VARCHAR(12),
+                            captain_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            updated_at TIMESTAMP DEFAULT NOW(),
+                            UNIQUE (guild_id, name)
+                        )
+                    """)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS team_members (
+                            id SERIAL PRIMARY KEY,
+                            team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            role VARCHAR(20) NOT NULL DEFAULT 'member',
+                            invited_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                            joined_at TIMESTAMP DEFAULT NOW(),
+                            UNIQUE (team_id, user_id)
+                        )
+                    """)
+                    conn.commit()
+                    logger.info("✅ Team system migration applied")
+                except Exception as migration_error:
+                    logger.warning(f"⚠️ Team migration already applied or error: {migration_error}")
+                    conn.rollback()
+
         except Exception as e:
             conn.rollback()
             logger.error(f"❌ Error creating tables: {e}")
@@ -292,6 +324,165 @@ class Database:
             conn.rollback()
             logger.error(f"Error updating account name: {e}")
             return False
+        finally:
+            self.return_connection(conn)
+
+    # ==================== TEAM OPERATIONS ====================
+
+    def get_team_by_name(self, guild_id: int, team_name: str) -> Optional[Dict]:
+        """Get team by exact name in guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM teams
+                    WHERE guild_id = %s AND LOWER(name) = LOWER(%s)
+                    LIMIT 1
+                    """,
+                    (guild_id, team_name)
+                )
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def get_user_team(self, guild_id: int, user_id: int) -> Optional[Dict]:
+        """Get team for a user in guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT t.*
+                    FROM team_members tm
+                    JOIN teams t ON tm.team_id = t.id
+                    WHERE t.guild_id = %s AND tm.user_id = %s
+                    LIMIT 1
+                    """,
+                    (guild_id, user_id)
+                )
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def create_team(self, guild_id: int, name: str, captain_user_id: int, created_by_user_id: int) -> int:
+        """Create a team and auto-add captain as member"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO teams (guild_id, name, captain_user_id, created_by_user_id)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (guild_id, name, captain_user_id, created_by_user_id)
+                )
+                team_id = cur.fetchone()[0]
+
+                cur.execute(
+                    """
+                    INSERT INTO team_members (team_id, user_id, role, invited_by_user_id)
+                    VALUES (%s, %s, 'captain', %s)
+                    ON CONFLICT (team_id, user_id) DO NOTHING
+                    """,
+                    (team_id, captain_user_id, created_by_user_id)
+                )
+                conn.commit()
+                return team_id
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self.return_connection(conn)
+
+    def add_team_member(self, team_id: int, user_id: int, invited_by_user_id: int) -> bool:
+        """Add member to team"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO team_members (team_id, user_id, role, invited_by_user_id)
+                    VALUES (%s, %s, 'member', %s)
+                    ON CONFLICT (team_id, user_id) DO NOTHING
+                    """,
+                    (team_id, user_id, invited_by_user_id)
+                )
+                conn.commit()
+                return cur.rowcount > 0
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self.return_connection(conn)
+
+    def remove_team_member(self, team_id: int, user_id: int) -> bool:
+        """Remove member from team"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM team_members
+                    WHERE team_id = %s AND user_id = %s
+                    """,
+                    (team_id, user_id)
+                )
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            self.return_connection(conn)
+
+    def update_team_config(self, team_id: int, name: Optional[str] = None, tag: Optional[str] = None) -> bool:
+        """Update team config fields"""
+        fields = []
+        values: List[Any] = []
+        if name is not None:
+            fields.append("name = %s")
+            values.append(name)
+        if tag is not None:
+            fields.append("tag = %s")
+            values.append(tag)
+        if not fields:
+            return False
+
+        values.append(team_id)
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE teams
+                    SET {', '.join(fields)}, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    tuple(values)
+                )
+                conn.commit()
+                return cur.rowcount > 0
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self.return_connection(conn)
+
+    def get_team_members(self, team_id: int) -> List[Dict]:
+        """Get all members for team"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT tm.*, u.snowflake
+                    FROM team_members tm
+                    JOIN users u ON u.id = tm.user_id
+                    WHERE tm.team_id = %s
+                    ORDER BY CASE WHEN tm.role = 'captain' THEN 0 ELSE 1 END, tm.joined_at ASC
+                    """,
+                    (team_id,)
+                )
+                return cur.fetchall()
         finally:
             self.return_connection(conn)
     
