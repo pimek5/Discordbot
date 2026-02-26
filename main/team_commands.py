@@ -56,11 +56,10 @@ class TeamCommands(commands.Cog):
             return
 
         try:
-            team_id = db.create_team(guild.id, clean_name, db_user["id"], db_user["id"])
+            db.create_team(guild.id, clean_name, db_user["id"], db_user["id"])
             await interaction.followup.send(
                 f"✅ Team **{clean_name}** created!\n"
-                f"👑 Captain: {interaction.user.mention}\n"
-                f"🆔 Team ID: `{team_id}`",
+                f"👑 Captain: {interaction.user.mention}",
                 ephemeral=True,
             )
         except Exception as error:
@@ -210,7 +209,7 @@ class TeamCommands(commands.Cog):
         if name is None and tag is None:
             members = db.get_team_members(actor_team["id"])
             member_mentions = "\n".join([f"• <@{m['snowflake']}> ({m['role']})" for m in members]) or "No members"
-            embed = discord.Embed(title=f"⚙️ Team Config: {actor_team['name']}", color=0x1F8EFA)
+            embed = discord.Embed(title=f"⚙️ Team Config: {actor_team['name']}")
             embed.add_field(name="Tag", value=actor_team.get("tag") or "(none)", inline=False)
             embed.add_field(name="Members", value=member_mentions[:1024], inline=False)
             await interaction.followup.send(embed=embed, ephemeral=True)
