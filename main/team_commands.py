@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Optional
 
 import discord
@@ -125,6 +126,40 @@ class TeamCommands(commands.Cog):
 
     def _best_rank_display(self, ranks: list) -> str:
         return self._best_rank_stats(ranks)["display"]
+
+    def _resolve_member_from_query(self, guild: discord.Guild, query: str) -> Optional[discord.Member]:
+        match = re.match(r"^<@!?(\d+)>$", query)
+        if match:
+            member_id = int(match.group(1))
+            return guild.get_member(member_id)
+
+        normalized = query.strip().lower()
+        if not normalized:
+            return None
+
+        def member_name_candidates(member: discord.Member) -> list:
+            values = [member.display_name, member.name]
+            global_name = getattr(member, "global_name", None)
+            if global_name:
+                values.append(global_name)
+            return [v.lower() for v in values if v]
+
+        for member in guild.members:
+            names = member_name_candidates(member)
+            if normalized in names:
+                return member
+
+        for member in guild.members:
+            names = member_name_candidates(member)
+            if any(name.startswith(normalized) for name in names):
+                return member
+
+        for member in guild.members:
+            names = member_name_candidates(member)
+            if any(normalized in name for name in names):
+                return member
+
+        return None
 
     async def _get_effective_ranks(self, db, user_id: int) -> list:
         cached_ranks = db.get_user_ranks(user_id)
@@ -451,8 +486,8 @@ class TeamCommands(commands.Cog):
             await interaction.followup.send("❌ Failed to update team config.", ephemeral=True)
 
     @team.command(name="info", description="Show team overview")
-    @app_commands.describe(name="Team name (leave empty to show your team)")
-    async def team_info(self, interaction: discord.Interaction, name: Optional[str] = None):
+    @app_commands.describe(query="Team name, tag (e.g. HXRT), member mention or nickname")
+    async def team_info(self, interaction: discord.Interaction, query: Optional[str] = None):
         await interaction.response.defer(ephemeral=False)
 
         guild = interaction.guild
@@ -463,10 +498,32 @@ class TeamCommands(commands.Cog):
         db = get_db()
         team = None
 
-        if name and name.strip():
-            team = db.get_team_by_name(guild.id, name.strip())
+        if query and query.strip():
+            lookup = query.strip()
+
+            member = self._resolve_member_from_query(guild, lookup)
+            if member:
+                member_db_user = db.get_user_by_discord_id(member.id)
+                if member_db_user:
+                    team = db.get_user_team(guild.id, member_db_user["id"])
+
             if not team:
-                await interaction.followup.send("❌ Team not found.", ephemeral=True)
+                team = db.get_team_by_name(guild.id, lookup)
+
+            if not team:
+                teams_by_tag = db.get_teams_by_tag(guild.id, lookup)
+                if len(teams_by_tag) == 1:
+                    team = teams_by_tag[0]
+                elif len(teams_by_tag) > 1:
+                    names = ", ".join(team_row["name"] for team_row in teams_by_tag[:5])
+                    await interaction.followup.send(
+                        f"⚠️ Found multiple teams with tag **{lookup.upper()}**: {names}. Use exact team name.",
+                        ephemeral=True,
+                    )
+                    return
+
+            if not team:
+                await interaction.followup.send("❌ Team not found. Search by team name, tag, or member.", ephemeral=True)
                 return
         else:
             actor_db_user = db.get_user_by_discord_id(interaction.user.id)

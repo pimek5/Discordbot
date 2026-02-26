@@ -350,6 +350,23 @@ class Database:
         finally:
             self.return_connection(conn)
 
+    def get_teams_by_tag(self, guild_id: int, team_tag: str) -> List[Dict]:
+        """Get teams by exact tag in guild (case-insensitive)"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM teams
+                    WHERE guild_id = %s AND LOWER(COALESCE(tag, '')) = LOWER(%s)
+                    ORDER BY created_at ASC
+                    """,
+                    (guild_id, team_tag)
+                )
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+
     def get_user_team(self, guild_id: int, user_id: int) -> Optional[Dict]:
         """Get team for a user in guild"""
         conn = self.get_connection()
