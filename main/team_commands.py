@@ -126,7 +126,49 @@ class TeamCommands(commands.Cog):
     def _best_rank_display(self, ranks: list) -> str:
         return self._best_rank_stats(ranks)["display"]
 
-    def _build_team_overview_embed(self, team: dict, db, title_prefix: str) -> discord.Embed:
+    async def _get_effective_ranks(self, db, user_id: int) -> list:
+        cached_ranks = db.get_user_ranks(user_id)
+        cached_best = self._best_rank_stats(cached_ranks)
+        if cached_best["rank_score"] is not None:
+            return cached_ranks
+
+        riot_api = getattr(self.bot, "riot_api", None)
+        if not riot_api:
+            return cached_ranks
+
+        accounts = self._get_verified_accounts(db, user_id)
+        if not accounts:
+            return cached_ranks
+
+        all_live_ranks = []
+        for account in accounts:
+            puuid = account.get("puuid")
+            region = account.get("region")
+            if not puuid or not region:
+                continue
+            try:
+                live_ranks = await riot_api.get_ranked_stats_by_puuid(puuid, region)
+                if live_ranks:
+                    all_live_ranks.extend(live_ranks)
+                    for queue in live_ranks:
+                        db.update_ranked_stats(
+                            user_id,
+                            queue.get("queueType", ""),
+                            queue.get("tier", "UNRANKED"),
+                            queue.get("rank", ""),
+                            int(queue.get("leaguePoints", 0) or 0),
+                            int(queue.get("wins", 0) or 0),
+                            int(queue.get("losses", 0) or 0),
+                            bool(queue.get("hotStreak", False)),
+                            bool(queue.get("veteran", False)),
+                            bool(queue.get("freshBlood", False)),
+                        )
+            except Exception as error:
+                logger.warning("Failed live rank fetch for user %s account %s: %s", user_id, account.get("id"), error)
+
+        return all_live_ranks if all_live_ranks else cached_ranks
+
+    async def _build_team_overview_embed(self, team: dict, db, title_prefix: str) -> discord.Embed:
         members = db.get_team_members(team["id"])
         member_lines = []
         rank_scores = []
@@ -134,7 +176,8 @@ class TeamCommands(commands.Cog):
 
         for member in members:
             prefix = "👑" if member.get("role") == "captain" else "•"
-            rank_stats = self._best_rank_stats(db.get_user_ranks(member["user_id"]))
+            member_ranks = await self._get_effective_ranks(db, member["user_id"])
+            rank_stats = self._best_rank_stats(member_ranks)
             member_lines.append(f"{prefix} <@{member['snowflake']}> — {rank_stats['display']}")
 
             if rank_stats["rank_score"] is not None:
@@ -356,7 +399,7 @@ class TeamCommands(commands.Cog):
             return
 
         if name is None and tag is None and description is None and recruiting is None:
-            embed = self._build_team_overview_embed(actor_team, db, "⚙️ Team Config")
+            embed = await self._build_team_overview_embed(actor_team, db, "⚙️ Team Config")
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
@@ -436,5 +479,5 @@ class TeamCommands(commands.Cog):
                 await interaction.followup.send("❌ You are not in any team. Pass a team name to view another team.", ephemeral=True)
                 return
 
-        embed = self._build_team_overview_embed(team, db, "👥 Team")
+        embed = await self._build_team_overview_embed(team, db, "👥 Team")
         await interaction.followup.send(embed=embed, ephemeral=False)

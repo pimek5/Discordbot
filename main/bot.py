@@ -755,6 +755,7 @@ class MyBot(commands.Bot):
                     
                 # Create Riot API instance
                 riot_api = RiotAPI(RIOT_API_KEY)
+                self.riot_api = riot_api
                 print("✅ Riot API instance created")
                 
                 # Load champion data from DDragon
