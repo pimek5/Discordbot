@@ -799,10 +799,10 @@ class MyBot(commands.Bot):
                 await self.add_cog(settings_cog, guild=primary_guild)
                 print("  ✅ SettingsCommands loaded (guild-specific)")
 
-                # Load team commands (guild-specific)
+                # Load team commands (global)
                 print("🔄 Loading TeamCommands...")
-                await self.add_cog(team_commands.TeamCommands(self), guild=primary_guild)
-                print("  ✅ TeamCommands loaded (guild-specific)")
+                await self.add_cog(team_commands.TeamCommands(self))
+                print("  ✅ TeamCommands loaded (global)")
                 
                 # Load voting commands (guild-specific)
                 print("🔄 Loading VoteCommands...")

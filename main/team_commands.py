@@ -76,19 +76,29 @@ class TeamCommands(commands.Cog):
         if not ranks:
             return {"display": "Unranked", "rank_score": None, "wr_pct": None}
 
-        solo_queues = [rank_data for rank_data in ranks if "SOLO" in (rank_data.get("queueType", "") or "").upper()]
-        flex_queues = [rank_data for rank_data in ranks if "FLEX" in (rank_data.get("queueType", "") or "").upper()]
+        solo_queues = [
+            rank_data
+            for rank_data in ranks
+            if "SOLO" in ((rank_data.get("queueType") or rank_data.get("queue") or "").upper())
+        ]
+        flex_queues = [
+            rank_data
+            for rank_data in ranks
+            if "FLEX" in ((rank_data.get("queueType") or rank_data.get("queue") or "").upper())
+        ]
 
         def rank_key(rank_data: dict):
             tier = rank_data.get("tier")
             division = rank_data.get("rank")
-            lp = rank_data.get("league_points", 0)
+            lp = rank_data.get("league_points")
+            if lp is None:
+                lp = rank_data.get("leaguePoints", 0)
             return (self._tier_score(tier), self._division_score(division), int(lp or 0))
 
         highest_solo = max(solo_queues, key=rank_key) if solo_queues else None
         highest_flex = max(flex_queues, key=rank_key) if flex_queues else None
 
-        best = highest_solo or highest_flex
+        best = highest_solo or highest_flex or max(ranks, key=rank_key)
         best_key = rank_key(best) if best else (-1, -1, -1)
 
         if not best or best_key[0] <= 0:
@@ -96,7 +106,10 @@ class TeamCommands(commands.Cog):
 
         tier = (best.get("tier") or "").title()
         division = best.get("rank") or ""
-        lp = int(best.get("league_points", 0) or 0)
+        lp = best.get("league_points")
+        if lp is None:
+            lp = best.get("leaguePoints", 0)
+        lp = int(lp or 0)
         wins = int(best.get("wins", 0) or 0)
         losses = int(best.get("losses", 0) or 0)
         total = wins + losses
@@ -105,7 +118,8 @@ class TeamCommands(commands.Cog):
 
         rank_emoji = get_rank_emoji((best.get("tier") or "").upper())
         emoji_prefix = f"{rank_emoji} " if rank_emoji else ""
-        display = f"{emoji_prefix}{tier} {division} • {lp} LP • {wr} WR"
+        rank_label = f"{tier} {division}".strip()
+        display = f"{emoji_prefix}{rank_label} • {lp} LP • {wr} WR"
         rank_score = best_key[0] * 10000 + best_key[1] * 1000 + lp
         return {"display": display, "rank_score": rank_score, "wr_pct": wr_pct}
 
@@ -269,12 +283,19 @@ class TeamCommands(commands.Cog):
         )
 
     @team.command(name="config", description="Configure your team")
-    @app_commands.describe(name="New team name", tag="Team tag (max 12 chars)")
+    @app_commands.describe(
+        name="New team name",
+        tag="Team tag (max 12 chars)",
+        description="Team description (max 180 chars)",
+        recruiting="Open recruitment: true/false",
+    )
     async def team_config(
         self,
         interaction: discord.Interaction,
         name: Optional[str] = None,
         tag: Optional[str] = None,
+        description: Optional[str] = None,
+        recruiting: Optional[bool] = None,
     ):
         await interaction.response.defer(ephemeral=True)
 
@@ -298,7 +319,7 @@ class TeamCommands(commands.Cog):
             await interaction.followup.send("❌ Only the team captain can configure team settings.", ephemeral=True)
             return
 
-        if name is None and tag is None:
+        if name is None and tag is None and description is None and recruiting is None:
             members = db.get_team_members(actor_team["id"])
             member_lines = []
             rank_scores = []
@@ -317,6 +338,12 @@ class TeamCommands(commands.Cog):
             member_mentions = "\n".join(member_lines) if member_lines else "No members"
             embed = discord.Embed(title=f"⚙️ Team Config: {actor_team['name']}")
             embed.add_field(name="Tag", value=actor_team.get("tag") or "(none)", inline=False)
+            embed.add_field(name="Description", value=actor_team.get("description") or "(none)", inline=False)
+            embed.add_field(
+                name="Recruiting",
+                value="✅ Open" if actor_team.get("recruiting", True) else "⛔ Closed",
+                inline=False,
+            )
             embed.add_field(name="Members", value=member_mentions[:1024], inline=False)
             avg_rank = self._format_rank_from_score(sum(rank_scores) / len(rank_scores)) if rank_scores else "Unranked"
             avg_wr = f"{(sum(wr_values) / len(wr_values)):.1f}%" if wr_values else "--"
@@ -330,6 +357,7 @@ class TeamCommands(commands.Cog):
 
         new_name = name.strip() if name is not None else None
         new_tag = tag.strip() if tag is not None else None
+        new_description = description.strip() if description is not None else None
 
         if new_name is not None and (len(new_name) < 3 or len(new_name) > 50):
             await interaction.followup.send("❌ Team name must be between 3 and 50 characters.", ephemeral=True)
@@ -339,6 +367,10 @@ class TeamCommands(commands.Cog):
             await interaction.followup.send("❌ Team tag must be max 12 characters.", ephemeral=True)
             return
 
+        if new_description is not None and len(new_description) > 180:
+            await interaction.followup.send("❌ Team description must be max 180 characters.", ephemeral=True)
+            return
+
         if new_name and new_name.lower() != actor_team["name"].lower():
             existing = db.get_team_by_name(guild.id, new_name)
             if existing and existing["id"] != actor_team["id"]:
@@ -346,7 +378,13 @@ class TeamCommands(commands.Cog):
                 return
 
         try:
-            updated = db.update_team_config(actor_team["id"], name=new_name, tag=new_tag)
+            updated = db.update_team_config(
+                actor_team["id"],
+                name=new_name,
+                tag=new_tag,
+                description=new_description,
+                recruiting=recruiting,
+            )
             if not updated:
                 await interaction.followup.send("⚠️ Nothing changed.", ephemeral=True)
                 return
@@ -355,7 +393,9 @@ class TeamCommands(commands.Cog):
             await interaction.followup.send(
                 f"✅ Team updated!\n"
                 f"• Name: **{refreshed['name']}**\n"
-                f"• Tag: **{refreshed.get('tag') or '(none)'}**",
+                f"• Tag: **{refreshed.get('tag') or '(none)'}**\n"
+                f"• Description: **{refreshed.get('description') or '(none)'}**\n"
+                f"• Recruiting: **{'Open' if refreshed.get('recruiting', True) else 'Closed'}**",
                 ephemeral=True,
             )
         except Exception as error:

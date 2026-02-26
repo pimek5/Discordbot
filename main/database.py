@@ -88,6 +88,8 @@ class Database:
                             guild_id BIGINT NOT NULL,
                             name VARCHAR(50) NOT NULL,
                             tag VARCHAR(12),
+                            description VARCHAR(180),
+                            recruiting BOOLEAN NOT NULL DEFAULT TRUE,
                             captain_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                             created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                             created_at TIMESTAMP DEFAULT NOW(),
@@ -106,6 +108,8 @@ class Database:
                             UNIQUE (team_id, user_id)
                         )
                     """)
+                    cur.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS description VARCHAR(180)")
+                    cur.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS recruiting BOOLEAN NOT NULL DEFAULT TRUE")
                     conn.commit()
                     logger.info("✅ Team system migration applied")
                 except Exception as migration_error:
@@ -434,7 +438,14 @@ class Database:
         finally:
             self.return_connection(conn)
 
-    def update_team_config(self, team_id: int, name: Optional[str] = None, tag: Optional[str] = None) -> bool:
+    def update_team_config(
+        self,
+        team_id: int,
+        name: Optional[str] = None,
+        tag: Optional[str] = None,
+        description: Optional[str] = None,
+        recruiting: Optional[bool] = None,
+    ) -> bool:
         """Update team config fields"""
         fields = []
         values: List[Any] = []
@@ -444,6 +455,12 @@ class Database:
         if tag is not None:
             fields.append("tag = %s")
             values.append(tag)
+        if description is not None:
+            fields.append("description = %s")
+            values.append(description)
+        if recruiting is not None:
+            fields.append("recruiting = %s")
+            values.append(recruiting)
         if not fields:
             return False
 
