@@ -126,6 +126,42 @@ class TeamCommands(commands.Cog):
     def _best_rank_display(self, ranks: list) -> str:
         return self._best_rank_stats(ranks)["display"]
 
+    def _build_team_overview_embed(self, team: dict, db, title_prefix: str) -> discord.Embed:
+        members = db.get_team_members(team["id"])
+        member_lines = []
+        rank_scores = []
+        wr_values = []
+
+        for member in members:
+            prefix = "👑" if member.get("role") == "captain" else "•"
+            rank_stats = self._best_rank_stats(db.get_user_ranks(member["user_id"]))
+            member_lines.append(f"{prefix} <@{member['snowflake']}> — {rank_stats['display']}")
+
+            if rank_stats["rank_score"] is not None:
+                rank_scores.append(rank_stats["rank_score"])
+            if rank_stats["wr_pct"] is not None:
+                wr_values.append(rank_stats["wr_pct"])
+
+        member_mentions = "\n".join(member_lines) if member_lines else "No members"
+        avg_rank = self._format_rank_from_score(sum(rank_scores) / len(rank_scores)) if rank_scores else "Unranked"
+        avg_wr = f"{(sum(wr_values) / len(wr_values)):.1f}%" if wr_values else "--"
+
+        embed = discord.Embed(title=f"{title_prefix}: {team['name']}")
+        embed.add_field(name="Tag", value=team.get("tag") or "(none)", inline=False)
+        embed.add_field(name="Description", value=team.get("description") or "(none)", inline=False)
+        embed.add_field(
+            name="Recruiting",
+            value="✅ Open" if team.get("recruiting", True) else "⛔ Closed",
+            inline=False,
+        )
+        embed.add_field(name="Members", value=member_mentions[:1024], inline=False)
+        embed.add_field(
+            name="Averages",
+            value=f"• Rank: **{avg_rank}**\n• WR: **{avg_wr} WR**",
+            inline=False,
+        )
+        return embed
+
     @team.command(name="create", description="Create a new team")
     @app_commands.describe(name="Team name")
     async def team_create(self, interaction: discord.Interaction, name: str):
@@ -320,38 +356,7 @@ class TeamCommands(commands.Cog):
             return
 
         if name is None and tag is None and description is None and recruiting is None:
-            members = db.get_team_members(actor_team["id"])
-            member_lines = []
-            rank_scores = []
-            wr_values = []
-            for member in members:
-                prefix = "👑" if member.get("role") == "captain" else "•"
-                rank_stats = self._best_rank_stats(db.get_user_ranks(member["user_id"]))
-                rank_display = rank_stats["display"]
-                member_lines.append(f"{prefix} <@{member['snowflake']}> — {rank_display}")
-
-                if rank_stats["rank_score"] is not None:
-                    rank_scores.append(rank_stats["rank_score"])
-                if rank_stats["wr_pct"] is not None:
-                    wr_values.append(rank_stats["wr_pct"])
-
-            member_mentions = "\n".join(member_lines) if member_lines else "No members"
-            embed = discord.Embed(title=f"⚙️ Team Config: {actor_team['name']}")
-            embed.add_field(name="Tag", value=actor_team.get("tag") or "(none)", inline=False)
-            embed.add_field(name="Description", value=actor_team.get("description") or "(none)", inline=False)
-            embed.add_field(
-                name="Recruiting",
-                value="✅ Open" if actor_team.get("recruiting", True) else "⛔ Closed",
-                inline=False,
-            )
-            embed.add_field(name="Members", value=member_mentions[:1024], inline=False)
-            avg_rank = self._format_rank_from_score(sum(rank_scores) / len(rank_scores)) if rank_scores else "Unranked"
-            avg_wr = f"{(sum(wr_values) / len(wr_values)):.1f}%" if wr_values else "--"
-            embed.add_field(
-                name="Averages",
-                value=f"• Rank: **{avg_rank}**\n• WR: **{avg_wr} WR**",
-                inline=False,
-            )
+            embed = self._build_team_overview_embed(actor_team, db, "⚙️ Team Config")
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
@@ -401,3 +406,35 @@ class TeamCommands(commands.Cog):
         except Exception as error:
             logger.error("Failed to update team config: %s", error)
             await interaction.followup.send("❌ Failed to update team config.", ephemeral=True)
+
+    @team.command(name="info", description="Show team overview")
+    @app_commands.describe(name="Team name (leave empty to show your team)")
+    async def team_info(self, interaction: discord.Interaction, name: Optional[str] = None):
+        await interaction.response.defer(ephemeral=False)
+
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db = get_db()
+        team = None
+
+        if name and name.strip():
+            team = db.get_team_by_name(guild.id, name.strip())
+            if not team:
+                await interaction.followup.send("❌ Team not found.", ephemeral=True)
+                return
+        else:
+            actor_db_user = db.get_user_by_discord_id(interaction.user.id)
+            if not actor_db_user:
+                await interaction.followup.send("❌ You need to link a Riot account first.", ephemeral=True)
+                return
+
+            team = db.get_user_team(guild.id, actor_db_user["id"])
+            if not team:
+                await interaction.followup.send("❌ You are not in any team. Pass a team name to view another team.", ephemeral=True)
+                return
+
+        embed = self._build_team_overview_embed(team, db, "👥 Team")
+        await interaction.followup.send(embed=embed, ephemeral=False)
