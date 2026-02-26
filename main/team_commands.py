@@ -20,6 +20,55 @@ class TeamCommands(commands.Cog):
         accounts = db.get_user_accounts(db_user_id)
         return [account for account in accounts if account.get("verified")]
 
+    def _tier_score(self, tier: str) -> int:
+        order = {
+            "IRON": 1,
+            "BRONZE": 2,
+            "SILVER": 3,
+            "GOLD": 4,
+            "PLATINUM": 5,
+            "EMERALD": 6,
+            "DIAMOND": 7,
+            "MASTER": 8,
+            "GRANDMASTER": 9,
+            "CHALLENGER": 10,
+        }
+        return order.get((tier or "").upper(), 0)
+
+    def _division_score(self, division: str) -> int:
+        order = {"IV": 1, "III": 2, "II": 3, "I": 4}
+        return order.get((division or "").upper(), 0)
+
+    def _best_rank_display(self, ranks: list) -> str:
+        if not ranks:
+            return "Unranked"
+
+        best = None
+        best_key = (-1, -1, -1)
+
+        for rank_data in ranks:
+            tier = rank_data.get("tier")
+            division = rank_data.get("rank")
+            lp = rank_data.get("league_points", 0)
+
+            key = (self._tier_score(tier), self._division_score(division), int(lp or 0))
+            if key > best_key:
+                best_key = key
+                best = rank_data
+
+        if not best or best_key[0] <= 0:
+            return "Unranked"
+
+        tier = (best.get("tier") or "").title()
+        division = best.get("rank") or ""
+        lp = int(best.get("league_points", 0) or 0)
+        wins = int(best.get("wins", 0) or 0)
+        losses = int(best.get("losses", 0) or 0)
+        total = wins + losses
+        wr = f"{(wins / total * 100):.0f}%" if total > 0 else "--"
+
+        return f"{tier} {division} • {lp} LP • {wr} WR"
+
     @team.command(name="create", description="Create a new team")
     @app_commands.describe(name="Team name")
     async def team_create(self, interaction: discord.Interaction, name: str):
@@ -208,7 +257,13 @@ class TeamCommands(commands.Cog):
 
         if name is None and tag is None:
             members = db.get_team_members(actor_team["id"])
-            member_mentions = "\n".join([f"• <@{m['snowflake']}> ({m['role']})" for m in members]) or "No members"
+            member_lines = []
+            for member in members:
+                prefix = "👑" if member.get("role") == "captain" else "•"
+                rank_display = self._best_rank_display(db.get_user_ranks(member["user_id"]))
+                member_lines.append(f"{prefix} <@{member['snowflake']}> — {rank_display}")
+
+            member_mentions = "\n".join(member_lines) if member_lines else "No members"
             embed = discord.Embed(title=f"⚙️ Team Config: {actor_team['name']}")
             embed.add_field(name="Tag", value=actor_team.get("tag") or "(none)", inline=False)
             embed.add_field(name="Members", value=member_mentions[:1024], inline=False)
