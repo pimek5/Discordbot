@@ -110,6 +110,31 @@ class Database:
                     """)
                     cur.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS description VARCHAR(180)")
                     cur.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS recruiting BOOLEAN NOT NULL DEFAULT TRUE")
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS team_profile_embeds (
+                            team_id INTEGER PRIMARY KEY REFERENCES teams(id) ON DELETE CASCADE,
+                            guild_id BIGINT NOT NULL,
+                            channel_id BIGINT NOT NULL,
+                            message_id BIGINT NOT NULL,
+                            last_updated TIMESTAMP DEFAULT NOW()
+                        )
+                    """)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS team_leaderboard_embeds (
+                            guild_id BIGINT PRIMARY KEY,
+                            channel_id BIGINT NOT NULL,
+                            message_id BIGINT NOT NULL,
+                            last_updated TIMESTAMP DEFAULT NOW()
+                        )
+                    """)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS team_power_snapshots (
+                            id SERIAL PRIMARY KEY,
+                            team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                            power_score DOUBLE PRECISION NOT NULL,
+                            created_at TIMESTAMP DEFAULT NOW()
+                        )
+                    """)
                     conn.commit()
                     logger.info("✅ Team system migration applied")
                 except Exception as migration_error:
@@ -644,6 +669,119 @@ class Database:
                 cur.execute("DELETE FROM teams WHERE id = %s", (team_id,))
                 conn.commit()
                 return cur.rowcount > 0
+        finally:
+            self.return_connection(conn)
+
+    def save_team_profile_embed(self, team_id: int, guild_id: int, channel_id: int, message_id: int):
+        """Save or update persistent team profile embed message"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO team_profile_embeds (team_id, guild_id, channel_id, message_id)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (team_id) DO UPDATE SET
+                        guild_id = EXCLUDED.guild_id,
+                        channel_id = EXCLUDED.channel_id,
+                        message_id = EXCLUDED.message_id,
+                        last_updated = NOW()
+                    """,
+                    (team_id, guild_id, channel_id, message_id),
+                )
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def get_team_profile_embed(self, team_id: int) -> Optional[Dict]:
+        """Get persistent team profile embed for team"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM team_profile_embeds
+                    WHERE team_id = %s
+                    LIMIT 1
+                    """,
+                    (team_id,),
+                )
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def save_team_leaderboard_embed(self, guild_id: int, channel_id: int, message_id: int):
+        """Save or update persistent team leaderboard embed message"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO team_leaderboard_embeds (guild_id, channel_id, message_id)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (guild_id) DO UPDATE SET
+                        channel_id = EXCLUDED.channel_id,
+                        message_id = EXCLUDED.message_id,
+                        last_updated = NOW()
+                    """,
+                    (guild_id, channel_id, message_id),
+                )
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def get_team_leaderboard_embed(self, guild_id: int) -> Optional[Dict]:
+        """Get persistent team leaderboard embed by guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM team_leaderboard_embeds
+                    WHERE guild_id = %s
+                    LIMIT 1
+                    """,
+                    (guild_id,),
+                )
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def add_team_power_snapshot(self, team_id: int, power_score: float):
+        """Store team power score snapshot"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO team_power_snapshots (team_id, power_score)
+                    VALUES (%s, %s)
+                    """,
+                    (team_id, float(power_score)),
+                )
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def get_team_power_trend(self, team_id: int, days: int = 7) -> Optional[float]:
+        """Return power delta from oldest snapshot in period to latest"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT power_score, created_at
+                    FROM team_power_snapshots
+                    WHERE team_id = %s
+                      AND created_at >= NOW() - (%s || ' days')::interval
+                    ORDER BY created_at ASC
+                    """,
+                    (team_id, days),
+                )
+                rows = cur.fetchall()
+                if not rows or len(rows) < 2:
+                    return None
+                return float(rows[-1]["power_score"] - rows[0]["power_score"])
         finally:
             self.return_connection(conn)
     

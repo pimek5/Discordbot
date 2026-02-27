@@ -1,11 +1,12 @@
 import logging
 import re
 from datetime import datetime
-from typing import Optional
+from datetime import timedelta, timezone
+from typing import Optional, List
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from database import get_db
 from emoji_dict import get_rank_emoji
@@ -13,11 +14,98 @@ from emoji_dict import get_rank_emoji
 logger = logging.getLogger("team_commands")
 
 
+class TeamRosterPaginationView(discord.ui.View):
+    def __init__(self, pages: List[discord.Embed], author_id: int):
+        super().__init__(timeout=300)
+        self.pages = pages
+        self.author_id = author_id
+        self.current_index = 0
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.prev_button.disabled = self.current_index <= 0
+        self.next_button.disabled = self.current_index >= len(self.pages) - 1
+
+    async def _reject_if_not_author(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ This pagination is only for the command author.", ephemeral=True)
+            return True
+        return False
+
+    @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if await self._reject_if_not_author(interaction):
+            return
+        self.current_index = max(0, self.current_index - 1)
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self.pages[self.current_index], view=self)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.primary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if await self._reject_if_not_author(interaction):
+            return
+        self.current_index = min(len(self.pages) - 1, self.current_index + 1)
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self.pages[self.current_index], view=self)
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+
+
+class TeamHelpButtonView(discord.ui.View):
+    def __init__(self, help_text: str):
+        super().__init__(timeout=900)
+        self.help_text = help_text
+
+    @discord.ui.button(label="Jak stworzyć team?", style=discord.ButtonStyle.success, emoji="🛠️")
+    async def team_help_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(self.help_text, ephemeral=True)
+
+
 class TeamCommands(commands.Cog):
+    TEAM_FEED_CHANNEL_ID = 1476929985674608641
+    TEAM_LOG_CHANNEL_ID = 1169499314964418601
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._rate_limit_cache = {}
+        self._sync_in_progress = False
+
+    async def cog_load(self):
+        if not self.team_auto_sync.is_running():
+            self.team_auto_sync.start()
+
+    async def cog_unload(self):
+        if self.team_auto_sync.is_running():
+            self.team_auto_sync.cancel()
 
     team = app_commands.Group(name="team", description="League teams management")
+
+    def _is_rate_limited(self, action: str, user_id: int, cooldown_seconds: int = 3) -> bool:
+        now = datetime.now(timezone.utc)
+        key = f"{action}:{user_id}"
+        previous = self._rate_limit_cache.get(key)
+        if previous and (now - previous).total_seconds() < cooldown_seconds:
+            return True
+        self._rate_limit_cache[key] = now
+        return False
+
+    def _safe_pct(self, numerator: float, denominator: float) -> Optional[float]:
+        if denominator <= 0:
+            return None
+        return (numerator / denominator) * 100
+
+    def _team_help_text(self) -> str:
+        return (
+            "**Jak założyć i prowadzić team?**\n"
+            "1) `/team create name:<nazwa>`\n"
+            "2) Ustaw detale: `/team config tag:<tag> description:<opis> recruiting:true`\n"
+            "3) Dodawaj ludzi: `/team invite user:@osoba` lub otwórz rekrutację i użyj `/team join`\n"
+            "4) Sprawdzaj skład: `/team info` i `/team roster`\n"
+            "5) Zarządzanie: `/team transfer`, `/team remove`, `/team disband`\n\n"
+            "ℹ️ Limit: maksymalnie **10 osób** w teamie."
+        )
 
     def _get_verified_accounts(self, db, db_user_id: int):
         accounts = db.get_user_accounts(db_user_id)
@@ -661,7 +749,11 @@ class TeamCommands(commands.Cog):
                 return
 
         embed = await self._build_team_overview_embed(team, db, "👥 Team")
-        await interaction.followup.send(embed=embed, ephemeral=False)
+        await interaction.followup.send(
+            embed=embed,
+            view=TeamHelpButtonView(self._team_help_text()),
+            ephemeral=False,
+        )
 
     @team.command(name="list", description="List teams on this server")
     @app_commands.describe(recruiting_only="Show only teams open for recruitment", query="Optional name/tag search")
@@ -700,7 +792,11 @@ class TeamCommands(commands.Cog):
 
         embed = discord.Embed(title="📋 Team List")
         embed.add_field(name="Teams", value="\n".join(lines)[:1024], inline=False)
-        await interaction.followup.send(embed=embed, ephemeral=False)
+        await interaction.followup.send(
+            embed=embed,
+            view=TeamHelpButtonView(self._team_help_text()),
+            ephemeral=False,
+        )
 
     @team.command(name="join", description="Join an open team by name or tag")
     @app_commands.describe(query="Team name or tag")
