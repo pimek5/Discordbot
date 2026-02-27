@@ -519,6 +519,118 @@ class Database:
                 return cur.fetchall()
         finally:
             self.return_connection(conn)
+
+    def list_teams(self, guild_id: int, recruiting_only: bool = False, limit: int = 20) -> List[Dict]:
+        """List teams in guild with member counts"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                params: List[Any] = [guild_id]
+                where_parts = ["t.guild_id = %s"]
+                if recruiting_only:
+                    where_parts.append("t.recruiting = TRUE")
+
+                params.append(limit)
+                cur.execute(
+                    f"""
+                    SELECT
+                        t.*, COUNT(tm.user_id)::int AS member_count
+                    FROM teams t
+                    LEFT JOIN team_members tm ON tm.team_id = t.id
+                    WHERE {' AND '.join(where_parts)}
+                    GROUP BY t.id
+                    ORDER BY member_count DESC, t.created_at ASC
+                    LIMIT %s
+                    """,
+                    tuple(params)
+                )
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def search_teams(self, guild_id: int, query: str, limit: int = 10) -> List[Dict]:
+        """Search teams by name or tag in guild"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                like_query = f"%{query}%"
+                cur.execute(
+                    """
+                    SELECT
+                        t.*, COUNT(tm.user_id)::int AS member_count
+                    FROM teams t
+                    LEFT JOIN team_members tm ON tm.team_id = t.id
+                    WHERE t.guild_id = %s
+                      AND (
+                        LOWER(t.name) LIKE LOWER(%s)
+                        OR LOWER(COALESCE(t.tag, '')) LIKE LOWER(%s)
+                      )
+                    GROUP BY t.id
+                    ORDER BY
+                        CASE WHEN LOWER(t.name) = LOWER(%s) THEN 0 ELSE 1 END,
+                        CASE WHEN LOWER(COALESCE(t.tag, '')) = LOWER(%s) THEN 0 ELSE 1 END,
+                        member_count DESC,
+                        t.created_at ASC
+                    LIMIT %s
+                    """,
+                    (guild_id, like_query, like_query, query, query, limit)
+                )
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def transfer_team_captain(self, team_id: int, new_captain_user_id: int) -> bool:
+        """Transfer captain role to another existing member"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE team_members
+                    SET role = 'member'
+                    WHERE team_id = %s AND role = 'captain'
+                    """,
+                    (team_id,)
+                )
+
+                cur.execute(
+                    """
+                    UPDATE team_members
+                    SET role = 'captain'
+                    WHERE team_id = %s AND user_id = %s
+                    """,
+                    (team_id, new_captain_user_id)
+                )
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    return False
+
+                cur.execute(
+                    """
+                    UPDATE teams
+                    SET captain_user_id = %s, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (new_captain_user_id, team_id)
+                )
+                conn.commit()
+                return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self.return_connection(conn)
+
+    def delete_team(self, team_id: int) -> bool:
+        """Delete team (members are removed by FK cascade)"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM teams WHERE id = %s", (team_id,))
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            self.return_connection(conn)
     
     # ==================== CHAMPION MASTERY OPERATIONS ====================
     

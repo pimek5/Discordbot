@@ -240,6 +240,27 @@ class TeamCommands(commands.Cog):
         )
         return embed
 
+    def _resolve_team_from_text(self, db, guild_id: int, lookup: str) -> tuple[Optional[dict], Optional[str]]:
+        team = db.get_team_by_name(guild_id, lookup)
+        if team:
+            return team, None
+
+        teams_by_tag = db.get_teams_by_tag(guild_id, lookup)
+        if len(teams_by_tag) == 1:
+            return teams_by_tag[0], None
+        if len(teams_by_tag) > 1:
+            names = ", ".join(team_row["name"] for team_row in teams_by_tag[:5])
+            return None, f"⚠️ Found multiple teams with tag **{lookup.upper()}**: {names}. Use exact team name."
+
+        searched = db.search_teams(guild_id, lookup, limit=5)
+        if len(searched) == 1:
+            return searched[0], None
+        if len(searched) > 1:
+            names = ", ".join(team_row["name"] for team_row in searched)
+            return None, f"⚠️ Found multiple matching teams: {names}. Use exact name or tag."
+
+        return None, "❌ Team not found."
+
     @team.command(name="create", description="Create a new team")
     @app_commands.describe(name="Team name")
     async def team_create(self, interaction: discord.Interaction, name: str):
@@ -538,3 +559,227 @@ class TeamCommands(commands.Cog):
 
         embed = await self._build_team_overview_embed(team, db, "👥 Team")
         await interaction.followup.send(embed=embed, ephemeral=False)
+
+    @team.command(name="list", description="List teams on this server")
+    @app_commands.describe(recruiting_only="Show only teams open for recruitment", query="Optional name/tag search")
+    async def team_list(
+        self,
+        interaction: discord.Interaction,
+        recruiting_only: bool = False,
+        query: Optional[str] = None,
+    ):
+        await interaction.response.defer(ephemeral=False)
+
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db = get_db()
+        if query and query.strip():
+            teams = db.search_teams(guild.id, query.strip(), limit=15)
+        else:
+            teams = db.list_teams(guild.id, recruiting_only=recruiting_only, limit=15)
+
+        if recruiting_only:
+            teams = [team for team in teams if team.get("recruiting", True)]
+
+        if not teams:
+            await interaction.followup.send("❌ No teams found for this filter.", ephemeral=True)
+            return
+
+        lines = []
+        for index, team in enumerate(teams, start=1):
+            status = "✅" if team.get("recruiting", True) else "⛔"
+            tag = team.get("tag") or "-"
+            members = int(team.get("member_count", 0) or 0)
+            lines.append(f"{index}. {status} **{team['name']}** [{tag}] • {members} members")
+
+        embed = discord.Embed(title="📋 Team List")
+        embed.add_field(name="Teams", value="\n".join(lines)[:1024], inline=False)
+        await interaction.followup.send(embed=embed, ephemeral=False)
+
+    @team.command(name="join", description="Join an open team by name or tag")
+    @app_commands.describe(query="Team name or tag")
+    async def team_join(self, interaction: discord.Interaction, query: str):
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        lookup = query.strip()
+        if not lookup:
+            await interaction.followup.send("❌ Provide team name or tag.", ephemeral=True)
+            return
+
+        db = get_db()
+        actor_db_user = db.get_user_by_discord_id(interaction.user.id)
+        if not actor_db_user:
+            await interaction.followup.send("❌ You need to link a Riot account first.", ephemeral=True)
+            return
+
+        verified_accounts = self._get_verified_accounts(db, actor_db_user["id"])
+        if not verified_accounts:
+            await interaction.followup.send("❌ You need at least one verified Riot account.", ephemeral=True)
+            return
+
+        current_team = db.get_user_team(guild.id, actor_db_user["id"])
+        if current_team:
+            await interaction.followup.send(f"❌ You are already in team **{current_team['name']}**.", ephemeral=True)
+            return
+
+        team, error_message = self._resolve_team_from_text(db, guild.id, lookup)
+        if not team:
+            await interaction.followup.send(error_message or "❌ Team not found.", ephemeral=True)
+            return
+
+        if not team.get("recruiting", True):
+            await interaction.followup.send("❌ This team is not currently recruiting.", ephemeral=True)
+            return
+
+        members = db.get_team_members(team["id"])
+        if len(members) >= 10:
+            await interaction.followup.send("❌ This team is full (10/10).", ephemeral=True)
+            return
+
+        added = db.add_team_member(team["id"], actor_db_user["id"], actor_db_user["id"])
+        if not added:
+            await interaction.followup.send("⚠️ You are already in this team.", ephemeral=True)
+            return
+
+        await interaction.followup.send(f"✅ You joined team **{team['name']}**.", ephemeral=True)
+
+    @team.command(name="leave", description="Leave your current team")
+    async def team_leave(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db = get_db()
+        actor_db_user = db.get_user_by_discord_id(interaction.user.id)
+        if not actor_db_user:
+            await interaction.followup.send("❌ You need to link a Riot account first.", ephemeral=True)
+            return
+
+        team = db.get_user_team(guild.id, actor_db_user["id"])
+        if not team:
+            await interaction.followup.send("❌ You are not in any team.", ephemeral=True)
+            return
+
+        members = db.get_team_members(team["id"])
+        is_captain = team["captain_user_id"] == actor_db_user["id"]
+
+        if is_captain and len(members) > 1:
+            await interaction.followup.send(
+                "❌ You are the captain. Transfer captain first (`/team transfer`) or disband team (`/team disband`).",
+                ephemeral=True,
+            )
+            return
+
+        if is_captain and len(members) == 1:
+            deleted = db.delete_team(team["id"])
+            if deleted:
+                await interaction.followup.send(f"✅ Team **{team['name']}** was disbanded.", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Failed to disband team.", ephemeral=True)
+            return
+
+        removed = db.remove_team_member(team["id"], actor_db_user["id"])
+        if not removed:
+            await interaction.followup.send("❌ Failed to leave team.", ephemeral=True)
+            return
+
+        await interaction.followup.send(f"✅ You left team **{team['name']}**.", ephemeral=True)
+
+    @team.command(name="transfer", description="Transfer captain role to another member")
+    @app_commands.describe(user="Member who should become new captain")
+    async def team_transfer(self, interaction: discord.Interaction, user: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db = get_db()
+        actor_db_user = db.get_user_by_discord_id(interaction.user.id)
+        if not actor_db_user:
+            await interaction.followup.send("❌ You need to link a Riot account first.", ephemeral=True)
+            return
+
+        actor_team = db.get_user_team(guild.id, actor_db_user["id"])
+        if not actor_team:
+            await interaction.followup.send("❌ You are not in any team.", ephemeral=True)
+            return
+
+        if actor_team["captain_user_id"] != actor_db_user["id"]:
+            await interaction.followup.send("❌ Only the team captain can transfer captain role.", ephemeral=True)
+            return
+
+        target_db_user = db.get_user_by_discord_id(user.id)
+        if not target_db_user:
+            await interaction.followup.send(f"❌ {user.mention} has no linked account.", ephemeral=True)
+            return
+
+        if target_db_user["id"] == actor_db_user["id"]:
+            await interaction.followup.send("❌ You are already the captain.", ephemeral=True)
+            return
+
+        target_team = db.get_user_team(guild.id, target_db_user["id"])
+        if not target_team or target_team["id"] != actor_team["id"]:
+            await interaction.followup.send(f"❌ {user.mention} is not in your team.", ephemeral=True)
+            return
+
+        transferred = db.transfer_team_captain(actor_team["id"], target_db_user["id"])
+        if not transferred:
+            await interaction.followup.send("❌ Failed to transfer captain role.", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            f"✅ Captain role transferred in **{actor_team['name']}** to {user.mention}.",
+            ephemeral=True,
+        )
+
+    @team.command(name="disband", description="Disband your team permanently")
+    @app_commands.describe(confirm="Type exact team name to confirm")
+    async def team_disband(self, interaction: discord.Interaction, confirm: str):
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db = get_db()
+        actor_db_user = db.get_user_by_discord_id(interaction.user.id)
+        if not actor_db_user:
+            await interaction.followup.send("❌ You need to link a Riot account first.", ephemeral=True)
+            return
+
+        actor_team = db.get_user_team(guild.id, actor_db_user["id"])
+        if not actor_team:
+            await interaction.followup.send("❌ You are not in any team.", ephemeral=True)
+            return
+
+        if actor_team["captain_user_id"] != actor_db_user["id"]:
+            await interaction.followup.send("❌ Only the team captain can disband the team.", ephemeral=True)
+            return
+
+        if (confirm or "").strip().lower() != actor_team["name"].lower():
+            await interaction.followup.send(
+                f"❌ Confirmation failed. Type exact team name: **{actor_team['name']}**",
+                ephemeral=True,
+            )
+            return
+
+        deleted = db.delete_team(actor_team["id"])
+        if not deleted:
+            await interaction.followup.send("❌ Failed to disband team.", ephemeral=True)
+            return
+
+        await interaction.followup.send(f"✅ Team **{actor_team['name']}** has been disbanded.", ephemeral=True)
