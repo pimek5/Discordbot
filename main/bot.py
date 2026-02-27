@@ -153,7 +153,6 @@ def normalize_guesses(raw):
         return [s]
     return [raw]
 import leaderboard_commands
-import prostats_commands
 
 # Orianna configuration
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -782,11 +781,6 @@ class MyBot(commands.Bot):
                 print("🔄 Loading ThreadMigrationCommands...")
                 await self.add_cog(thread_migration.ThreadMigrationCommands(self), guild=primary_guild)
                 print("  ✅ ThreadMigrationCommands loaded (guild-specific)")
-                
-                # Load pro stats commands
-                print("🔄 Loading ProStatsCommands...")
-                await self.add_cog(prostats_commands.ProStatsCommands(self))
-                print("  ✅ ProStatsCommands loaded")
                 
                 # Load configuration commands
                 import config_commands
