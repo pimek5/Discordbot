@@ -104,6 +104,83 @@ class TeamCommands(commands.Cog):
             return None
         return (numerator / denominator) * 100
 
+    def _schedule_leaderboard_refresh(self):
+        try:
+            if self.bot.loop and self.bot.loop.is_running():
+                self.bot.loop.create_task(self._sync_team_leaderboard_channel())
+        except Exception as error:
+            logger.warning("Failed to schedule team leaderboard refresh: %s", error)
+
+    async def _sync_team_leaderboard_channel(self):
+        db = get_db()
+        channel = self.bot.get_channel(self.TEAM_FEED_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(self.TEAM_FEED_CHANNEL_ID)
+            except Exception as error:
+                logger.warning("Could not fetch team feed channel %s: %s", self.TEAM_FEED_CHANNEL_ID, error)
+                return
+
+        guild = getattr(channel, "guild", None)
+        if guild is None:
+            return
+
+        teams = db.list_teams(guild.id, recruiting_only=False, limit=15)
+        embed = discord.Embed(title="🏆 Team Leaderboard")
+
+        if not teams:
+            embed.description = "No teams yet. Use `/team create name:<nazwa>` to start."
+        else:
+            lines = []
+            for index, team in enumerate(teams, start=1):
+                members = db.get_team_members(team["id"])
+                rank_scores = []
+                wr_values = []
+
+                for member in members:
+                    rank_stats = self._best_rank_stats(db.get_user_ranks(member["user_id"]))
+                    if rank_stats["rank_score"] is not None:
+                        rank_scores.append(rank_stats["rank_score"])
+                    if rank_stats["wr_pct"] is not None:
+                        wr_values.append(rank_stats["wr_pct"])
+
+                avg_rank_score = (sum(rank_scores) / len(rank_scores)) if rank_scores else 0
+                avg_wr = (sum(wr_values) / len(wr_values)) if wr_values else 0
+                member_count = len(members)
+                power_score = (avg_rank_score / 1000.0) + (avg_wr * 2.0) + (member_count * 5.0)
+
+                db.add_team_power_snapshot(team["id"], power_score)
+                trend_7d = db.get_team_power_trend(team["id"], days=7)
+                trend_text = "—"
+                if trend_7d is not None:
+                    trend_text = f"{trend_7d:+.1f}"
+
+                avg_rank = self._format_rank_from_score(avg_rank_score) if avg_rank_score > 0 else "Unranked"
+                tag = team.get("tag") or "-"
+                lines.append(
+                    f"rank: **{index}** • **{team['name']}** [{tag}] • power: **{power_score:.1f}** • members: **{member_count}/10**\n"
+                    f"avg: {avg_rank} • wr: {avg_wr:.1f}% • trend 7d: {trend_text}"
+                )
+
+            embed.add_field(name="Ranking", value="\n\n".join(lines)[:1024], inline=False)
+
+        embed.set_footer(text="Auto-updated every 15 min and on team changes")
+        existing = db.get_team_leaderboard_embed(guild.id)
+
+        message = None
+        if existing:
+            try:
+                message = await channel.fetch_message(int(existing["message_id"]))
+            except Exception:
+                message = None
+
+        if message:
+            await message.edit(embed=embed)
+            return
+
+        sent = await channel.send(embed=embed)
+        db.save_team_leaderboard_embed(guild.id, channel.id, sent.id)
+
     @tasks.loop(minutes=15)
     async def team_auto_sync(self):
         if self._sync_in_progress:
@@ -111,9 +188,7 @@ class TeamCommands(commands.Cog):
 
         self._sync_in_progress = True
         try:
-            # Placeholder loop for upcoming team leaderboard/profile auto-sync logic.
-            # Keeps cog lifecycle stable and prevents startup crashes.
-            return
+            await self._sync_team_leaderboard_channel()
         except Exception as error:
             logger.error("Team auto-sync loop error: %s", error)
         finally:
@@ -548,12 +623,14 @@ class TeamCommands(commands.Cog):
             return
 
         try:
-            db.create_team(guild.id, clean_name, db_user["id"], db_user["id"])
+            team_id = db.create_team(guild.id, clean_name, db_user["id"], db_user["id"])
             await interaction.followup.send(
                 f"✅ Team **{clean_name}** created!\n"
                 f"👑 Captain: {interaction.user.mention}",
                 ephemeral=True,
             )
+            db.add_team_power_snapshot(team_id, 0.0)
+            self._schedule_leaderboard_refresh()
         except Exception as error:
             logger.error("Failed to create team: %s", error)
             await interaction.followup.send("❌ Failed to create team. Try a different name.", ephemeral=True)
@@ -620,6 +697,7 @@ class TeamCommands(commands.Cog):
                 f"✅ {user.mention} joined team **{inviter_team['name']}**.",
                 ephemeral=True,
             )
+            self._schedule_leaderboard_refresh()
         except Exception as error:
             logger.error("Failed to invite member: %s", error)
             await interaction.followup.send("❌ Failed to invite member.", ephemeral=True)
@@ -672,6 +750,7 @@ class TeamCommands(commands.Cog):
             f"✅ Removed {user.mention} from team **{actor_team['name']}**.",
             ephemeral=True,
         )
+        self._schedule_leaderboard_refresh()
 
     @team.command(name="config", description="Configure your team")
     @app_commands.describe(
@@ -762,6 +841,7 @@ class TeamCommands(commands.Cog):
                 f"• Recruiting: **{'Open' if refreshed.get('recruiting', True) else 'Closed'}**",
                 ephemeral=True,
             )
+            self._schedule_leaderboard_refresh()
         except Exception as error:
             logger.error("Failed to update team config: %s", error)
             await interaction.followup.send("❌ Failed to update team config.", ephemeral=True)
@@ -918,6 +998,7 @@ class TeamCommands(commands.Cog):
             return
 
         await interaction.followup.send(f"✅ You joined team **{team['name']}**.", ephemeral=True)
+        self._schedule_leaderboard_refresh()
 
     @team.command(name="leave", description="Leave your current team")
     async def team_leave(self, interaction: discord.Interaction):
@@ -953,6 +1034,7 @@ class TeamCommands(commands.Cog):
             deleted = db.delete_team(team["id"])
             if deleted:
                 await interaction.followup.send(f"✅ Team **{team['name']}** was disbanded.", ephemeral=True)
+                self._schedule_leaderboard_refresh()
             else:
                 await interaction.followup.send("❌ Failed to disband team.", ephemeral=True)
             return
@@ -963,6 +1045,7 @@ class TeamCommands(commands.Cog):
             return
 
         await interaction.followup.send(f"✅ You left team **{team['name']}**.", ephemeral=True)
+        self._schedule_leaderboard_refresh()
 
     @team.command(name="transfer", description="Transfer captain role to another member")
     @app_commands.describe(user="Member who should become new captain")
@@ -1012,6 +1095,7 @@ class TeamCommands(commands.Cog):
             f"✅ Captain role transferred in **{actor_team['name']}** to {user.mention}.",
             ephemeral=True,
         )
+        self._schedule_leaderboard_refresh()
 
     @team.command(name="disband", description="Disband your team permanently")
     @app_commands.describe(confirm="Type exact team name to confirm")
@@ -1051,3 +1135,4 @@ class TeamCommands(commands.Cog):
             return
 
         await interaction.followup.send(f"✅ Team **{actor_team['name']}** has been disbanded.", ephemeral=True)
+        self._schedule_leaderboard_refresh()
