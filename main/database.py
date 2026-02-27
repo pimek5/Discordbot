@@ -425,16 +425,31 @@ class Database:
                 cur.execute(
                     """
                     INSERT INTO team_members (team_id, user_id, role, invited_by_user_id)
-                    VALUES (%s, %s, 'member', %s)
+                    SELECT %s, %s, 'member', %s
+                    WHERE (
+                        SELECT COUNT(*)
+                        FROM team_members
+                        WHERE team_id = %s
+                    ) < 10
                     ON CONFLICT (team_id, user_id) DO NOTHING
                     """,
-                    (team_id, user_id, invited_by_user_id)
+                    (team_id, user_id, invited_by_user_id, team_id)
                 )
                 conn.commit()
                 return cur.rowcount > 0
         except Exception:
             conn.rollback()
             raise
+        finally:
+            self.return_connection(conn)
+
+    def get_team_member_count(self, team_id: int) -> int:
+        """Get current member count for team"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM team_members WHERE team_id = %s", (team_id,))
+                return int(cur.fetchone()[0] or 0)
         finally:
             self.return_connection(conn)
 

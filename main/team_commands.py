@@ -452,6 +452,11 @@ class TeamCommands(commands.Cog):
             )
             return
 
+        current_count = db.get_team_member_count(inviter_team["id"])
+        if current_count >= 10:
+            await interaction.followup.send("❌ This team is full (10/10).", ephemeral=True)
+            return
+
         try:
             added = db.add_team_member(inviter_team["id"], target_db_user["id"], inviter_db_user["id"])
             if not added:
