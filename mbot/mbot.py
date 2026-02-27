@@ -2247,7 +2247,20 @@ async def search(interaction: discord.Interaction, query: str):
     try:
         # Handle Spotify URL
         if 'spotify' in query.lower():
-            query = await handle_spotify_to_youtube(query)
+            spotify_result = await handle_spotify_to_youtube(query)
+            if isinstance(spotify_result, dict):
+                if spotify_result.get('type') == 'track':
+                    query = spotify_result.get('query', query)
+                elif spotify_result.get('type') == 'playlist':
+                    await interaction.followup.send(
+                        "🎵 Spotify playlist detected. Use /play with this link to add the full playlist to queue.",
+                        ephemeral=True,
+                    )
+                    return
+                else:
+                    query = query
+            else:
+                query = spotify_result
         
         loop = bot.loop or asyncio.get_event_loop()
         search_query = f"ytsearch5:{query}" if not query.startswith('ytsearch') else query
