@@ -104,6 +104,25 @@ class TeamCommands(commands.Cog):
             return None
         return (numerator / denominator) * 100
 
+    @tasks.loop(minutes=15)
+    async def team_auto_sync(self):
+        if self._sync_in_progress:
+            return
+
+        self._sync_in_progress = True
+        try:
+            # Placeholder loop for upcoming team leaderboard/profile auto-sync logic.
+            # Keeps cog lifecycle stable and prevents startup crashes.
+            return
+        except Exception as error:
+            logger.error("Team auto-sync loop error: %s", error)
+        finally:
+            self._sync_in_progress = False
+
+    @team_auto_sync.before_loop
+    async def before_team_auto_sync(self):
+        await self.bot.wait_until_ready()
+
     def _contains_blocked_team_word(self, text: str) -> bool:
         raw = (text or "").lower().strip()
         if not raw:
