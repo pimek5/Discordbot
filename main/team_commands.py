@@ -59,7 +59,7 @@ class TeamHelpButtonView(discord.ui.View):
         super().__init__(timeout=900)
         self.help_text = help_text
 
-    @discord.ui.button(label="Jak stworzyć team?", style=discord.ButtonStyle.success, emoji="🛠️")
+    @discord.ui.button(label="How to create a team?", style=discord.ButtonStyle.success, emoji="🛠️")
     async def team_help_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(self.help_text, ephemeral=True)
 
@@ -129,7 +129,7 @@ class TeamCommands(commands.Cog):
         embed = discord.Embed(title="🏆 Team Leaderboard")
 
         if not teams:
-            embed.description = "No teams yet. Use `/team create name:<nazwa>` to start."
+            embed.description = "No teams yet. Use `/team create name:<team_name>` to start."
         else:
             lines = []
             for index, team in enumerate(teams, start=1):
@@ -248,13 +248,13 @@ class TeamCommands(commands.Cog):
 
     def _team_help_text(self) -> str:
         return (
-            "**Jak założyć i prowadzić team?**\n"
-            "1) `/team create name:<nazwa>`\n"
-            "2) Ustaw detale: `/team config tag:<tag> description:<opis> recruiting:true`\n"
-            "3) Dodawaj ludzi: `/team invite user:@osoba` lub otwórz rekrutację i użyj `/team join`\n"
-            "4) Sprawdzaj skład: `/team info` i `/team roster`\n"
-            "5) Zarządzanie: `/team transfer`, `/team remove`, `/team disband`\n\n"
-            "ℹ️ Limit: maksymalnie **10 osób** w teamie."
+            "**How to create and manage a team**\n"
+            "1) `/team create name:<team_name>`\n"
+            "2) Configure details: `/team config tag:<tag> description:<text> recruiting:true`\n"
+            "3) Add members: `/team invite user:@member` or open recruiting and use `/team join`\n"
+            "4) Check the roster: `/team info` and `/team roster`\n"
+            "5) Manage leadership: `/team transfer`, `/team remove`, `/team disband`\n\n"
+            "ℹ️ Limit: maximum **10 members** per team."
         )
 
     def _get_verified_accounts(self, db, db_user_id: int):
