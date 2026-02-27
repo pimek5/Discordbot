@@ -1,5 +1,6 @@
 import logging
 import re
+import unicodedata
 from datetime import datetime
 from datetime import timedelta, timezone
 from typing import Optional, List
@@ -104,19 +105,51 @@ class TeamCommands(commands.Cog):
         return (numerator / denominator) * 100
 
     def _contains_blocked_team_word(self, text: str) -> bool:
-        normalized = (text or "").lower()
-        normalized = re.sub(r"[^a-z0-9ąćęłńóśźż\s]", " ", normalized)
+        raw = (text or "").lower().strip()
+        if not raw:
+            return False
+
+        leet_map = str.maketrans({
+            "0": "o", "1": "i", "2": "z", "3": "e", "4": "a", "5": "s", "6": "g", "7": "t", "8": "b", "9": "g",
+            "@": "a", "$": "s", "!": "i", "|": "i", "€": "e", "£": "l", "+": "t"
+        })
+        raw = raw.translate(leet_map)
+
+        normalized = unicodedata.normalize("NFKD", raw)
+        normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+        normalized = re.sub(r"[^a-z\s]", " ", normalized)
         normalized = re.sub(r"\s+", " ", normalized).strip()
         if not normalized:
             return False
 
         compact = normalized.replace(" ", "")
+        compact = re.sub(r"(.)\1{2,}", r"\1\1", compact)
+
+        tokenized = normalized.split(" ")
+        squashed_tokens = [re.sub(r"(.)\1{2,}", r"\1\1", token) for token in tokenized]
+        normalized_with_spaces = " ".join(tokenized)
+        squashed_with_spaces = " ".join(squashed_tokens)
+
         for word in self.BLOCKED_TEAM_WORDS:
-            blocked = word.lower().strip()
+            blocked = (word or "").lower().strip()
             if not blocked:
                 continue
-            if blocked in normalized or blocked.replace(" ", "") in compact:
+
+            blocked_norm = unicodedata.normalize("NFKD", blocked)
+            blocked_norm = "".join(ch for ch in blocked_norm if not unicodedata.combining(ch))
+            blocked_norm = re.sub(r"[^a-z\s]", " ", blocked_norm)
+            blocked_norm = re.sub(r"\s+", " ", blocked_norm).strip()
+            if not blocked_norm:
+                continue
+
+            blocked_compact = blocked_norm.replace(" ", "")
+            if (
+                blocked_norm in normalized_with_spaces
+                or blocked_norm in squashed_with_spaces
+                or blocked_compact in compact
+            ):
                 return True
+
         return False
 
     def _team_help_text(self) -> str:
