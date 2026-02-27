@@ -394,7 +394,6 @@ class TeamCommands(commands.Cog):
     async def _build_team_overview_embed(self, team: dict, db, title_prefix: str) -> discord.Embed:
         members = db.get_team_members(team["id"])
         member_lines = []
-        top_rank_lines = []
         member_cards = []
         rank_scores = []
         wr_values = []
@@ -448,16 +447,6 @@ class TeamCommands(commands.Cog):
         avg_wr = f"{(sum(wr_values) / len(wr_values)):.1f}%" if wr_values else "--"
         avg_lp = f"{(sum(lp_values) / len(lp_values)):.0f}" if lp_values else "--"
 
-        sorted_cards = sorted(
-            member_cards,
-            key=lambda card: (card["rank_score"] or -1, card["wr_pct"] or -1),
-            reverse=True,
-        )
-        for index, card in enumerate(sorted_cards[:5], start=1):
-            top_rank_lines.append(
-                f"{index}. <@{card['snowflake']}> — {card['rank_display']}"
-            )
-
         tag_value = team.get("tag") or "(none)"
         created_at = team.get("created_at")
         created_line = "Unknown"
@@ -489,9 +478,6 @@ class TeamCommands(commands.Cog):
             ),
             inline=False,
         )
-        if top_rank_lines:
-            embed.add_field(name="Top Ranked", value="\n".join(top_rank_lines)[:1024], inline=False)
-
         embed.add_field(name="Roster", value=member_mentions[:1024], inline=False)
         embed.add_field(
             name="Recruiting",
