@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime
 from typing import Optional
 
 import discord
@@ -75,7 +76,15 @@ class TeamCommands(commands.Cog):
 
     def _best_rank_stats(self, ranks: list) -> dict:
         if not ranks:
-            return {"display": "Unranked", "rank_score": None, "wr_pct": None}
+            return {
+                "display": "Unranked",
+                "rank_score": None,
+                "wr_pct": None,
+                "lp": 0,
+                "wins": 0,
+                "losses": 0,
+                "games": 0,
+            }
 
         solo_queues = [
             rank_data
@@ -103,7 +112,15 @@ class TeamCommands(commands.Cog):
         best_key = rank_key(best) if best else (-1, -1, -1)
 
         if not best or best_key[0] <= 0:
-            return {"display": "Unranked", "rank_score": None, "wr_pct": None}
+            return {
+                "display": "Unranked",
+                "rank_score": None,
+                "wr_pct": None,
+                "lp": 0,
+                "wins": 0,
+                "losses": 0,
+                "games": 0,
+            }
 
         tier = (best.get("tier") or "").title()
         division = best.get("rank") or ""
@@ -122,7 +139,15 @@ class TeamCommands(commands.Cog):
         rank_label = f"{tier} {division}".strip()
         display = f"{emoji_prefix}{rank_label} • {lp} LP • {wr} WR"
         rank_score = best_key[0] * 10000 + best_key[1] * 1000 + lp
-        return {"display": display, "rank_score": rank_score, "wr_pct": wr_pct}
+        return {
+            "display": display,
+            "rank_score": rank_score,
+            "wr_pct": wr_pct,
+            "lp": lp,
+            "wins": wins,
+            "losses": losses,
+            "games": total,
+        }
 
     def _best_rank_display(self, ranks: list) -> str:
         return self._best_rank_stats(ranks)["display"]
@@ -206,38 +231,111 @@ class TeamCommands(commands.Cog):
     async def _build_team_overview_embed(self, team: dict, db, title_prefix: str) -> discord.Embed:
         members = db.get_team_members(team["id"])
         member_lines = []
+        top_rank_lines = []
+        member_cards = []
         rank_scores = []
         wr_values = []
+        ranked_games = 0
+        lp_values = []
+        captain_mention = "(unknown)"
 
         for member in members:
             prefix = "👑" if member.get("role") == "captain" else "•"
+            if member.get("role") == "captain":
+                captain_mention = f"<@{member['snowflake']}>"
+
             member_ranks = await self._get_effective_ranks(db, member["user_id"])
             rank_stats = self._best_rank_stats(member_ranks)
-            member_lines.append(f"{prefix} <@{member['snowflake']}> — {rank_stats['display']}")
+            account = db.get_primary_account(member["user_id"])
+            riot_id = None
+            if account:
+                game_name = account.get("riot_id_game_name")
+                tagline = account.get("riot_id_tagline")
+                if game_name and tagline:
+                    riot_id = f"{game_name}#{tagline}"
+
+            main_line = f"{prefix} <@{member['snowflake']}> — {rank_stats['display']}"
+            if riot_id:
+                main_line += f"\n↳ `{riot_id}`"
+            member_lines.append(main_line)
+
+            member_cards.append(
+                {
+                    "snowflake": member["snowflake"],
+                    "rank_display": rank_stats["display"],
+                    "rank_score": rank_stats["rank_score"],
+                    "wr_pct": rank_stats["wr_pct"],
+                    "lp": rank_stats["lp"],
+                    "games": rank_stats["games"],
+                }
+            )
 
             if rank_stats["rank_score"] is not None:
                 rank_scores.append(rank_stats["rank_score"])
+                lp_values.append(rank_stats["lp"])
             if rank_stats["wr_pct"] is not None:
                 wr_values.append(rank_stats["wr_pct"])
+            ranked_games += rank_stats["games"]
+
+        ranked_members = sum(1 for card in member_cards if card["rank_score"] is not None)
+        unranked_members = max(0, len(member_cards) - ranked_members)
 
         member_mentions = "\n".join(member_lines) if member_lines else "No members"
         avg_rank = self._format_rank_from_score(sum(rank_scores) / len(rank_scores)) if rank_scores else "Unranked"
         avg_wr = f"{(sum(wr_values) / len(wr_values)):.1f}%" if wr_values else "--"
+        avg_lp = f"{(sum(lp_values) / len(lp_values)):.0f}" if lp_values else "--"
 
-        embed = discord.Embed(title=f"{title_prefix}: {team['name']}")
-        embed.add_field(name="Tag", value=team.get("tag") or "(none)", inline=False)
-        embed.add_field(name="Description", value=team.get("description") or "(none)", inline=False)
+        sorted_cards = sorted(
+            member_cards,
+            key=lambda card: (card["rank_score"] or -1, card["wr_pct"] or -1),
+            reverse=True,
+        )
+        for index, card in enumerate(sorted_cards[:5], start=1):
+            top_rank_lines.append(
+                f"{index}. <@{card['snowflake']}> — {card['rank_display']}"
+            )
+
+        tag_value = team.get("tag") or "(none)"
+        created_at = team.get("created_at")
+        created_line = "Unknown"
+        if isinstance(created_at, datetime):
+            created_line = f"<t:{int(created_at.timestamp())}:D> • <t:{int(created_at.timestamp())}:R>"
+
+        embed = discord.Embed(title=f"{title_prefix}: {team['name']} [{tag_value}]")
+        embed.description = (
+            f"{team.get('description') or '*No team description yet.*'}\n"
+            f"Status: **{'Recruiting' if team.get('recruiting', True) else 'Closed'}**"
+        )
+        embed.add_field(
+            name="Overview",
+            value=(
+                f"• Captain: {captain_mention}\n"
+                f"• Members: **{len(members)}/10**\n"
+                f"• Ranked: **{ranked_members}** | Unranked: **{unranked_members}**\n"
+                f"• Created: {created_line}"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Team Power",
+            value=(
+                f"• Avg Rank: **{avg_rank}**\n"
+                f"• Avg WR: **{avg_wr} WR**\n"
+                f"• Avg LP: **{avg_lp} LP**\n"
+                f"• Ranked Games: **{ranked_games}**"
+            ),
+            inline=False,
+        )
+        if top_rank_lines:
+            embed.add_field(name="Top Ranked", value="\n".join(top_rank_lines)[:1024], inline=False)
+
+        embed.add_field(name="Roster", value=member_mentions[:1024], inline=False)
         embed.add_field(
             name="Recruiting",
             value="✅ Open" if team.get("recruiting", True) else "⛔ Closed",
             inline=False,
         )
-        embed.add_field(name="Members", value=member_mentions[:1024], inline=False)
-        embed.add_field(
-            name="Averages",
-            value=f"• Rank: **{avg_rank}**\n• WR: **{avg_wr} WR**",
-            inline=False,
-        )
+        embed.set_footer(text="Use /team join query:<name_or_tag> to join open teams")
         return embed
 
     def _resolve_team_from_text(self, db, guild_id: int, lookup: str) -> tuple[Optional[dict], Optional[str]]:
