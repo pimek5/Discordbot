@@ -67,9 +67,11 @@ class TeamCommands(commands.Cog):
     TEAM_FEED_CHANNEL_ID = 1476929985674608641
     TEAM_LOG_CHANNEL_ID = 1169499314964418601
     BLOCKED_TEAM_WORDS = {
-        "kurwa", "chuj", "chujowy", "pizda", "jebac", "jebać", "pierdol",
-        "cipa", "dziwka", "nigger", "nigga", "faggot", "retard", "hitler",
-        "nazi", "kys", "kill yourself", "rape", "rapist",
+        "kurwa", "chuj", "chujowy", "pizda", "jebac", "jebać", "pierdol", "spierdalaj",
+        "cipa", "dziwka", "suka", "szmata", "debil", "idiota", "imbecyl",
+        "nigger", "nigga", "niga", "n1gger", "n1gga", "negro", "coon",
+        "faggot", "fag", "tranny", "retard", "autist", "hitler",
+        "nazi", "nazis", "heil hitler", "kys", "kill yourself", "rape", "rapist", "pedo", "pedophile",
     }
 
     def __init__(self, bot: commands.Bot):
