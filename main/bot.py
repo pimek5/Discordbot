@@ -878,15 +878,14 @@ class MyBot(commands.Bot):
         self.tree.add_command(server_group, guild=primary_guild)
         print("✅ Mod and Server commands registered for guild only")
         
-        # Copy global commands to primary guild for instant access
-        print(f"🔧 Copying global commands to primary guild {GUILD_ID}...")
+        # Sync guild-specific commands only (avoid duplicate global+guild command copies)
+        print(f"🔧 Syncing guild-specific commands to primary guild {GUILD_ID}...")
         try:
-            self.tree.copy_global_to(guild=primary_guild)
             synced_guild = await asyncio.wait_for(
                 self.tree.sync(guild=primary_guild),
                 timeout=30.0
             )
-            print(f"✅ Synced {len(synced_guild)} commands to primary guild (instant access)")
+            print(f"✅ Synced {len(synced_guild)} guild-specific commands to primary guild")
         except asyncio.TimeoutError:
             print("⚠️ Timeout syncing to guild - will retry next restart")
         except Exception as e:
