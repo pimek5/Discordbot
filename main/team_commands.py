@@ -66,6 +66,11 @@ class TeamHelpButtonView(discord.ui.View):
 class TeamCommands(commands.Cog):
     TEAM_FEED_CHANNEL_ID = 1476929985674608641
     TEAM_LOG_CHANNEL_ID = 1169499314964418601
+    BLOCKED_TEAM_WORDS = {
+        "kurwa", "chuj", "chujowy", "pizda", "jebac", "jebać", "pierdol",
+        "cipa", "dziwka", "nigger", "nigga", "faggot", "retard", "hitler",
+        "nazi", "kys", "kill yourself", "rape", "rapist",
+    }
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -95,6 +100,22 @@ class TeamCommands(commands.Cog):
         if denominator <= 0:
             return None
         return (numerator / denominator) * 100
+
+    def _contains_blocked_team_word(self, text: str) -> bool:
+        normalized = (text or "").lower()
+        normalized = re.sub(r"[^a-z0-9ąćęłńóśźż\s]", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        if not normalized:
+            return False
+
+        compact = normalized.replace(" ", "")
+        for word in self.BLOCKED_TEAM_WORDS:
+            blocked = word.lower().strip()
+            if not blocked:
+                continue
+            if blocked in normalized or blocked.replace(" ", "") in compact:
+                return True
+        return False
 
     def _team_help_text(self) -> str:
         return (
@@ -462,6 +483,10 @@ class TeamCommands(commands.Cog):
             await interaction.followup.send("❌ Team name must be between 3 and 50 characters.", ephemeral=True)
             return
 
+        if self._contains_blocked_team_word(clean_name):
+            await interaction.followup.send("❌ Team name contains blocked words. Choose a different name.", ephemeral=True)
+            return
+
         db = get_db()
         db_user = db.get_user_by_discord_id(interaction.user.id)
         if not db_user:
@@ -656,6 +681,10 @@ class TeamCommands(commands.Cog):
 
         if new_name is not None and (len(new_name) < 3 or len(new_name) > 50):
             await interaction.followup.send("❌ Team name must be between 3 and 50 characters.", ephemeral=True)
+            return
+
+        if new_name is not None and self._contains_blocked_team_word(new_name):
+            await interaction.followup.send("❌ Team name contains blocked words. Choose a different name.", ephemeral=True)
             return
 
         if new_tag is not None and len(new_tag) > 12:
