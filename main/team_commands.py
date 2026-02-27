@@ -113,6 +113,61 @@ class TeamCommands(commands.Cog):
             return f"📉 {trend_value:.1f}"
         return "➖ 0.0"
 
+    async def _collect_team_metrics(self, db, team: dict) -> dict:
+        members = db.get_team_members(team["id"])
+        rank_scores = []
+        wr_values = []
+        best_member = None
+        best_member_score = (-1, -1.0)
+
+        for member in members:
+            member_ranks = await self._get_effective_ranks(db, member["user_id"])
+            rank_stats = self._best_rank_stats(member_ranks)
+
+            if rank_stats["rank_score"] is not None:
+                rank_scores.append(rank_stats["rank_score"])
+            if rank_stats["wr_pct"] is not None:
+                wr_values.append(rank_stats["wr_pct"])
+
+            member_key = (
+                rank_stats["rank_score"] or -1,
+                rank_stats["wr_pct"] if rank_stats["wr_pct"] is not None else -1.0,
+            )
+            if member_key > best_member_score:
+                best_member_score = member_key
+                best_member = {
+                    "mention": f"<@{member['snowflake']}>",
+                    "display": rank_stats["display"],
+                    "wr_pct": rank_stats["wr_pct"],
+                }
+
+        avg_rank_score = (sum(rank_scores) / len(rank_scores)) if rank_scores else None
+        avg_wr = (sum(wr_values) / len(wr_values)) if wr_values else None
+        member_count = len(members)
+        power_score = (((avg_rank_score or 0.0) / 1000.0) + ((avg_wr or 0.0) * 2.0) + (member_count * 5.0))
+
+        db.add_team_power_snapshot(team["id"], power_score)
+        trend_7d = db.get_team_power_trend(team["id"], days=7)
+
+        top_perf_text = "N/A"
+        if best_member:
+            top_perf_text = best_member["mention"]
+            if best_member.get("wr_pct") is not None:
+                top_perf_text += f" ({best_member['wr_pct']:.1f}% WR)"
+
+        return {
+            "team": team,
+            "member_count": member_count,
+            "power": power_score,
+            "avg_rank_score": avg_rank_score or 0.0,
+            "avg_rank": self._format_rank_from_score(avg_rank_score) if avg_rank_score else "N/A",
+            "avg_wr": avg_wr,
+            "avg_wr_text": f"{avg_wr:.1f}%" if avg_wr is not None else "N/A",
+            "trend_value": trend_7d,
+            "trend_text": self._format_trend_7d(trend_7d),
+            "top_performer": top_perf_text,
+        }
+
     def _schedule_leaderboard_refresh(self):
         try:
             if self.bot.loop and self.bot.loop.is_running():
@@ -142,67 +197,7 @@ class TeamCommands(commands.Cog):
         else:
             team_metrics = []
             for team in teams:
-                members = db.get_team_members(team["id"])
-                rank_scores = []
-                wr_values = []
-                best_member = None
-                best_member_score = (-1, -1.0)
-
-                for member in members:
-                    member_ranks = await self._get_effective_ranks(db, member["user_id"])
-                    rank_stats = self._best_rank_stats(member_ranks)
-                    if rank_stats["rank_score"] is not None:
-                        rank_scores.append(rank_stats["rank_score"])
-                    if rank_stats["wr_pct"] is not None:
-                        wr_values.append(rank_stats["wr_pct"])
-
-                    member_key = (
-                        rank_stats["rank_score"] or -1,
-                        rank_stats["wr_pct"] if rank_stats["wr_pct"] is not None else -1.0,
-                    )
-                    if member_key > best_member_score:
-                        best_member_score = member_key
-                        best_member = {
-                            "mention": f"<@{member['snowflake']}>",
-                            "display": rank_stats["display"],
-                            "wr_pct": rank_stats["wr_pct"],
-                        }
-
-                avg_rank_score = (sum(rank_scores) / len(rank_scores)) if rank_scores else None
-                avg_wr = (sum(wr_values) / len(wr_values)) if wr_values else None
-                member_count = len(members)
-                power_score = (
-                    ((avg_rank_score or 0.0) / 1000.0)
-                    + ((avg_wr or 0.0) * 2.0)
-                    + (member_count * 5.0)
-                )
-
-                db.add_team_power_snapshot(team["id"], power_score)
-                trend_7d = db.get_team_power_trend(team["id"], days=7)
-                trend_text = self._format_trend_7d(trend_7d)
-
-                avg_rank = self._format_rank_from_score(avg_rank_score) if avg_rank_score else "N/A"
-                avg_wr_text = f"{avg_wr:.1f}%" if avg_wr is not None else "N/A"
-                top_perf_text = "N/A"
-                if best_member:
-                    top_perf_text = best_member["mention"]
-                    if best_member.get("wr_pct") is not None:
-                        top_perf_text += f" ({best_member['wr_pct']:.1f}% WR)"
-
-                team_metrics.append(
-                    {
-                        "team": team,
-                        "power": power_score,
-                        "avg_rank": avg_rank,
-                        "avg_rank_score": avg_rank_score or 0.0,
-                        "avg_wr": avg_wr,
-                        "avg_wr_text": avg_wr_text,
-                        "member_count": member_count,
-                        "trend_text": trend_text,
-                        "trend_value": trend_7d,
-                        "top_performer": top_perf_text,
-                    }
-                )
+                team_metrics.append(await self._collect_team_metrics(db, team))
 
             team_metrics.sort(key=lambda item: item["power"], reverse=True)
 
@@ -1206,3 +1201,84 @@ class TeamCommands(commands.Cog):
 
         await interaction.followup.send(f"✅ Team **{actor_team['name']}** has been disbanded.", ephemeral=True)
         self._schedule_leaderboard_refresh()
+
+    @team.command(name="compare", description="Compare two teams")
+    @app_commands.describe(team_a="First team (name/tag/member)", team_b="Second team (name/tag/member)")
+    async def team_compare(self, interaction: discord.Interaction, team_a: str, team_b: str):
+        await interaction.response.defer(ephemeral=False)
+
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        db = get_db()
+
+        resolved_a, err_a = self._resolve_team_from_text(db, guild.id, team_a.strip())
+        if not resolved_a:
+            await interaction.followup.send(err_a or "❌ First team not found.", ephemeral=True)
+            return
+
+        resolved_b, err_b = self._resolve_team_from_text(db, guild.id, team_b.strip())
+        if not resolved_b:
+            await interaction.followup.send(err_b or "❌ Second team not found.", ephemeral=True)
+            return
+
+        if resolved_a["id"] == resolved_b["id"]:
+            await interaction.followup.send("❌ Select two different teams to compare.", ephemeral=True)
+            return
+
+        metrics_a = await self._collect_team_metrics(db, resolved_a)
+        metrics_b = await self._collect_team_metrics(db, resolved_b)
+
+        def winner_text(value_a, value_b, label_a, label_b) -> str:
+            if value_a > value_b:
+                return f"🏆 {label_a}"
+            if value_b > value_a:
+                return f"🏆 {label_b}"
+            return "⚖️ Tie"
+
+        name_a = metrics_a["team"]["name"]
+        name_b = metrics_b["team"]["name"]
+
+        embed = discord.Embed(title=f"⚔️ Team Compare: {name_a} vs {name_b}")
+        embed.add_field(
+            name=name_a,
+            value=(
+                f"• Power: **{metrics_a['power']:.1f}**\n"
+                f"• Avg ELO: **{metrics_a['avg_rank']}**\n"
+                f"• Avg WR: **{metrics_a['avg_wr_text']}**\n"
+                f"• Members: **{metrics_a['member_count']}/10**\n"
+                f"• Trend 7d: **{metrics_a['trend_text']}**\n"
+                f"• Top performer: {metrics_a['top_performer']}"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name=name_b,
+            value=(
+                f"• Power: **{metrics_b['power']:.1f}**\n"
+                f"• Avg ELO: **{metrics_b['avg_rank']}**\n"
+                f"• Avg WR: **{metrics_b['avg_wr_text']}**\n"
+                f"• Members: **{metrics_b['member_count']}/10**\n"
+                f"• Trend 7d: **{metrics_b['trend_text']}**\n"
+                f"• Top performer: {metrics_b['top_performer']}"
+            ),
+            inline=True,
+        )
+
+        trend_a = metrics_a["trend_value"] if metrics_a["trend_value"] is not None else -9999
+        trend_b = metrics_b["trend_value"] if metrics_b["trend_value"] is not None else -9999
+
+        embed.add_field(
+            name="Category Winners",
+            value=(
+                f"• Power: {winner_text(metrics_a['power'], metrics_b['power'], name_a, name_b)}\n"
+                f"• Avg ELO: {winner_text(metrics_a['avg_rank_score'], metrics_b['avg_rank_score'], name_a, name_b)}\n"
+                f"• Avg WR: {winner_text(metrics_a['avg_wr'] or 0.0, metrics_b['avg_wr'] or 0.0, name_a, name_b)}\n"
+                f"• Trend 7d: {winner_text(trend_a, trend_b, name_a, name_b)}"
+            ),
+            inline=False,
+        )
+
+        await interaction.followup.send(embed=embed, ephemeral=False)
