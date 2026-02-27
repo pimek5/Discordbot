@@ -874,10 +874,9 @@ class MyBot(commands.Bot):
         print("✅ No global command groups")
         
         # Add guild-specific command groups
-        self.tree.add_command(twitter_group, guild=primary_guild)
         self.tree.add_command(mod_group, guild=primary_guild)
         self.tree.add_command(server_group, guild=primary_guild)
-        print("✅ Twitter, Mod, and Server commands registered for guild only")
+        print("✅ Mod and Server commands registered for guild only")
         
         # Copy global commands to primary guild for instant access
         print(f"🔧 Copying global commands to primary guild {GUILD_ID}...")
