@@ -104,6 +104,15 @@ class TeamCommands(commands.Cog):
             return None
         return (numerator / denominator) * 100
 
+    def _format_trend_7d(self, trend_value: Optional[float]) -> str:
+        if trend_value is None:
+            return "collecting"
+        if trend_value > 0.05:
+            return f"📈 +{trend_value:.1f}"
+        if trend_value < -0.05:
+            return f"📉 {trend_value:.1f}"
+        return "➖ 0.0"
+
     def _schedule_leaderboard_refresh(self):
         try:
             if self.bot.loop and self.bot.loop.is_running():
@@ -125,44 +134,105 @@ class TeamCommands(commands.Cog):
         if guild is None:
             return
 
-        teams = db.list_teams(guild.id, recruiting_only=False, limit=15)
+        teams = db.list_teams(guild.id, recruiting_only=False, limit=20)
         embed = discord.Embed(title="🏆 Team Leaderboard")
 
         if not teams:
             embed.description = "No teams yet. Use `/team create name:<team_name>` to start."
         else:
-            lines = []
-            for index, team in enumerate(teams, start=1):
+            team_metrics = []
+            for team in teams:
                 members = db.get_team_members(team["id"])
                 rank_scores = []
                 wr_values = []
+                best_member = None
+                best_member_score = (-1, -1.0)
 
                 for member in members:
-                    rank_stats = self._best_rank_stats(db.get_user_ranks(member["user_id"]))
+                    member_ranks = await self._get_effective_ranks(db, member["user_id"])
+                    rank_stats = self._best_rank_stats(member_ranks)
                     if rank_stats["rank_score"] is not None:
                         rank_scores.append(rank_stats["rank_score"])
                     if rank_stats["wr_pct"] is not None:
                         wr_values.append(rank_stats["wr_pct"])
 
-                avg_rank_score = (sum(rank_scores) / len(rank_scores)) if rank_scores else 0
-                avg_wr = (sum(wr_values) / len(wr_values)) if wr_values else 0
+                    member_key = (
+                        rank_stats["rank_score"] or -1,
+                        rank_stats["wr_pct"] if rank_stats["wr_pct"] is not None else -1.0,
+                    )
+                    if member_key > best_member_score:
+                        best_member_score = member_key
+                        best_member = {
+                            "mention": f"<@{member['snowflake']}>",
+                            "display": rank_stats["display"],
+                            "wr_pct": rank_stats["wr_pct"],
+                        }
+
+                avg_rank_score = (sum(rank_scores) / len(rank_scores)) if rank_scores else None
+                avg_wr = (sum(wr_values) / len(wr_values)) if wr_values else None
                 member_count = len(members)
-                power_score = (avg_rank_score / 1000.0) + (avg_wr * 2.0) + (member_count * 5.0)
+                power_score = (
+                    ((avg_rank_score or 0.0) / 1000.0)
+                    + ((avg_wr or 0.0) * 2.0)
+                    + (member_count * 5.0)
+                )
 
                 db.add_team_power_snapshot(team["id"], power_score)
                 trend_7d = db.get_team_power_trend(team["id"], days=7)
-                trend_text = "—"
-                if trend_7d is not None:
-                    trend_text = f"{trend_7d:+.1f}"
+                trend_text = self._format_trend_7d(trend_7d)
 
-                avg_rank = self._format_rank_from_score(avg_rank_score) if avg_rank_score > 0 else "Unranked"
-                tag = team.get("tag") or "-"
-                lines.append(
-                    f"rank: **{index}** • **{team['name']}** [{tag}] • power: **{power_score:.1f}** • members: **{member_count}/10**\n"
-                    f"avg: {avg_rank} • wr: {avg_wr:.1f}% • trend 7d: {trend_text}"
+                avg_rank = self._format_rank_from_score(avg_rank_score) if avg_rank_score else "N/A"
+                avg_wr_text = f"{avg_wr:.1f}%" if avg_wr is not None else "N/A"
+                top_perf_text = "N/A"
+                if best_member:
+                    top_perf_text = best_member["mention"]
+                    if best_member.get("wr_pct") is not None:
+                        top_perf_text += f" ({best_member['wr_pct']:.1f}% WR)"
+
+                team_metrics.append(
+                    {
+                        "team": team,
+                        "power": power_score,
+                        "avg_rank": avg_rank,
+                        "avg_rank_score": avg_rank_score or 0.0,
+                        "avg_wr": avg_wr,
+                        "avg_wr_text": avg_wr_text,
+                        "member_count": member_count,
+                        "trend_text": trend_text,
+                        "trend_value": trend_7d,
+                        "top_performer": top_perf_text,
+                    }
                 )
 
+            team_metrics.sort(key=lambda item: item["power"], reverse=True)
+
+            lines = []
+            for index, item in enumerate(team_metrics[:6], start=1):
+                team = item["team"]
+                tag = team.get("tag") or "-"
+                lines.append(
+                    f"rank: **{index}** • **{team['name']}** [{tag}] • power: **{item['power']:.1f}** • members: **{item['member_count']}/10**\n"
+                    f"avg elo: {item['avg_rank']} • avg wr: {item['avg_wr_text']} • trend 7d: {item['trend_text']}\n"
+                    f"top performer: {item['top_performer']}"
+                )
+
+            top_power = team_metrics[0] if team_metrics else None
+            top_wr = max(team_metrics, key=lambda item: item["avg_wr"] if item["avg_wr"] is not None else -1) if team_metrics else None
+            top_elo = max(team_metrics, key=lambda item: item["avg_rank_score"]) if team_metrics else None
+            top_trend = max(
+                team_metrics,
+                key=lambda item: item["trend_value"] if item["trend_value"] is not None else -9999,
+            ) if team_metrics else None
+
             embed.add_field(name="Ranking", value="\n\n".join(lines)[:1024], inline=False)
+            if top_power:
+                highlights = [
+                    f"• Highest power: **{top_power['team']['name']}** ({top_power['power']:.1f})",
+                    f"• Best avg ELO: **{top_elo['team']['name']}** ({top_elo['avg_rank']})" if top_elo else "• Best avg ELO: N/A",
+                    f"• Best avg WR: **{top_wr['team']['name']}** ({top_wr['avg_wr_text']})" if top_wr and top_wr["avg_wr"] is not None else "• Best avg WR: N/A",
+                    f"• Best trend 7d: **{top_trend['team']['name']}** ({top_trend['trend_text']})" if top_trend and top_trend["trend_value"] is not None else "• Best trend 7d: collecting",
+                ]
+                embed.add_field(name="Highlights", value="\n".join(highlights)[:1024], inline=False)
 
         embed.set_footer(text="Auto-updated every 15 min and on team changes")
         existing = db.get_team_leaderboard_embed(guild.id)
