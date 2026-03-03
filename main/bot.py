@@ -3671,6 +3671,9 @@ async def expire_bans_task():
                             print(f"⚠️ Error auto-unbanning {ban_entry.user.name}: {e}")
                             
     except Exception as e:
+        if "OperationalError" in str(type(e)) or "timeout expired" in str(e).lower():
+            print(f"⚠️ Ban expiration task skipped (database temporarily unavailable): {e}")
+            return
         print(f"❌ Error in ban expiration task: {e}")
         import traceback
         traceback.print_exc()

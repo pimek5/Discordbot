@@ -4,6 +4,7 @@ Handles PostgreSQL connection and queries
 """
 
 import os
+import time
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from psycopg2 import pool
@@ -23,12 +24,7 @@ class Database:
         """Initialize connection pool"""
         try:
             print("🔄 Creating database connection pool...")
-            self.connection_pool = pool.ThreadedConnectionPool(
-                minconn=1,
-                maxconn=10,
-                dsn=self.database_url,
-                connect_timeout=10  # 10 second timeout
-            )
+            self._create_pool()
             print("✅ Database connection pool created")
             logger.info("✅ Database connection pool created")
             
@@ -41,14 +37,65 @@ class Database:
             print(f"❌ Failed to create connection pool: {e}")
             logger.error(f"❌ Failed to create connection pool: {e}")
             raise
+
+    def _create_pool(self):
+        """Create/recreate connection pool"""
+        self.connection_pool = pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=self.database_url,
+            connect_timeout=10
+        )
     
     def get_connection(self):
         """Get a connection from the pool"""
-        return self.connection_pool.getconn()
+        if self.connection_pool is None:
+            self.initialize()
+
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                return self.connection_pool.getconn()
+            except (psycopg2.OperationalError, psycopg2.InterfaceError, pool.PoolError) as error:
+                last_error = error
+                logger.warning("⚠️ DB connection attempt %s/3 failed: %s", attempt, error)
+
+                try:
+                    if self.connection_pool is not None:
+                        self.connection_pool.closeall()
+                except Exception:
+                    pass
+
+                self.connection_pool = None
+                if attempt < 3:
+                    time.sleep(1.5 * attempt)
+                    try:
+                        self._create_pool()
+                    except Exception as pool_error:
+                        last_error = pool_error
+                        logger.warning("⚠️ Failed to recreate DB pool: %s", pool_error)
+
+        raise last_error
     
     def return_connection(self, conn):
         """Return connection to the pool"""
-        self.connection_pool.putconn(conn)
+        if conn is None:
+            return
+
+        try:
+            if self.connection_pool is None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                return
+
+            if getattr(conn, "closed", 1) != 0:
+                self.connection_pool.putconn(conn, close=True)
+            else:
+                self.connection_pool.putconn(conn)
+        except Exception as error:
+            logger.warning("⚠️ Failed to return DB connection to pool: %s", error)
     
     def create_tables(self):
         """Create all tables from schema"""
