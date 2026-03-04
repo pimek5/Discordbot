@@ -209,9 +209,33 @@ def extract_champion_from_title(title: str) -> Optional[str]:
     return None
 
 
-async def build_migrated_source_url_index(target_channel: discord.abc.GuildChannel) -> set[str]:
-    """Build a set of original source thread URLs already migrated into target channel threads."""
-    migrated_urls = set()
+def extract_source_thread_id_from_text(content: str) -> Optional[int]:
+    """Extract source thread ID from migrated post content.
+
+    Supports both:
+    - explicit marker: "Source thread id: <id>"
+    - legacy URL format: https://discord.com/channels/<guild>/<thread>/<message?>
+    """
+    marker = re.search(r"source\s*thread\s*id\s*:\s*(\d+)", content, flags=re.IGNORECASE)
+    if marker:
+        try:
+            return int(marker.group(1))
+        except Exception:
+            pass
+
+    url_match = re.search(r"https://discord\.com/channels/\d+/(\d+)(?:/\d+)?", content)
+    if url_match:
+        try:
+            return int(url_match.group(1))
+        except Exception:
+            pass
+
+    return None
+
+
+async def build_migrated_source_url_index(target_channel: discord.abc.GuildChannel) -> set[int]:
+    """Build a set of original source thread IDs already migrated into target channel threads."""
+    migrated_source_thread_ids: set[int] = set()
 
     threads = []
     if hasattr(target_channel, 'threads'):
@@ -231,14 +255,14 @@ async def build_migrated_source_url_index(target_channel: discord.abc.GuildChann
                 if "Migrated from custom-skins" not in content:
                     break
 
-                match = re.search(r"https://discord\.com/channels/\d+/\d+/\d+", content)
-                if match:
-                    migrated_urls.add(match.group(0))
+                source_thread_id = extract_source_thread_id_from_text(content)
+                if source_thread_id is not None:
+                    migrated_source_thread_ids.add(source_thread_id)
                 break
         except Exception:
             continue
 
-    return migrated_urls
+    return migrated_source_thread_ids
 
 
 async def migrate_thread(thread: discord.Thread, target_channel_id: int, champion_name: str) -> bool:
@@ -280,6 +304,7 @@ async def migrate_thread(thread: discord.Thread, target_channel_id: int, champio
                     image_urls.append(embed.thumbnail.url)
         
         content_parts = [f"📋 **Migrated from custom-skins**"]
+        content_parts.append(f"🧩 Source thread id: {thread.id}")
         content_parts.append(f"🔗 Original thread: {thread.jump_url}")
         initial_content = '\n'.join(content_parts)
 
@@ -354,8 +379,8 @@ class ThreadMigrationCommands(commands.Cog):
             already_migrated = 0
             errors = 0
 
-            # Per-target-channel cache: channel_id -> set(source_thread_urls_already_migrated)
-            migrated_url_cache: Dict[int, set[str]] = {}
+            # Per-target-channel cache: channel_id -> set(source_thread_ids_already_migrated)
+            migrated_source_cache: Dict[int, set[int]] = {}
             
             status_msg = await interaction.followup.send(f"🔄 Processing {len(threads)} threads...")
             
@@ -380,10 +405,10 @@ class ThreadMigrationCommands(commands.Cog):
                     continue
 
                 # Build index once per target channel and skip already-migrated source threads
-                if target_channel_id not in migrated_url_cache:
-                    migrated_url_cache[target_channel_id] = await build_migrated_source_url_index(target_channel)
+                if target_channel_id not in migrated_source_cache:
+                    migrated_source_cache[target_channel_id] = await build_migrated_source_url_index(target_channel)
 
-                if thread.jump_url in migrated_url_cache[target_channel_id]:
+                if thread.id in migrated_source_cache[target_channel_id]:
                     already_migrated += 1
                     logger.info(f"⏭️ Skipped '{thread.name}' - already migrated")
                     continue
@@ -392,7 +417,7 @@ class ThreadMigrationCommands(commands.Cog):
                 
                 if success:
                     migrated += 1
-                    migrated_url_cache[target_channel_id].add(thread.jump_url)
+                    migrated_source_cache[target_channel_id].add(thread.id)
                 else:
                     errors += 1
                 
