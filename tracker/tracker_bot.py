@@ -111,11 +111,22 @@ class TrackerBot(commands.Bot):
             
             if "{active_bets}" in status_text:
                 try:
-                    # Count active bets from database
-                    result = self.db.execute_query(
-                        "SELECT COUNT(*) as count FROM hexbet_bets WHERE status = 'pending'"
-                    )
-                    active_count = result[0]['count'] if result else 0
+                    # Count unsettled bets only for currently open matches.
+                    conn = self.db.get_connection()
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                SELECT COUNT(*)
+                                FROM hexbet_bets b
+                                INNER JOIN hexbet_matches m ON b.match_id = m.id
+                                WHERE b.settled = FALSE AND m.status = 'open'
+                                """
+                            )
+                            row = cur.fetchone()
+                            active_count = int(row[0]) if row else 0
+                    finally:
+                        self.db.return_connection(conn)
                     status_text = status_text.replace("{active_bets}", str(active_count))
                 except:
                     status_text = status_text.replace("{active_bets}", "0")
