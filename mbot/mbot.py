@@ -901,6 +901,7 @@ class MusicBot(commands.Bot):
         )
         
         self.queues = {}  # Dictionary of queues for each server
+        self._guild_sync_done = False
         
     async def setup_hook(self):
         """Hook called on bot startup"""
@@ -909,6 +910,15 @@ class MusicBot(commands.Bot):
         
     async def on_ready(self):
         """Event called when bot is ready"""
+        if not self._guild_sync_done:
+            try:
+                for guild in self.guilds:
+                    await self.tree.sync(guild=guild)
+                self._guild_sync_done = True
+                logger.info("Guild slash commands synchronized")
+            except Exception as sync_error:
+                logger.warning("Failed to sync guild commands: %s", sync_error)
+
         logger.info(f'?? DJSona logged in as {self.user}')
         logger.info(f'Bot is on {len(self.guilds)} servers')
         
@@ -1052,7 +1062,7 @@ class QueuePaginationView(View):
         self.previous_page_btn.disabled = self.current_page == 0
         self.next_page_btn.disabled = self.current_page >= len(self.pages) - 1
     
-    @discord.ui.button(emoji="??", style=discord.ButtonStyle.primary, custom_id="prev_page")
+    @discord.ui.button(label="Prev", style=discord.ButtonStyle.primary, custom_id="prev_page")
     async def previous_page_btn(self, interaction: discord.Interaction, button: Button):
         if self.current_page > 0:
             self.current_page -= 1
@@ -1061,7 +1071,7 @@ class QueuePaginationView(View):
         else:
             await safe_defer(interaction)
     
-    @discord.ui.button(emoji="??", style=discord.ButtonStyle.primary, custom_id="next_page")
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.primary, custom_id="next_page")
     async def next_page_btn(self, interaction: discord.Interaction, button: Button):
         if self.current_page < len(self.pages) - 1:
             self.current_page += 1
@@ -1076,22 +1086,22 @@ class MusicControlView(View):
         super().__init__(timeout=None)
         self.guild_id = guild_id
     
-    @discord.ui.button(emoji="??", style=discord.ButtonStyle.primary, custom_id="pause_btn")
+    @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, custom_id="pause_btn")
     async def pause_button(self, interaction: discord.Interaction, button: Button):
         if interaction.guild.voice_client and interaction.guild.voice_client.is_playing():
             interaction.guild.voice_client.pause()
-            button.emoji = "??"
+            button.label = "Resume"
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("?? Paused", ephemeral=True)
         elif interaction.guild.voice_client and interaction.guild.voice_client.is_paused():
             interaction.guild.voice_client.resume()
-            button.emoji = "??"
+            button.label = "Pause"
             await interaction.response.edit_message(view=self)
             await interaction.followup.send("?? Resumed", ephemeral=True)
         else:
             await interaction.response.send_message("? Nothing playing!", ephemeral=True)
     
-    @discord.ui.button(emoji="??", style=discord.ButtonStyle.primary, custom_id="previous_btn")
+    @discord.ui.button(label="Previous", style=discord.ButtonStyle.primary, custom_id="previous_btn")
     async def previous_button(self, interaction: discord.Interaction, button: Button):
         if not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
             await interaction.response.send_message("? Nothing playing!", ephemeral=True)
@@ -1123,7 +1133,7 @@ class MusicControlView(View):
         except Exception as e:
             await interaction.response.send_message(f"? Error: {str(e)}", ephemeral=True)
     
-    @discord.ui.button(emoji="??", style=discord.ButtonStyle.primary, custom_id="skip_btn")
+    @discord.ui.button(label="Skip", style=discord.ButtonStyle.primary, custom_id="skip_btn")
     async def skip_button(self, interaction: discord.Interaction, button: Button):
         if not interaction.guild.voice_client or not interaction.guild.voice_client.is_playing():
             await interaction.response.send_message("? Nothing playing!", ephemeral=True)
@@ -1157,7 +1167,7 @@ class MusicControlView(View):
         else:
             await interaction.response.send_message(f"??? Vote: {len(queue.skip_votes)}/{votes_needed}", ephemeral=True)
     
-    @discord.ui.button(emoji="??", style=discord.ButtonStyle.danger, custom_id="stop_btn")
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, custom_id="stop_btn")
     async def stop_button(self, interaction: discord.Interaction, button: Button):
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("? Only admins can stop!", ephemeral=True)
@@ -1174,7 +1184,7 @@ class MusicControlView(View):
         else:
             await interaction.response.send_message("? Nothing playing!", ephemeral=True)
     
-    @discord.ui.button(emoji="??", style=discord.ButtonStyle.secondary, custom_id="shuffle_btn")
+    @discord.ui.button(label="Shuffle", style=discord.ButtonStyle.secondary, custom_id="shuffle_btn")
     async def shuffle_button(self, interaction: discord.Interaction, button: Button):
         queue = bot.get_queue(interaction.guild.id)
         if queue.is_empty():
@@ -1183,19 +1193,17 @@ class MusicControlView(View):
         queue.shuffle()
         await interaction.response.send_message(f"?? Shuffled {len(queue.queue)} tracks", ephemeral=True)
     
-    @discord.ui.button(emoji="??", style=discord.ButtonStyle.secondary, custom_id="loop_btn")
+    @discord.ui.button(label="Loop", style=discord.ButtonStyle.secondary, custom_id="loop_btn")
     async def loop_button(self, interaction: discord.Interaction, button: Button):
         queue = bot.get_queue(interaction.guild.id)
         modes = ['off', 'track', 'queue']
         current_index = modes.index(queue.loop_mode)
         queue.loop_mode = modes[(current_index + 1) % 3]
-        
-        emoji_map = {'off': '??', 'track': '??', 'queue': '??'}
-        button.emoji = emoji_map[queue.loop_mode]
+
         await interaction.response.edit_message(view=self)
-        await interaction.followup.send(f"{button.emoji} Loop: {queue.loop_mode.title()}", ephemeral=True)
+        await interaction.followup.send(f"Loop: {queue.loop_mode.title()}", ephemeral=True)
     
-    @discord.ui.button(emoji="??", style=discord.ButtonStyle.secondary, custom_id="volume_btn")
+    @discord.ui.button(label="Volume", style=discord.ButtonStyle.secondary, custom_id="volume_btn")
     async def volume_button(self, interaction: discord.Interaction, button: Button):
         if not interaction.guild.voice_client:
             await interaction.response.send_message("? Bot is not in a voice channel!", ephemeral=True)
