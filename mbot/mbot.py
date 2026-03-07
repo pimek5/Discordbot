@@ -1,6 +1,6 @@
 """
 DJSona - Discord Music Bot v2.1
-Odtwarzanie muzyki z YouTube, Spotify, SoundCloud i innych zrodel
+Music playback from YouTube, Spotify, SoundCloud, and other sources
 + SongQuiz Deluxe: Genre selection, Audio clips, Rankings & Stats
 """
 
@@ -1627,7 +1627,7 @@ async def play(interaction: discord.Interaction, url: str):
                 
                 view = MusicControlView(interaction.guild.id)
                 
-                # Usun stara wiadomosc now playing jesli istnieje
+                # Remove old now playing message if it exists
                 if interaction.guild.id in main_control_messages:
                     try:
                         # Try cached message first to avoid fetch_message
@@ -1683,8 +1683,8 @@ async def play(interaction: discord.Interaction, url: str):
         error_text = str(e)
         if 'Sign in to confirm' in error_text or 'cookies' in error_text:
             await interaction.followup.send(
-                "⚠️ YouTube wymaga uwierzytelnienia. Ustaw `YTDL_COOKIES_FILE` lub "
-                "`YTDL_COOKIES_FROM_BROWSER` w srodowisku bota i sprobuj ponownie."
+                "⚠️ YouTube requires authentication. Set `YTDL_COOKIES_FILE` or "
+                "`YTDL_COOKIES_FROM_BROWSER` in the bot environment and try again."
             )
         else:
             await interaction.followup.send(f"⚠️ An error occurred during playback: {error_text}")
@@ -1792,10 +1792,10 @@ async def play_next(interaction: discord.Interaction):
         # Create control buttons
         view = MusicControlView(interaction.guild.id)
         
-        # Wyslij wiadomosc na kanale tekstowym
+        # Send message in the text channel
         channel = interaction.channel
         if channel:
-            # Usun stara wiadomosc now playing jesli istnieje
+            # Remove old now playing message if it exists
             if interaction.guild.id in main_control_messages:
                 try:
                     # Try to use cached message first
@@ -1913,9 +1913,9 @@ async def skip(interaction: discord.Interaction):
             await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="queue", description="Pokaz kolejke utworow")
+@bot.tree.command(name="queue", description="Show music queue")
 async def queue_command(interaction: discord.Interaction):
-    """Wyswietl kolejke utworow"""
+    """Display music queue"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
@@ -1943,7 +1943,7 @@ async def queue_command(interaction: discord.Interaction):
             timestamp=datetime.now()
         )
         
-        # Aktualnie odtwarzany utwor (tylko na pierwszej stronie)
+        # Currently playing track (first page only)
         if page_num == 0 and queue.current:
             current_desc = f"**[{queue.current.title}]({queue.current.url})**\n"
             if queue.current.requester:
@@ -1957,7 +1957,7 @@ async def queue_command(interaction: discord.Interaction):
                 inline=False
             )
         
-        # Nastepne utwory dla tej strony
+        # Upcoming tracks for this page
         if queue_list:
             start_idx = page_num * TRACKS_PER_PAGE
             end_idx = start_idx + TRACKS_PER_PAGE
@@ -1979,7 +1979,7 @@ async def queue_command(interaction: discord.Interaction):
                 inline=False
             )
         
-        # Dodatkowe informacje (tylko na pierwszej stronie)
+        # Additional info (first page only)
         if page_num == 0:
             # Total time
             if queue_list:
@@ -2014,15 +2014,15 @@ async def queue_command(interaction: discord.Interaction):
         await interaction.response.send_message(embed=pages[0])
 
 
-@bot.tree.command(name="volume", description="Ustaw Volume odtwarzania (0-100)")
-@app_commands.describe(volume="Glosnosc (0-100)")
+@bot.tree.command(name="volume", description="Set playback volume (0-100)")
+@app_commands.describe(volume="Volume (0-100)")
 async def volume(interaction: discord.Interaction, volume: int):
-    """Ustaw Volume odtwarzania"""
+    """Set playback volume"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
     if not 0 <= volume <= 100:
-        await interaction.response.send_message("⚠️ Volume musi byc miedzy 0 a 100!", ephemeral=True)
+        await interaction.response.send_message("⚠️ Volume must be between 0 and 100!", ephemeral=True)
         return
     
     if not interaction.guild.voice_client:
@@ -2035,12 +2035,12 @@ async def volume(interaction: discord.Interaction, volume: int):
     if interaction.guild.voice_client.source:
         interaction.guild.voice_client.source.volume = volume / 100
     
-    await interaction.response.send_message(f"🔊 Ustawiono Volume na {volume}%", ephemeral=True)
+    await interaction.response.send_message(f"🔊 Volume set to {volume}%", ephemeral=True)
 
 
-@bot.tree.command(name="nowplaying", description="Pokaz aktualnie odtwarzany utwor")
+@bot.tree.command(name="nowplaying", description="Show currently playing track")
 async def nowplaying(interaction: discord.Interaction):
-    """Wyswietl aktualnie odtwarzany utwor"""
+    """Display currently playing track"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
@@ -2061,11 +2061,11 @@ async def nowplaying(interaction: discord.Interaction):
         embed.set_image(url=queue.current.thumbnail)
     
     if queue.current.requester:
-        embed.add_field(name="👤 Dodane przez", value=queue.current.requester.mention, inline=True)
+        embed.add_field(name="👤 Added by", value=queue.current.requester.mention, inline=True)
     
     if queue.current.duration:
         mins, secs = divmod(queue.current.duration, 60)
-        embed.add_field(name="⏱️ Dlugosc", value=f"{int(mins)}:{int(secs):02d}", inline=True)
+        embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
     
     embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
     
@@ -2074,20 +2074,20 @@ async def nowplaying(interaction: discord.Interaction):
         embed.add_field(name="🔁 Loop", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
     
     if not queue.is_empty():
-        embed.add_field(name="📥 W kolejce", value=f"{len(queue.queue)} utworow", inline=True)
+        embed.add_field(name="📥 In queue", value=f"{len(queue.queue)} tracks", inline=True)
     
-    # Dodaj timestamp utworu
+    # Add track timestamp
     time_added = queue.current.added_at.strftime("%H:%M:%S")
-    embed.add_field(name="🕒 Dodano o", value=time_added, inline=True)
+    embed.add_field(name="🕒 Added at", value=time_added, inline=True)
     
     embed.set_footer(text="DJSona Music", icon_url=bot.user.display_avatar.url)
     
     view = MusicControlView(interaction.guild.id)
     
-    # Wyslij embed na kanale i zapisz ID (przywrocenie embeda)
+    # Send embed in channel and save ID (panel restore)
     await safe_defer(interaction)
     
-    # Usun stara wiadomosc now playing jesli istnieje
+    # Remove old now playing message if it exists
     if interaction.guild.id in main_control_messages:
         try:
             # Try cached message first to avoid fetch_message
@@ -2116,18 +2116,18 @@ async def nowplaying(interaction: discord.Interaction):
     message_cache[interaction.guild.id] = msg
 
 
-@bot.tree.command(name="np", description="Przywroc panel kontrolny (alias dla nowplaying)")
+@bot.tree.command(name="np", description="Restore control panel (alias for nowplaying)")
 async def np(interaction: discord.Interaction):
-    """Alias dla nowplaying - przywraca panel kontrolny"""
+    """Alias for nowplaying - restores control panel"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
     await nowplaying.__wrapped__(interaction)
 
 
-@bot.tree.command(name="clear", description="Wyczysc kolejke muzyki")
+@bot.tree.command(name="clear", description="Clear music queue")
 async def clear(interaction: discord.Interaction):
-    """Wyczysc kolejke"""
+    """Clear queue"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
@@ -2142,21 +2142,21 @@ async def clear(interaction: discord.Interaction):
     
     embed = discord.Embed(
         title="🧹 Cleared Queue",
-        description=f"Usunieto **{cleared_count}** utworow z kolejki",
+        description=f"Removed **{cleared_count}** tracks from queue",
         color=discord.Color.red()
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="loop", description="Set loop mode (off/track/queue)")
-@app_commands.describe(mode="Tryb petli: off (wylacz), track (utwor), queue (kolejka)")
+@app_commands.describe(mode="Loop mode: off, track, queue")
 @app_commands.choices(mode=[
     app_commands.Choice(name="⏹️ Disable loop", value="off"),
     app_commands.Choice(name="🔂 Repeat track", value="track"),
     app_commands.Choice(name="🔁 Repeat queue", value="queue")
 ])
 async def loop(interaction: discord.Interaction, mode: app_commands.Choice[str]):
-    """Ustaw tryb powtarzania"""
+    """Set repeat mode"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
@@ -2165,8 +2165,8 @@ async def loop(interaction: discord.Interaction, mode: app_commands.Choice[str])
     
     emoji_map = {"off": "⏹️", "track": "🔂", "queue": "🔁"}
     embed = discord.Embed(
-        title=f"{emoji_map[mode.value]} Tryb petli zmieniony",
-        description=f"Ustawiono: **{mode.name}**",
+        title=f"{emoji_map[mode.value]} Loop mode changed",
+        description=f"Set to: **{mode.name}**",
         color=discord.Color.purple()
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -2174,7 +2174,7 @@ async def loop(interaction: discord.Interaction, mode: app_commands.Choice[str])
 
 @bot.tree.command(name="shuffle", description="Shuffle tracks in queue")
 async def shuffle(interaction: discord.Interaction):
-    """Wymieszaj kolejke"""
+    """Shuffle queue"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
@@ -2187,23 +2187,23 @@ async def shuffle(interaction: discord.Interaction):
     queue.shuffle()
     embed = discord.Embed(
         title="🔀 Shuffled Queue",
-        description=f"Losowo ustawiono **{len(queue.queue)}** utworow",
+        description=f"Randomized **{len(queue.queue)}** tracks",
         color=discord.Color.purple()
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="remove", description="Usun utwor z kolejki")
-@app_commands.describe(position="Numer utworu do usuniecia (1, 2, 3...)")
+@bot.tree.command(name="remove", description="Remove track from queue")
+@app_commands.describe(position="Track number to remove (1, 2, 3...)")
 async def remove(interaction: discord.Interaction, position: int):
-    """Usun utwor z kolejki"""
+    """Remove track from queue"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
     queue = bot.get_queue(interaction.guild.id)
     
     if position < 1 or position > len(queue.queue):
-        await interaction.response.send_message(f"⚠️ Nieprawidlowa pozycja! Wybierz od 1 do {len(queue.queue)}", ephemeral=True)
+        await interaction.response.send_message(f"⚠️ Invalid position! Choose from 1 to {len(queue.queue)}", ephemeral=True)
         return
     
     removed_song = list(queue.queue)[position - 1]
@@ -2554,9 +2554,9 @@ async def mode_247(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="history", description="Pokaz ostatnio odtwarzane utwory")
+@bot.tree.command(name="history", description="Show recently played tracks")
 async def history_command(interaction: discord.Interaction):
-    """Wyswietl historie odtwarzania"""
+    """Display playback history"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
@@ -2573,7 +2573,7 @@ async def history_command(interaction: discord.Interaction):
     
     embed = discord.Embed(
         title="📜 Playback History",
-        description=f"Ostatnio odtwarzane utwory (max {len(queue.history)})",
+        description=f"Recently played tracks (max {len(queue.history)})",
         color=discord.Color.blue(),
         timestamp=datetime.now()
     )
@@ -2592,15 +2592,15 @@ async def history_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="stats", description="Pokaz statystyki bota")
+@bot.tree.command(name="stats", description="Show bot statistics")
 async def stats(interaction: discord.Interaction):
-    """Wyswietl statystyki bota"""
+    """Display bot statistics"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
     queue = bot.get_queue(interaction.guild.id)
     
-    # Oblicz Total Time kolejki
+    # Calculate total queue time
     total_duration = sum(song.duration or 0 for song in queue.queue)
     hours, remainder = divmod(total_duration, 3600)
     mins, secs = divmod(remainder, 60)
@@ -2620,7 +2620,7 @@ async def stats(interaction: discord.Interaction):
         loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
         embed.add_field(name="🔁 Loop", value=f"{loop_emoji} {queue.loop_mode.title()}", inline=True)
     
-    embed.add_field(name="🕘 History", value=f"{len(queue.history)} utworow", inline=True)
+    embed.add_field(name="🕘 History", value=f"{len(queue.history)} tracks", inline=True)
     embed.add_field(name="🌐 Servers", value=str(len(bot.guilds)), inline=True)
     
     if interaction.guild.voice_client:
@@ -2634,9 +2634,9 @@ async def stats(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="help", description="Pokaz dostepne komendy")
+@bot.tree.command(name="help", description="Show available commands")
 async def help_command(interaction: discord.Interaction):
-    """Wyswietl pomoc"""
+    """Display help"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
@@ -2649,7 +2649,7 @@ async def help_command(interaction: discord.Interaction):
     
     commands_list = [
         ("🎵 Playback", [
-            "`/play <url/nazwa>` - Play or add to queue",
+            "`/play <url/name>` - Play or add to queue",
             "`/pause` - Pause playback",
             "`/resume` - Resume playback",
             "`/stop` - Stop and clear queue",
@@ -3352,12 +3352,12 @@ async def wrapped(interaction: discord.Interaction, scope: str = "user", year: i
 
 if __name__ == "__main__":
     if not TOKEN:
-        logger.error("⚠️ Brak tokenu Discord! Ustaw zmienna BOT_TOKEN w pliku .env")
+        logger.error("⚠️ Missing Discord token! Set the BOT_TOKEN variable in the .env file")
     else:
         try:
             bot.run(TOKEN)
         except Exception as e:
-            logger.error(f"⚠️ Blad podczas uruchamiania bota: {e}")
+            logger.error(f"⚠️ Error while starting the bot: {e}")
 
 
 
