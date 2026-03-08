@@ -1,8 +1,12 @@
 import os
 import logging
+import json
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
+import aiohttp
 
 HELPER_FORUM_ID = 1464368533088768124  # Support forum channel ID
 SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
@@ -11,9 +15,141 @@ STREAM_ROLE_ID = 1470171489096564736  # Role granted while streaming
 STREAM_LIST_CHANNEL_ID = 1470173597157818559  # Channel for streaming roster embed
 GUILD_ID = os.getenv("HELPER_GUILD_ID")
 TOKEN = os.getenv("HELPER_TOKEN")
+TIKTOK_USERNAME = (os.getenv("TIKTOK_USERNAME") or "").strip().lstrip("@")
+TIKTOK_CHANNEL_ID = os.getenv("TIKTOK_CHANNEL_ID")
+NOTIFY_ROLE_ID = int(os.getenv("HELPER_NOTIFY_ROLE_ID", "1173564965152637018"))
+TIKTOK_STATE_FILE = os.getenv(
+    "TIKTOK_STATE_FILE",
+    str(Path(__file__).with_name("tiktok_state.json")),
+)
+
+try:
+    TIKTOK_CHECK_MINUTES = max(1, int(os.getenv("TIKTOK_CHECK_MINUTES", "10")))
+except ValueError:
+    TIKTOK_CHECK_MINUTES = 10
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("helper")
+
+
+def load_tiktok_state() -> dict:
+    """Load persisted TikTok posting state from disk."""
+    try:
+        state_path = Path(TIKTOK_STATE_FILE)
+        if not state_path.exists():
+            return {}
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning("Failed to load TikTok state: %s", e)
+        return {}
+
+
+def save_tiktok_state(state: dict):
+    """Persist TikTok posting state to disk."""
+    try:
+        state_path = Path(TIKTOK_STATE_FILE)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.warning("Failed to save TikTok state: %s", e)
+
+
+def build_tiktok_embed(video: dict, username: str) -> discord.Embed:
+    """Build a rich embed for a TikTok video."""
+    title = video.get("title") or f"New TikTok from @{username}"
+    title = title[:256]
+    url = video.get("url") or f"https://www.tiktok.com/@{username}"
+    description = (video.get("description") or "").strip()
+    if len(description) > 300:
+        description = description[:297] + "..."
+
+    embed = discord.Embed(
+        title=title,
+        url=url,
+        description=description or "Tap the button below to watch.",
+        color=discord.Color.from_rgb(18, 18, 18),
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    embed.set_author(name=f"@{username} on TikTok", icon_url=video.get("author_avatar") or discord.Embed.Empty)
+
+    cover_url = video.get("cover")
+    if cover_url:
+        embed.set_image(url=cover_url)
+
+    stats_line = (
+        f"▶️ {video.get('play_count', 0):,}  "
+        f"❤️ {video.get('digg_count', 0):,}  "
+        f"💬 {video.get('comment_count', 0):,}  "
+        f"🔁 {video.get('share_count', 0):,}"
+    )
+    embed.add_field(name="Stats", value=stats_line, inline=False)
+
+    created_ts = video.get("create_time")
+    if created_ts:
+        embed.add_field(name="Posted", value=f"<t:{int(created_ts)}:R>", inline=True)
+
+    embed.set_footer(text="Auto-posted by Helper • TikTok tracker")
+    return embed
+
+
+async def fetch_latest_tiktok_video(username: str) -> dict | None:
+    """Fetch latest TikTok post for a username using TikWM public endpoint."""
+    if not username:
+        return None
+
+    api_url = f"https://www.tikwm.com/api/user/posts?unique_id={username}&count=12&cursor=0"
+    timeout = aiohttp.ClientTimeout(total=20)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json,text/plain,*/*",
+    }
+
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            async with session.get(api_url) as resp:
+                if resp.status != 200:
+                    logger.warning("TikTok fetch failed with status %s", resp.status)
+                    return None
+                payload = await resp.json(content_type=None)
+    except Exception as e:
+        logger.warning("TikTok fetch error: %s", e)
+        return None
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    videos = []
+    if isinstance(data, dict):
+        videos = data.get("videos") or data.get("aweme_list") or []
+    elif isinstance(data, list):
+        videos = data
+
+    if not videos:
+        return None
+
+    def _timestamp(v: dict) -> int:
+        try:
+            return int(v.get("create_time") or 0)
+        except Exception:
+            return 0
+
+    latest = max(videos, key=_timestamp)
+    video_id = str(latest.get("video_id") or latest.get("aweme_id") or latest.get("id") or "")
+    canonical_url = latest.get("share_url") or (f"https://www.tiktok.com/@{username}/video/{video_id}" if video_id else None)
+
+    return {
+        "id": video_id,
+        "url": canonical_url,
+        "title": latest.get("title") or latest.get("desc") or "New TikTok post",
+        "description": latest.get("desc") or latest.get("title") or "",
+        "cover": latest.get("cover") or latest.get("origin_cover") or latest.get("ai_dynamic_cover"),
+        "author_avatar": (latest.get("author") or {}).get("avatar") if isinstance(latest.get("author"), dict) else None,
+        "create_time": _timestamp(latest),
+        "play_count": int(latest.get("play_count") or latest.get("play") or 0),
+        "digg_count": int(latest.get("digg_count") or latest.get("digg") or 0),
+        "comment_count": int(latest.get("comment_count") or latest.get("comment") or 0),
+        "share_count": int(latest.get("share_count") or latest.get("share") or 0),
+    }
 
 
 def build_welcome_embed(bot_avatar_url: str = None) -> discord.Embed:
@@ -145,6 +281,8 @@ def create_bot():
     bot.streaming_embed_signature = None
     bot.streaming_embed_last_update = None
     bot.streaming_embed_cleanup_done = False
+    bot.tiktok_state = load_tiktok_state()
+    bot.tiktok_username = TIKTOK_USERNAME or "p1mek"
     bot.status_messages = [
         ("playing", "🧩 /help"),
         ("listening", "support requests"),
@@ -152,6 +290,80 @@ def create_bot():
         ("listening", "error reports"),
         ("playing", "📌 forum triage"),
     ]
+
+    async def check_and_post_latest_tiktok(force_post: bool = False) -> tuple[bool, str]:
+        """Check latest TikTok and post to configured channel if a new video appears."""
+        if not TIKTOK_CHANNEL_ID:
+            return False, "TIKTOK_CHANNEL_ID is not configured"
+
+        try:
+            channel_id = int(TIKTOK_CHANNEL_ID)
+        except ValueError:
+            return False, "TIKTOK_CHANNEL_ID is invalid"
+
+        channel = bot.get_channel(channel_id)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return False, f"Channel {channel_id} not found or not a text channel"
+
+        username = bot.tiktok_username
+        video = await fetch_latest_tiktok_video(username)
+        if not video:
+            return False, f"No TikTok data found for @{username}"
+
+        video_id = video.get("id") or video.get("url")
+        if not video_id:
+            return False, "Latest TikTok item does not include id/url"
+
+        state_key = f"{channel_id}:{username}"
+        last_video_id = bot.tiktok_state.get(state_key)
+
+        # First run seeds state to avoid posting old content.
+        if not last_video_id and not force_post:
+            bot.tiktok_state[state_key] = str(video_id)
+            save_tiktok_state(bot.tiktok_state)
+            return False, f"Seeded tracker for @{username} with current latest post"
+
+        if str(last_video_id) == str(video_id) and not force_post:
+            return False, "No new TikTok post"
+
+        embed = build_tiktok_embed(video, username)
+        role_mention = f"<@&{NOTIFY_ROLE_ID}>"
+        content = f"{role_mention} New TikTok dropped from **@{username}**"
+
+        try:
+            await channel.send(
+                content=content,
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions(roles=True),
+            )
+        except Exception as e:
+            return False, f"Failed to send TikTok post: {e}"
+
+        bot.tiktok_state[state_key] = str(video_id)
+        save_tiktok_state(bot.tiktok_state)
+        return True, f"Posted new TikTok for @{username}"
+
+    @tasks.loop(minutes=TIKTOK_CHECK_MINUTES)
+    async def tiktok_watch_loop():
+        posted, detail = await check_and_post_latest_tiktok(force_post=False)
+        if posted:
+            logger.info("TikTok tracker: %s", detail)
+        else:
+            logger.info("TikTok tracker: %s", detail)
+
+    @tiktok_watch_loop.before_loop
+    async def before_tiktok_watch_loop():
+        await bot.wait_until_ready()
+
+    @bot.tree.command(name="tiktokcheck", description="Force-check and post latest TikTok now")
+    @app_commands.default_permissions(administrator=True)
+    async def tiktokcheck(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        posted, detail = await check_and_post_latest_tiktok(force_post=True)
+        if posted:
+            await interaction.followup.send(f"✅ {detail}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"⚠️ {detail}", ephemeral=True)
 
     async def update_streaming_embed(guild: discord.Guild):
         channel = guild.get_channel(STREAM_LIST_CHANNEL_ID)
@@ -331,6 +543,8 @@ def create_bot():
             change_status.start()
         if not sync_streaming_roles_loop.is_running():
             sync_streaming_roles_loop.start()
+        if not tiktok_watch_loop.is_running():
+            tiktok_watch_loop.start()
         if GUILD_ID:
             guild = bot.get_guild(int(GUILD_ID))
             if guild:
