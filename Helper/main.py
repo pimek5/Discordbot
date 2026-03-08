@@ -483,8 +483,10 @@ def create_bot():
         await bot.wait_until_ready()
 
     @bot.tree.command(name="tiktokcheck", description="Force-check and post latest TikTok now")
-    @app_commands.default_permissions(administrator=True)
     async def tiktokcheck(interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Only administrators can use this command.", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
         posted, detail = await check_and_post_latest_tiktok(force_post=True)
         if posted:
@@ -671,13 +673,14 @@ def create_bot():
                 synced_global = await bot.tree.sync()
                 logger.info("Synced %s global slash command(s)", len(synced_global))
 
-                if GUILD_ID:
-                    guild = bot.get_guild(int(GUILD_ID))
-                    if guild:
-                        # Copy globals to guild for near-instant availability.
+                # Copy globals to every connected guild for near-instant availability.
+                for guild in bot.guilds:
+                    try:
                         bot.tree.copy_global_to(guild=guild)
                         synced_guild = await bot.tree.sync(guild=guild)
                         logger.info("Synced %s guild slash command(s) for %s", len(synced_guild), guild.id)
+                    except Exception as guild_sync_error:
+                        logger.warning("Failed to sync guild %s commands: %s", guild.id, guild_sync_error)
                 bot.slash_sync_done = True
             except Exception as e:
                 logger.warning("Failed to sync slash commands: %s", e)
