@@ -407,6 +407,7 @@ def create_bot():
     bot.streaming_embed_signature = None
     bot.streaming_embed_last_update = None
     bot.streaming_embed_cleanup_done = False
+    bot.slash_sync_done = False
     bot.tiktok_state = load_tiktok_state()
     bot.tiktok_username = TIKTOK_USERNAME or "p1mek"
     bot.status_messages = [
@@ -665,6 +666,22 @@ def create_bot():
     @bot.event
     async def on_ready():
         logger.info("Helper bot ready as %s", bot.user)
+        if not bot.slash_sync_done:
+            try:
+                synced_global = await bot.tree.sync()
+                logger.info("Synced %s global slash command(s)", len(synced_global))
+
+                if GUILD_ID:
+                    guild = bot.get_guild(int(GUILD_ID))
+                    if guild:
+                        # Copy globals to guild for near-instant availability.
+                        bot.tree.copy_global_to(guild=guild)
+                        synced_guild = await bot.tree.sync(guild=guild)
+                        logger.info("Synced %s guild slash command(s) for %s", len(synced_guild), guild.id)
+                bot.slash_sync_done = True
+            except Exception as e:
+                logger.warning("Failed to sync slash commands: %s", e)
+
         if not change_status.is_running():
             change_status.start()
         if not sync_streaming_roles_loop.is_running():
@@ -743,9 +760,10 @@ def create_bot():
 
         await update_streaming_embed(after.guild)
 
-    @bot.event
     async def setup_hook():
         bot.add_view(HelperView())
+
+    bot.setup_hook = setup_hook
 
     return bot
 
