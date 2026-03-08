@@ -80,12 +80,16 @@ def build_tiktok_embed(video: dict, username: str) -> discord.Embed:
     if cover_url:
         embed.set_image(url=cover_url)
 
-    stats_line = (
-        f"▶️ {video.get('play_count', 0):,}  "
-        f"❤️ {video.get('digg_count', 0):,}  "
-        f"💬 {video.get('comment_count', 0):,}  "
-        f"🔁 {video.get('share_count', 0):,}"
-    )
+    custom_stats = video.get("custom_stats")
+    if custom_stats:
+        stats_line = custom_stats
+    else:
+        stats_line = (
+            f"▶️ {video.get('play_count', 0):,}  "
+            f"❤️ {video.get('digg_count', 0):,}  "
+            f"💬 {video.get('comment_count', 0):,}  "
+            f"🔁 {video.get('share_count', 0):,}"
+        )
     embed.add_field(name="Stats", value=stats_line, inline=False)
 
     created_ts = video.get("create_time")
@@ -160,6 +164,59 @@ async def fetch_latest_tiktok_video(username: str) -> dict | None:
             "share_count": int(latest.get("share_count") or 0),
         }
 
+    async def _tikwm_profile_fallback() -> dict | None:
+        """Fallback when TikWM post listing is blocked: use profile stats + video count signal."""
+        info_url = f"https://www.tikwm.com/api/user/info?unique_id={username}"
+        timeout = aiohttp.ClientTimeout(total=20)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/json,text/plain,*/*",
+            "Referer": "https://www.tikwm.com/",
+        }
+
+        try:
+            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                async with session.get(info_url) as resp:
+                    if resp.status != 200:
+                        logger.warning("TikTok profile fallback failed with status %s", resp.status)
+                        return None
+                    payload = await resp.json(content_type=None)
+        except Exception as e:
+            logger.warning("TikTok profile fallback error: %s", e)
+            return None
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        user = data.get("user") if isinstance(data, dict) else None
+        stats = data.get("stats") if isinstance(data, dict) else None
+        if not isinstance(user, dict) or not isinstance(stats, dict):
+            return None
+
+        video_count = int(stats.get("videoCount") or 0)
+        if video_count <= 0:
+            return None
+
+        avatar = user.get("avatarLarger") or user.get("avatarMedium") or user.get("avatarThumb")
+        profile_url = f"https://www.tiktok.com/@{username}"
+        return {
+            "id": f"profile-video-count:{video_count}",
+            "url": profile_url,
+            "title": f"New TikTok detected from @{username}",
+            "description": "Open profile to watch the latest upload.",
+            "cover": avatar,
+            "author_avatar": avatar,
+            "create_time": int(datetime.now(timezone.utc).timestamp()),
+            "play_count": 0,
+            "digg_count": 0,
+            "comment_count": 0,
+            "share_count": 0,
+            "custom_stats": (
+                f"🎬 Videos: {video_count:,}  "
+                f"👥 Followers: {int(stats.get('followerCount') or 0):,}  "
+                f"❤️ Likes: {int(stats.get('heartCount') or 0):,}"
+            ),
+        }
+
     if not username:
         return None
 
@@ -180,11 +237,11 @@ async def fetch_latest_tiktok_video(username: str) -> dict | None:
             async with session.get(api_url) as resp:
                 if resp.status != 200:
                     logger.warning("TikTok fetch failed with status %s", resp.status)
-                    return None
+                    return await _tikwm_profile_fallback()
                 payload = await resp.json(content_type=None)
     except Exception as e:
         logger.warning("TikTok fetch error: %s", e)
-        return None
+        return await _tikwm_profile_fallback()
 
     data = payload.get("data") if isinstance(payload, dict) else None
     videos = []
@@ -194,7 +251,7 @@ async def fetch_latest_tiktok_video(username: str) -> dict | None:
         videos = data
 
     if not videos:
-        return None
+        return await _tikwm_profile_fallback()
 
     def _timestamp(v: dict) -> int:
         try:
