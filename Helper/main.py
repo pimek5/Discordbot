@@ -18,6 +18,9 @@ TOKEN = os.getenv("HELPER_TOKEN")
 TIKTOK_USERNAME = (os.getenv("TIKTOK_USERNAME") or "").strip().lstrip("@")
 TIKTOK_CHANNEL_ID = os.getenv("TIKTOK_CHANNEL_ID")
 NOTIFY_ROLE_ID = int(os.getenv("HELPER_NOTIFY_ROLE_ID", "1173564965152637018"))
+TIKTOK_CLIENT_KEY = os.getenv("TIKTOK_CLIENT_KEY")
+TIKTOK_CLIENT_SECRET = os.getenv("TIKTOK_CLIENT_SECRET")
+TIKTOK_ACCESS_TOKEN = os.getenv("TIKTOK_ACCESS_TOKEN")
 TIKTOK_STATE_FILE = os.getenv(
     "TIKTOK_STATE_FILE",
     str(Path(__file__).with_name("tiktok_state.json")),
@@ -94,9 +97,75 @@ def build_tiktok_embed(video: dict, username: str) -> discord.Embed:
 
 
 async def fetch_latest_tiktok_video(username: str) -> dict | None:
-    """Fetch latest TikTok post for a username using TikWM public endpoint."""
+    """Fetch latest TikTok post.
+
+    Priority:
+    1) Official TikTok API (if TIKTOK_ACCESS_TOKEN is configured)
+    2) Public fallback endpoint (TikWM)
+    """
+    async def _official_fetch() -> dict | None:
+        if not TIKTOK_ACCESS_TOKEN:
+            return None
+
+        api_url = (
+            "https://open.tiktokapis.com/v2/video/list/"
+            "?fields=id,title,video_description,create_time,cover_image_url,share_url,"
+            "like_count,comment_count,share_count,view_count"
+        )
+        timeout = aiohttp.ClientTimeout(total=20)
+        headers = {
+            "Authorization": f"Bearer {TIKTOK_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        }
+        payload = {"max_count": 20}
+
+        try:
+            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                async with session.post(api_url, json=payload) as resp:
+                    if resp.status != 200:
+                        logger.warning("Official TikTok API returned status %s", resp.status)
+                        return None
+                    raw = await resp.json(content_type=None)
+        except Exception as e:
+            logger.warning("Official TikTok API request failed: %s", e)
+            return None
+
+        data = raw.get("data") if isinstance(raw, dict) else None
+        videos = []
+        if isinstance(data, dict):
+            videos = data.get("videos") or []
+
+        if not videos:
+            return None
+
+        def _timestamp(v: dict) -> int:
+            try:
+                return int(v.get("create_time") or 0)
+            except Exception:
+                return 0
+
+        latest = max(videos, key=_timestamp)
+        video_id = str(latest.get("id") or "")
+        return {
+            "id": video_id,
+            "url": latest.get("share_url") or (f"https://www.tiktok.com/@{username}/video/{video_id}" if video_id else None),
+            "title": latest.get("title") or latest.get("video_description") or "New TikTok post",
+            "description": latest.get("video_description") or latest.get("title") or "",
+            "cover": latest.get("cover_image_url"),
+            "author_avatar": None,
+            "create_time": _timestamp(latest),
+            "play_count": int(latest.get("view_count") or 0),
+            "digg_count": int(latest.get("like_count") or 0),
+            "comment_count": int(latest.get("comment_count") or 0),
+            "share_count": int(latest.get("share_count") or 0),
+        }
+
     if not username:
         return None
+
+    official = await _official_fetch()
+    if official:
+        return official
 
     api_url = f"https://www.tikwm.com/api/user/posts?unique_id={username}&count=12&cursor=0"
     timeout = aiohttp.ClientTimeout(total=20)
