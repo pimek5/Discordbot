@@ -290,19 +290,44 @@ async def migrate_thread(thread: discord.Thread, target_channel_id: int, champio
             logger.info(f"No messages in thread {thread.name}")
             return False
         
-        # Collect images from attachments/embeds in source thread.
+        def _is_image_url(url: str) -> bool:
+            """Return True for direct image links Discord can preview."""
+            if not url:
+                return False
+            lowered = url.lower()
+            # Strip querystring when checking extension.
+            path = lowered.split('?', 1)[0]
+            return path.endswith((
+                '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.avif'
+            ))
+
+        # Collect images from attachments/embeds/source text URLs.
         # The first one is used as preview candidate for the migrated post.
         image_urls = []
         for msg in messages:
             for attachment in msg.attachments:
-                if attachment.content_type and attachment.content_type.startswith('image/'):
+                is_image_attachment = (
+                    (attachment.content_type and attachment.content_type.startswith('image/'))
+                    or _is_image_url(attachment.url)
+                    or _is_image_url(getattr(attachment, 'proxy_url', ''))
+                    or _is_image_url(getattr(attachment, 'filename', ''))
+                )
+                if is_image_attachment:
                     image_urls.append(attachment.url)
+
             # Check for embeds with images
             for embed in msg.embeds:
                 if embed.image:
                     image_urls.append(embed.image.url)
                 if embed.thumbnail:
                     image_urls.append(embed.thumbnail.url)
+
+            # Fallback: scan raw message content for direct image links.
+            if msg.content:
+                for match in re.findall(r'https?://\S+', msg.content):
+                    candidate = match.strip('<>.,)\]\"\'')
+                    if _is_image_url(candidate):
+                        image_urls.append(candidate)
 
         # Preserve order and drop duplicates.
         image_urls = list(dict.fromkeys(image_urls))
