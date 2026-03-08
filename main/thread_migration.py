@@ -290,7 +290,8 @@ async def migrate_thread(thread: discord.Thread, target_channel_id: int, champio
             logger.info(f"No messages in thread {thread.name}")
             return False
         
-        # Collect images
+        # Collect images from attachments/embeds in source thread.
+        # The first one is used as preview candidate for the migrated post.
         image_urls = []
         for msg in messages:
             for attachment in msg.attachments:
@@ -302,10 +303,17 @@ async def migrate_thread(thread: discord.Thread, target_channel_id: int, champio
                     image_urls.append(embed.image.url)
                 if embed.thumbnail:
                     image_urls.append(embed.thumbnail.url)
+
+        # Preserve order and drop duplicates.
+        image_urls = list(dict.fromkeys(image_urls))
+        preview_image_url = image_urls[0] if image_urls else None
         
         content_parts = [f"📋 **Migrated from custom-skins**"]
         content_parts.append(f"🧩 Source thread id: {thread.id}")
         content_parts.append(f"🔗 Original thread: {thread.jump_url}")
+        if preview_image_url:
+            # Keep raw URL in the first post so Discord can generate preview thumbnail.
+            content_parts.append(preview_image_url)
         initial_content = '\n'.join(content_parts)
 
         # Create new thread in target channel.
