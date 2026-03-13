@@ -1100,7 +1100,7 @@ class CreatorCommands(commands.Cog):
                         ephemeral=True
                     )
                 
-                @discord.ui.button(label="�🔔 Notifications", style=discord.ButtonStyle.secondary)
+                @discord.ui.button(label="🔔 Notifications", style=discord.ButtonStyle.secondary)
                 async def toggle_notifications(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
                     class NotifView(discord.ui.View):
                         def __init__(self, db_obj, gid, cfg):

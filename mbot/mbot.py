@@ -963,7 +963,7 @@ class MusicBot(commands.Bot):
             except Exception as sync_error:
                 logger.warning("Failed to sync guild commands: %s", sync_error)
 
-        logger.info(f'? DJSona logged in as {self.user}')
+        logger.info(f'🎵 DJSona logged in as {self.user}')
         logger.info(f'Bot is on {len(self.guilds)} servers')
         
         # Set bot avatar

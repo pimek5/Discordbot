@@ -38,13 +38,13 @@ TIER_COLORS = {
 }
 
 TIER_EMOJIS = {
-    'S': '≡ƒö┤',
-    'A': '≡ƒƒá',
-    'B': '≡ƒƒí',
-    'C': '≡ƒƒó',
-    'D': '≡ƒö╡',
-    'E': '≡ƒƒú',
-    'F': 'ΓÜ½',
+    'S': '🟥',
+    'A': '🟧',
+    'B': '🟨',
+    'C': '🟩',
+    'D': '🟦',
+    'E': '🟪',
+    'F': '⬛',
 }
 
 
@@ -86,7 +86,7 @@ class SkinTierlistView(discord.ui.View):
         
         # Add done button
         done_button = discord.ui.Button(
-            label="Γ£à Done",
+            label="✅ Done",
             style=discord.ButtonStyle.success,
             custom_id="done_btn"
         )
@@ -148,7 +148,7 @@ class SkinTierlistView(discord.ui.View):
         
         # Show current tierlist progress
         embed.add_field(
-            name="≡ƒôè Tierlist Progress",
+            name="📊 Tierlist Progress",
             value=self._format_tierlist_progress(),
             inline=False
         )
@@ -180,14 +180,14 @@ class SkinTierlistView(discord.ui.View):
     def _create_final_tierlist_embed(self) -> discord.Embed:
         """Create final tierlist embed"""
         embed = discord.Embed(
-            title=f"≡ƒÄ» {self.champion} Skin Tierlist - Final",
+            title=f"🏆 {self.champion} Skin Tierlist - Final",
             color=discord.Color.gold()
         )
         
         for tier in ['S', 'A', 'B', 'C', 'D', 'E', 'F']:
             skins_in_tier = self.tierlist[tier]
             if skins_in_tier:
-                value = "\n".join([f"ΓÇó {skin}" for skin in skins_in_tier])
+                value = "\n".join([f"• {skin}" for skin in skins_in_tier])
             else:
                 value = "*No skins*"
             
@@ -232,6 +232,8 @@ class SkinScraper:
     async def fetch_champion_skins(champion_name: str) -> List[Dict]:
         """Fetch skins for a champion from wiki sources"""
         try:
+            # Normalize input: capitalize each word (e.g. "twitch" -> "Twitch", "twisted fate" -> "Twisted Fate")
+            champion_name = champion_name.strip().title()
             # Use mapping if available, otherwise use provided name
             display_name = SkinScraper.CHAMPION_URL_MAPPING.get(champion_name, champion_name)
             
@@ -258,7 +260,7 @@ class SkinScraper:
                             skins = SkinScraper._parse_skins_from_html(html, champion_name)
                             
                             if skins:
-                                logger.info(f"Γ£à Found {len(skins)} skins for {champion_name}")
+                                logger.info(f"✅ Found {len(skins)} skins for {champion_name}")
                                 return skins
                 except asyncio.TimeoutError:
                     logger.warning(f"Timeout fetching from {url}")
@@ -398,8 +400,8 @@ class SkinScraper:
                                 potential_skin = lines[0].strip()
                                 
                                 # Remove common markers and artifacts
-                                potential_skin = re.sub(r'ΓÇóView.*?Music', '', potential_skin).strip()  # Remove "ΓÇóView Music" markers
-                                potential_skin = re.sub(r'ΓÇó.*', '', potential_skin).strip()  # Remove bullet points and after
+                                potential_skin = re.sub(r'•View.*?Music', '', potential_skin).strip()  # Remove "•View Music" markers
+                                potential_skin = re.sub(r'•.*', '', potential_skin).strip()  # Remove bullet points and after
                                 potential_skin = re.sub(r'Chromas.*', '', potential_skin).strip()  # Remove "Chromas" section
                                 
                                 # Remove pricing info (before skin name) - remove pricing codes at start
@@ -487,7 +489,7 @@ class SkinTierlistCommands(commands.Cog):
             
             if not skins:
                 embed = discord.Embed(
-                    title="Γ¥î No Skins Found",
+                    title="❌ No Skins Found",
                     description=f"Could not find skins for champion: **{champion}**\n\nMake sure the champion name is spelled correctly (e.g., Twitch, Ahri, Yasuo).",
                     color=discord.Color.red()
                 )
@@ -503,7 +505,7 @@ class SkinTierlistCommands(commands.Cog):
             
             # Create initial embed
             embed = discord.Embed(
-                title=f"≡ƒÄ¿ {champion.title()} Skin Tierlist",
+                title=f"🎨 {champion.title()} Skin Tierlist",
                 description=f"Click skin numbers to select, then choose a tier.\n**Found {len(skins)} skins** to rank!",
                 color=discord.Color.blue()
             )
@@ -512,13 +514,13 @@ class SkinTierlistCommands(commands.Cog):
                 embed.set_thumbnail(url=skins[0]['image_url'])
             
             embed.add_field(
-                name="≡ƒôï How to use",
-                value="1∩╕ÅΓâú Click a skin number (1-25)\n2∩╕ÅΓâú Select a tier (S-F)\n3∩╕ÅΓâú Repeat until done\n4∩╕ÅΓâú Click Γ£à Done when finished",
+                name="📋 How to use",
+                value="1. Click a skin number (1-25)\n2. Select a tier (S-F)\n3. Repeat until done\n4. Click ✅ Done when finished",
                 inline=False
             )
             
             embed.add_field(
-                name="≡ƒôè Skins to rank",
+                name="🧾 Skins to rank",
                 value="\n".join([f"{i+1}. {skin['name']}" for i, skin in enumerate(skins[:10])]) + 
                       ("\n..." if len(skins) > 10 else ""),
                 inline=False
@@ -530,7 +532,7 @@ class SkinTierlistCommands(commands.Cog):
         except Exception as e:
             logger.error(f"Error in skin_tierlist command: {e}", exc_info=True)
             embed = discord.Embed(
-                title="Γ¥î Error",
+                title="❌ Error",
                 description=f"An error occurred: {str(e)}",
                 color=discord.Color.red()
             )

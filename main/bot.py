@@ -2550,7 +2550,7 @@ async def check_threads_for_runeforge():
         # Check each channel
         for channel_id, tag_id in RUNEFORGE_CHANNELS.items():
             print(f"\n{'='*40}")
-            print(f"� Checking channel ID: {channel_id} (Tag ID: {tag_id})")
+            print(f"🔍 Checking channel ID: {channel_id} (Tag ID: {tag_id})")
             
             channel = bot.get_channel(channel_id)
             if not channel:
