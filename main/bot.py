@@ -778,8 +778,8 @@ class MyBot(commands.Bot):
                 await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
                 print("  ✅ LeaderboardCommands loaded")
 
-                await self.add_cog(skin_tierlist_commands.SkinTierlistCommands(self))
-                print("  ✅ SkinTierlistCommands loaded")
+                await self.add_cog(skin_tierlist_commands.SkinTierlistCommands(self), guild=primary_guild)
+                print("  ✅ SkinTierlistCommands loaded (guild-specific)")
 
                 # Load thread migration commands
                 print("🔄 Loading ThreadMigrationCommands...")
