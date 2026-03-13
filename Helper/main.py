@@ -477,7 +477,6 @@ def create_bot():
     async def sync_streaming_roles(guild: discord.Guild):
         role = guild.get_role(STREAM_ROLE_ID)
         if not role:
-            logger.warning("Streaming role not found in guild %s (role_id=%s)", guild.id, STREAM_ROLE_ID)
             return
 
         try:
@@ -607,7 +606,6 @@ def create_bot():
 
         role = after.guild.get_role(STREAM_ROLE_ID)
         if not role:
-            logger.warning("Streaming role not found in guild %s (role_id=%s)", after.guild.id, STREAM_ROLE_ID)
             return
 
         is_streaming = await get_verified_stream_activity(after) is not None
@@ -628,14 +626,6 @@ def create_bot():
                     after.id,
                     after.display_name,
                     role.id,
-                )
-            else:
-                logger.info(
-                    "[STREAM_ROLE][PRESENCE] NO_CHANGE user=%s (%s) is_streaming=%s has_role=%s",
-                    after.id,
-                    after.display_name,
-                    is_streaming,
-                    role in after.roles,
                 )
         except Exception as e:
             logger.warning("Failed to update streaming role: %s", e)
