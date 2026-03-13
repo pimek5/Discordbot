@@ -130,6 +130,7 @@ import profile_commands
 import stats_commands
 import thread_migration
 import team_commands
+import skin_tierlist_commands
 
 # Utility: normalize various DB-stored guess formats into a Python list
 def normalize_guesses(raw):
@@ -776,6 +777,9 @@ class MyBot(commands.Bot):
                 print("  ✅ StatsCommands loaded")
                 await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
                 print("  ✅ LeaderboardCommands loaded")
+
+                await self.add_cog(skin_tierlist_commands.SkinTierlistCommands(self))
+                print("  ✅ SkinTierlistCommands loaded")
 
                 # Load thread migration commands
                 print("🔄 Loading ThreadMigrationCommands...")
