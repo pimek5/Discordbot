@@ -204,77 +204,120 @@ class SkinTierlistView(discord.ui.View):
 
 
 class SkinScraper:
-    """Scrapes skin information from League of Legends wiki"""
-    
-    # Special champion name mappings (for champions with unusual wiki URLs)
-    CHAMPION_URL_MAPPING = {
-        "DrMundo": "Dr._Mundo",
-        "JarvanIV": "Jarvan IV",
-        "KSante": "K'Sante",
-        "XinZhao": "Xin Zhao",
-        "Khazix": "Kha'Zix",
-        "LeeSin": "Lee Sin",
-        "MasterYi": "Master Yi",
-        "RekSai": "Rek'Sai",
-        "AurelionSol": "Aurelion Sol",
-        "Chogath": "Cho'Gath",
-        "Leblanc": "LeBlanc",
-        "Kaisa": "Kai'Sa",
-        "KogMaw": "Kog'Maw",
-        "MissFortune": "Miss Fortune",
-        "TwistedFate": "Twisted Fate",
-        "Renata": "Renata Glasc",
-        "TahmKench": "Tahm Kench",
-        "Velkoz": "Vel'Koz",
-    }
-    
+    """Fetches skin information from Riot Data Dragon (primary) and wiki (fallback)"""
+
+    # Cache at class level so it persists for the bot's lifetime
+    _ddragon_version: Optional[str] = None
+    _ddragon_champions: Optional[Dict] = None  # {name_lower: dd_key}
+
+    @staticmethod
+    async def _ensure_ddragon_cache() -> bool:
+        """Populate version + champion-list cache. Returns True on success."""
+        session = await get_session()
+        try:
+            if SkinScraper._ddragon_version is None:
+                async with session.get(
+                    "https://ddragon.leagueoflegends.com/api/versions.json",
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as resp:
+                    if resp.status != 200:
+                        return False
+                    versions = await resp.json(content_type=None)
+                    SkinScraper._ddragon_version = versions[0]
+
+            if SkinScraper._ddragon_champions is None:
+                url = f"https://ddragon.leagueoflegends.com/cdn/{SkinScraper._ddragon_version}/data/en_US/champion.json"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status != 200:
+                        return False
+                    data = await resp.json(content_type=None)
+                    # map display-name-lower → dd_key (e.g. "twisted fate" → "TwistedFate")
+                    SkinScraper._ddragon_champions = {
+                        v["name"].lower(): k for k, v in data["data"].items()
+                    }
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to populate Data Dragon cache: {e}")
+            return False
+
+    @staticmethod
+    async def _fetch_from_ddragon(champion_name: str) -> List[Dict]:
+        """Fetch skins from Riot Data Dragon. Returns list or [] on failure."""
+        try:
+            if not await SkinScraper._ensure_ddragon_cache():
+                return []
+
+            dd_key = SkinScraper._ddragon_champions.get(champion_name.lower())
+            if not dd_key:
+                logger.warning(f"Champion '{champion_name}' not found in Data Dragon champion list")
+                return []
+
+            version = SkinScraper._ddragon_version
+            url = f"https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion/{dd_key}.json"
+            session = await get_session()
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json(content_type=None)
+
+            skins_raw = data["data"][dd_key]["skins"]
+            skins = []
+            for skin in skins_raw:
+                name = skin["name"]
+                if name == "default":
+                    name = f"Classic {champion_name.title()}"
+                num = skin["num"]
+                image_url = f"https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{dd_key}_{num}.jpg"
+                skins.append({"name": name, "image_url": image_url, "tier": None})
+            return skins[:25]
+        except Exception as e:
+            logger.warning(f"Data Dragon fetch failed for {champion_name}: {e}")
+            return []
+
     @staticmethod
     async def fetch_champion_skins(champion_name: str) -> List[Dict]:
-        """Fetch skins for a champion from wiki sources"""
+        """Fetch skins for a champion. Uses Data Dragon first, wiki as fallback."""
         try:
-            # Normalize input: capitalize each word (e.g. "twitch" -> "Twitch", "twisted fate" -> "Twisted Fate")
+            # Normalize input (e.g. "twitch" → "Twitch", "twisted fate" → "Twisted Fate")
             champion_name = champion_name.strip().title()
-            # Use mapping if available, otherwise use provided name
-            display_name = SkinScraper.CHAMPION_URL_MAPPING.get(champion_name, champion_name)
-            
-            # Normalize champion name for URL
-            url_name = display_name.replace(" ", "_")
-            url_name_encoded = url_name.replace("'", "%27")
-            url_name_no_apostrophe = url_name.replace("'", "")
-            
-            # Try official wiki first with encoded apostrophe, then fallback variants
+
+            # --- Primary: Riot Data Dragon ---
+            skins = await SkinScraper._fetch_from_ddragon(champion_name)
+            if skins:
+                logger.info(f"✅ Found {len(skins)} skins for {champion_name} via Data Dragon")
+                return skins
+
+            # --- Fallback: Fandom wiki HTML ---
+            clean = champion_name.replace("'", "").replace(".", "").replace(" ", "_")
+            encoded = champion_name.replace(" ", "_").replace("'", "%27")
             urls_to_try = [
-                f"https://wiki.leagueoflegends.com/en-us/{url_name_encoded}/Cosmetics",
-                f"https://leagueoflegends.fandom.com/wiki/{url_name_encoded}/Skins",
-                f"https://wiki.leagueoflegends.com/en-us/{url_name_no_apostrophe}/Cosmetics",
-                f"https://leagueoflegends.fandom.com/wiki/{url_name_no_apostrophe}/Skins"
+                f"https://leagueoflegends.fandom.com/wiki/{encoded}/Skins",
+                f"https://leagueoflegends.fandom.com/wiki/{clean}/Skins",
             ]
-            
-            # Use global session for better performance
             session = await get_session()
             for url in urls_to_try:
                 try:
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=5, connect=2)) as response:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=8, connect=3)) as response:
                         if response.status == 200:
                             html = await response.text()
                             skins = SkinScraper._parse_skins_from_html(html, champion_name)
-                            
                             if skins:
-                                logger.info(f"✅ Found {len(skins)} skins for {champion_name}")
+                                logger.info(f"✅ Found {len(skins)} skins for {champion_name} via wiki")
                                 return skins
                 except asyncio.TimeoutError:
                     logger.warning(f"Timeout fetching from {url}")
-                    continue
                 except Exception as e:
                     logger.warning(f"Error fetching from {url}: {e}")
-                    continue
-            
+
             logger.warning(f"No skins found for {champion_name} from any source")
             return []
-        
+
         except Exception as e:
             logger.error(f"Error in fetch_champion_skins: {e}")
             return []
+
+    # Keep CHAMPION_URL_MAPPING for any legacy references
+    CHAMPION_URL_MAPPING: Dict = {}
     
     @staticmethod
     def _extract_image_url(html: str, skin_name: str) -> Optional[str]:
