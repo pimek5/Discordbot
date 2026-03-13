@@ -1,6 +1,8 @@
 import os
 import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
+import aiohttp
 import discord
 from discord.ext import commands, tasks
 
@@ -16,9 +18,60 @@ AUTO_TRIAGE_KEYWORDS = {
 }
 GUILD_ID = os.getenv("HELPER_GUILD_ID")
 TOKEN = os.getenv("HELPER_TOKEN")
+TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
+TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("helper")
+
+VALID_STREAM_HOSTS = {
+    "twitch.tv",
+}
+
+
+def get_valid_stream_activity(member: discord.Member):
+    for activity in member.activities:
+        if not activity or activity.type != discord.ActivityType.streaming:
+            continue
+
+        stream_url = getattr(activity, "url", None)
+        if not stream_url:
+            continue
+
+        try:
+            hostname = urlparse(stream_url).netloc.lower()
+        except Exception:
+            continue
+
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+
+        if any(hostname == valid_host or hostname.endswith(f".{valid_host}") for valid_host in VALID_STREAM_HOSTS):
+            return activity
+
+    return None
+
+
+def extract_twitch_login(stream_url: str) -> str | None:
+    try:
+        parsed = urlparse(stream_url)
+    except Exception:
+        return None
+
+    hostname = parsed.netloc.lower()
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    if hostname != "twitch.tv" and not hostname.endswith(".twitch.tv"):
+        return None
+
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if not path_parts:
+        return None
+
+    login = path_parts[0].strip().lower()
+    if login in {"directory", "downloads", "jobs", "settings", "subscriptions", "team", "videos"}:
+        return None
+    return login
 
 
 def build_welcome_embed(bot_avatar_url: str = None) -> discord.Embed:
@@ -165,6 +218,10 @@ def create_bot():
     bot.streaming_embed_signature = None
     bot.streaming_embed_last_update = None
     bot.streaming_embed_cleanup_done = False
+    bot.twitch_access_token = None
+    bot.twitch_access_token_expires_at = None
+    bot.twitch_live_cache = {}
+    bot.twitch_api_warning_logged = False
     bot.status_messages = [
         ("playing", "🧩 /help"),
         ("listening", "support requests"),
@@ -172,6 +229,125 @@ def create_bot():
         ("listening", "error reports"),
         ("playing", "📌 forum triage"),
     ]
+
+    async def get_http_session() -> aiohttp.ClientSession:
+        if not hasattr(bot, "http_session") or bot.http_session.closed:
+            bot.http_session = aiohttp.ClientSession()
+        return bot.http_session
+
+    async def get_twitch_access_token() -> str | None:
+        if not TWITCH_CLIENT_ID or not TWITCH_CLIENT_SECRET:
+            if not bot.twitch_api_warning_logged:
+                logger.warning("TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET not configured; streaming role verification is disabled")
+                bot.twitch_api_warning_logged = True
+            return None
+
+        now = datetime.now(timezone.utc)
+        if bot.twitch_access_token and bot.twitch_access_token_expires_at and now < bot.twitch_access_token_expires_at:
+            return bot.twitch_access_token
+
+        session = await get_http_session()
+        try:
+            async with session.post(
+                "https://id.twitch.tv/oauth2/token",
+                params={
+                    "client_id": TWITCH_CLIENT_ID,
+                    "client_secret": TWITCH_CLIENT_SECRET,
+                    "grant_type": "client_credentials",
+                },
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as response:
+                if response.status != 200:
+                    body = await response.text()
+                    logger.warning("Failed to fetch Twitch access token: %s %s", response.status, body[:200])
+                    return None
+
+                data = await response.json(content_type=None)
+                expires_in = int(data.get("expires_in", 0))
+                bot.twitch_access_token = data.get("access_token")
+                bot.twitch_access_token_expires_at = now + timedelta(seconds=max(0, expires_in - 60))
+                return bot.twitch_access_token
+        except Exception as e:
+            logger.warning("Error fetching Twitch access token: %s", e)
+            return None
+
+    async def is_twitch_channel_live(login: str) -> bool:
+        cache_entry = bot.twitch_live_cache.get(login)
+        now = datetime.now(timezone.utc)
+        if cache_entry and cache_entry[1] > now:
+            return cache_entry[0]
+
+        access_token = await get_twitch_access_token()
+        if not access_token:
+            bot.twitch_live_cache[login] = (False, now + timedelta(seconds=60))
+            return False
+
+        session = await get_http_session()
+        try:
+            async with session.get(
+                "https://api.twitch.tv/helix/streams",
+                params={"user_login": login},
+                headers={
+                    "Client-ID": TWITCH_CLIENT_ID,
+                    "Authorization": f"Bearer {access_token}",
+                },
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as response:
+                if response.status == 401:
+                    bot.twitch_access_token = None
+                    bot.twitch_access_token_expires_at = None
+                    access_token = await get_twitch_access_token()
+                    if not access_token:
+                        bot.twitch_live_cache[login] = (False, now + timedelta(seconds=60))
+                        return False
+                    async with session.get(
+                        "https://api.twitch.tv/helix/streams",
+                        params={"user_login": login},
+                        headers={
+                            "Client-ID": TWITCH_CLIENT_ID,
+                            "Authorization": f"Bearer {access_token}",
+                        },
+                        timeout=aiohttp.ClientTimeout(total=10),
+                    ) as retry_response:
+                        if retry_response.status != 200:
+                            body = await retry_response.text()
+                            logger.warning("Failed Twitch live check for %s: %s %s", login, retry_response.status, body[:200])
+                            bot.twitch_live_cache[login] = (False, now + timedelta(seconds=60))
+                            return False
+                        data = await retry_response.json(content_type=None)
+                elif response.status != 200:
+                    body = await response.text()
+                    logger.warning("Failed Twitch live check for %s: %s %s", login, response.status, body[:200])
+                    bot.twitch_live_cache[login] = (False, now + timedelta(seconds=60))
+                    return False
+                else:
+                    data = await response.json(content_type=None)
+
+                is_live = bool(data.get("data"))
+                bot.twitch_live_cache[login] = (is_live, now + timedelta(seconds=90))
+                return is_live
+        except Exception as e:
+            logger.warning("Error checking Twitch live status for %s: %s", login, e)
+            bot.twitch_live_cache[login] = (False, now + timedelta(seconds=60))
+            return False
+
+    async def get_verified_stream_activity(member: discord.Member):
+        activity = get_valid_stream_activity(member)
+        if not activity:
+            return None
+
+        stream_url = getattr(activity, "url", None)
+        if not stream_url:
+            return None
+
+        twitch_login = extract_twitch_login(stream_url)
+        if not twitch_login:
+            return None
+
+        if not await is_twitch_channel_live(twitch_login):
+            return None
+
+        return activity
 
     async def update_streaming_embed(guild: discord.Guild):
         channel = guild.get_channel(STREAM_LIST_CHANNEL_ID)
@@ -191,12 +367,8 @@ def create_bot():
         if members:
             lines = []
             for member in members:
-                stream_url = None
-                for activity in member.activities:
-                    if activity and activity.type == discord.ActivityType.streaming:
-                        stream_url = getattr(activity, "url", None)
-                        if stream_url:
-                            break
+                stream_activity = await get_verified_stream_activity(member)
+                stream_url = getattr(stream_activity, "url", None) if stream_activity else None
 
                 if stream_url:
                     entry = f"• {member.mention} [click]({stream_url})"
@@ -316,10 +488,7 @@ def create_bot():
             if member.bot:
                 continue
 
-            is_streaming = any(
-                activity and activity.type == discord.ActivityType.streaming
-                for activity in member.activities
-            )
+            is_streaming = await get_verified_stream_activity(member) is not None
 
             try:
                 if is_streaming and role not in member.roles:
@@ -427,10 +596,7 @@ def create_bot():
         if not role:
             return
 
-        is_streaming = any(
-            activity and activity.type == discord.ActivityType.streaming
-            for activity in after.activities
-        )
+        is_streaming = await get_verified_stream_activity(after) is not None
 
         try:
             if is_streaming and role not in after.roles:
@@ -445,6 +611,18 @@ def create_bot():
     @bot.event
     async def setup_hook():
         bot.add_view(HelperView())
+
+    async def close_http_session():
+        if hasattr(bot, "http_session") and bot.http_session and not bot.http_session.closed:
+            await bot.http_session.close()
+
+    original_close = bot.close
+
+    async def wrapped_close(*args, **kwargs):
+        await close_http_session()
+        await original_close(*args, **kwargs)
+
+    bot.close = wrapped_close
 
     return bot
 
