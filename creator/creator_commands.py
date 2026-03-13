@@ -316,6 +316,111 @@ class CreatorCommands(commands.Cog):
         except Exception as e:
             logger.error("❌ Error removing creator: %s", e)
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+
+    @creator_group.command(name="watchlist", description="Manage your creator watchlist")
+    @app_commands.describe(
+        action="Action to perform",
+        platform="Platform (required for add/remove/mute/unmute)",
+        username="Creator username (required for add/remove/mute/unmute)"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="List", value="list"),
+        app_commands.Choice(name="Add", value="add"),
+        app_commands.Choice(name="Remove", value="remove"),
+        app_commands.Choice(name="Mute", value="mute"),
+        app_commands.Choice(name="Unmute", value="unmute"),
+    ])
+    @app_commands.choices(platform=[
+        app_commands.Choice(name="RuneForge", value="runeforge"),
+        app_commands.Choice(name="Divine Skins", value="divineskins")
+    ])
+    async def creator_watchlist(
+        self,
+        interaction: discord.Interaction,
+        action: app_commands.Choice[str],
+        platform: str = None,
+        username: str = None,
+    ):
+        db = get_creator_db()
+        guild_id = interaction.guild_id if interaction.guild else 0
+        user_id = interaction.user.id
+
+        if action.value == "list":
+            entries = db.get_watchlist_entries(guild_id, user_id)
+            embed = discord.Embed(
+                title="👀 Your Creator Watchlist",
+                color=discord.Color.blurple()
+            )
+            if not entries:
+                embed.description = "Your watchlist is empty. Use `/creator watchlist action:Add ...`"
+            else:
+                lines = []
+                for entry in entries:
+                    mute_icon = "🔕" if entry.get('muted') else "🔔"
+                    platform_label = "RuneForge" if entry['platform'] == 'runeforge' else "Divine Skins"
+                    lines.append(f"{mute_icon} **{entry['username']}** on **{platform_label}**")
+                embed.description = "\n".join(lines[:20])
+                if len(lines) > 20:
+                    embed.set_footer(text=f"Showing 20/{len(lines)} entries")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        if not platform or not username:
+            await interaction.response.send_message(
+                "❌ For this action you must provide both `platform` and `username`.",
+                ephemeral=True,
+            )
+            return
+
+        clean_username = username.strip().lower()
+        if not clean_username:
+            await interaction.response.send_message("❌ Username cannot be empty.", ephemeral=True)
+            return
+
+        if action.value == "add":
+            created = db.add_watchlist_entry(guild_id, user_id, platform, clean_username)
+            if created:
+                await interaction.response.send_message(
+                    f"✅ Added **{clean_username}** on **{platform}** to your watchlist.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    f"ℹ️ **{clean_username}** on **{platform}** is already on your watchlist.",
+                    ephemeral=True,
+                )
+            return
+
+        if action.value == "remove":
+            removed = db.remove_watchlist_entry(guild_id, user_id, platform, clean_username)
+            if removed:
+                await interaction.response.send_message(
+                    f"✅ Removed **{clean_username}** on **{platform}** from your watchlist.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ Entry not found on your watchlist.",
+                    ephemeral=True,
+                )
+            return
+
+        if action.value in {"mute", "unmute"}:
+            muted = action.value == "mute"
+            updated = db.set_watchlist_muted(guild_id, user_id, platform, clean_username, muted)
+            if updated:
+                await interaction.response.send_message(
+                    f"✅ {'Muted' if muted else 'Unmuted'} **{clean_username}** on **{platform}**.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ Entry not found on your watchlist.",
+                    ephemeral=True,
+                )
+            return
+
+        await interaction.response.send_message("❌ Unsupported action.", ephemeral=True)
     
     @creator_group.command(name="refresh", description="Manually refresh a creator's data (Admin only)")
     @app_commands.describe(

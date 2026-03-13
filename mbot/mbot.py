@@ -885,6 +885,44 @@ class MusicQueue:
         return len(self.queue) == 0
 
 
+async def enqueue_autoplay_track(interaction: discord.Interaction, queue: MusicQueue) -> bool:
+    """Try to enqueue a related YouTube track when autoplay is enabled."""
+    if not queue.current:
+        return False
+
+    base_title = (queue.current.title or "").strip()
+    if not base_title:
+        return False
+
+    # Strip common suffixes so search stays closer to the original song.
+    cleaned = re.sub(r"\(.*?(official|lyrics|audio|video).*?\)", "", base_title, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"\[.*?(official|lyrics|audio|video).*?\]", "", cleaned, flags=re.IGNORECASE).strip()
+    search_query = f"ytsearch1:{cleaned or base_title}"
+
+    try:
+        player = await YTDLSource.from_url(search_query, loop=bot.loop, stream=False)
+    except Exception as e:
+        logger.warning("Autoplay failed to load related track for '%s': %s", base_title, e)
+        return False
+
+    autoplay_song = Song(player, queue.current.requester, query=search_query)
+    queue.add(autoplay_song)
+    logger.info("✅ Autoplay queued related track: %s", autoplay_song.title)
+
+    try:
+        if interaction.channel:
+            embed = discord.Embed(
+                title="🤖 Autoplay",
+                description=f"Queued related track: **{autoplay_song.title}**",
+                color=discord.Color.green()
+            )
+            asyncio.create_task(send_temp_embed(interaction.channel, embed, delete_after=10))
+    except Exception:
+        pass
+
+    return True
+
+
 class MusicBot(commands.Bot):
     """Main music bot class"""
     
@@ -1043,6 +1081,9 @@ def create_now_playing_embed(song, queue, bot_user, show_progress=False):
     if queue.loop_mode != 'off':
         loop_emoji = "🔂" if queue.loop_mode == 'track' else "🔁"
         status_line += f" | {loop_emoji} `{queue.loop_mode.title()}`"
+
+    if queue.autoplay:
+        status_line += " | 🤖 `Autoplay`"
     
     if not queue.is_empty():
         status_line += f" | 📥 `{len(queue.queue)} in queue`"
@@ -1710,6 +1751,19 @@ async def play_next(interaction: discord.Interaction):
         cleanup_audio_file(queue.current.source.filename)
     
     if queue.is_empty() and queue.loop_mode == 'off':
+        if queue.autoplay:
+            queued = await enqueue_autoplay_track(interaction, queue)
+            if queued:
+                song = queue.next()
+            else:
+                song = None
+        else:
+            song = None
+
+    else:
+        song = queue.next()
+
+    if not song and queue.is_empty() and queue.loop_mode == 'off':
         # Disconnect after 3 minutes of inactivity
         await asyncio.sleep(180)
         if interaction.guild.voice_client and not interaction.guild.voice_client.is_playing():
@@ -1724,8 +1778,6 @@ async def play_next(interaction: discord.Interaction):
             except:
                 pass
         return
-    
-    song = queue.next()
     
     if song and interaction.guild.voice_client:
         # Load lazy-loaded song if needed
@@ -2168,6 +2220,29 @@ async def loop(interaction: discord.Interaction, mode: app_commands.Choice[str])
         title=f"{emoji_map[mode.value]} Loop mode changed",
         description=f"Set to: **{mode.name}**",
         color=discord.Color.purple()
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="autoplay", description="Enable or disable autoplay for related tracks")
+@app_commands.describe(mode="Autoplay mode")
+@app_commands.choices(mode=[
+    app_commands.Choice(name="✅ On", value="on"),
+    app_commands.Choice(name="⛔ Off", value="off")
+])
+async def autoplay(interaction: discord.Interaction, mode: app_commands.Choice[str]):
+    """Toggle autoplay for the current server."""
+    if not check_channel(interaction):
+        await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
+        return
+
+    queue = bot.get_queue(interaction.guild.id)
+    queue.autoplay = mode.value == "on"
+
+    embed = discord.Embed(
+        title="🤖 Autoplay Updated",
+        description=f"Autoplay is now **{'enabled' if queue.autoplay else 'disabled'}**.",
+        color=discord.Color.green() if queue.autoplay else discord.Color.orange()
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 

@@ -9,6 +9,11 @@ SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
 UNSOLVED_TAG_ID = 1464379721272787069  # Tag applied when thread is unsolved/created
 STREAM_ROLE_ID = 1470171489096564736  # Role granted while streaming
 STREAM_LIST_CHANNEL_ID = 1470173597157818559  # Channel for streaming roster embed
+AUTO_TRIAGE_KEYWORDS = {
+    "bug": ["bug", "error", "crash", "exception", "failed", "traceback"],
+    "install": ["install", "setup", "launcher", "open", "start", "cannot launch"],
+    "performance": ["fps", "lag", "stutter", "freeze", "performance", "slow"],
+}
 GUILD_ID = os.getenv("HELPER_GUILD_ID")
 TOKEN = os.getenv("HELPER_TOKEN")
 
@@ -79,6 +84,21 @@ async def ensure_prefix(thread: discord.Thread, prefix: str):
         await thread.edit(name=f"{prefix}{clean_name}")
     except Exception as e:
         logger.warning("Failed to edit thread name: %s", e)
+
+
+def select_auto_triage_tag(forum: discord.ForumChannel, text: str) -> discord.ForumTag | None:
+    lowered = (text or "").lower()
+    if not lowered:
+        return None
+
+    for category, keywords in AUTO_TRIAGE_KEYWORDS.items():
+        if any(keyword in lowered for keyword in keywords):
+            for tag in forum.available_tags:
+                tag_name = tag.name.lower()
+                if category in tag_name:
+                    return tag
+
+    return None
 
 
 class HelperView(discord.ui.View):
@@ -364,15 +384,34 @@ def create_bot():
             # Apply unsolved tag to new threads
             forum = thread.parent
             unsolved_tag = discord.utils.get(forum.available_tags, id=UNSOLVED_TAG_ID)
-            if unsolved_tag and unsolved_tag not in thread.applied_tags:
-                new_tags = list(thread.applied_tags)
+
+            starter_message = None
+            try:
+                starter_message = await thread.fetch_message(thread.id)
+            except Exception:
+                messages = [msg async for msg in thread.history(limit=1, oldest_first=True)]
+                starter_message = messages[0] if messages else None
+
+            triage_source = f"{thread.name}\n{starter_message.content if starter_message else ''}"
+            triage_tag = select_auto_triage_tag(forum, triage_source)
+
+            new_tags = list(thread.applied_tags)
+            if unsolved_tag and unsolved_tag not in new_tags:
                 new_tags.append(unsolved_tag)
+            if triage_tag and triage_tag not in new_tags:
+                new_tags.append(triage_tag)
+
+            if len(new_tags) != len(thread.applied_tags):
                 await thread.edit(applied_tags=new_tags[:5])  # Max 5 tags
             
             helper_view = HelperView()
             bot_avatar = bot.user.display_avatar.url if bot.user else None
             await thread.send(embed=build_welcome_embed(bot_avatar), view=helper_view)
-            logger.info("Posted helper embed in thread %s", thread.id)
+            logger.info(
+                "Posted helper embed in thread %s (triage tag: %s)",
+                thread.id,
+                triage_tag.name if triage_tag else "none"
+            )
         except Exception as e:
             logger.error("Failed to post helper embed: %s", e)
 

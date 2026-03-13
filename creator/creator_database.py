@@ -134,6 +134,20 @@ class CreatorDatabase:
                     )
                     """
                 )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS creator_watchlist (
+                        id SERIAL PRIMARY KEY,
+                        guild_id BIGINT NOT NULL,
+                        user_id BIGINT NOT NULL,
+                        platform VARCHAR(20) NOT NULL,
+                        username VARCHAR(255) NOT NULL,
+                        muted BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(guild_id, user_id, platform, username)
+                    )
+                    """
+                )
                 self.conn.commit()
                 logger.info("✅ Database tables created/verified")
                 
@@ -572,6 +586,77 @@ class CreatorDatabase:
             logger.error("❌ Error revoking API key: %s", e)
             self.conn.rollback()
             return False
+
+    # ==================== WATCHLIST ====================
+    def add_watchlist_entry(self, guild_id: int, user_id: int, platform: str, username: str) -> bool:
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO creator_watchlist (guild_id, user_id, platform, username)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (guild_id, user_id, platform, username) DO NOTHING
+                    """,
+                    (guild_id, user_id, platform, username.lower()),
+                )
+                self.conn.commit()
+                return cur.rowcount > 0
+        except Exception as e:
+            logger.error("❌ Error adding watchlist entry: %s", e)
+            self.conn.rollback()
+            return False
+
+    def remove_watchlist_entry(self, guild_id: int, user_id: int, platform: str, username: str) -> bool:
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM creator_watchlist
+                    WHERE guild_id = %s AND user_id = %s AND platform = %s AND username = %s
+                    """,
+                    (guild_id, user_id, platform, username.lower()),
+                )
+                self.conn.commit()
+                return cur.rowcount > 0
+        except Exception as e:
+            logger.error("❌ Error removing watchlist entry: %s", e)
+            self.conn.rollback()
+            return False
+
+    def set_watchlist_muted(self, guild_id: int, user_id: int, platform: str, username: str, muted: bool) -> bool:
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE creator_watchlist
+                    SET muted = %s
+                    WHERE guild_id = %s AND user_id = %s AND platform = %s AND username = %s
+                    """,
+                    (muted, guild_id, user_id, platform, username.lower()),
+                )
+                self.conn.commit()
+                return cur.rowcount > 0
+        except Exception as e:
+            logger.error("❌ Error updating watchlist mute: %s", e)
+            self.conn.rollback()
+            return False
+
+    def get_watchlist_entries(self, guild_id: int, user_id: int):
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT platform, username, muted, created_at
+                    FROM creator_watchlist
+                    WHERE guild_id = %s AND user_id = %s
+                    ORDER BY platform, username
+                    """,
+                    (guild_id, user_id),
+                )
+                return cur.fetchall()
+        except Exception as e:
+            logger.error("❌ Error getting watchlist entries: %s", e)
+            return []
 
 
 _db_instance = None

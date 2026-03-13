@@ -135,15 +135,28 @@ def pick_rank_entry(stats: List[dict]) -> Tuple[str, str, float]:
     return entry.get('tier', 'UNRANKED').upper(), entry.get('rank', '').upper(), wr
 
 
-def odds_from_scores(score_blue: float, score_red: float) -> Tuple[float, float]:
+def odds_from_scores(score_blue: float, score_red: float, confidence: float = 1.0) -> Tuple[float, float]:
     total = max(score_blue + score_red, 0.01)
     prob_blue = score_blue / total
-    prob_red = score_red / total
-    # Tighter bounds to allow more differentiation in odds
-    prob_blue = min(max(prob_blue, 0.35), 0.65)
+
+    # Confidence-aware calibration: low confidence pulls probability toward 50/50.
+    confidence = min(max(confidence, 0.45), 1.0)
+    edge = prob_blue - 0.5
+    calibrated_edge = edge * confidence
+    prob_blue = 0.5 + calibrated_edge
+
+    # Dynamic bounds: allow stronger favorites only when edge is clear.
+    max_prob = min(0.78, 0.62 + abs(calibrated_edge) * 0.8)
+    min_prob = 1 - max_prob
+    prob_blue = min(max(prob_blue, min_prob), max_prob)
     prob_red = 1 - prob_blue
+
+    # Tiny bookmaker margin to avoid flat 1.00 edge cases.
+    margin = 1.015
     odds_blue = round(1 / prob_blue, 2)
     odds_red = round(1 / prob_red, 2)
+    odds_blue = round(max(1.2, odds_blue / margin), 2)
+    odds_red = round(max(1.2, odds_red / margin), 2)
     return odds_blue, odds_red
 
 
@@ -686,7 +699,8 @@ class Hexbet(commands.Cog):
                     is_special_bet = avg_lp > 700
                     logger.info(f"📈 Average LP: {avg_lp:.0f} LP - Special bet: {is_special_bet}")
                     
-                    odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+                    confidence = self._odds_confidence(blue_ordered, red_ordered)
+                    odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                     chance_red = round(100 - chance_blue, 1)
                     
@@ -1116,18 +1130,10 @@ class Hexbet(commands.Cog):
             if game_start_time_ms > 0:
                 current_time_ms = time.time() * 1000
                 game_duration_minutes = (current_time_ms - game_start_time_ms) / 1000 / 60
-                
-                # Update title to show game duration
-                title = embed.title
-                if '⏱️' in title:
-                    title = title.split('⏱️')[0].strip()
-                
-                new_title = f"{title} ⏱️ {game_duration_minutes:.0f}m"
-                embed.title = new_title
-                
-                # Update the embed
-                await msg.edit(embed=embed)
-                logger.info(f"📊 Updated live odds for match {game_id}: game duration {game_duration_minutes:.1f}m")
+
+                # Rebuild embed so timeline and marker sections update consistently.
+                await self._refresh_match_embed(match['id'])
+                logger.info(f"📊 Updated live embed for match {game_id}: game duration {game_duration_minutes:.1f}m")
         
         except Exception as e:
             logger.warning(f"Error updating live odds: {e}")
@@ -1591,6 +1597,17 @@ class Hexbet(commands.Cog):
             p['lp'] = lp
             p['wins'] = wins
             p['losses'] = losses
+            games = wins + losses
+
+            # Anti-smurf heuristic marker used in embed transparency.
+            smurf_risk_score = 0
+            if games >= 15 and wr >= 68:
+                smurf_risk_score += 1
+            if games >= 20 and wr >= 62 and tier in {'SILVER', 'GOLD', 'PLATINUM', 'EMERALD'} and lp <= 120:
+                smurf_risk_score += 1
+            p['smurf_risk'] = smurf_risk_score >= 1
+            p['smurf_risk_score'] = smurf_risk_score
+
             champ_id = p.get('championId')
             champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f'Champion#{champ_id}')
             # Log new champions for monitoring (including correct DDragon IDs)
@@ -1717,6 +1734,40 @@ class Hexbet(commands.Cog):
         # Total: exponential rank dominates heavily, then WR and LP
         return rank_contribution + lp_contribution + wr_contribution + comp_score
 
+    def _odds_confidence(self, blue: List[dict], red: List[dict]) -> float:
+        all_players = blue + red
+        if not all_players:
+            return 0.6
+
+        visible_ids = sum(1 for p in all_players if not p.get('streamer_mode', False))
+        ranked_players = sum(1 for p in all_players if p.get('tier', 'UNRANKED') != 'UNRANKED')
+        sample_quality = (visible_ids / 10.0) * 0.6 + (ranked_players / 10.0) * 0.4
+        return min(max(sample_quality, 0.45), 1.0)
+
+    def _build_live_timeline(self, game_duration_min: int) -> str:
+        milestones = ["0", "10", "20", "30", "40+"]
+        if game_duration_min < 10:
+            idx = 0
+        elif game_duration_min < 20:
+            idx = 1
+        elif game_duration_min < 30:
+            idx = 2
+        elif game_duration_min < 40:
+            idx = 3
+        else:
+            idx = 4
+
+        cells = []
+        for i, label in enumerate(milestones):
+            if i == idx:
+                cells.append(f"🔵{label}")
+            else:
+                cells.append(label)
+        return "Timeline: " + " - ".join(cells)
+
+    def _smurf_summary(self, team: List[dict]) -> int:
+        return sum(1 for p in team if p.get('smurf_risk'))
+
     def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None, game_start_at: Optional[str] = None) -> discord.Embed:
         # Calculate team statistics (only from ranked players, not streamer mode)
         blue_ranked = [p for p in blue if not p.get('streamer_mode', False)]
@@ -1828,6 +1879,7 @@ class Hexbet(commands.Cog):
                 game_duration_min = int((now_dt - start_dt).total_seconds() / 60)
                 game_duration_min = max(0, game_duration_min)
                 desc += f"\n\n⏱️ **Game Duration:** {game_duration_min} min"
+                desc += f"\n{self._build_live_timeline(game_duration_min)}"
             except Exception as e:
                 logger.warning(f"Failed to parse timestamp '{game_start_at}': {e}")
                 desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
@@ -1864,6 +1916,15 @@ class Hexbet(commands.Cog):
             f"**Red:** {red_tier_name} • {red_avg_lp:.0f} LP avg • {red_avg_wr:.1f}% WR"
         )
         embed.add_field(name="📊 Team Stats", value=stats_comparison, inline=False)
+
+        smurf_blue = self._smurf_summary(blue)
+        smurf_red = self._smurf_summary(red)
+        if smurf_blue or smurf_red:
+            embed.add_field(
+                name="🕵️ Anti-Smurf Marker",
+                value=f"Blue flagged: **{smurf_blue}** | Red flagged: **{smurf_red}**",
+                inline=False,
+            )
         
         # Get current bets if match exists
         bet_info = ""
@@ -1942,8 +2003,9 @@ class Hexbet(commands.Cog):
                 lines.append(f"   └ {rank_str} • {wr:.1f}% WR")
             else:
                 rank_str = f"{tier}{' ' + division if division else ''}"
+                smurf_marker = " ⚠️" if p.get('smurf_risk') else ""
                 lines.append(f"{role} {champ} {badge}**{name}**")
-                lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR")
+                lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR{smurf_marker}")
         return "\n".join(lines)
 
     async def _find_player_in_db(self, identifier: str):
@@ -2879,7 +2941,8 @@ class Hexbet(commands.Cog):
                         await interaction.followup.send("⚠️ A special bet is already active. Wait for it to finish first.", ephemeral=True)
                         return
                     
-                    odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+                    confidence = self._odds_confidence(blue_ordered, red_ordered)
+                    odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
                     chance_blue = score_blue / (score_blue + score_red) * 100
                     chance_red = 100 - chance_blue
                     
@@ -3047,7 +3110,8 @@ class Hexbet(commands.Cog):
                     if recalc_odds:
                         score_blue = self._team_score(blue_players)
                         score_red = self._team_score(red_players)
-                        odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+                        confidence = self._odds_confidence(blue_players, red_players)
+                        odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
                         
                         # Update in database
                         self.db.update_match_odds(match['id'], odds_blue, odds_red)
@@ -4682,7 +4746,8 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
             score_blue = self.cog._team_score(blue_ordered)
             score_red = self.cog._team_score(red_ordered)
             
-            odds_blue, odds_red = odds_from_scores(score_blue, score_red)
+            confidence = self.cog._odds_confidence(blue_ordered, red_ordered)
+            odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
             chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
             chance_red = round(100 - chance_blue, 1)
             
