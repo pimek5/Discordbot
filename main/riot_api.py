@@ -706,7 +706,7 @@ class RiotAPI:
         inactive = solo_queue.get('inactive', False)
         inactive_start_time = solo_queue.get('inactiveStartTime')
         
-        logger.debug(f"📊 Decay data: tier={tier} {rank} lp={lp} inactive={inactive}, inactiveStartTime={inactive_start_time}")
+        logger.info(f"📊 Decay API fields — tier={tier} {rank} lp={lp} inactive={inactive} inactiveStartTime={inactive_start_time} all_keys={list(solo_queue.keys())}")
         
         # Decay działa tylko dla Diamond+
         decay_tiers = ['DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER']
