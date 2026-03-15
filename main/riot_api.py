@@ -108,9 +108,10 @@ class RiotAPI:
             'X-Riot-Token': api_key
         }
         if api_key:
-            logger.info(f"🔑 Riot API key loaded (len={len(api_key)})")
+            logger.info(f"🔑 Main Bot API Key: {api_key[:10]}...{api_key[-4:]} (len={len(api_key)})")
+            logger.info(f"🔑 MAIN BOT FULL KEY: {api_key}")
         else:
-            logger.error("❌ No Riot API key provided!")
+            logger.error("❌ No API key provided!")
     
     async def get_account_by_riot_id(self, game_name: str, tag_line: str, 
                                      region: Optional[str] = None, 

@@ -131,7 +131,6 @@ import stats_commands
 import thread_migration
 import team_commands
 import skin_tierlist_commands
-import riot_commands
 
 # Utility: normalize various DB-stored guess formats into a Python list
 def normalize_guesses(raw):
@@ -778,9 +777,6 @@ class MyBot(commands.Bot):
                 print("  ✅ StatsCommands loaded")
                 await self.add_cog(leaderboard_commands.LeaderboardCommands(self, riot_api, GUILD_ID))
                 print("  ✅ LeaderboardCommands loaded")
-
-                await riot_commands.setup(self, riot_api, GUILD_ID)
-                print("  ✅ RiotCommands loaded")
 
                 await self.add_cog(skin_tierlist_commands.SkinTierlistCommands(self), guild=primary_guild)
                 print("  ✅ SkinTierlistCommands loaded (guild-specific)")
@@ -1649,115 +1645,77 @@ async def update_mastery(interaction: discord.Interaction):
 
 @bot.tree.command(name="update_ranks", description="Update rank roles for all members (Admin only)", guild=discord.Object(id=GUILD_ID))
 async def update_ranks(interaction: discord.Interaction):
-    """Manually update rank roles for all members with per-tier change report"""
+    """Manually update rank roles for all members"""
+    # Check permissions
     if not has_admin_permissions(interaction):
         await interaction.response.send_message(
             "❌ You need Administrator permission to use this command!",
             ephemeral=True
         )
         return
-
+    
     await interaction.response.defer(ephemeral=True)
-
+    
     try:
         guild = interaction.guild
         if not guild:
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
-
+        
+        # Update ALL members (not just those with accounts)
         updated_count = 0
         skipped_count = 0
+        unranked_count = 0
         error_count = 0
-        promotions = []   # (member_name, old_rank, new_rank)
-        demotions = []    # (member_name, old_rank, new_rank)
-        tier_distribution = {}  # tier -> count after update
-
+        
         for member in guild.members:
             if member.bot:
                 continue
-
-            # Snapshot old rank role
-            old_rank = None
-            for tier, role_id in RANK_ROLES.items():
-                role = guild.get_role(role_id)
-                if role and role in member.roles:
-                    old_rank = tier
-                    break
-
+            
             try:
+                # Update roles (returns True if changes were made)
                 changed = await update_user_rank_roles(member.id, guild.id)
-
-                # Snapshot new rank role
+                
+                if not changed:
+                    skipped_count += 1
+                    # Still count unranked even if no change
+                    for tier, role_id in RANK_ROLES.items():
+                        if tier == 'UNRANKED':
+                            role = guild.get_role(role_id)
+                            if role and role in member.roles:
+                                unranked_count += 1
+                            break
+                    continue
+                
+                updated_count += 1
+                
+                # Get new rank
                 new_rank = None
                 for tier, role_id in RANK_ROLES.items():
                     role = guild.get_role(role_id)
                     if role and role in member.roles:
                         new_rank = tier
                         break
-
-                tier_distribution[new_rank or 'UNRANKED'] = tier_distribution.get(new_rank or 'UNRANKED', 0) + 1
-
-                if not changed:
-                    skipped_count += 1
-                    continue
-
-                updated_count += 1
-
-                RANK_PRIORITY = {
-                    'UNRANKED': -1, 'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3,
-                    'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6,
-                    'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9
-                }
-                old_p = RANK_PRIORITY.get(old_rank or 'UNRANKED', -1)
-                new_p = RANK_PRIORITY.get(new_rank or 'UNRANKED', -1)
-                if new_p > old_p and old_rank != new_rank:
-                    promotions.append(f"📈 {member.display_name}: {old_rank or 'Unranked'} → {new_rank}")
-                elif new_p < old_p and old_rank != new_rank:
-                    demotions.append(f"📉 {member.display_name}: {old_rank} → {new_rank or 'Unranked'}")
-
+                
+                if new_rank == 'UNRANKED':
+                    unranked_count += 1
+                
             except Exception as e:
                 error_count += 1
                 logging.error(f"Failed to update rank roles for {member.id}: {e}")
-
+        
         embed = discord.Embed(
             title="✅ Rank Roles Updated",
             color=0x00FF00 if error_count == 0 else 0xFFA500
         )
-        embed.add_field(name="🔄 Changed", value=str(updated_count), inline=True)
+        embed.add_field(name="🔄 Changes", value=str(updated_count), inline=True)
         embed.add_field(name="⏭️ Skipped", value=str(skipped_count), inline=True)
+        embed.add_field(name="📌 Unranked", value=str(unranked_count), inline=True)
         embed.add_field(name="❌ Errors", value=str(error_count), inline=True)
-        embed.add_field(name="👥 Processed", value=str(updated_count + skipped_count + error_count), inline=True)
-
-        # Tier distribution
-        from emoji_dict import get_rank_emoji
-        tier_order = ['CHALLENGER', 'GRANDMASTER', 'MASTER', 'DIAMOND', 'EMERALD',
-                      'PLATINUM', 'GOLD', 'SILVER', 'BRONZE', 'IRON', 'UNRANKED']
-        dist_lines = []
-        for tier in tier_order:
-            cnt = tier_distribution.get(tier, 0)
-            if cnt:
-                dist_lines.append(f"{get_rank_emoji(tier)} {tier.capitalize()}: **{cnt}**")
-        if dist_lines:
-            embed.add_field(name="📊 Distribution", value="\n".join(dist_lines), inline=False)
-
-        # Top promotions
-        if promotions:
-            embed.add_field(
-                name=f"🏆 Promotions ({len(promotions)})",
-                value="\n".join(promotions[:10]) + (f"\n…+{len(promotions)-10} more" if len(promotions) > 10 else ""),
-                inline=False
-            )
-
-        # Top demotions
-        if demotions:
-            embed.add_field(
-                name=f"🔻 Demotions ({len(demotions)})",
-                value="\n".join(demotions[:10]) + (f"\n…+{len(demotions)-10} more" if len(demotions) > 10 else ""),
-                inline=False
-            )
-
+        embed.add_field(name="👥 Processed", value=str(len([m for m in guild.members if not m.bot])), inline=True)
+        
         await interaction.followup.send(embed=embed, ephemeral=True)
-
+    
     except Exception as e:
         logging.error(f"Error in update_ranks: {e}")
         await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
