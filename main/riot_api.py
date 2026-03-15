@@ -666,6 +666,8 @@ class RiotAPI:
                 'days_remaining': None,
                 'days_in_bank': 0,
                 'max_bank': 0,
+                'lp_loss_per_day': None,
+                'days_until_demote': None,
                 'last_ranked_game': None,
                 'tier': 'UNRANKED',
                 'lp': 0,
@@ -686,6 +688,8 @@ class RiotAPI:
                 'days_remaining': None,
                 'days_in_bank': 0,
                 'max_bank': 0,
+                'lp_loss_per_day': None,
+                'days_until_demote': None,
                 'last_ranked_game': None,
                 'tier': 'UNRANKED',
                 'lp': 0,
@@ -712,17 +716,21 @@ class RiotAPI:
                 'days_remaining': None,
                 'days_in_bank': 0,
                 'max_bank': 0,
+                'lp_loss_per_day': None,
+                'days_until_demote': None,
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
                 'lp': lp,
-                'message': f'✅ {tier} {rank} ({lp} LP) - brak decay poniżej Diamond'
+                'message': f'✅ {tier} {rank} ({lp} LP) - no decay below Diamond'
             }
         
         # Ustaw parametry decay wg rankingu
         if tier == 'DIAMOND':
-            decay_starts_after = 30
+            decay_starts_after = 28
+            lp_loss_per_day = 50
         else:  # Master+
             decay_starts_after = 14
+            lp_loss_per_day = 75
         
         # Najlepsze źródło: jeśli API ma inactiveStartTime, użyj tego
         if inactive and inactive_start_time:
@@ -742,6 +750,7 @@ class RiotAPI:
                 max_bank = decay_starts_after
                 days_in_bank = max_bank
                 days_remaining = max(0, max_bank - days_since_inactive)
+                days_until_demote = max(0, lp // lp_loss_per_day) if days_remaining <= 0 else None
                 
                 if days_remaining <= 0:
                     return {
@@ -749,10 +758,12 @@ class RiotAPI:
                         'days_remaining': 0,
                         'days_in_bank': 0,
                         'max_bank': max_bank,
+                        'lp_loss_per_day': lp_loss_per_day,
+                        'days_until_demote': days_until_demote,
                         'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
                         'tier': f'{tier} {rank}',
                         'lp': lp,
-                        'message': f'🚨 **DECAY AKTYWNY!** {tier} {rank} ({lp} LP)\nInactive since: {days_since_inactive} days ago'
+                        'message': f'🚨 **DECAY ACTIVE!** {tier} {rank} ({lp} LP)\nInactive since: {days_since_inactive} days ago'
                     }
                 elif days_remaining <= 3:
                     return {
@@ -760,10 +771,12 @@ class RiotAPI:
                         'days_remaining': days_remaining,
                         'days_in_bank': max(0, days_remaining),
                         'max_bank': max_bank,
+                        'lp_loss_per_day': lp_loss_per_day,
+                        'days_until_demote': None,
                         'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
                         'tier': f'{tier} {rank}',
                         'lp': lp,
-                        'message': f'⚠️ **UWAGA DECAY!** {tier} {rank} ({lp} LP)\nInactive: {days_since_inactive} days\n**Zostało {days_remaining} dni!**'
+                        'message': f'⚠️ **DECAY WARNING!** {tier} {rank} ({lp} LP)\n{days_remaining} days left in bank'
                     }
                 else:
                     return {
@@ -771,10 +784,12 @@ class RiotAPI:
                         'days_remaining': days_remaining,
                         'days_in_bank': days_remaining,
                         'max_bank': max_bank,
+                        'lp_loss_per_day': lp_loss_per_day,
+                        'days_until_demote': None,
                         'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
                         'tier': f'{tier} {rank}',
                         'lp': lp,
-                        'message': f'✅ {tier} {rank} ({lp} LP) - Bezpieczny przez {days_remaining} dni'
+                        'message': f'✅ {tier} {rank} ({lp} LP) - Safe for {days_remaining} days'
                     }
             except Exception as e:
                 logger.warning(f"⚠️ Could not parse inactiveStartTime: {e}, falling back to match history")
@@ -789,11 +804,13 @@ class RiotAPI:
                 'at_risk': True,
                 'days_remaining': 0,
                 'days_in_bank': 0,
-                'max_bank': 0,
+                'max_bank': decay_starts_after,
+                'lp_loss_per_day': lp_loss_per_day,
+                'days_until_demote': max(0, lp // lp_loss_per_day),
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
                 'lp': lp,
-                'message': f'⚠️ {tier} {rank} ({lp} LP) - brak danych match history'
+                'message': f'⚠️ {tier} {rank} ({lp} LP) - no match history found'
             }
         
         # Zbierz daty wszystkich ranked solo queue gier
@@ -815,11 +832,13 @@ class RiotAPI:
                 'at_risk': True,
                 'days_remaining': 0,
                 'days_in_bank': 0,
-                'max_bank': 0,
+                'max_bank': decay_starts_after,
+                'lp_loss_per_day': lp_loss_per_day,
+                'days_until_demote': max(0, lp // lp_loss_per_day),
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
                 'lp': lp,
-                'message': f'⚠️ {tier} {rank} ({lp} LP) - brak ranked gier w historii'
+                'message': f'⚠️ {tier} {rank} ({lp} LP) - no ranked games in history'
             }
         
         # Sortuj daty od najstarszej do najnowszej
@@ -861,6 +880,7 @@ class RiotAPI:
         
         days_remaining = max(0, current_bank)
         days_in_bank = days_remaining
+        days_until_demote = max(0, lp // lp_loss_per_day) if days_remaining <= 0 else None
         
         # Oblicz dni od ostatniej gry dla wyświetlenia
         days_since = (now - last_game_date).days
@@ -874,12 +894,14 @@ class RiotAPI:
                 'days_remaining': 0,
                 'days_in_bank': 0,
                 'max_bank': max_bank,
+                'lp_loss_per_day': lp_loss_per_day,
+                'days_until_demote': days_until_demote,
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
                 'lp': lp,
-                'message': f'🚨 **DECAY AKTYWNY!** {tier} {rank} ({lp} LP)\n' +
-                          f'Ostatnia gra: {days_since} dni temu\n' +
-                          f'Bank wyczerpany! Graj natychmiast!'
+                'message': f'🚨 **DECAY ACTIVE!** {tier} {rank} ({lp} LP)\n'
+                          f'Last game: {days_since} days ago\n'
+                          f'Bank empty — play immediately!'
             }
         elif days_remaining <= 3:
             return {
@@ -887,13 +909,15 @@ class RiotAPI:
                 'days_remaining': days_remaining,
                 'days_in_bank': max(0, days_remaining),
                 'max_bank': max_bank,
+                'lp_loss_per_day': lp_loss_per_day,
+                'days_until_demote': None,
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
                 'lp': lp,
-                'message': f'⚠️ **UWAGA DECAY!** {tier} {rank} ({lp} LP)\n' +
-                          f'Ostatnia gra: {days_since} dni temu\n' +
-                          f'Bank: {days_remaining}/{max_bank} dni\n' +
-                          f'**Zostało {days_remaining} dni!**'
+                'message': f'⚠️ **DECAY WARNING!** {tier} {rank} ({lp} LP)\n'
+                          f'Last game: {days_since} days ago\n'
+                          f'Bank: {days_remaining}/{max_bank} days\n'
+                          f'**{days_remaining} days left!**'
             }
         elif days_remaining <= 7:
             return {
@@ -901,13 +925,15 @@ class RiotAPI:
                 'days_remaining': days_remaining,
                 'days_in_bank': days_remaining,
                 'max_bank': max_bank,
+                'lp_loss_per_day': lp_loss_per_day,
+                'days_until_demote': None,
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
                 'lp': lp,
-                'message': f'⚡ {tier} {rank} ({lp} LP)\n' +
-                          f'Ostatnia gra: {days_since} dni temu\n' +
-                          f'Bank: {days_remaining}/{max_bank} dni\n' +
-                          f'Zostało {days_remaining} dni'
+                'message': f'⚡ {tier} {rank} ({lp} LP)\n'
+                          f'Last game: {days_since} days ago\n'
+                          f'Bank: {days_remaining}/{max_bank} days\n'
+                          f'{days_remaining} days remaining'
             }
         else:
             return {
@@ -915,11 +941,13 @@ class RiotAPI:
                 'days_remaining': days_remaining,
                 'days_in_bank': days_remaining,
                 'max_bank': max_bank,
+                'lp_loss_per_day': lp_loss_per_day,
+                'days_until_demote': None,
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
                 'lp': lp,
-                'message': f'✅ {tier} {rank} ({lp} LP)\n' +
-                          f'Ostatnia gra: {days_since} dni temu\n' +
-                          f'Bank: {days_remaining}/{max_bank} dni\n' +
-                          f'Bezpieczny jeszcze przez {days_remaining} dni'
+                'message': f'✅ {tier} {rank} ({lp} LP)\n'
+                          f'Last game: {days_since} days ago\n'
+                          f'Bank: {days_remaining}/{max_bank} days\n'
+                          f'Safe for {days_remaining} more days'
             }

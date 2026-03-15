@@ -1695,12 +1695,18 @@ class ProfileCommands(commands.Cog):
                     counter = "Safe ✅"
                     bank = ""
                 
+                lp_loss = result.get('lp_loss_per_day')
+                days_until_demote = result.get('days_until_demote')
                 last_game = result.get('last_ranked_game')
                 last_game_str = f"Last game: {last_game}" if last_game else ""
                 
                 value = f"{tier_display}\n{region}\n{counter}"
                 if bank:
                     value += f"\n{bank}"
+                if lp_loss:
+                    value += f"\nLP loss: **{lp_loss}/day**"
+                if days_until_demote is not None:
+                    value += f"\nDemote in: **{days_until_demote} days**"
                 if last_game_str:
                     value += f"\n{last_game_str}"
                 
@@ -1711,7 +1717,7 @@ class ProfileCommands(commands.Cog):
                 )
             
             # Add footer with info
-            embed.set_footer(text="💎 Diamond: 30d max (+7d/game) | 👑 Master+: 14d max (+1d/game)")
+            embed.set_footer(text="💎 Diamond: 28d max bank (+7d/game) • 👑 Master+: 14d max bank (+1d/game) • LP loss: 50/day (D) • 75/day (M+)")
             
             await interaction.followup.send(embed=embed)
             
