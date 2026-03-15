@@ -1636,7 +1636,7 @@ class ProfileCommands(commands.Cog):
                 if has_any_ranked:
                     embed = discord.Embed(
                         title="✅ No Decay Risk",
-                        description="**U can't decay!**\n\nAll your accounts are below Diamond.\nDecay only affects Diamond, Master, Grandmaster, and Challenger ranks.",
+                        description="All your accounts are below Diamond.\nDecay only affects **Diamond, Master, Grandmaster and Challenger**.",
                         color=0x00FF00
                     )
                 else:
@@ -1650,8 +1650,8 @@ class ProfileCommands(commands.Cog):
             
             # Check decay for each Diamond+ account
             embed = discord.Embed(
-                title=f"💎 Decay Status - {target.display_name}",
-                description="",
+                title=f"💎 Decay Status — {target.display_name}",
+                description=f"{len(diamond_accounts)} Diamond+ account{'s' if len(diamond_accounts) != 1 else ''} tracked",
                 color=0x1F8EFA
             )
             
@@ -1687,7 +1687,7 @@ class ProfileCommands(commands.Cog):
                 # Decay counter
                 if days_remaining is not None:
                     if days_remaining <= 0:
-                        counter = f"**DECAY ACTIVE** 🚨"
+                        counter = "**DECAY ACTIVE** 🚨"
                     else:
                         counter = f"**{days_remaining} days** remaining"
                     bank = f"Bank: {result['days_in_bank']}/{result['max_bank']} days"
@@ -1695,9 +1695,14 @@ class ProfileCommands(commands.Cog):
                     counter = "Safe ✅"
                     bank = ""
                 
+                last_game = result.get('last_ranked_game')
+                last_game_str = f"Last game: {last_game}" if last_game else ""
+                
                 value = f"{tier_display}\n{region}\n{counter}"
                 if bank:
                     value += f"\n{bank}"
+                if last_game_str:
+                    value += f"\n{last_game_str}"
                 
                 embed.add_field(
                     name=name,
