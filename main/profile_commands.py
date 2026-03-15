@@ -1649,8 +1649,12 @@ class ProfileCommands(commands.Cog):
                 return
             
             # Check decay for each Diamond+ account
+            # Pick highest tier emoji for embed title
+            _tier_priority = {'DIAMOND': 0, 'MASTER': 1, 'GRANDMASTER': 2, 'CHALLENGER': 3}
+            highest_tier = max(diamond_accounts, key=lambda x: _tier_priority.get(x['tier'], 0))['tier']
+            title_rank_emoji = get_rank_emoji(highest_tier)
             embed = discord.Embed(
-                title=f"💎 Decay Status — {target.display_name}",
+                title=f"{title_rank_emoji} Decay Status — {target.display_name}",
                 description=f"{len(diamond_accounts)} Diamond+ account{'s' if len(diamond_accounts) != 1 else ''} tracked",
                 color=0x1F8EFA
             )
@@ -1669,20 +1673,24 @@ class ProfileCommands(commands.Cog):
                 # Emoji based on urgency
                 days_remaining = result.get('days_remaining')
                 if days_remaining is None or days_remaining > 14:
-                    emoji = "✅"
+                    urgency_emoji = "✅"
                 elif days_remaining <= 0:
-                    emoji = "🚨"
+                    urgency_emoji = "🚨"
                 elif days_remaining <= 3:
-                    emoji = "⚠️"
+                    urgency_emoji = "⚠️"
                 elif days_remaining <= 7:
-                    emoji = "⚡"
+                    urgency_emoji = "⚡"
                 else:
-                    emoji = "🟢"
+                    urgency_emoji = "🟢"
+                
+                # Rank emoji
+                raw_tier = item['tier']  # e.g. 'DIAMOND'
+                rank_emoji = get_rank_emoji(raw_tier)
                 
                 # Format account info
-                name = f"{emoji} {account['riot_id_game_name']}#{account['riot_id_tagline']}"
+                name = f"{urgency_emoji} {account['riot_id_game_name']}#{account['riot_id_tagline']}"
                 region = account['region'].upper()
-                tier_display = f"{result['tier']} ({result['lp']} LP)"
+                tier_display = f"{rank_emoji} {result['tier']} ({result['lp']} LP)"
                 
                 # Decay counter
                 if days_remaining is not None:
@@ -1717,7 +1725,7 @@ class ProfileCommands(commands.Cog):
                 )
             
             # Add footer with info
-            embed.set_footer(text="💎 Diamond: 30d max bank (+7d/game) • 👑 Master+: 14d max bank (+1d/game) • LP loss: 50/day (D) • 75/day (M+)")
+            embed.set_footer(text="Diamond: 30d max bank (+7d/game) • Master+: 14d max bank (+1d/game) • LP loss: 50/day (D) • 75/day (M+)")
             
             await interaction.followup.send(embed=embed)
             
