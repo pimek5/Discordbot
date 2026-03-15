@@ -821,7 +821,10 @@ class ProfileCommands(commands.Cog):
             
         except Exception as e:
             logger.error(f"Error setting primary account: {e}")
-            await interaction.followup.send("❌ An error occurred while updating your primary account.", ephemeral=True)
+            try:
+                await interaction.followup.send("❌ An error occurred while updating your primary account.", ephemeral=True)
+            except Exception:
+                pass
     
     @app_commands.command(name="profile", description="View player profile and stats")
     @app_commands.describe(user="The user to view (defaults to yourself)")
@@ -1733,12 +1736,15 @@ class ProfileCommands(commands.Cog):
             logger.error(f"Error checking decay: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            embed = discord.Embed(
-                title="❌ Error",
-                description=f"Failed to check decay status: {str(e)}",
-                color=0xFF0000
-            )
-            await interaction.followup.send(embed=embed)
+            try:
+                embed = discord.Embed(
+                    title="❌ Error",
+                    description=f"Failed to check decay status: {str(e)}",
+                    color=0xFF0000
+                )
+                await interaction.followup.send(embed=embed)
+            except Exception:
+                pass
     
     @app_commands.command(name="forcelink", description="[OWNER ONLY] Force link a Riot account without verification")
     @app_commands.describe(
