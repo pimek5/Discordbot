@@ -1717,7 +1717,7 @@ class ProfileCommands(commands.Cog):
                 )
             
             # Add footer with info
-            embed.set_footer(text="💎 Diamond: 28d max bank (+7d/game) • 👑 Master+: 14d max bank (+1d/game) • LP loss: 50/day (D) • 75/day (M+)")
+            embed.set_footer(text="💎 Diamond: 30d max bank (+7d/game) • 👑 Master+: 14d max bank (+1d/game) • LP loss: 50/day (D) • 75/day (M+)")
             
             await interaction.followup.send(embed=embed)
             

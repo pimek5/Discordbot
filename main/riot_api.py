@@ -726,7 +726,7 @@ class RiotAPI:
         
         # Ustaw parametry decay wg rankingu
         if tier == 'DIAMOND':
-            decay_starts_after = 28
+            decay_starts_after = 30
             lp_loss_per_day = 50
         else:  # Master+
             decay_starts_after = 14
