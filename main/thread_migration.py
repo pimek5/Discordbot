@@ -325,7 +325,7 @@ async def migrate_thread(thread: discord.Thread, target_channel_id: int, champio
             # Fallback: scan raw message content for direct image links.
             if msg.content:
                 for match in re.findall(r'https?://\S+', msg.content):
-                    candidate = match.strip('<>.,)\]\"\'')
+                    candidate = match.strip('<>.,)]"\'')
                     if _is_image_url(candidate):
                         image_urls.append(candidate)
 
