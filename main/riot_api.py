@@ -525,13 +525,16 @@ class RiotAPI:
         return None
     
     async def get_match_history(self, puuid: str, region: str, 
-                                count: int = 10, retries: int = 5) -> Optional[List[str]]:
+                                count: int = 10, retries: int = 5,
+                                queue: Optional[int] = None) -> Optional[List[str]]:
         """Get match IDs for a player - uses routing endpoint"""
         if not self.api_key:
             return None
         
         routing = RIOT_REGIONS.get(region.lower(), 'europe')
         url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?count={count}"
+        if queue is not None:
+            url += f"&queue={queue}"
         
         for attempt in range(retries):
             try:
@@ -797,8 +800,8 @@ class RiotAPI:
         # Fallback: użyj match history jeśli API nie ma inactiveStartTime
         logger.info(f"📊 Falling back to match history for decay calculation")
         
-        # Pobierz match history (ostatnie 100 gier aby mieć pełny obraz)
-        match_ids = await self.get_match_history(puuid, region, count=100)
+        # Pobierz TYLKO ranked solo gry (queue=420), max 200 aby mieć wystarczającą historię
+        match_ids = await self.get_match_history(puuid, region, count=200, queue=420)
         if not match_ids:
             return {
                 'at_risk': True,
@@ -813,7 +816,7 @@ class RiotAPI:
                 'message': f'⚠️ {tier} {rank} ({lp} LP) - no match history found'
             }
         
-        # Zbierz daty wszystkich ranked solo queue gier
+        # Zbierz daty ranked solo queue gier (queueId już przefiltrowany przez API)
         ranked_game_dates = []
         for match_id in match_ids:
             match_data = await self.get_match_details(match_id, region)
@@ -821,11 +824,10 @@ class RiotAPI:
                 continue
             
             info = match_data.get('info', {})
-            if info.get('queueId') == 420:  # Ranked Solo/Duo
-                timestamp = info.get('gameCreation')
-                if timestamp:
-                    game_date = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
-                    ranked_game_dates.append(game_date)
+            timestamp = info.get('gameCreation')
+            if timestamp:
+                game_date = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                ranked_game_dates.append(game_date)
         
         if not ranked_game_dates:
             return {
@@ -851,10 +853,23 @@ class RiotAPI:
         max_bank = decay_starts_after
         bank_per_game = 7 if tier == 'DIAMOND' else 1  # Diamond +7 dni/grę, Master+ +1 dzień/grę
         
-        # Symuluj bank od ostatnich 60 dni (lub od najstarszej gry)
-        simulation_start = max(ranked_game_dates[0], now - timedelta(days=60))
+        # Okno symulacji: max_bank*2+30 dni wstecz, aby dokładnie obliczyć bank
+        # Startujemy od bank=0 i odbudowujemy na podstawie gier
+        # Jeśli historia sięga poza okno, zaczynamy od max_bank (gracz aktywny)
+        window_days = max_bank * 2 + 30  # np. Diamond: 30*2+30 = 90 dni
+        sim_window_start = now - timedelta(days=window_days)
         
-        # Grupuj gry po dniach (bez godzin)
+        if ranked_game_dates[0] <= sim_window_start:
+            # Historia sięga poza okno — gracz grał regularnie, startuj z max
+            current_bank = max_bank
+            simulation_start = sim_window_start
+        else:
+            # Historia krótsza niż okno — zaczynamy od 0 bo nie wiemy ile miał na starcie
+            # (np. świeżo wbił Diamond)
+            current_bank = 0
+            simulation_start = ranked_game_dates[0]
+        
+        # Grupuj gry po dniach (bez godzin), tylko od simulation_start
         games_by_day = {}
         for game_date in ranked_game_dates:
             if game_date >= simulation_start:
@@ -862,7 +877,6 @@ class RiotAPI:
                 games_by_day[day_key] = games_by_day.get(day_key, 0) + 1
         
         # Symuluj bank dzień po dniu
-        current_bank = max_bank  # Startujemy z pełnym bankiem
         current_date = simulation_start.date()
         today = now.date()
         
