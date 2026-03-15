@@ -1,8 +1,7 @@
 import logging
 import re
 import unicodedata
-from datetime import datetime
-from datetime import timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional, List
 
 import discord

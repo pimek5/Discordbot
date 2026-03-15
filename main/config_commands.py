@@ -9,7 +9,6 @@ Allows server admins to configure:
 import discord
 from discord import app_commands
 from discord.ext import commands
-from typing import Optional
 import logging
 from database import get_db
 

@@ -6,7 +6,6 @@ Updates all users' mastery and ranked stats periodically
 import os
 import asyncio
 import logging
-from datetime import datetime
 
 from database import initialize_database, get_db
 from riot_api import RiotAPI, load_champion_data

@@ -12,7 +12,6 @@ import matplotlib
 matplotlib.use('Agg')  # Non-GUI backend
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from datetime import datetime
 import io
 import logging
 

@@ -1,1 +1,0 @@
-worker: python tracker/tracker_bot.py
