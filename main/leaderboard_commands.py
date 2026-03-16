@@ -19,6 +19,7 @@ logger = logging.getLogger('leaderboard_commands')
 DEFAULT_RANK_LEADERBOARD_CHANNEL_ID = 1483141413666296038
 RANK_PAGE_SIZE = 10
 DAILY_RESET_HOURS = 24
+SNAPSHOT_RETENTION_HOURS = 24 * 7
 
 async def loading_animation(interaction, messages=None):
     """Helper function for loading animation"""
@@ -159,6 +160,12 @@ class LeaderboardCommands(commands.Cog):
         """Return the ISO timestamp for current UTC day start."""
         return f"{self._get_global_rank_day_key()}T00:00:00"
 
+    def _get_rank_window_start_for_guild(self, guild_id: int) -> str:
+        """Get persisted UTC day window start for guild, fallback to current day start."""
+        db = get_db()
+        stored = db.get_guild_setting(guild_id, 'ranked_snapshot_window_started_at')
+        return stored or self._get_global_rank_window_start()
+
     def _mark_rank_refresh(self, guild_id: int):
         """Persist last successful rank leaderboard refresh timestamp."""
         db = get_db()
@@ -173,19 +180,19 @@ class LeaderboardCommands(commands.Cog):
         if not stored_day_key:
             db.set_guild_setting(guild_id, 'ranked_snapshot_day_key', current_day_key)
             db.set_guild_setting(guild_id, 'ranked_snapshot_window_started_at', self._get_global_rank_window_start())
+            db.cleanup_ranked_progress_snapshots(guild_id, SNAPSHOT_RETENTION_HOURS)
             return
 
         if stored_day_key != current_day_key:
-            db.clear_ranked_progress_snapshots(guild_id)
             db.set_guild_setting(guild_id, 'ranked_snapshot_day_key', current_day_key)
             db.set_guild_setting(guild_id, 'ranked_snapshot_window_started_at', self._get_global_rank_window_start())
-        else:
-            db.cleanup_ranked_progress_snapshots(guild_id, DAILY_RESET_HOURS)
+
+        db.cleanup_ranked_progress_snapshots(guild_id, SNAPSHOT_RETENTION_HOURS)
 
     def _calculate_games_delta(self, current_wins: int, current_losses: int, baseline_snapshot: Optional[dict]) -> int:
         """Calculate games delta from the daily baseline snapshot."""
         if not baseline_snapshot:
-            return 1
+            return 0
 
         prev_wins = int(baseline_snapshot.get('wins') or 0)
         prev_losses = int(baseline_snapshot.get('losses') or 0)
@@ -243,7 +250,8 @@ class LeaderboardCommands(commands.Cog):
     def _filter_members_played_today(self, guild_id: int, ranked_members: list) -> list:
         """Keep only users with ranked activity in the current 24h window."""
         db = get_db()
-        snapshot_map = db.get_daily_baseline_ranked_progress_snapshots_map(guild_id, DAILY_RESET_HOURS)
+        day_start = self._get_rank_window_start_for_guild(guild_id)
+        snapshot_map = db.get_ranked_progress_baseline_map_for_day(guild_id, day_start)
         filtered_members = []
         for entry in ranked_members:
             aggregate_progress = entry.get('aggregate_progress') or self._aggregate_account_progress(

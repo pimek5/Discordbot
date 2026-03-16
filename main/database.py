@@ -1075,6 +1075,72 @@ class Database:
         finally:
             self.return_connection(conn)
 
+    def get_ranked_progress_baseline_map_for_day(
+        self,
+        guild_id: int,
+        day_start_iso: str,
+    ) -> Dict[tuple, Dict]:
+        """Get per-account baseline for a UTC day: earliest snapshot today, else latest before day start."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (discord_user_id, puuid)
+                        discord_user_id,
+                        puuid,
+                        tier,
+                        rank,
+                        league_points,
+                        wins,
+                        losses,
+                        snapshot_at
+                    FROM ranked_progress_snapshots
+                    WHERE guild_id = %s
+                      AND snapshot_at >= %s::timestamp
+                    ORDER BY discord_user_id, puuid, snapshot_at ASC
+                    """,
+                    (guild_id, day_start_iso),
+                )
+                today_rows = cur.fetchall() or []
+
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (discord_user_id, puuid)
+                        discord_user_id,
+                        puuid,
+                        tier,
+                        rank,
+                        league_points,
+                        wins,
+                        losses,
+                        snapshot_at
+                    FROM ranked_progress_snapshots
+                    WHERE guild_id = %s
+                      AND snapshot_at < %s::timestamp
+                    ORDER BY discord_user_id, puuid, snapshot_at DESC
+                    """,
+                    (guild_id, day_start_iso),
+                )
+                before_rows = cur.fetchall() or []
+
+            result: Dict[tuple, Dict] = {}
+
+            # Prefer earliest snapshot inside the day.
+            for row in today_rows:
+                key = (int(row['discord_user_id']), str(row['puuid']))
+                result[key] = dict(row)
+
+            # Fill missing keys with latest snapshot before day start.
+            for row in before_rows:
+                key = (int(row['discord_user_id']), str(row['puuid']))
+                if key not in result:
+                    result[key] = dict(row)
+
+            return result
+        finally:
+            self.return_connection(conn)
+
     def cleanup_ranked_progress_snapshots(self, guild_id: int, max_age_hours: int = 24) -> int:
         """Delete snapshots older than the configured window and return deleted rows count."""
         conn = self.get_connection()
