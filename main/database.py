@@ -1009,6 +1009,71 @@ class Database:
                 return cur.fetchone()
         finally:
             self.return_connection(conn)
+
+    def get_daily_baseline_ranked_progress_snapshot(
+        self,
+        guild_id: int,
+        discord_user_id: int,
+        puuid: str,
+        max_age_hours: int = 24,
+    ) -> Optional[Dict]:
+        """Get the earliest snapshot in the current 24h window (daily baseline)."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM ranked_progress_snapshots
+                    WHERE guild_id = %s
+                      AND discord_user_id = %s
+                      AND puuid = %s
+                      AND snapshot_at >= NOW() - (%s || ' hours')::interval
+                    ORDER BY snapshot_at ASC
+                    LIMIT 1
+                    """,
+                    (guild_id, discord_user_id, puuid, max_age_hours),
+                )
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
+
+    def cleanup_ranked_progress_snapshots(self, guild_id: int, max_age_hours: int = 24) -> int:
+        """Delete snapshots older than the configured window and return deleted rows count."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM ranked_progress_snapshots
+                    WHERE guild_id = %s
+                      AND snapshot_at < NOW() - (%s || ' hours')::interval
+                    """,
+                    (guild_id, max_age_hours),
+                )
+                deleted = cur.rowcount
+                conn.commit()
+                return deleted
+        finally:
+            self.return_connection(conn)
+
+    def clear_ranked_progress_snapshots(self, guild_id: int) -> int:
+        """Clear all ranked snapshots for a guild (daily reset)."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM ranked_progress_snapshots
+                    WHERE guild_id = %s
+                    """,
+                    (guild_id,),
+                )
+                deleted = cur.rowcount
+                conn.commit()
+                return deleted
+        finally:
+            self.return_connection(conn)
     
     # ==================== LEADERBOARD QUERIES ====================
     

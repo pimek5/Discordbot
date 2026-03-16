@@ -9,12 +9,16 @@ from discord.ext import commands, tasks
 from typing import Optional
 import logging
 import asyncio
+from datetime import datetime, timedelta
+import math
 
 from database import get_db
 from riot_api import RiotAPI, CHAMPION_ID_TO_NAME
 
 logger = logging.getLogger('leaderboard_commands')
 DEFAULT_RANK_LEADERBOARD_CHANNEL_ID = 1483141413666296038
+RANK_PAGE_SIZE = 10
+DAILY_RESET_HOURS = 24
 
 async def loading_animation(interaction, messages=None):
     """Helper function for loading animation"""
@@ -51,6 +55,57 @@ def find_champion_id(champion_name: str) -> Optional[tuple]:
     
     return matching[0]
 
+
+class RankTopView(discord.ui.View):
+    def __init__(self, cog: "LeaderboardCommands", guild: discord.Guild, ranked_members: list, region: Optional[str], requested_by: str):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.guild = guild
+        self.ranked_members = ranked_members
+        self.region = region
+        self.requested_by = requested_by
+        self.current_page = 1
+
+    def _max_pages(self) -> int:
+        return max(1, math.ceil(len(self.ranked_members) / RANK_PAGE_SIZE))
+
+    def _sync_buttons(self):
+        total_pages = self._max_pages()
+        self.prev_button.disabled = self.current_page <= 1
+        self.next_button.disabled = self.current_page >= total_pages
+
+    async def _render(self, interaction: discord.Interaction):
+        self._sync_buttons()
+        embed = self.cog._build_ranked_embed(
+            guild=self.guild,
+            ranked_members=self.ranked_members,
+            region=self.region,
+            requested_by=self.requested_by,
+            page=self.current_page,
+            page_size=RANK_PAGE_SIZE,
+            only_played_today=True,
+        )
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 1:
+            self.current_page -= 1
+        await self._render(interaction)
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < self._max_pages():
+            self.current_page += 1
+        await self._render(interaction)
+
+    @discord.ui.button(label="Setup Account", style=discord.ButtonStyle.success, emoji="🔗")
+    async def setup_account_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "Start account setup with `/link` and then verify it with `/verify`.",
+            ephemeral=True,
+        )
+
 class LeaderboardCommands(commands.Cog):
     def __init__(self, bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
         self.bot = bot
@@ -64,19 +119,46 @@ class LeaderboardCommands(commands.Cog):
         if self.auto_update_rank_leaderboard_embed.is_running():
             self.auto_update_rank_leaderboard_embed.cancel()
 
-    def _format_today_progress(self, current_lp: int, current_wins: int, current_losses: int, snapshot: Optional[dict]) -> str:
-        """Format LP and games delta against the latest snapshot."""
-        if not snapshot:
-            return "today: -- LP / --G"
+    def _maybe_reset_daily_snapshots(self, guild_id: int):
+        """Reset ranked snapshot window every 24 hours and keep data clean."""
+        db = get_db()
+        reset_at_raw = db.get_guild_setting(guild_id, 'ranked_snapshot_reset_at')
+        now = datetime.utcnow()
 
-        prev_lp = int(snapshot.get('league_points') or 0)
-        prev_wins = int(snapshot.get('wins') or 0)
-        prev_losses = int(snapshot.get('losses') or 0)
+        should_reset = True
+        if reset_at_raw:
+            try:
+                last_reset = datetime.fromisoformat(reset_at_raw)
+                should_reset = (now - last_reset) >= timedelta(hours=DAILY_RESET_HOURS)
+            except Exception:
+                should_reset = True
 
-        lp_delta = int(current_lp) - prev_lp
+        if should_reset:
+            db.clear_ranked_progress_snapshots(guild_id)
+            db.set_guild_setting(guild_id, 'ranked_snapshot_reset_at', now.isoformat())
+        else:
+            db.cleanup_ranked_progress_snapshots(guild_id, DAILY_RESET_HOURS)
+
+    def _calculate_games_delta(self, current_wins: int, current_losses: int, baseline_snapshot: Optional[dict]) -> int:
+        """Calculate games delta from the daily baseline snapshot."""
+        if not baseline_snapshot:
+            return 1
+
+        prev_wins = int(baseline_snapshot.get('wins') or 0)
+        prev_losses = int(baseline_snapshot.get('losses') or 0)
         games_delta = (int(current_wins) + int(current_losses)) - (prev_wins + prev_losses)
+        return max(games_delta, 0)
+
+    def _format_today_progress(self, current_lp: int, current_wins: int, current_losses: int, baseline_snapshot: Optional[dict]) -> str:
+        """Format LP and games delta against the daily baseline snapshot."""
+        if not baseline_snapshot:
+            return "today: +0 LP / 0G"
+
+        prev_lp = int(baseline_snapshot.get('league_points') or 0)
+        lp_delta = int(current_lp) - prev_lp
+        games_delta = self._calculate_games_delta(current_wins, current_losses, baseline_snapshot)
         lp_prefix = "+" if lp_delta >= 0 else ""
-        return f"today: {lp_prefix}{lp_delta} LP / {max(games_delta, 0)}G"
+        return f"today: {lp_prefix}{lp_delta} LP / {games_delta}G"
 
     async def _collect_ranked_members(self, guild: discord.Guild, region: Optional[str] = None) -> list:
         """Collect and sort ranked members in guild."""
@@ -161,7 +243,16 @@ class LeaderboardCommands(commands.Cog):
         ranked_members.sort(key=lambda x: x['priority'], reverse=True)
         return ranked_members
 
-    def _build_ranked_embed(self, guild: discord.Guild, ranked_members: list, region: Optional[str] = None, requested_by: Optional[str] = None) -> discord.Embed:
+    def _build_ranked_embed(
+        self,
+        guild: discord.Guild,
+        ranked_members: list,
+        region: Optional[str] = None,
+        requested_by: Optional[str] = None,
+        page: int = 1,
+        page_size: int = RANK_PAGE_SIZE,
+        only_played_today: bool = False,
+    ) -> discord.Embed:
         """Build ranked leaderboard embed for command and auto-updates."""
         db = get_db()
         from emoji_dict import get_rank_emoji
@@ -173,19 +264,43 @@ class LeaderboardCommands(commands.Cog):
             'ph': '🇵🇭', 'th': '🇹🇭', 'tw': '🇹🇼', 'vn': '🇻🇳'
         }
 
+        # Optional filter: keep only players who played at least one ranked game in current 24h window.
+        filtered_members = ranked_members
+        if only_played_today:
+            tmp = []
+            for entry in ranked_members:
+                data = entry['data']
+                baseline = db.get_daily_baseline_ranked_progress_snapshot(
+                    guild.id,
+                    entry['member'].id,
+                    data.get('puuid', ''),
+                    DAILY_RESET_HOURS,
+                )
+                if self._calculate_games_delta(data['wins'], data['losses'], baseline) > 0:
+                    tmp.append(entry)
+            filtered_members = tmp
+
+        total_players = len(filtered_members)
+        total_pages = max(1, math.ceil(total_players / page_size))
+        page = max(1, min(page, total_pages))
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        page_entries = filtered_members[start_idx:end_idx]
+
         region_text = f" • {region.upper()}" if region else ""
         embed = discord.Embed(
             title=f"🏆 Server Rank Leaderboard{region_text}",
-            description=f"**{guild.name}** • TOP20 Ranked Players",
+            description=f"**{guild.name}** • TOP10 Ranked Players • Page {page}/{total_pages}",
             color=0xC89B3C
         )
 
         leaderboard_parts = []
         current_part = ""
 
-        for i, entry in enumerate(ranked_members[:20], start=1):
+        for offset, entry in enumerate(page_entries, start=1):
             member = entry['member']
             data = entry['data']
+            position = start_idx + offset
 
             tier = data['tier']
             rank = data['rank']
@@ -197,15 +312,20 @@ class LeaderboardCommands(commands.Cog):
 
             rank_emoji = get_rank_emoji(tier)
             region_flag = region_flags.get(data['region'].lower(), '🌍')
-            snapshot = db.get_latest_ranked_progress_snapshot(guild.id, member.id, data.get('puuid', ''))
-            today_progress = self._format_today_progress(lp, wins, losses, snapshot)
+            baseline_snapshot = db.get_daily_baseline_ranked_progress_snapshot(
+                guild.id,
+                member.id,
+                data.get('puuid', ''),
+                DAILY_RESET_HOURS,
+            )
+            today_progress = self._format_today_progress(lp, wins, losses, baseline_snapshot)
 
             if tier in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
                 rank_text = f"{rank_emoji} **{tier.capitalize()}**"
             else:
                 rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
 
-            entry_text = f"{i}. {member.mention} {region_flag} **{data['region']}**\n"
+            entry_text = f"{position}. {member.mention} {region_flag} **{data['region']}**\n"
             entry_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR) • {today_progress}\n"
 
             if len(current_part) + len(entry_text) > 1024:
@@ -222,10 +342,10 @@ class LeaderboardCommands(commands.Cog):
                 field_name = "📊 Rankings" if idx == 0 else "📊 Rankings (continued)"
                 embed.add_field(name=field_name, value=part, inline=False)
         else:
-            embed.add_field(name="📊 Rankings", value="No one has played a ranked game yet.", inline=False)
+            embed.add_field(name="📊 Rankings", value="No one has played a ranked game in the last 24h.", inline=False)
 
         footer_author = requested_by or "Auto update"
-        embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • {footer_author}")
+        embed.set_footer(text=f"Total ranked players: {total_players} • {footer_author}")
         return embed
 
     def _save_ranked_snapshots(self, guild_id: int, ranked_members: list):
@@ -250,6 +370,8 @@ class LeaderboardCommands(commands.Cog):
     async def _update_or_create_rank_embed(self, guild: discord.Guild):
         """Update persistent ranked leaderboard embed, or create it if missing."""
         db = get_db()
+
+        self._maybe_reset_daily_snapshots(guild.id)
 
         leaderboards_enabled = db.get_guild_setting(guild.id, 'leaderboards_enabled')
         if leaderboards_enabled == 'false':
@@ -280,7 +402,15 @@ class LeaderboardCommands(commands.Cog):
             return
 
         ranked_members = await self._collect_ranked_members(guild)
-        embed = self._build_ranked_embed(guild, ranked_members, requested_by="Auto update")
+        self._save_ranked_snapshots(guild.id, ranked_members)
+        embed = self._build_ranked_embed(
+            guild,
+            ranked_members,
+            requested_by="Auto update",
+            page=1,
+            page_size=RANK_PAGE_SIZE,
+            only_played_today=True,
+        )
 
         message_id_raw = db.get_guild_setting(guild.id, 'rank_leaderboard_message_id')
         message_id = int(message_id_raw) if message_id_raw and str(message_id_raw).isdigit() else None
@@ -289,7 +419,6 @@ class LeaderboardCommands(commands.Cog):
             try:
                 message = await channel.fetch_message(message_id)
                 await message.edit(embed=embed)
-                self._save_ranked_snapshots(guild.id, ranked_members)
                 logger.info("✅ Updated persistent rank leaderboard embed for guild %s", guild.id)
                 return
             except discord.NotFound:
@@ -299,7 +428,6 @@ class LeaderboardCommands(commands.Cog):
 
         message = await channel.send(embed=embed)
         db.set_guild_setting(guild.id, 'rank_leaderboard_message_id', str(message.id))
-        self._save_ranked_snapshots(guild.id, ranked_members)
         logger.info("✅ Created persistent rank leaderboard embed for guild %s", guild.id)
 
     @tasks.loop(hours=1)
@@ -439,7 +567,7 @@ class LeaderboardCommands(commands.Cog):
         except:
             pass
     
-    @app_commands.command(name="ranktop", description="View TOP20 ranked players on this server") 
+    @app_commands.command(name="ranktop", description="View TOP10 ranked players on this server") 
     @app_commands.describe(
         user="Show specific user's position in ranking (optional)",
         region="Filter by specific region (optional)"
@@ -466,330 +594,86 @@ class LeaderboardCommands(commands.Cog):
     async def ranktop(self, interaction: discord.Interaction, 
                      user: Optional[discord.User] = None,
                      region: Optional[str] = None):
-        """Show TOP20 ranked players with detailed stats from database"""
+        """Show TOP10 ranked players with pagination and daily activity filter."""
         await interaction.response.defer()
-        
-        # Keep interaction alive with periodic updates
-        async def keep_alive():
-            """Update the interaction periodically to prevent timeout"""
-            messages = [
-                "⏳ Loading leaderboard data...",
-                "🔍 Fetching player ranks...",
-                "📊 Calculating statistics...",
-                "🏆 Preparing rankings..."
-            ]
-            for i, msg in enumerate(messages):
-                if i > 0:  # Don't wait before first message
-                    await asyncio.sleep(2)
-                try:
-                    await interaction.edit_original_response(content=msg)
-                except:
-                    break  # Stop if interaction is no longer valid
-        
-        # Start keep-alive task
-        keep_alive_task = asyncio.create_task(keep_alive())
-        
+
         try:
-            # Must be in a guild
             if not interaction.guild:
-                keep_alive_task.cancel()
                 await interaction.followup.send(
                     "❌ This command can only be used in a server!",
                     ephemeral=True
                 )
                 return
-            
+
             db = get_db()
-            
-            # Rank priority for sorting
-            rank_priority = {
-                'CHALLENGER': 9, 'GRANDMASTER': 8, 'MASTER': 7,
-                'DIAMOND': 6, 'EMERALD': 5, 'PLATINUM': 4,
-                'GOLD': 3, 'SILVER': 2, 'BRONZE': 1, 'IRON': 0
-            }
-            
-            division_priority = {'I': 4, 'II': 3, 'III': 2, 'IV': 1}
-        
-            # Collect all members with their rank data from database
-            ranked_members = []
-            
-            for member in interaction.guild.members:
-                if member.bot:
-                    continue
-                
-                # Get user from database
-                db_user = db.get_user_by_discord_id(member.id)
-                if not db_user:
-                    continue
-                
-                # Get all accounts
-                accounts = db.get_user_accounts(db_user['id'])
-                if not accounts:
-                    continue
-                
-                # Find best rank across all accounts
-                best_rank_data = None
-                best_priority = -1
-                
-                for account in accounts:
-                    if not account.get('verified'):
-                        continue
-                    
-                    # Check region filter
-                    if region and account['region'].lower() != region.lower():
-                        continue
-                    
-                    # Fetch rank data from Riot API
-                    try:
-                        ranks = await self.riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
-                        if not ranks:
-                            continue
-                        
-                        # Check Solo/Duo queue
-                        for rank_data in ranks:
-                            if 'SOLO' in rank_data.get('queueType', ''):
-                                tier = rank_data.get('tier', 'UNRANKED')
-                                if tier == 'UNRANKED':
-                                    continue
-                                
-                                rank = rank_data.get('rank', 'I')
-                                lp = rank_data.get('leaguePoints', 0)
-                                wins = rank_data.get('wins', 0)
-                                losses = rank_data.get('losses', 0)
-                                total_games = wins + losses
+            self._maybe_reset_daily_snapshots(interaction.guild.id)
 
-                                # Require at least one ranked game to appear in leaderboard.
-                                if total_games < 1:
-                                    continue
-                                
-                                # Calculate priority
-                                tier_priority = rank_priority.get(tier, -1)
-                                div_priority = division_priority.get(rank, 0) if tier not in ['MASTER', 'GRANDMASTER', 'CHALLENGER'] else 4
-                                total_priority = tier_priority * 1000 + div_priority * 100 + lp
-                                
-                                if total_priority > best_priority:
-                                    best_priority = total_priority
-                                    best_rank_data = {
-                                        'tier': tier,
-                                        'rank': rank,
-                                        'lp': lp,
-                                        'wins': wins,
-                                        'losses': losses,
-                                        'puuid': account['puuid'],
-                                        'region': account['region'].upper(),
-                                        'riot_name': f"{account['riot_id_game_name']}#{account['riot_id_tagline']}"
-                                    }
-                    except Exception as e:
-                        continue
-                
-                # Add member if they have rank data
-                if best_rank_data:
-                    ranked_members.append({
-                        'member': member,
-                        'data': best_rank_data,
-                        'priority': best_priority
-                    })
-                
-            # Sort by priority (highest first)
-            ranked_members.sort(key=lambda x: x['priority'], reverse=True)
-            
-            # Cancel keep-alive task
-            keep_alive_task.cancel()
-            # Remove the last loading message before sending the result
-            try:
-                await interaction.delete_original_response()
-            except Exception:
-                pass
-            
-            if not ranked_members:
-                region_text = f" in {region.upper()}" if region else ""
-                # Remove loading message if still present
-                try:
-                    await interaction.delete_original_response()
-                except Exception:
-                    pass
-                await interaction.followup.send(
-                    f"❌ No one has played a ranked game yet{region_text}.",
-                    ephemeral=True
-                )
-                return
-                
-            # Get rank emoji
-            from emoji_dict import get_rank_emoji
-            
-            # Region emoji map
-            region_flags = {
-                'euw': '🇪🇺', 'eune': '🇪🇺', 'na': '🇺🇸', 'kr': '🇰🇷',
-                'jp': '🇯🇵', 'br': '🇧🇷', 'lan': '🇲🇽', 'las': '🇦🇷',
-                'oce': '🇦🇺', 'ru': '🇷🇺', 'tr': '🇹🇷', 'sg': '🇸🇬',
-                'ph': '🇵🇭', 'th': '🇹🇭', 'tw': '🇹🇼', 'vn': '🇻🇳'
-            }
-            
-            # Create embed
-            region_text = f" • {region.upper()}" if region else ""
-            embed = discord.Embed(
-                title=f"🏆 Server Rank Leaderboard{region_text}",
-                description=f"**{interaction.guild.name}** • TOP20 Ranked Players",
-                color=0xC89B3C
-            )
-            
-            # TOP20 leaderboard text - split into multiple fields to avoid 1024 char limit
-            leaderboard_parts = []
-            current_part = ""
-            user_position = None
-            
-            for i, entry in enumerate(ranked_members[:20], start=1):
-                member = entry['member']
-                data = entry['data']
-                
-                tier = data['tier']
-                rank = data['rank']
-                lp = data['lp']
-                wins = data['wins']
-                losses = data['losses']
-                region_code = data['region'].lower()
-                
-                # Calculate winrate
-                total_games = wins + losses
-                winrate = (wins / total_games * 100) if total_games > 0 else 0
-                
-                rank_emoji = get_rank_emoji(tier)
-                region_flag = region_flags.get(region_code, '🌍')
-                snapshot = db.get_latest_ranked_progress_snapshot(
-                    interaction.guild.id,
-                    member.id,
-                    data.get('puuid', ''),
-                )
-                today_progress = self._format_today_progress(lp, wins, losses, snapshot)
-                
-                # Format rank text
-                if tier in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
-                    rank_text = f"{rank_emoji} **{tier.capitalize()}**"
-                else:
-                    rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
-                
-                entry_text = f"{i}. {member.mention} {region_flag} **{data['region']}**\n"
-                entry_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR) • {today_progress}\n"
-                
-                # Check if adding this entry would exceed 1024 characters
-                if len(current_part) + len(entry_text) > 1024:
-                    leaderboard_parts.append(current_part)
-                    current_part = entry_text
-                else:
-                    current_part += entry_text
-                
-                # Check if this is the requested user
-                if user and member.id == user.id:
-                    user_position = i
-            
-            # Add remaining text
-            if current_part:
-                leaderboard_parts.append(current_part)
-            
-            # Add fields for each part
-            if leaderboard_parts:
-                for idx, part in enumerate(leaderboard_parts):
-                    field_name = "📊 Rankings" if idx == 0 else "📊 Rankings (continued)"
-                    embed.add_field(
-                        name=field_name,
-                        value=part,
-                        inline=False
-                    )
-            else:
-                embed.add_field(
-                    name="📊 Rankings",
-                    value="No one has played a ranked game yet.",
-                    inline=False
-                )
-            
-            # If user specified and found in ranking
-            if user:
-                if user_position:
-                    data = ranked_members[user_position - 1]['data']
-                    rank_emoji = get_rank_emoji(data['tier'])
-                    region_flag = region_flags.get(data['region'].lower(), '🌍')
-                    
-                    if data['tier'] in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
-                        rank_text = f"{data['tier'].capitalize()}"
-                    else:
-                        rank_text = f"{data['tier'].capitalize()} {data['rank']}"
-                    
-                    total_games = data['wins'] + data['losses']
-                    winrate = (data['wins'] / total_games * 100) if total_games > 0 else 0
-                    
-                    embed.add_field(
-                        name=f"📍 {user.display_name}'s Position",
-                        value=f"**#{user_position}** • {region_flag} **{data['region']}** • {rank_emoji} **{rank_text}** • {data['lp']} LP • {winrate:.0f}% WR",
-                        inline=False
-                    )
-                else:
-                    # Check if user is ranked but outside TOP20
-                    user_found = False
-                    for i, entry in enumerate(ranked_members, start=1):
-                        if entry['member'].id == user.id:
-                            data = entry['data']
-                            rank_emoji = get_rank_emoji(data['tier'])
-                            region_flag = region_flags.get(data['region'].lower(), '🌍')
-                            
-                            if data['tier'] in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
-                                rank_text = f"{data['tier'].capitalize()}"
-                            else:
-                                rank_text = f"{data['tier'].capitalize()} {data['rank']}"
-                            
-                            total_games = data['wins'] + data['losses']
-                            winrate = (data['wins'] / total_games * 100) if total_games > 0 else 0
-                            
-                            embed.add_field(
-                                name=f"📍 {user.display_name}'s Position",
-                                value=f"**#{i}** • {region_flag} **{data['region']}** • {rank_emoji} **{rank_text}** • {data['lp']} LP • {winrate:.0f}% WR (Outside TOP20)",
-                                inline=False
-                            )
-                            user_found = True
-                            break
-                    
-                    if not user_found:
-                        embed.add_field(
-                            name=f"📍 {user.display_name}'s Position",
-                            value="**Unranked** • Not in leaderboard",
-                            inline=False
-                        )
-            
-            embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
+            ranked_members = await self._collect_ranked_members(interaction.guild, region=region)
+            self._save_ranked_snapshots(interaction.guild.id, ranked_members)
 
-            # Save snapshots after rendering so delta is based on previous state.
+            filtered_members = []
             for entry in ranked_members:
                 data = entry['data']
-                puuid = data.get('puuid')
-                if not puuid:
-                    continue
-                db.save_ranked_progress_snapshot(
+                baseline = db.get_daily_baseline_ranked_progress_snapshot(
                     interaction.guild.id,
                     entry['member'].id,
-                    puuid,
-                    data.get('tier', 'UNRANKED'),
-                    data.get('rank', 'I'),
-                    int(data.get('lp', 0)),
-                    int(data.get('wins', 0)),
-                    int(data.get('losses', 0)),
+                    data.get('puuid', ''),
+                    DAILY_RESET_HOURS,
                 )
-            
-            message = await interaction.followup.send(embed=embed)
-            
-            # Auto-delete after 60 seconds
-            await asyncio.sleep(60)
-            try:
-                await message.delete()
-            except:
-                pass
-        
+                if self._calculate_games_delta(data.get('wins', 0), data.get('losses', 0), baseline) > 0:
+                    filtered_members.append(entry)
+
+            if not filtered_members:
+                region_text = f" in {region.upper()}" if region else ""
+                await interaction.followup.send(
+                    f"❌ No one has played a ranked game in the last 24h{region_text}.",
+                    ephemeral=True,
+                )
+                return
+
+            view = RankTopView(
+                cog=self,
+                guild=interaction.guild,
+                ranked_members=filtered_members,
+                region=region,
+                requested_by=interaction.user.name,
+            )
+            view._sync_buttons()
+
+            embed = self._build_ranked_embed(
+                guild=interaction.guild,
+                ranked_members=filtered_members,
+                region=region,
+                requested_by=interaction.user.name,
+                page=1,
+                page_size=RANK_PAGE_SIZE,
+                only_played_today=True,
+            )
+
+            if user:
+                user_position = None
+                for i, entry in enumerate(filtered_members, start=1):
+                    if entry['member'].id == user.id:
+                        user_position = i
+                        break
+                if user_position:
+                    embed.add_field(
+                        name=f"📍 {user.display_name}'s Position",
+                        value=f"**#{user_position}** in today's ranking",
+                        inline=False,
+                    )
+                else:
+                    embed.add_field(
+                        name=f"📍 {user.display_name}'s Position",
+                        value="Not shown (no ranked game played in the last 24h or outside filter).",
+                        inline=False,
+                    )
+
+            await interaction.followup.send(embed=embed, view=view)
+
         except Exception as e:
-            keep_alive_task.cancel()
             logger.error(f"Error in ranktop: {e}")
             await interaction.followup.send("❌ An error occurred while fetching leaderboard data.", ephemeral=True)
-        finally:
-            # Ensure keep-alive task is cancelled
-            if not keep_alive_task.done():
-                keep_alive_task.cancel()
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
     """Setup leaderboard commands"""
