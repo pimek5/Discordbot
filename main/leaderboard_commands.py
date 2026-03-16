@@ -403,6 +403,14 @@ class LeaderboardCommands(commands.Cog):
 
         ranked_members = await self._collect_ranked_members(guild)
         self._save_ranked_snapshots(guild.id, ranked_members)
+        view = RankTopView(
+            cog=self,
+            guild=guild,
+            ranked_members=ranked_members,
+            region=None,
+            requested_by="Auto update",
+        )
+        view._sync_buttons()
         embed = self._build_ranked_embed(
             guild,
             ranked_members,
@@ -418,7 +426,7 @@ class LeaderboardCommands(commands.Cog):
         if message_id:
             try:
                 message = await channel.fetch_message(message_id)
-                await message.edit(embed=embed)
+                await message.edit(embed=embed, view=view)
                 logger.info("✅ Updated persistent rank leaderboard embed for guild %s", guild.id)
                 return
             except discord.NotFound:
@@ -426,7 +434,7 @@ class LeaderboardCommands(commands.Cog):
             except Exception as e:
                 logger.warning("⚠️ Failed to update persistent rank leaderboard embed for guild %s: %s", guild.id, e)
 
-        message = await channel.send(embed=embed)
+        message = await channel.send(embed=embed, view=view)
         db.set_guild_setting(guild.id, 'rank_leaderboard_message_id', str(message.id))
         logger.info("✅ Created persistent rank leaderboard embed for guild %s", guild.id)
 
