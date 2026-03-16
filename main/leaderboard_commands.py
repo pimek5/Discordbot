@@ -455,7 +455,6 @@ class LeaderboardCommands(commands.Cog):
             return
 
         ranked_members = await self._collect_ranked_members(guild)
-        self._save_ranked_snapshots(guild.id, ranked_members)
         view = RankTopView(
             cog=self,
             guild=guild,
@@ -480,6 +479,7 @@ class LeaderboardCommands(commands.Cog):
             try:
                 message = await channel.fetch_message(message_id)
                 await message.edit(embed=embed, view=view)
+                self._save_ranked_snapshots(guild.id, ranked_members)
                 logger.info("✅ Updated persistent rank leaderboard embed for guild %s", guild.id)
                 return
             except discord.NotFound:
@@ -489,6 +489,7 @@ class LeaderboardCommands(commands.Cog):
 
         message = await channel.send(embed=embed, view=view)
         db.set_guild_setting(guild.id, 'rank_leaderboard_message_id', str(message.id))
+        self._save_ranked_snapshots(guild.id, ranked_members)
         logger.info("✅ Created persistent rank leaderboard embed for guild %s", guild.id)
 
     @tasks.loop(hours=1)
@@ -670,7 +671,6 @@ class LeaderboardCommands(commands.Cog):
             self._maybe_reset_daily_snapshots(interaction.guild.id)
 
             ranked_members = await self._collect_ranked_members(interaction.guild, region=region)
-            self._save_ranked_snapshots(interaction.guild.id, ranked_members)
 
             filtered_members = []
             for entry in ranked_members:
@@ -730,6 +730,7 @@ class LeaderboardCommands(commands.Cog):
                     )
 
             await interaction.followup.send(embed=embed, view=view)
+            self._save_ranked_snapshots(interaction.guild.id, ranked_members)
 
         except Exception as e:
             logger.error(f"Error in ranktop: {e}")
