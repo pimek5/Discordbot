@@ -149,6 +149,50 @@ class LeaderboardCommands(commands.Cog):
         games_delta = (int(current_wins) + int(current_losses)) - (prev_wins + prev_losses)
         return max(games_delta, 0)
 
+    def _calculate_lp_delta(self, current_lp: int, baseline_snapshot: Optional[dict]) -> int:
+        """Calculate LP delta from the daily baseline snapshot."""
+        if not baseline_snapshot:
+            return 0
+        prev_lp = int(baseline_snapshot.get('league_points') or 0)
+        return int(current_lp) - prev_lp
+
+    def _aggregate_account_progress(self, guild_id: int, discord_user_id: int, accounts_data: list) -> dict:
+        """Aggregate daily LP and games deltas across all ranked accounts for one user."""
+        db = get_db()
+        total_lp_delta = 0
+        total_games_delta = 0
+
+        for account_data in accounts_data:
+            puuid = account_data.get('puuid')
+            if not puuid:
+                continue
+
+            baseline_snapshot = db.get_daily_baseline_ranked_progress_snapshot(
+                guild_id,
+                discord_user_id,
+                puuid,
+                DAILY_RESET_HOURS,
+            )
+            total_lp_delta += self._calculate_lp_delta(account_data.get('lp', 0), baseline_snapshot)
+            total_games_delta += self._calculate_games_delta(
+                account_data.get('wins', 0),
+                account_data.get('losses', 0),
+                baseline_snapshot,
+            )
+
+        return {
+            'lp_delta': total_lp_delta,
+            'games_delta': max(total_games_delta, 0),
+            'played_today': total_games_delta > 0,
+        }
+
+    def _format_aggregate_today_progress(self, aggregate_progress: dict) -> str:
+        """Format aggregated daily progress across all accounts."""
+        lp_delta = int(aggregate_progress.get('lp_delta', 0))
+        games_delta = int(aggregate_progress.get('games_delta', 0))
+        lp_prefix = "+" if lp_delta >= 0 else ""
+        return f"today: {lp_prefix}{lp_delta} LP / {games_delta}G"
+
     def _format_today_progress(self, current_lp: int, current_wins: int, current_losses: int, baseline_snapshot: Optional[dict]) -> str:
         """Format LP and games delta against the daily baseline snapshot."""
         if not baseline_snapshot:
@@ -186,6 +230,7 @@ class LeaderboardCommands(commands.Cog):
 
             best_rank_data = None
             best_priority = -1
+            ranked_accounts_data = []
 
             for account in accounts:
                 if not account.get('verified'):
@@ -214,30 +259,40 @@ class LeaderboardCommands(commands.Cog):
                         if (wins + losses) < 1:
                             continue
 
+                        account_rank_data = {
+                            'tier': tier,
+                            'rank': rank,
+                            'lp': lp,
+                            'wins': wins,
+                            'losses': losses,
+                            'puuid': account['puuid'],
+                            'region': account['region'].upper(),
+                            'riot_name': f"{account['riot_id_game_name']}#{account['riot_id_tagline']}"
+                        }
+                        ranked_accounts_data.append(account_rank_data)
+
                         tier_priority = rank_priority.get(tier, -1)
                         div_priority = division_priority.get(rank, 0) if tier not in ['MASTER', 'GRANDMASTER', 'CHALLENGER'] else 4
                         total_priority = tier_priority * 1000 + div_priority * 100 + lp
 
                         if total_priority > best_priority:
                             best_priority = total_priority
-                            best_rank_data = {
-                                'tier': tier,
-                                'rank': rank,
-                                'lp': lp,
-                                'wins': wins,
-                                'losses': losses,
-                                'puuid': account['puuid'],
-                                'region': account['region'].upper(),
-                                'riot_name': f"{account['riot_id_game_name']}#{account['riot_id_tagline']}"
-                            }
+                            best_rank_data = dict(account_rank_data)
                 except Exception:
                     continue
 
             if best_rank_data:
+                aggregate_progress = self._aggregate_account_progress(
+                    guild.id,
+                    member.id,
+                    ranked_accounts_data,
+                )
                 ranked_members.append({
                     'member': member,
                     'data': best_rank_data,
-                    'priority': best_priority
+                    'priority': best_priority,
+                    'accounts': ranked_accounts_data,
+                    'aggregate_progress': aggregate_progress,
                 })
 
         ranked_members.sort(key=lambda x: x['priority'], reverse=True)
@@ -270,13 +325,12 @@ class LeaderboardCommands(commands.Cog):
             tmp = []
             for entry in ranked_members:
                 data = entry['data']
-                baseline = db.get_daily_baseline_ranked_progress_snapshot(
+                aggregate_progress = entry.get('aggregate_progress') or self._aggregate_account_progress(
                     guild.id,
                     entry['member'].id,
-                    data.get('puuid', ''),
-                    DAILY_RESET_HOURS,
+                    entry.get('accounts', []),
                 )
-                if self._calculate_games_delta(data['wins'], data['losses'], baseline) > 0:
+                if aggregate_progress.get('played_today'):
                     tmp.append(entry)
             filtered_members = tmp
 
@@ -312,13 +366,12 @@ class LeaderboardCommands(commands.Cog):
 
             rank_emoji = get_rank_emoji(tier)
             region_flag = region_flags.get(data['region'].lower(), '🌍')
-            baseline_snapshot = db.get_daily_baseline_ranked_progress_snapshot(
+            aggregate_progress = entry.get('aggregate_progress') or self._aggregate_account_progress(
                 guild.id,
                 member.id,
-                data.get('puuid', ''),
-                DAILY_RESET_HOURS,
+                entry.get('accounts', []),
             )
-            today_progress = self._format_today_progress(lp, wins, losses, baseline_snapshot)
+            today_progress = self._format_aggregate_today_progress(aggregate_progress)
 
             if tier in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
                 rank_text = f"{rank_emoji} **{tier.capitalize()}**"
@@ -352,20 +405,20 @@ class LeaderboardCommands(commands.Cog):
         """Persist snapshots after each successful leaderboard render."""
         db = get_db()
         for entry in ranked_members:
-            data = entry['data']
-            puuid = data.get('puuid')
-            if not puuid:
-                continue
-            db.save_ranked_progress_snapshot(
-                guild_id,
-                entry['member'].id,
-                puuid,
-                data.get('tier', 'UNRANKED'),
-                data.get('rank', 'I'),
-                int(data.get('lp', 0)),
-                int(data.get('wins', 0)),
-                int(data.get('losses', 0)),
-            )
+            for data in entry.get('accounts', []):
+                puuid = data.get('puuid')
+                if not puuid:
+                    continue
+                db.save_ranked_progress_snapshot(
+                    guild_id,
+                    entry['member'].id,
+                    puuid,
+                    data.get('tier', 'UNRANKED'),
+                    data.get('rank', 'I'),
+                    int(data.get('lp', 0)),
+                    int(data.get('wins', 0)),
+                    int(data.get('losses', 0)),
+                )
 
     async def _update_or_create_rank_embed(self, guild: discord.Guild):
         """Update persistent ranked leaderboard embed, or create it if missing."""
@@ -621,14 +674,13 @@ class LeaderboardCommands(commands.Cog):
 
             filtered_members = []
             for entry in ranked_members:
-                data = entry['data']
-                baseline = db.get_daily_baseline_ranked_progress_snapshot(
+                aggregate_progress = entry.get('aggregate_progress') or self._aggregate_account_progress(
                     interaction.guild.id,
                     entry['member'].id,
-                    data.get('puuid', ''),
-                    DAILY_RESET_HOURS,
+                    entry.get('accounts', []),
                 )
-                if self._calculate_games_delta(data.get('wins', 0), data.get('losses', 0), baseline) > 0:
+                entry['aggregate_progress'] = aggregate_progress
+                if aggregate_progress.get('played_today'):
                     filtered_members.append(entry)
 
             if not filtered_members:
