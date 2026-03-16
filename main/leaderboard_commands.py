@@ -9,7 +9,7 @@ from discord.ext import commands, tasks
 from typing import Optional
 import logging
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 import math
 
 from database import get_db
@@ -108,7 +108,7 @@ class RankTopView(discord.ui.View):
             self.current_page += 1
         await self._render(interaction)
 
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.primary, emoji="🔃")
+    @discord.ui.button(label="🔃", style=discord.ButtonStyle.primary)
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         await self._refresh_data()
@@ -124,6 +124,7 @@ class RankTopView(discord.ui.View):
         )
         await interaction.edit_original_response(embed=embed, view=self)
         self.cog._save_ranked_snapshots(self.guild.id, self.all_ranked_members)
+        self.cog._mark_rank_refresh(self.guild.id)
 
     @discord.ui.button(label="Setup Account", style=discord.ButtonStyle.success, emoji="🔗")
     async def setup_account_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -145,23 +146,34 @@ class LeaderboardCommands(commands.Cog):
         if self.auto_update_rank_leaderboard_embed.is_running():
             self.auto_update_rank_leaderboard_embed.cancel()
 
-    def _maybe_reset_daily_snapshots(self, guild_id: int):
-        """Reset ranked snapshot window every 24 hours and keep data clean."""
+    def _get_global_rank_day_key(self) -> str:
+        """Return the current global UTC day key for ranked tracking."""
+        return datetime.utcnow().date().isoformat()
+
+    def _get_global_rank_window_start(self) -> str:
+        """Return the ISO timestamp for current UTC day start."""
+        return f"{self._get_global_rank_day_key()}T00:00:00"
+
+    def _mark_rank_refresh(self, guild_id: int):
+        """Persist last successful rank leaderboard refresh timestamp."""
         db = get_db()
-        reset_at_raw = db.get_guild_setting(guild_id, 'ranked_snapshot_reset_at')
-        now = datetime.utcnow()
+        db.set_guild_setting(guild_id, 'rank_leaderboard_last_refresh_at', datetime.utcnow().isoformat())
 
-        should_reset = True
-        if reset_at_raw:
-            try:
-                last_reset = datetime.fromisoformat(reset_at_raw)
-                should_reset = (now - last_reset) >= timedelta(hours=DAILY_RESET_HOURS)
-            except Exception:
-                should_reset = True
+    def _maybe_reset_daily_snapshots(self, guild_id: int):
+        """Reset ranked snapshot window by persisted global UTC day, not process uptime."""
+        db = get_db()
+        current_day_key = self._get_global_rank_day_key()
+        stored_day_key = db.get_guild_setting(guild_id, 'ranked_snapshot_day_key')
 
-        if should_reset:
+        if not stored_day_key:
+            db.set_guild_setting(guild_id, 'ranked_snapshot_day_key', current_day_key)
+            db.set_guild_setting(guild_id, 'ranked_snapshot_window_started_at', self._get_global_rank_window_start())
+            return
+
+        if stored_day_key != current_day_key:
             db.clear_ranked_progress_snapshots(guild_id)
-            db.set_guild_setting(guild_id, 'ranked_snapshot_reset_at', now.isoformat())
+            db.set_guild_setting(guild_id, 'ranked_snapshot_day_key', current_day_key)
+            db.set_guild_setting(guild_id, 'ranked_snapshot_window_started_at', self._get_global_rank_window_start())
         else:
             db.cleanup_ranked_progress_snapshots(guild_id, DAILY_RESET_HOURS)
 
@@ -512,6 +524,7 @@ class LeaderboardCommands(commands.Cog):
                 message = await channel.fetch_message(message_id)
                 await message.edit(embed=embed, view=view)
                 self._save_ranked_snapshots(guild.id, ranked_members)
+                self._mark_rank_refresh(guild.id)
                 logger.info("✅ Updated persistent rank leaderboard embed for guild %s", guild.id)
                 return
             except discord.NotFound:
@@ -522,6 +535,7 @@ class LeaderboardCommands(commands.Cog):
         message = await channel.send(embed=embed, view=view)
         db.set_guild_setting(guild.id, 'rank_leaderboard_message_id', str(message.id))
         self._save_ranked_snapshots(guild.id, ranked_members)
+        self._mark_rank_refresh(guild.id)
         logger.info("✅ Created persistent rank leaderboard embed for guild %s", guild.id)
 
     @tasks.loop(hours=1)
@@ -763,6 +777,7 @@ class LeaderboardCommands(commands.Cog):
 
             await interaction.followup.send(embed=embed, view=view)
             self._save_ranked_snapshots(interaction.guild.id, ranked_members)
+            self._mark_rank_refresh(interaction.guild.id)
 
         except Exception as e:
             logger.error(f"Error in ranktop: {e}")
