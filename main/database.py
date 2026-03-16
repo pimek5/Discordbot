@@ -1284,6 +1284,43 @@ class Database:
                 return cur.fetchone()[0]
         finally:
             self.return_connection(conn)
+
+    def get_guild_setting(self, guild_id: int, key: str) -> Optional[str]:
+        """Get a guild setting value by key."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT value
+                    FROM guild_settings
+                    WHERE guild_id = %s AND key = %s
+                    LIMIT 1
+                    """,
+                    (guild_id, key),
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+        finally:
+            self.return_connection(conn)
+
+    def set_guild_setting(self, guild_id: int, key: str, value: str):
+        """Create or update a guild setting value."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO guild_settings (guild_id, key, value)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (guild_id, key)
+                    DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+                    """,
+                    (guild_id, key, value),
+                )
+                conn.commit()
+        finally:
+            self.return_connection(conn)
     
     # ==================== VOTING OPERATIONS ====================
     
