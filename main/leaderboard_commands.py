@@ -62,6 +62,7 @@ class RankTopView(discord.ui.View):
         self.cog = cog
         self.guild = guild
         self.ranked_members = ranked_members
+        self.all_ranked_members = ranked_members
         self.region = region
         self.requested_by = requested_by
         self.current_page = 1
@@ -73,6 +74,14 @@ class RankTopView(discord.ui.View):
         total_pages = self._max_pages()
         self.prev_button.disabled = self.current_page <= 1
         self.next_button.disabled = self.current_page >= total_pages
+
+    async def _refresh_data(self):
+        self.cog._maybe_reset_daily_snapshots(self.guild.id)
+        self.all_ranked_members = await self.cog._collect_ranked_members(self.guild, region=self.region)
+        self.ranked_members = self.cog._filter_members_played_today(self.guild.id, self.all_ranked_members)
+        max_pages = self._max_pages()
+        if self.current_page > max_pages:
+            self.current_page = max_pages
 
     async def _render(self, interaction: discord.Interaction):
         self._sync_buttons()
@@ -98,6 +107,23 @@ class RankTopView(discord.ui.View):
         if self.current_page < self._max_pages():
             self.current_page += 1
         await self._render(interaction)
+
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.primary, emoji="🔃")
+    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        await self._refresh_data()
+        self._sync_buttons()
+        embed = self.cog._build_ranked_embed(
+            guild=self.guild,
+            ranked_members=self.ranked_members,
+            region=self.region,
+            requested_by=self.requested_by,
+            page=self.current_page,
+            page_size=RANK_PAGE_SIZE,
+            only_played_today=True,
+        )
+        await interaction.edit_original_response(embed=embed, view=self)
+        self.cog._save_ranked_snapshots(self.guild.id, self.all_ranked_members)
 
     @discord.ui.button(label="Setup Account", style=discord.ButtonStyle.success, emoji="🔗")
     async def setup_account_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -192,6 +218,20 @@ class LeaderboardCommands(commands.Cog):
         games_delta = int(aggregate_progress.get('games_delta', 0))
         lp_prefix = "+" if lp_delta >= 0 else ""
         return f"today: {lp_prefix}{lp_delta} LP / {games_delta}G"
+
+    def _filter_members_played_today(self, guild_id: int, ranked_members: list) -> list:
+        """Keep only users with ranked activity in the current 24h window."""
+        filtered_members = []
+        for entry in ranked_members:
+            aggregate_progress = entry.get('aggregate_progress') or self._aggregate_account_progress(
+                guild_id,
+                entry['member'].id,
+                entry.get('accounts', []),
+            )
+            entry['aggregate_progress'] = aggregate_progress
+            if aggregate_progress.get('played_today'):
+                filtered_members.append(entry)
+        return filtered_members
 
     def _format_today_progress(self, current_lp: int, current_wins: int, current_losses: int, baseline_snapshot: Optional[dict]) -> str:
         """Format LP and games delta against the daily baseline snapshot."""
@@ -322,17 +362,7 @@ class LeaderboardCommands(commands.Cog):
         # Optional filter: keep only players who played at least one ranked game in current 24h window.
         filtered_members = ranked_members
         if only_played_today:
-            tmp = []
-            for entry in ranked_members:
-                data = entry['data']
-                aggregate_progress = entry.get('aggregate_progress') or self._aggregate_account_progress(
-                    guild.id,
-                    entry['member'].id,
-                    entry.get('accounts', []),
-                )
-                if aggregate_progress.get('played_today'):
-                    tmp.append(entry)
-            filtered_members = tmp
+            filtered_members = self._filter_members_played_today(guild.id, ranked_members)
 
         total_players = len(filtered_members)
         total_pages = max(1, math.ceil(total_players / page_size))
@@ -455,13 +485,15 @@ class LeaderboardCommands(commands.Cog):
             return
 
         ranked_members = await self._collect_ranked_members(guild)
+        filtered_members = self._filter_members_played_today(guild.id, ranked_members)
         view = RankTopView(
             cog=self,
             guild=guild,
-            ranked_members=ranked_members,
+            ranked_members=filtered_members,
             region=None,
             requested_by="Auto update",
         )
+        view.all_ranked_members = ranked_members
         view._sync_buttons()
         embed = self._build_ranked_embed(
             guild,
