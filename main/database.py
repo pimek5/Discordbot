@@ -1038,6 +1038,43 @@ class Database:
         finally:
             self.return_connection(conn)
 
+    def get_daily_baseline_ranked_progress_snapshots_map(
+        self,
+        guild_id: int,
+        max_age_hours: int = 24,
+    ) -> Dict[tuple, Dict]:
+        """Get earliest daily snapshots map keyed by (discord_user_id, puuid)."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (discord_user_id, puuid)
+                        discord_user_id,
+                        puuid,
+                        tier,
+                        rank,
+                        league_points,
+                        wins,
+                        losses,
+                        snapshot_at
+                    FROM ranked_progress_snapshots
+                    WHERE guild_id = %s
+                      AND snapshot_at >= NOW() - (%s || ' hours')::interval
+                    ORDER BY discord_user_id, puuid, snapshot_at ASC
+                    """,
+                    (guild_id, max_age_hours),
+                )
+                rows = cur.fetchall() or []
+
+            result: Dict[tuple, Dict] = {}
+            for row in rows:
+                key = (int(row['discord_user_id']), str(row['puuid']))
+                result[key] = dict(row)
+            return result
+        finally:
+            self.return_connection(conn)
+
     def cleanup_ranked_progress_snapshots(self, guild_id: int, max_age_hours: int = 24) -> int:
         """Delete snapshots older than the configured window and return deleted rows count."""
         conn = self.get_connection()

@@ -199,7 +199,7 @@ class LeaderboardCommands(commands.Cog):
         prev_lp = int(baseline_snapshot.get('league_points') or 0)
         return int(current_lp) - prev_lp
 
-    def _aggregate_account_progress(self, guild_id: int, discord_user_id: int, accounts_data: list) -> dict:
+    def _aggregate_account_progress(self, guild_id: int, discord_user_id: int, accounts_data: list, snapshot_map: Optional[dict] = None) -> dict:
         """Aggregate daily LP and games deltas across all ranked accounts for one user."""
         db = get_db()
         total_lp_delta = 0
@@ -210,12 +210,16 @@ class LeaderboardCommands(commands.Cog):
             if not puuid:
                 continue
 
-            baseline_snapshot = db.get_daily_baseline_ranked_progress_snapshot(
-                guild_id,
-                discord_user_id,
-                puuid,
-                DAILY_RESET_HOURS,
-            )
+            baseline_snapshot = None
+            if snapshot_map is not None:
+                baseline_snapshot = snapshot_map.get((int(discord_user_id), str(puuid)))
+            if baseline_snapshot is None:
+                baseline_snapshot = db.get_daily_baseline_ranked_progress_snapshot(
+                    guild_id,
+                    discord_user_id,
+                    puuid,
+                    DAILY_RESET_HOURS,
+                )
             total_lp_delta += self._calculate_lp_delta(account_data.get('lp', 0), baseline_snapshot)
             total_games_delta += self._calculate_games_delta(
                 account_data.get('wins', 0),
@@ -238,12 +242,15 @@ class LeaderboardCommands(commands.Cog):
 
     def _filter_members_played_today(self, guild_id: int, ranked_members: list) -> list:
         """Keep only users with ranked activity in the current 24h window."""
+        db = get_db()
+        snapshot_map = db.get_daily_baseline_ranked_progress_snapshots_map(guild_id, DAILY_RESET_HOURS)
         filtered_members = []
         for entry in ranked_members:
             aggregate_progress = entry.get('aggregate_progress') or self._aggregate_account_progress(
                 guild_id,
                 entry['member'].id,
                 entry.get('accounts', []),
+                snapshot_map=snapshot_map,
             )
             entry['aggregate_progress'] = aggregate_progress
             if aggregate_progress.get('played_today'):
@@ -277,11 +284,11 @@ class LeaderboardCommands(commands.Cog):
             if member.bot:
                 continue
 
-            db_user = db.get_user_by_discord_id(member.id)
+            db_user = await asyncio.to_thread(db.get_user_by_discord_id, member.id)
             if not db_user:
                 continue
 
-            accounts = db.get_user_accounts(db_user['id'])
+            accounts = await asyncio.to_thread(db.get_user_accounts, db_user['id'])
             if not accounts:
                 continue
 
