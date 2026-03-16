@@ -153,7 +153,8 @@ class VoteCommands(commands.Cog):
                 inline=False
             )
         
-        embed.set_footer(text=f"📊 {unique_voters} user{'s' if unique_voters != 1 else ''} participated • Voting in progress")
+        total_votes = sum(r['vote_count'] for r in results)
+        embed.set_footer(text=f"📊 {unique_voters} user{'s' if unique_voters != 1 else ''} participated • {total_votes} vote{'s' if total_votes != 1 else ''} cast • Voting in progress")
         return embed
     
     async def process_vote_message(self, message: discord.Message) -> bool:
@@ -491,8 +492,8 @@ class VoteCommands(commands.Cog):
         
         # Get unique voter count
         unique_voters = db.get_unique_voter_count(session['id'])
-        
-        embed.set_footer(text=f"📊 Final: {unique_voters} user{'s' if unique_voters != 1 else ''} participated")
+        total_votes = sum(r['vote_count'] for r in results)
+        embed.set_footer(text=f"📊 Final: {unique_voters} user{'s' if unique_voters != 1 else ''} participated • {total_votes} vote{'s' if total_votes != 1 else ''} cast")
         
         # Send results in channel
         try:
