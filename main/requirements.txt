@@ -1,7 +1,7 @@
 ﻿aiohttp
 python-dotenv
 requests
-py-cord==2.6.1
+discord.py>=2.3.0
 tweepy
 beautifulsoup4
 lxml
