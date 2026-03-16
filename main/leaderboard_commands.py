@@ -139,11 +139,39 @@ class RankTopView(discord.ui.View):
             ephemeral=True,
         )
 
+
+class RankPersistentView(discord.ui.View):
+    def __init__(self, cog: "LeaderboardCommands"):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(label="🔃", style=discord.ButtonStyle.primary, custom_id="rank_refresh_button")
+    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This button only works in a server.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        try:
+            await self.cog._update_or_create_rank_embed(interaction.guild)
+        except Exception as e:
+            logger.error("❌ Persistent refresh failed for guild %s: %s", interaction.guild.id, e)
+            await interaction.followup.send("❌ Refresh failed. Try again in a moment.", ephemeral=True)
+
+    @discord.ui.button(label="Setup Account", style=discord.ButtonStyle.success, emoji="🔗", custom_id="rank_setup_button")
+    async def setup_account_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "Start account setup with `/link` and then verify it with `/verify`.",
+            ephemeral=True,
+        )
+
 class LeaderboardCommands(commands.Cog):
     def __init__(self, bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
         self.bot = bot
         self.riot_api = riot_api
         self.guild = discord.Object(id=guild_id)
+        self.persistent_rank_view = RankPersistentView(self)
+        self.bot.add_view(self.persistent_rank_view)
 
         if not self.auto_update_rank_leaderboard_embed.is_running():
             self.auto_update_rank_leaderboard_embed.start()
@@ -517,16 +545,7 @@ class LeaderboardCommands(commands.Cog):
             return
 
         ranked_members = await self._collect_ranked_members(guild)
-        filtered_members = self._filter_members_played_today(guild.id, ranked_members)
-        view = RankTopView(
-            cog=self,
-            guild=guild,
-            ranked_members=filtered_members,
-            region=None,
-            requested_by="Auto update",
-        )
-        view.all_ranked_members = ranked_members
-        view._sync_buttons()
+        view = self.persistent_rank_view
         embed = self._build_ranked_embed(
             guild,
             ranked_members,
