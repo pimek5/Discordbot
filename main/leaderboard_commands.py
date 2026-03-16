@@ -111,20 +111,25 @@ class RankTopView(discord.ui.View):
     @discord.ui.button(label="🔃", style=discord.ButtonStyle.primary)
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        await self._refresh_data()
-        self._sync_buttons()
-        embed = self.cog._build_ranked_embed(
-            guild=self.guild,
-            ranked_members=self.ranked_members,
-            region=self.region,
-            requested_by=self.requested_by,
-            page=self.current_page,
-            page_size=RANK_PAGE_SIZE,
-            only_played_today=True,
-        )
-        await interaction.edit_original_response(embed=embed, view=self)
-        self.cog._save_ranked_snapshots(self.guild.id, self.all_ranked_members)
-        self.cog._mark_rank_refresh(self.guild.id)
+        try:
+            await self._refresh_data()
+            self._sync_buttons()
+            embed = self.cog._build_ranked_embed(
+                guild=self.guild,
+                ranked_members=self.ranked_members,
+                region=self.region,
+                requested_by=self.requested_by,
+                page=self.current_page,
+                page_size=RANK_PAGE_SIZE,
+                only_played_today=True,
+            )
+            if interaction.message:
+                await interaction.message.edit(embed=embed, view=self)
+            self.cog._save_ranked_snapshots(self.guild.id, self.all_ranked_members)
+            self.cog._mark_rank_refresh(self.guild.id)
+        except Exception as e:
+            logger.error("❌ Refresh button failed for guild %s: %s", self.guild.id, e)
+            await interaction.followup.send("❌ Refresh failed. Try again in a moment.", ephemeral=True)
 
     @discord.ui.button(label="Setup Account", style=discord.ButtonStyle.success, emoji="🔗")
     async def setup_account_button(self, interaction: discord.Interaction, button: discord.ui.Button):
