@@ -72,6 +72,20 @@ CREATE TABLE IF NOT EXISTS user_ranks (
     UNIQUE(user_id, queue, season)
 );
 
+-- Ranked progress snapshots (for daily LP / games delta in leaderboard)
+CREATE TABLE IF NOT EXISTS ranked_progress_snapshots (
+    id SERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    discord_user_id BIGINT NOT NULL,
+    puuid VARCHAR(100) NOT NULL,
+    tier VARCHAR(20),
+    rank VARCHAR(5),
+    league_points INTEGER DEFAULT 0,
+    wins INTEGER DEFAULT 0,
+    losses INTEGER DEFAULT 0,
+    snapshot_at TIMESTAMP DEFAULT NOW()
+);
+
 
 -- Guild membership tracking
 CREATE TABLE IF NOT EXISTS guild_members (
@@ -199,6 +213,8 @@ CREATE INDEX IF NOT EXISTS idx_champion_stats_user ON user_champion_stats(user_i
 CREATE INDEX IF NOT EXISTS idx_champion_stats_score ON user_champion_stats(score DESC);
 CREATE INDEX IF NOT EXISTS idx_mastery_delta_user_champ ON user_mastery_delta(user_id, champion_id);
 CREATE INDEX IF NOT EXISTS idx_ranks_user ON user_ranks(user_id);
+CREATE INDEX IF NOT EXISTS idx_ranked_progress_lookup
+    ON ranked_progress_snapshots(guild_id, discord_user_id, puuid, snapshot_at DESC);
 CREATE INDEX IF NOT EXISTS idx_guild_members_guild ON guild_members(guild_id);
 CREATE INDEX IF NOT EXISTS idx_verification_expires ON verification_codes(expires_at);
 CREATE INDEX IF NOT EXISTS idx_allowed_channels_guild ON allowed_channels(guild_id);

@@ -945,6 +945,70 @@ class Database:
                 return cur.fetchall()
         finally:
             self.return_connection(conn)
+
+    def save_ranked_progress_snapshot(
+        self,
+        guild_id: int,
+        discord_user_id: int,
+        puuid: str,
+        tier: str,
+        rank: str,
+        league_points: int,
+        wins: int,
+        losses: int,
+    ):
+        """Store a ranked progress snapshot used for LP/games delta calculations."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO ranked_progress_snapshots
+                    (guild_id, discord_user_id, puuid, tier, rank, league_points, wins, losses)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        guild_id,
+                        discord_user_id,
+                        puuid,
+                        tier,
+                        rank,
+                        int(league_points),
+                        int(wins),
+                        int(losses),
+                    ),
+                )
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def get_latest_ranked_progress_snapshot(
+        self,
+        guild_id: int,
+        discord_user_id: int,
+        puuid: str,
+        max_age_hours: int = 36,
+    ) -> Optional[Dict]:
+        """Get the latest ranked progress snapshot for a user/account in a guild."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM ranked_progress_snapshots
+                    WHERE guild_id = %s
+                      AND discord_user_id = %s
+                      AND puuid = %s
+                      AND snapshot_at >= NOW() - (%s || ' hours')::interval
+                    ORDER BY snapshot_at DESC
+                    LIMIT 1
+                    """,
+                    (guild_id, discord_user_id, puuid, max_age_hours),
+                )
+                return cur.fetchone()
+        finally:
+            self.return_connection(conn)
     
     # ==================== LEADERBOARD QUERIES ====================
     

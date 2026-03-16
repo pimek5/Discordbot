@@ -55,6 +55,20 @@ class LeaderboardCommands(commands.Cog):
         self.bot = bot
         self.riot_api = riot_api
         self.guild = discord.Object(id=guild_id)
+
+    def _format_today_progress(self, current_lp: int, current_wins: int, current_losses: int, snapshot: Optional[dict]) -> str:
+        """Format LP and games delta against the latest snapshot."""
+        if not snapshot:
+            return "today: -- LP / --G"
+
+        prev_lp = int(snapshot.get('league_points') or 0)
+        prev_wins = int(snapshot.get('wins') or 0)
+        prev_losses = int(snapshot.get('losses') or 0)
+
+        lp_delta = int(current_lp) - prev_lp
+        games_delta = (int(current_wins) + int(current_losses)) - (prev_wins + prev_losses)
+        lp_prefix = "+" if lp_delta >= 0 else ""
+        return f"today: {lp_prefix}{lp_delta} LP / {max(games_delta, 0)}G"
     
     @app_commands.command(name="top", description="View champion leaderboard")
     @app_commands.describe(
@@ -296,6 +310,11 @@ class LeaderboardCommands(commands.Cog):
                                 lp = rank_data.get('leaguePoints', 0)
                                 wins = rank_data.get('wins', 0)
                                 losses = rank_data.get('losses', 0)
+                                total_games = wins + losses
+
+                                # Require at least one ranked game to appear in leaderboard.
+                                if total_games < 1:
+                                    continue
                                 
                                 # Calculate priority
                                 tier_priority = rank_priority.get(tier, -1)
@@ -310,6 +329,7 @@ class LeaderboardCommands(commands.Cog):
                                         'lp': lp,
                                         'wins': wins,
                                         'losses': losses,
+                                        'puuid': account['puuid'],
                                         'region': account['region'].upper(),
                                         'riot_name': f"{account['riot_id_game_name']}#{account['riot_id_tagline']}"
                                     }
@@ -343,7 +363,7 @@ class LeaderboardCommands(commands.Cog):
                 except Exception:
                     pass
                 await interaction.followup.send(
-                    f"❌ No ranked players found{region_text}!",
+                    f"❌ No one has played a ranked game yet{region_text}.",
                     ephemeral=True
                 )
                 return
@@ -389,6 +409,12 @@ class LeaderboardCommands(commands.Cog):
                 
                 rank_emoji = get_rank_emoji(tier)
                 region_flag = region_flags.get(region_code, '🌍')
+                snapshot = db.get_latest_ranked_progress_snapshot(
+                    interaction.guild.id,
+                    member.id,
+                    data.get('puuid', ''),
+                )
+                today_progress = self._format_today_progress(lp, wins, losses, snapshot)
                 
                 # Format rank text
                 if tier in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
@@ -396,28 +422,8 @@ class LeaderboardCommands(commands.Cog):
                 else:
                     rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
                 
-                # Display priority: display_name (server nick) > global username > riot name
-                user_display = None
-                
-                # Priority 1: Try member display_name (server nickname)
-                if member and hasattr(member, 'display_name') and member.display_name:
-                    user_display = f"**{member.display_name}**"
-                
-                # Priority 2: Fetch global username if display_name not available
-                if not user_display and member:
-                    try:
-                        fetched_user = await self.bot.fetch_user(member.id)
-                        if fetched_user and fetched_user.name:
-                            user_display = f"**{fetched_user.name}**"
-                    except:
-                        pass
-                
-                # Final fallback: use riot name
-                if not user_display:
-                    user_display = f"**{data.get('riot_name', 'Unknown')}**"
-                
-                entry_text = f"{i}. {user_display} {region_flag} **{data['region']}**\n"
-                entry_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR)\n"
+                entry_text = f"{i}. {member.mention} {region_flag} **{data['region']}**\n"
+                entry_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR) • {today_progress}\n"
                 
                 # Check if adding this entry would exceed 1024 characters
                 if len(current_part) + len(entry_text) > 1024:
@@ -446,7 +452,7 @@ class LeaderboardCommands(commands.Cog):
             else:
                 embed.add_field(
                     name="📊 Rankings",
-                    value="No ranked players",
+                    value="No one has played a ranked game yet.",
                     inline=False
                 )
             
@@ -503,6 +509,23 @@ class LeaderboardCommands(commands.Cog):
                         )
             
             embed.set_footer(text=f"Total ranked players: {len(ranked_members)} • Requested by {interaction.user.name}")
+
+            # Save snapshots after rendering so delta is based on previous state.
+            for entry in ranked_members:
+                data = entry['data']
+                puuid = data.get('puuid')
+                if not puuid:
+                    continue
+                db.save_ranked_progress_snapshot(
+                    interaction.guild.id,
+                    entry['member'].id,
+                    puuid,
+                    data.get('tier', 'UNRANKED'),
+                    data.get('rank', 'I'),
+                    int(data.get('lp', 0)),
+                    int(data.get('wins', 0)),
+                    int(data.get('losses', 0)),
+                )
             
             message = await interaction.followup.send(embed=embed)
             
