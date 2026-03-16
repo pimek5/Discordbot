@@ -1,5 +1,5 @@
 [build]
-builder = "RAILPACK"
+builder = "NIXPACKS"
 
 [deploy]
 startCommand = "python bot.py"
