@@ -22,6 +22,7 @@ import json
 import glob
 import uuid
 import re
+import base64
 from urllib.parse import urlparse
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -39,6 +40,7 @@ TOKEN = os.getenv('BOT_TOKEN')
 YTDL_COOKIES_FILE = os.getenv('YTDL_COOKIES_FILE')
 YTDL_COOKIES_FROM_BROWSER = os.getenv('YTDL_COOKIES_FROM_BROWSER')
 YTDL_COOKIES_PROFILE = os.getenv('YTDL_COOKIES_PROFILE')
+YTDL_COOKIES_DATA = os.getenv('YTDL_COOKIES_DATA')
 
 
 def parse_cookies_from_browser_value(value: Optional[str], profile: Optional[str]):
@@ -63,6 +65,61 @@ def parse_cookies_from_browser_value(value: Optional[str], profile: Optional[str
         return (raw, profile.strip())
 
     return raw
+
+
+def resolve_cookiefile_path(cookiefile_value: Optional[str]) -> Optional[str]:
+    """Resolve cookie file path from env, handling relative paths safely."""
+    if not cookiefile_value:
+        return None
+
+    raw = cookiefile_value.strip()
+    if not raw:
+        return None
+
+    # Relative path should be relative to this file directory, not process CWD.
+    if os.path.isabs(raw):
+        candidate = raw
+    else:
+        candidate = os.path.join(os.path.dirname(__file__), raw)
+
+    if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+        return candidate
+
+    logger.warning("⚠️ YTDL_COOKIES_FILE is set but file is missing or empty: %s", candidate)
+    return None
+
+
+def ensure_cookiefile_from_env_data(cookies_data: Optional[str]) -> Optional[str]:
+    """Create runtime cookie file from env content (plain text or base64)."""
+    if not cookies_data:
+        return None
+
+    data = cookies_data.strip()
+    if not data:
+        return None
+
+    try:
+        decoded = base64.b64decode(data, validate=True)
+        content = decoded.decode('utf-8', errors='ignore')
+    except Exception:
+        content = data
+
+    if not content.strip():
+        return None
+
+    runtime_cookie_path = os.path.join(os.path.dirname(__file__), '.runtime_cookies.txt')
+    try:
+        with open(runtime_cookie_path, 'w', encoding='utf-8') as handle:
+            handle.write(content)
+        return runtime_cookie_path
+    except Exception as e:
+        logger.warning("⚠️ Failed to create runtime cookie file from YTDL_COOKIES_DATA: %s", e)
+        return None
+
+
+RESOLVED_YTDL_COOKIEFILE = resolve_cookiefile_path(YTDL_COOKIES_FILE)
+if not RESOLVED_YTDL_COOKIEFILE:
+    RESOLVED_YTDL_COOKIEFILE = ensure_cookiefile_from_env_data(YTDL_COOKIES_DATA)
 
 # Konfiguracja yt-dlp
 YTDL_FORMAT_OPTIONS = {
@@ -106,8 +163,8 @@ YTDL_FORMAT_OPTIONS = {
 def apply_cookies_to_ytdl_options(options: Dict) -> Dict:
     """Apply cookie settings to yt-dlp options if configured via env."""
     opts = options.copy()
-    if YTDL_COOKIES_FILE:
-        opts['cookiefile'] = YTDL_COOKIES_FILE
+    if RESOLVED_YTDL_COOKIEFILE:
+        opts['cookiefile'] = RESOLVED_YTDL_COOKIEFILE
     parsed_cookies = parse_cookies_from_browser_value(YTDL_COOKIES_FROM_BROWSER, YTDL_COOKIES_PROFILE)
     if parsed_cookies:
         opts['cookiesfrombrowser'] = parsed_cookies
