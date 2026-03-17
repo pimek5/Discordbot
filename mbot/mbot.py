@@ -40,6 +40,30 @@ YTDL_COOKIES_FILE = os.getenv('YTDL_COOKIES_FILE')
 YTDL_COOKIES_FROM_BROWSER = os.getenv('YTDL_COOKIES_FROM_BROWSER')
 YTDL_COOKIES_PROFILE = os.getenv('YTDL_COOKIES_PROFILE')
 
+
+def parse_cookies_from_browser_value(value: Optional[str], profile: Optional[str]):
+    """Parse cookies-from-browser env in forms: browser, browser:profile."""
+    if not value:
+        return None
+
+    raw = value.strip()
+    if not raw:
+        return None
+
+    if ':' in raw:
+        browser, parsed_profile = raw.split(':', 1)
+        browser = browser.strip()
+        parsed_profile = parsed_profile.strip()
+        if browser and parsed_profile:
+            return (browser, parsed_profile)
+        if browser:
+            return browser
+
+    if profile and profile.strip():
+        return (raw, profile.strip())
+
+    return raw
+
 # Konfiguracja yt-dlp
 YTDL_FORMAT_OPTIONS = {
     'format': 'bestaudio[ext=m4a]/bestaudio/best',
@@ -84,11 +108,9 @@ def apply_cookies_to_ytdl_options(options: Dict) -> Dict:
     opts = options.copy()
     if YTDL_COOKIES_FILE:
         opts['cookiefile'] = YTDL_COOKIES_FILE
-    if YTDL_COOKIES_FROM_BROWSER:
-        if YTDL_COOKIES_PROFILE:
-            opts['cookiesfrombrowser'] = (YTDL_COOKIES_FROM_BROWSER, YTDL_COOKIES_PROFILE)
-        else:
-            opts['cookiesfrombrowser'] = YTDL_COOKIES_FROM_BROWSER
+    parsed_cookies = parse_cookies_from_browser_value(YTDL_COOKIES_FROM_BROWSER, YTDL_COOKIES_PROFILE)
+    if parsed_cookies:
+        opts['cookiesfrombrowser'] = parsed_cookies
     return opts
 
 FFMPEG_OPTIONS = {
@@ -1724,8 +1746,8 @@ async def play(interaction: discord.Interaction, url: str):
         error_text = str(e)
         if 'Sign in to confirm' in error_text or 'cookies' in error_text:
             await interaction.followup.send(
-                "⚠️ YouTube requires authentication. Set `YTDL_COOKIES_FILE` or "
-                "`YTDL_COOKIES_FROM_BROWSER` in the bot environment and try again."
+                "⚠️ YouTube requires authentication. Configure YTDL_COOKIES_FILE or "
+                "YTDL_COOKIES_FROM_BROWSER (for example: chrome:Default) in the bot environment and try again."
             )
         else:
             await interaction.followup.send(f"⚠️ An error occurred during playback: {error_text}")
