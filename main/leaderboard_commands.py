@@ -757,14 +757,18 @@ class LeaderboardCommands(commands.Cog):
                 )
                 return
 
-            view = RankTopView(
-                cog=self,
-                guild=interaction.guild,
-                ranked_members=ranked_members,
-                region=region,
-                requested_by=interaction.user.name,
-            )
-            view._sync_buttons()
+            view = None
+            try:
+                view = RankTopView(
+                    cog=self,
+                    guild=interaction.guild,
+                    ranked_members=ranked_members,
+                    region=region,
+                    requested_by=interaction.user.name,
+                )
+                view._sync_buttons()
+            except RuntimeError as loop_error:
+                logger.warning("⚠️ Failed to initialize RankTopView (no running event loop): %s", loop_error)
 
             embed = self._build_ranked_embed(
                 guild=interaction.guild,
@@ -795,13 +799,33 @@ class LeaderboardCommands(commands.Cog):
                         inline=False,
                     )
 
-            await interaction.followup.send(embed=embed, view=view)
+            try:
+                if view is not None:
+                    await interaction.followup.send(embed=embed, view=view)
+                else:
+                    await interaction.followup.send(embed=embed)
+            except discord.NotFound:
+                logger.warning("⚠️ Interaction followup expired in ranktop; sending message to channel fallback")
+                if interaction.channel:
+                    if view is not None:
+                        await interaction.channel.send(embed=embed, view=view)
+                    else:
+                        await interaction.channel.send(embed=embed)
+                else:
+                    raise
             self._save_ranked_snapshots(interaction.guild.id, ranked_members)
             self._mark_rank_refresh(interaction.guild.id)
 
         except Exception as e:
-            logger.error(f"Error in ranktop: {e}")
-            await interaction.followup.send("❌ An error occurred while fetching leaderboard data.", ephemeral=True)
+            logger.exception("Error in ranktop: %s", e)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ An error occurred while fetching leaderboard data.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ An error occurred while fetching leaderboard data.", ephemeral=True)
+            except discord.NotFound:
+                if interaction.channel:
+                    await interaction.channel.send("❌ An error occurred while fetching leaderboard data.")
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
     """Setup leaderboard commands"""
