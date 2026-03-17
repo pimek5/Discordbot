@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import logging
 import json
+import threading
 
 logger = logging.getLogger('database')
 
@@ -19,58 +20,86 @@ class Database:
     def __init__(self, database_url: str):
         self.database_url = database_url
         self.connection_pool = None
+        self._pool_lock = threading.RLock()
+        self._pool_generation = 0
+        self._checked_out_generations = {}
+        self._initialized = False
         
     def initialize(self):
         """Initialize connection pool"""
-        try:
-            print("🔄 Creating database connection pool...")
-            self._create_pool()
-            print("✅ Database connection pool created")
-            logger.info("✅ Database connection pool created")
-            
-            # Create tables if they don't exist
-            print("🔄 Creating/verifying database tables...")
-            self.create_tables()
-            print("✅ Database tables created/verified")
-            
-        except Exception as e:
-            print(f"❌ Failed to create connection pool: {e}")
-            logger.error(f"❌ Failed to create connection pool: {e}")
-            raise
+        with self._pool_lock:
+            if self._initialized and self.connection_pool is not None:
+                return
+
+            try:
+                print("🔄 Creating database connection pool...")
+                self._create_pool()
+                print("✅ Database connection pool created")
+                logger.info("✅ Database connection pool created")
+
+                # Create tables if they don't exist
+                print("🔄 Creating/verifying database tables...")
+                self.create_tables()
+                print("✅ Database tables created/verified")
+                self._initialized = True
+
+            except Exception as e:
+                print(f"❌ Failed to create connection pool: {e}")
+                logger.error(f"❌ Failed to create connection pool: {e}")
+                raise
 
     def _create_pool(self):
         """Create/recreate connection pool"""
-        self.connection_pool = pool.ThreadedConnectionPool(
-            minconn=1,
-            maxconn=10,
-            dsn=self.database_url,
-            connect_timeout=10
-        )
+        with self._pool_lock:
+            self.connection_pool = pool.ThreadedConnectionPool(
+                minconn=1,
+                maxconn=10,
+                dsn=self.database_url,
+                connect_timeout=10
+            )
+            self._pool_generation += 1
     
     def get_connection(self):
         """Get a connection from the pool"""
         if self.connection_pool is None:
-            self.initialize()
+            with self._pool_lock:
+                if self.connection_pool is None:
+                    self.initialize()
 
         last_error = None
         for attempt in range(1, 4):
             try:
-                return self.connection_pool.getconn()
+                with self._pool_lock:
+                    if self.connection_pool is None:
+                        self._create_pool()
+                    conn = self.connection_pool.getconn()
+                    self._checked_out_generations[id(conn)] = self._pool_generation
+                    return conn
             except (psycopg2.OperationalError, psycopg2.InterfaceError, pool.PoolError) as error:
                 last_error = error
                 logger.warning("⚠️ DB connection attempt %s/3 failed: %s", attempt, error)
 
+                error_text = str(error).lower()
+                if "exhausted" in error_text:
+                    if attempt < 3:
+                        time.sleep(0.4 * attempt)
+                        continue
+                    break
+
                 try:
-                    if self.connection_pool is not None:
-                        self.connection_pool.closeall()
+                    with self._pool_lock:
+                        if self.connection_pool is not None and "closed" in error_text:
+                            self.connection_pool.closeall()
+                            self.connection_pool = None
                 except Exception:
                     pass
 
-                self.connection_pool = None
                 if attempt < 3:
                     time.sleep(1.5 * attempt)
                     try:
-                        self._create_pool()
+                        with self._pool_lock:
+                            if self.connection_pool is None:
+                                self._create_pool()
                     except Exception as pool_error:
                         last_error = pool_error
                         logger.warning("⚠️ Failed to recreate DB pool: %s", pool_error)
@@ -83,7 +112,12 @@ class Database:
             return
 
         try:
-            if self.connection_pool is None:
+            with self._pool_lock:
+                checked_out_generation = self._checked_out_generations.pop(id(conn), None)
+                pool_ref = self.connection_pool
+                current_generation = self._pool_generation
+
+            if pool_ref is None or checked_out_generation is None or checked_out_generation != current_generation:
                 try:
                     conn.close()
                 except Exception:
@@ -91,9 +125,9 @@ class Database:
                 return
 
             if getattr(conn, "closed", 1) != 0:
-                self.connection_pool.putconn(conn, close=True)
+                pool_ref.putconn(conn, close=True)
             else:
-                self.connection_pool.putconn(conn)
+                pool_ref.putconn(conn)
         except Exception as error:
             logger.warning("⚠️ Failed to return DB connection to pool: %s", error)
     
@@ -2248,9 +2282,12 @@ class Database:
     
     def close(self):
         """Close all connections"""
-        if self.connection_pool:
-            self.connection_pool.closeall()
-            logger.info("✅ Database connections closed")
+        with self._pool_lock:
+            if self.connection_pool:
+                self.connection_pool.closeall()
+                self.connection_pool = None
+                self._checked_out_generations.clear()
+                logger.info("✅ Database connections closed")
 
 # Global database instance
 db = None
