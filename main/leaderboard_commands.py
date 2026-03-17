@@ -120,11 +120,11 @@ class RankTopView(discord.ui.View):
                 requested_by=self.requested_by,
                 page=self.current_page,
                 page_size=RANK_PAGE_SIZE,
-                only_played_today=True,
+                only_played_today=False,
             )
             if interaction.message:
                 await interaction.message.edit(embed=embed, view=self)
-            self.cog._save_ranked_snapshots(self.guild.id, self.all_ranked_members)
+            self.cog._save_ranked_snapshots(self.guild.id, self.ranked_members)
             self.cog._mark_rank_refresh(self.guild.id)
         except Exception as e:
             logger.error("❌ Refresh button failed for guild %s: %s", self.guild.id, e)
