@@ -143,6 +143,30 @@ class RankPersistentView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
 
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, custom_id="rank_prev_button")
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This button only works in a server.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        try:
+            await self.cog._change_persistent_rank_page(interaction.guild, -1)
+        except Exception as e:
+            logger.error("❌ Persistent prev page failed for guild %s: %s", interaction.guild.id, e)
+            await interaction.followup.send("❌ Couldn't change page. Try again.", ephemeral=True)
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, custom_id="rank_next_button")
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This button only works in a server.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        try:
+            await self.cog._change_persistent_rank_page(interaction.guild, 1)
+        except Exception as e:
+            logger.error("❌ Persistent next page failed for guild %s: %s", interaction.guild.id, e)
+            await interaction.followup.send("❌ Couldn't change page. Try again.", ephemeral=True)
+
     @discord.ui.button(label="🔃", style=discord.ButtonStyle.primary, custom_id="rank_refresh_button")
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.guild:
@@ -168,6 +192,7 @@ class LeaderboardCommands(commands.Cog):
         self.bot = bot
         self.riot_api = riot_api
         self.guild = discord.Object(id=guild_id)
+        self._persistent_rank_pages = {}
         self.persistent_rank_view = RankPersistentView(self)
         self.bot.add_view(self.persistent_rank_view)
 
@@ -502,6 +527,46 @@ class LeaderboardCommands(commands.Cog):
                     int(data.get('losses', 0)),
                 )
 
+    async def _change_persistent_rank_page(self, guild: discord.Guild, delta: int):
+        """Change persistent leaderboard page and update the configured message."""
+        db = get_db()
+        message_id_raw = db.get_guild_setting(guild.id, 'rank_leaderboard_message_id')
+        if not message_id_raw or not str(message_id_raw).isdigit():
+            await self._update_or_create_rank_embed(guild)
+            return
+
+        channel_id_raw = db.get_guild_setting(guild.id, 'leaderboard_channel')
+        if not channel_id_raw or not str(channel_id_raw).isdigit():
+            return
+
+        channel = guild.get_channel(int(channel_id_raw))
+        if channel is None:
+            return
+
+        try:
+            message = await channel.fetch_message(int(message_id_raw))
+        except discord.NotFound:
+            await self._update_or_create_rank_embed(guild)
+            return
+
+        ranked_members = await self._collect_ranked_members(guild)
+        total_pages = max(1, math.ceil(len(ranked_members) / RANK_PAGE_SIZE))
+        current_page = int(self._persistent_rank_pages.get(guild.id, 1))
+        next_page = max(1, min(current_page + delta, total_pages))
+        self._persistent_rank_pages[guild.id] = next_page
+
+        embed = self._build_ranked_embed(
+            guild,
+            ranked_members,
+            requested_by="Auto update",
+            page=next_page,
+            page_size=RANK_PAGE_SIZE,
+            only_played_today=False,
+        )
+        await message.edit(embed=embed, view=self.persistent_rank_view)
+        self._save_ranked_snapshots(guild.id, ranked_members)
+        self._mark_rank_refresh(guild.id)
+
     async def _update_or_create_rank_embed(self, guild: discord.Guild):
         """Update persistent ranked leaderboard embed, or create it if missing."""
         db = get_db()
@@ -537,12 +602,16 @@ class LeaderboardCommands(commands.Cog):
             return
 
         ranked_members = await self._collect_ranked_members(guild)
+        total_pages = max(1, math.ceil(len(ranked_members) / RANK_PAGE_SIZE))
+        current_page = int(self._persistent_rank_pages.get(guild.id, 1))
+        current_page = max(1, min(current_page, total_pages))
+        self._persistent_rank_pages[guild.id] = current_page
         view = self.persistent_rank_view
         embed = self._build_ranked_embed(
             guild,
             ranked_members,
             requested_by="Auto update",
-            page=1,
+            page=current_page,
             page_size=RANK_PAGE_SIZE,
             only_played_today=False,
         )
