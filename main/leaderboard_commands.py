@@ -150,7 +150,7 @@ class RankPersistentView(discord.ui.View):
             return
         await interaction.response.defer()
         try:
-            await self.cog._change_persistent_rank_page(interaction.guild, -1)
+            await self.cog._change_persistent_rank_page(interaction.guild, -1, message=interaction.message)
         except Exception as e:
             logger.error("❌ Persistent prev page failed for guild %s: %s", interaction.guild.id, e)
             await interaction.followup.send("❌ Couldn't change page. Try again.", ephemeral=True)
@@ -162,7 +162,7 @@ class RankPersistentView(discord.ui.View):
             return
         await interaction.response.defer()
         try:
-            await self.cog._change_persistent_rank_page(interaction.guild, 1)
+            await self.cog._change_persistent_rank_page(interaction.guild, 1, message=interaction.message)
         except Exception as e:
             logger.error("❌ Persistent next page failed for guild %s: %s", interaction.guild.id, e)
             await interaction.followup.send("❌ Couldn't change page. Try again.", ephemeral=True)
@@ -173,12 +173,10 @@ class RankPersistentView(discord.ui.View):
             await interaction.response.send_message("❌ This button only works in a server.", ephemeral=True)
             return
 
-        await interaction.response.defer()
-        try:
-            await self.cog._update_or_create_rank_embed(interaction.guild)
-        except Exception as e:
-            logger.error("❌ Persistent refresh failed for guild %s: %s", interaction.guild.id, e)
-            await interaction.followup.send("❌ Refresh failed. Try again in a moment.", ephemeral=True)
+        await interaction.response.send_message(
+            "ℹ️ Ranking updates automatically every 1 hour.",
+            ephemeral=True,
+        )
 
     @discord.ui.button(label="Setup Account", style=discord.ButtonStyle.success, emoji="🔗", custom_id="rank_setup_button")
     async def setup_account_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -193,6 +191,7 @@ class LeaderboardCommands(commands.Cog):
         self.riot_api = riot_api
         self.guild = discord.Object(id=guild_id)
         self._persistent_rank_pages = {}
+        self._persistent_rank_cache = {}
         self.persistent_rank_view = RankPersistentView(self)
         self.bot.add_view(self.persistent_rank_view)
 
@@ -527,29 +526,34 @@ class LeaderboardCommands(commands.Cog):
                     int(data.get('losses', 0)),
                 )
 
-    async def _change_persistent_rank_page(self, guild: discord.Guild, delta: int):
+    async def _change_persistent_rank_page(self, guild: discord.Guild, delta: int, message: Optional[discord.Message] = None):
         """Change persistent leaderboard page and update the configured message."""
         db = get_db()
-        message_id_raw = db.get_guild_setting(guild.id, 'rank_leaderboard_message_id')
-        if not message_id_raw or not str(message_id_raw).isdigit():
-            await self._update_or_create_rank_embed(guild)
-            return
+        if message is None:
+            message_id_raw = db.get_guild_setting(guild.id, 'rank_leaderboard_message_id')
+            if not message_id_raw or not str(message_id_raw).isdigit():
+                await self._update_or_create_rank_embed(guild)
+                return
 
-        channel_id_raw = db.get_guild_setting(guild.id, 'leaderboard_channel')
-        if not channel_id_raw or not str(channel_id_raw).isdigit():
-            return
+            channel_id_raw = db.get_guild_setting(guild.id, 'leaderboard_channel')
+            if not channel_id_raw or not str(channel_id_raw).isdigit():
+                return
 
-        channel = guild.get_channel(int(channel_id_raw))
-        if channel is None:
-            return
+            channel = guild.get_channel(int(channel_id_raw))
+            if channel is None:
+                return
 
-        try:
-            message = await channel.fetch_message(int(message_id_raw))
-        except discord.NotFound:
-            await self._update_or_create_rank_embed(guild)
-            return
+            try:
+                message = await channel.fetch_message(int(message_id_raw))
+            except discord.NotFound:
+                await self._update_or_create_rank_embed(guild)
+                return
 
-        ranked_members = await self._collect_ranked_members(guild)
+        ranked_members = self._persistent_rank_cache.get(guild.id)
+        if ranked_members is None:
+            ranked_members = await self._collect_ranked_members(guild)
+            self._persistent_rank_cache[guild.id] = ranked_members
+
         total_pages = max(1, math.ceil(len(ranked_members) / RANK_PAGE_SIZE))
         current_page = int(self._persistent_rank_pages.get(guild.id, 1))
         next_page = max(1, min(current_page + delta, total_pages))
@@ -564,8 +568,6 @@ class LeaderboardCommands(commands.Cog):
             only_played_today=False,
         )
         await message.edit(embed=embed, view=self.persistent_rank_view)
-        self._save_ranked_snapshots(guild.id, ranked_members)
-        self._mark_rank_refresh(guild.id)
 
     async def _update_or_create_rank_embed(self, guild: discord.Guild):
         """Update persistent ranked leaderboard embed, or create it if missing."""
@@ -602,6 +604,7 @@ class LeaderboardCommands(commands.Cog):
             return
 
         ranked_members = await self._collect_ranked_members(guild)
+        self._persistent_rank_cache[guild.id] = ranked_members
         total_pages = max(1, math.ceil(len(ranked_members) / RANK_PAGE_SIZE))
         current_page = int(self._persistent_rank_pages.get(guild.id, 1))
         current_page = max(1, min(current_page, total_pages))
@@ -882,6 +885,8 @@ class LeaderboardCommands(commands.Cog):
                         await interaction.channel.send(embed=embed)
                 else:
                     raise
+            self._persistent_rank_cache[interaction.guild.id] = ranked_members
+            self._persistent_rank_pages[interaction.guild.id] = 1
             self._save_ranked_snapshots(interaction.guild.id, ranked_members)
             self._mark_rank_refresh(interaction.guild.id)
 
