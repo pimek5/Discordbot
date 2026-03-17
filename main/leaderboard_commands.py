@@ -77,9 +77,7 @@ class RankTopView(discord.ui.View):
         self.next_button.disabled = self.current_page >= total_pages
 
     async def _refresh_data(self):
-        self.cog._maybe_reset_daily_snapshots(self.guild.id)
-        self.all_ranked_members = await self.cog._collect_ranked_members(self.guild, region=self.region)
-        self.ranked_members = self.cog._filter_members_played_today(self.guild.id, self.all_ranked_members)
+        self.ranked_members = await self.cog._collect_ranked_members(self.guild, region=self.region)
         max_pages = self._max_pages()
         if self.current_page > max_pages:
             self.current_page = max_pages
@@ -93,7 +91,7 @@ class RankTopView(discord.ui.View):
             requested_by=self.requested_by,
             page=self.current_page,
             page_size=RANK_PAGE_SIZE,
-            only_played_today=True,
+            only_played_today=False,
         )
         await interaction.response.edit_message(embed=embed, view=self)
 
@@ -434,7 +432,7 @@ class LeaderboardCommands(commands.Cog):
         region_text = f" • {region.upper()}" if region else ""
         embed = discord.Embed(
             title=f"🏆 Server Rank Leaderboard{region_text}",
-            description=f"**{guild.name}** • TOP10 Ranked Players • Page {page}/{total_pages}",
+            description=f"**{guild.name}** • Ranked Players • Page {page}/{total_pages}",
             color=0xC89B3C
         )
 
@@ -456,12 +454,6 @@ class LeaderboardCommands(commands.Cog):
 
             rank_emoji = get_rank_emoji(tier)
             region_flag = region_flags.get(data['region'].lower(), '🌍')
-            aggregate_progress = entry.get('aggregate_progress') or self._aggregate_account_progress(
-                guild.id,
-                member.id,
-                entry.get('accounts', []),
-            )
-            today_progress = self._format_aggregate_today_progress(aggregate_progress)
 
             if tier in ['MASTER', 'GRANDMASTER', 'CHALLENGER']:
                 rank_text = f"{rank_emoji} **{tier.capitalize()}**"
@@ -469,7 +461,7 @@ class LeaderboardCommands(commands.Cog):
                 rank_text = f"{rank_emoji} **{tier.capitalize()} {rank}**"
 
             entry_text = f"{position}. {member.mention} {region_flag} **{data['region']}**\n"
-            entry_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR) • {today_progress}\n"
+            entry_text += f"   {rank_text} • **{lp} LP** • {wins}W {losses}L ({winrate:.0f}% WR)\n"
 
             if len(current_part) + len(entry_text) > 1024:
                 leaderboard_parts.append(current_part)
@@ -485,7 +477,7 @@ class LeaderboardCommands(commands.Cog):
                 field_name = "📊 Rankings" if idx == 0 else "📊 Rankings (continued)"
                 embed.add_field(name=field_name, value=part, inline=False)
         else:
-            embed.add_field(name="📊 Rankings", value="No one has played a ranked game in the last 24h.", inline=False)
+            embed.add_field(name="📊 Rankings", value="No ranked players found.", inline=False)
 
         footer_author = requested_by or "Auto update"
         embed.set_footer(text=f"Total ranked players: {total_players} • {footer_author}")
@@ -552,7 +544,7 @@ class LeaderboardCommands(commands.Cog):
             requested_by="Auto update",
             page=1,
             page_size=RANK_PAGE_SIZE,
-            only_played_today=True,
+            only_played_today=False,
         )
 
         message_id_raw = db.get_guild_setting(guild.id, 'rank_leaderboard_message_id')
@@ -757,21 +749,10 @@ class LeaderboardCommands(commands.Cog):
 
             ranked_members = await self._collect_ranked_members(interaction.guild, region=region)
 
-            filtered_members = []
-            for entry in ranked_members:
-                aggregate_progress = entry.get('aggregate_progress') or self._aggregate_account_progress(
-                    interaction.guild.id,
-                    entry['member'].id,
-                    entry.get('accounts', []),
-                )
-                entry['aggregate_progress'] = aggregate_progress
-                if aggregate_progress.get('played_today'):
-                    filtered_members.append(entry)
-
-            if not filtered_members:
+            if not ranked_members:
                 region_text = f" in {region.upper()}" if region else ""
                 await interaction.followup.send(
-                    f"❌ No one has played a ranked game in the last 24h{region_text}.",
+                    f"❌ No ranked players found{region_text}.",
                     ephemeral=True,
                 )
                 return
@@ -779,7 +760,7 @@ class LeaderboardCommands(commands.Cog):
             view = RankTopView(
                 cog=self,
                 guild=interaction.guild,
-                ranked_members=filtered_members,
+                ranked_members=ranked_members,
                 region=region,
                 requested_by=interaction.user.name,
             )
@@ -787,30 +768,30 @@ class LeaderboardCommands(commands.Cog):
 
             embed = self._build_ranked_embed(
                 guild=interaction.guild,
-                ranked_members=filtered_members,
+                ranked_members=ranked_members,
                 region=region,
                 requested_by=interaction.user.name,
                 page=1,
                 page_size=RANK_PAGE_SIZE,
-                only_played_today=True,
+                only_played_today=False,
             )
 
             if user:
                 user_position = None
-                for i, entry in enumerate(filtered_members, start=1):
+                for i, entry in enumerate(ranked_members, start=1):
                     if entry['member'].id == user.id:
                         user_position = i
                         break
                 if user_position:
                     embed.add_field(
                         name=f"📍 {user.display_name}'s Position",
-                        value=f"**#{user_position}** in today's ranking",
+                        value=f"**#{user_position}** in the server ranking",
                         inline=False,
                     )
                 else:
                     embed.add_field(
                         name=f"📍 {user.display_name}'s Position",
-                        value="Not shown (no ranked game played in the last 24h or outside filter).",
+                        value="Not ranked or not in this server.",
                         inline=False,
                     )
 
