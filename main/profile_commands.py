@@ -525,15 +525,15 @@ class ProfileCommands(commands.Cog):
             value=f"1. Click your avatar in League Client\n"
                   f"2. Go to **Settings → Profile Icon**\n"
                   f"3. Select icon: **#{verification_icon}**\n"
-                  f"4. Click **Save** (no need to play games!)\n\n"
+                  f"4. Return to profile (no need to play games!)\n\n"
                   f"[Preview Icon](https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{verification_icon}.jpg)",
             inline=False
         )
         
         embed.add_field(
             name="✅ Step 3: Verify (Auto-checks every 5 seconds)",
-            value=f"After saving icon, use `/verifyacc` and **wait**\n"
-                  f"• Bot polls Riot API every 5 seconds\n"
+            value=f"After changing icon, use `/verifyacc` and **wait**\n"
+                f"• Bot checks rapidly at first, then less often\n"
                   f"• Verification completes automatically when detected\n"
                   f"• **Timeout: 10 minutes** from now",
             inline=False
@@ -579,39 +579,53 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        # Poll Riot API every 5 seconds until icon matches or verification expires.
+        # Poll Riot API with adaptive intervals until icon matches or verification expires.
+        # This is faster for normal cases and lighter on Riot API over longer waits.
         logger.info(f"🔐 Verifying icon for {verification['riot_id_game_name']}#{verification['riot_id_tagline']}")
 
         expected_icon = int(verification['code'])  # Icon ID stored as code
         summoner_data = None
         current_icon = 0
         resolved_region = verification['region']
-        poll_interval_seconds = 5
         verified = False
         had_profile_fetch = False
+        started_at = datetime.now()
+        attempts = 0
+        fallback_every_n_attempts = 4
+
+        # Resolve region once up front if needed.
+        first_try = await self.riot_api.get_summoner_by_puuid(
+            verification['puuid'],
+            resolved_region,
+            retries=1,
+        )
+        if first_try:
+            summoner_data = first_try
+        else:
+            fallback = await self.riot_api.get_summoner_by_puuid_any_region(
+                verification['puuid'],
+                preferred_region=verification['region'],
+                retries_per_region=1,
+            )
+            if fallback:
+                resolved_region = fallback['region']
+                summoner_data = fallback['data']
+                logger.info(
+                    "🔁 Verification fallback resolved region %s for %s#%s",
+                    resolved_region,
+                    verification['riot_id_game_name'],
+                    verification['riot_id_tagline'],
+                )
 
         while datetime.now() <= verification['expires_at']:
-            summoner_data = await self.riot_api.get_summoner_by_puuid(
-                verification['puuid'],
-                resolved_region
-            )
+            attempts += 1
 
-            # Region fallback: if primary region failed, probe all regions with this PUUID.
-            if not summoner_data:
-                fallback = await self.riot_api.get_summoner_by_puuid_any_region(
+            if summoner_data is None:
+                summoner_data = await self.riot_api.get_summoner_by_puuid(
                     verification['puuid'],
-                    preferred_region=verification['region'],
-                    retries_per_region=1,
+                    resolved_region,
+                    retries=1,
                 )
-                if fallback:
-                    resolved_region = fallback['region']
-                    summoner_data = fallback['data']
-                    logger.info(
-                        "🔁 Verification fallback resolved region %s for %s#%s",
-                        resolved_region,
-                        verification['riot_id_game_name'],
-                        verification['riot_id_tagline'],
-                    )
 
             if summoner_data:
                 had_profile_fetch = True
@@ -620,7 +634,29 @@ class ProfileCommands(commands.Cog):
                     verified = True
                     break
 
-            # Keep polling until verified or code expires.
+            # Periodically re-resolve region (not every loop) to avoid heavy API fan-out.
+            if attempts % fallback_every_n_attempts == 0:
+                fallback = await self.riot_api.get_summoner_by_puuid_any_region(
+                    verification['puuid'],
+                    preferred_region=resolved_region,
+                    retries_per_region=1,
+                )
+                if fallback:
+                    resolved_region = fallback['region']
+                    summoner_data = fallback['data']
+                else:
+                    summoner_data = None
+            else:
+                summoner_data = None
+
+            elapsed = (datetime.now() - started_at).total_seconds()
+            if elapsed < 30:
+                poll_interval_seconds = 2
+            elif elapsed < 120:
+                poll_interval_seconds = 5
+            else:
+                poll_interval_seconds = 10
+
             await asyncio.sleep(poll_interval_seconds)
 
         if not verified and not had_profile_fetch:
@@ -657,9 +693,9 @@ class ProfileCommands(commands.Cog):
             embed.add_field(
                 name="🔄 Try again:",
                 value=f"1. In League Client → Settings → Profile Icon\n"
-                      f"2. Make sure icon is set to **#{expected_icon}** and **Save**\n"
+                        f"2. Make sure icon is set to **#{expected_icon}**\n"
                       f"3. Run `/verifyacc` again (new 10-minute window)\n"
-                      f"4. Wait for auto-verification (checks every 5 seconds)",
+                        f"4. Wait for auto-verification",
                 inline=False
             )
             
