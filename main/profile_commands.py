@@ -529,7 +529,7 @@ class ProfileCommands(commands.Cog):
         
         embed.add_field(
             name="✅ Step 3: Verify",
-            value=f"After changing your icon, use `/verify` within **10 minutes**",
+            value=f"After changing your icon, use `/verifyacc` (or `/verify`) within **10 minutes**",
             inline=False
         )
         
@@ -728,6 +728,11 @@ class ProfileCommands(commands.Cog):
         embed.set_footer(text="💡 Tip: Use /accounts to manage multiple linked accounts")
         
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="verify", description="Complete account verification")
+    async def verify(self, interaction: discord.Interaction):
+        """Alias for /verifyacc to avoid command-name confusion."""
+        await self.verifyacc(interaction)
     
     @app_commands.command(name="setmain", description="Set your main Riot account")
     @app_commands.describe(riot_id="Riot ID of the account to set as main (Name#TAG)")
