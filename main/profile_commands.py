@@ -2648,6 +2648,17 @@ class ProfileCommands(commands.Cog):
         """View recent match history from all linked accounts with filters"""
         target_user = user or interaction.user
         await interaction.response.defer()
+
+        async def _safe_followup_send(*, embed: Optional[discord.Embed] = None, content: Optional[str] = None,
+                                      ephemeral: bool = False, view: Optional[discord.ui.View] = None):
+            """Send via interaction followup, fallback to channel message if token expired."""
+            try:
+                return await interaction.followup.send(content=content, embed=embed, ephemeral=ephemeral, view=view)
+            except (discord.NotFound, RuntimeError) as send_err:
+                logger.warning("⚠️ /matches followup failed, using channel fallback: %s", send_err)
+                if interaction.channel and not ephemeral:
+                    return await interaction.channel.send(content=content, embed=embed, view=view)
+                return None
         
         db = get_db()
         user_data = db.get_user_by_discord_id(target_user.id)
@@ -2674,7 +2685,7 @@ class ProfileCommands(commands.Cog):
                     inline=False
                 )
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await _safe_followup_send(embed=embed, ephemeral=True)
             return
         
         # Get visible accounts for matches
@@ -2694,7 +2705,7 @@ class ProfileCommands(commands.Cog):
                     inline=False
                 )
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await _safe_followup_send(embed=embed, ephemeral=True)
             return
         
         # Fetch matches from all accounts
@@ -2738,7 +2749,7 @@ class ProfileCommands(commands.Cog):
             
             embed.set_footer(text="💡 Try again in a few moments")
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await _safe_followup_send(embed=embed, ephemeral=True)
             return
         
         # Sort by game creation (newest first)
@@ -2866,7 +2877,9 @@ class ProfileCommands(commands.Cog):
         accounts_list = ", ".join([f"{acc['riot_id_game_name']}#{acc['riot_id_tagline']}" for acc in all_accounts if acc.get('verified')])
         embed.set_footer(text=f"Accounts: {accounts_list}")
         
-        message = await interaction.followup.send(embed=embed)
+        message = await _safe_followup_send(embed=embed)
+        if not message:
+            return
         
         # Auto-delete after 2 minutes
         await asyncio.sleep(120)
