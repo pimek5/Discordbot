@@ -573,62 +573,63 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        # Get current summoner data to check icon.
-        # Riot can return stale profile icon for a few seconds after a change,
-        # so retry briefly before failing verification.
+        # Poll Riot API every 5 seconds until icon matches or verification expires.
         logger.info(f"🔐 Verifying icon for {verification['riot_id_game_name']}#{verification['riot_id_tagline']}")
 
         expected_icon = int(verification['code'])  # Icon ID stored as code
         summoner_data = None
         current_icon = 0
-        max_attempts = 4
         resolved_region = verification['region']
+        poll_interval_seconds = 5
+        verified = False
+        had_profile_fetch = False
 
-        for attempt in range(max_attempts):
+        while datetime.now() <= verification['expires_at']:
             summoner_data = await self.riot_api.get_summoner_by_puuid(
                 verification['puuid'],
                 resolved_region
             )
 
+            # Region fallback: if primary region failed, probe all regions with this PUUID.
+            if not summoner_data:
+                fallback = await self.riot_api.get_summoner_by_puuid_any_region(
+                    verification['puuid'],
+                    preferred_region=verification['region'],
+                    retries_per_region=1,
+                )
+                if fallback:
+                    resolved_region = fallback['region']
+                    summoner_data = fallback['data']
+                    logger.info(
+                        "🔁 Verification fallback resolved region %s for %s#%s",
+                        resolved_region,
+                        verification['riot_id_game_name'],
+                        verification['riot_id_tagline'],
+                    )
+
             if summoner_data:
+                had_profile_fetch = True
                 current_icon = int(summoner_data.get('profileIconId', 0) or 0)
                 if current_icon == expected_icon:
+                    verified = True
                     break
 
-            if attempt < max_attempts - 1:
-                await asyncio.sleep(2)
+            # Keep polling until verified or code expires.
+            await asyncio.sleep(poll_interval_seconds)
 
-        # Region fallback: if we still failed, probe all regions with this PUUID.
-        if (not summoner_data or current_icon != expected_icon):
-            fallback = await self.riot_api.get_summoner_by_puuid_any_region(
-                verification['puuid'],
-                preferred_region=verification['region'],
-                retries_per_region=1,
-            )
-            if fallback:
-                resolved_region = fallback['region']
-                summoner_data = fallback['data']
-                current_icon = int(summoner_data.get('profileIconId', 0) or 0)
-                logger.info(
-                    "🔁 Verification fallback resolved region %s for %s#%s",
-                    resolved_region,
-                    verification['riot_id_game_name'],
-                    verification['riot_id_tagline'],
-                )
-
-        if not summoner_data:
+        if not verified and not had_profile_fetch:
             await interaction.followup.send(
-                "❌ Could not fetch your profile. Try again later.",
+                "❌ Could not fetch your profile during verification window. Use `/link` and try again.",
                 ephemeral=True
             )
             return
-        
-        if current_icon != expected_icon:
-            time_left = (verification['expires_at'] - datetime.now()).total_seconds() / 60
+
+        if not verified:
+            time_left = max(0, (verification['expires_at'] - datetime.now()).total_seconds() / 60)
             
             embed = discord.Embed(
-                title="❌ Verification Failed",
-                description="Your profile icon doesn't match the required verification icon.",
+                title="❌ Verification Expired",
+                description="Verification window ended before your profile icon matched the required icon.",
                 color=0xFF0000
             )
             
@@ -654,8 +655,8 @@ class ProfileCommands(commands.Cog):
                 name="📝 What to do?",
                 value=f"1. Open League Client\n"
                       f"2. Change your profile icon to **#{expected_icon}**\n"
-                      f"3. Wait 10-20 seconds for Riot sync\n"
-                      f"4. Run `/verifyacc` again",
+                      f"3. Run `/link` to generate a new verification icon\n"
+                      f"4. Use `/verifyacc` and keep the icon unchanged until success",
                 inline=False
             )
             
