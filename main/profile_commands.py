@@ -582,11 +582,12 @@ class ProfileCommands(commands.Cog):
         summoner_data = None
         current_icon = 0
         max_attempts = 4
+        resolved_region = verification['region']
 
         for attempt in range(max_attempts):
             summoner_data = await self.riot_api.get_summoner_by_puuid(
                 verification['puuid'],
-                verification['region']
+                resolved_region
             )
 
             if summoner_data:
@@ -596,6 +597,24 @@ class ProfileCommands(commands.Cog):
 
             if attempt < max_attempts - 1:
                 await asyncio.sleep(2)
+
+        # Region fallback: if we still failed, probe all regions with this PUUID.
+        if (not summoner_data or current_icon != expected_icon):
+            fallback = await self.riot_api.get_summoner_by_puuid_any_region(
+                verification['puuid'],
+                preferred_region=verification['region'],
+                retries_per_region=1,
+            )
+            if fallback:
+                resolved_region = fallback['region']
+                summoner_data = fallback['data']
+                current_icon = int(summoner_data.get('profileIconId', 0) or 0)
+                logger.info(
+                    "🔁 Verification fallback resolved region %s for %s#%s",
+                    resolved_region,
+                    verification['riot_id_game_name'],
+                    verification['riot_id_tagline'],
+                )
 
         if not summoner_data:
             await interaction.followup.send(
@@ -648,7 +667,7 @@ class ProfileCommands(commands.Cog):
         # Success! Add account to database (summoner_id no longer available)
         db.add_league_account(
             user['id'],
-            verification['region'],
+            resolved_region,
             verification['riot_id_game_name'],
             verification['riot_id_tagline'],
             verification['puuid'],
@@ -659,7 +678,7 @@ class ProfileCommands(commands.Cog):
         # Get initial mastery snapshot
         mastery_data = await self.riot_api.get_champion_mastery(
             verification['puuid'], 
-            verification['region'], 
+            resolved_region, 
             200
         )
         
@@ -704,7 +723,7 @@ class ProfileCommands(commands.Cog):
         embed.add_field(
             name="🎮 Linked Account",
             value=f"**{verification['riot_id_game_name']}#{verification['riot_id_tagline']}**\n"
-                  f"📍 Region: **{verification['region'].upper()}**\n"
+                  f"📍 Region: **{resolved_region.upper()}**\n"
                   f"🎉 You can now change your icon back!",
             inline=False
         )

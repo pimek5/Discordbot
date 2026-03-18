@@ -283,6 +283,36 @@ class RiotAPI:
         
         logger.warning(f"⚠️ Failed to get summoner after {retries} attempts")
         return None
+
+    async def get_summoner_by_puuid_any_region(
+        self,
+        puuid: str,
+        preferred_region: Optional[str] = None,
+        retries_per_region: int = 2,
+    ) -> Optional[Dict]:
+        """Find summoner data by PUUID across all supported platform regions.
+
+        Returns:
+            dict with keys: region, data
+        """
+        if not self.api_key:
+            return None
+
+        regions = list(PLATFORM_ROUTES.keys())
+        if preferred_region:
+            pref = preferred_region.lower()
+            if pref in regions:
+                regions = [pref] + [r for r in regions if r != pref]
+
+        for region in regions:
+            data = await self.get_summoner_by_puuid(puuid, region, retries=retries_per_region)
+            if data:
+                return {
+                    'region': region,
+                    'data': data,
+                }
+
+        return None
     
     async def verify_third_party_code(self, puuid: str, region: str, 
                                      expected_code: str, retries: int = 3) -> bool:
