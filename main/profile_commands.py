@@ -573,23 +573,36 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        # Get current summoner data to check icon
+        # Get current summoner data to check icon.
+        # Riot can return stale profile icon for a few seconds after a change,
+        # so retry briefly before failing verification.
         logger.info(f"🔐 Verifying icon for {verification['riot_id_game_name']}#{verification['riot_id_tagline']}")
-        
-        summoner_data = await self.riot_api.get_summoner_by_puuid(
-            verification['puuid'],
-            verification['region']
-        )
-        
+
+        expected_icon = int(verification['code'])  # Icon ID stored as code
+        summoner_data = None
+        current_icon = 0
+        max_attempts = 4
+
+        for attempt in range(max_attempts):
+            summoner_data = await self.riot_api.get_summoner_by_puuid(
+                verification['puuid'],
+                verification['region']
+            )
+
+            if summoner_data:
+                current_icon = int(summoner_data.get('profileIconId', 0) or 0)
+                if current_icon == expected_icon:
+                    break
+
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(2)
+
         if not summoner_data:
             await interaction.followup.send(
                 "❌ Could not fetch your profile. Try again later.",
                 ephemeral=True
             )
             return
-        
-        current_icon = summoner_data.get('profileIconId', 0)
-        expected_icon = int(verification['code'])  # Icon ID stored as code
         
         if current_icon != expected_icon:
             time_left = (verification['expires_at'] - datetime.now()).total_seconds() / 60
@@ -622,7 +635,8 @@ class ProfileCommands(commands.Cog):
                 name="📝 What to do?",
                 value=f"1. Open League Client\n"
                       f"2. Change your profile icon to **#{expected_icon}**\n"
-                      f"3. Run `/verifyacc` again",
+                      f"3. Wait 10-20 seconds for Riot sync\n"
+                      f"4. Run `/verifyacc` again",
                 inline=False
             )
             
