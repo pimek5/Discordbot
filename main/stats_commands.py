@@ -170,7 +170,11 @@ class StatsCommands(commands.Cog):
                 recent_champs.append(cname_recent)
 
             role = stats_list[-1]['role']
-            roles[role] = roles.get(role, 0) + 1
+            if role not in roles:
+                roles[role] = {'games': 0, 'wins': 0}
+            roles[role]['games'] += 1
+            if stats_list[-1]['win']:
+                roles[role]['wins'] += 1
 
             cid = stats_list[-1]['champion_id']
             cname = CHAMPION_ID_TO_NAME.get(cid, f"Champ {cid}")
@@ -215,7 +219,7 @@ class StatsCommands(commands.Cog):
             'avg_cs_per_min': avg_cs_per_min,
             'avg_vision': avg_vision,
             'avg_kp': avg_kp,
-            'roles': {k: {'games': v, 'wins': 0} for k, v in roles.items()},
+            'roles': roles,
             'champs': champs,
             'streak': streak[:8],
             'recent_champs': recent_champs[:5],
@@ -645,15 +649,24 @@ class StatsCommands(commands.Cog):
     @app_commands.describe(
         user1="First player",
         user2="Second player (defaults to you)",
-        games="Number of recent games to analyze (5-20)"
+        games="Number of recent games to analyze (5-20)",
+        queue="Queue filter",
+        compact="Compact view (less spam)",
+        private="Send only to you"
     )
+    @app_commands.choices(queue=[
+        app_commands.Choice(name="SoloQ", value="soloq"),
+        app_commands.Choice(name="Flex", value="flex"),
+        app_commands.Choice(name="All Ranked", value="ranked"),
+    ])
     async def compare(self, interaction: discord.Interaction, user1: discord.Member, 
-                     user2: Optional[discord.Member] = None, games: int = 10):
+                     user2: Optional[discord.Member] = None, games: int = 10,
+                     queue: str = "soloq", compact: bool = True, private: bool = True):
         """Player vs player using recent games (winrate, KDA, KP, CS/min, roles, top champs)."""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=private)
 
         user2 = user2 or interaction.user
-        queue_filter = 'soloq'
+        queue_filter = queue
         games = max(5, min(games, 20))
 
         db = get_db()
@@ -764,12 +777,49 @@ class StatsCommands(commands.Cog):
 
         edges = "\n".join(edge_line(n, a, b) for n, a, b in categories)
 
-        queue_label = 'SoloQ'
+        queue_label_map = {
+            'soloq': 'SoloQ',
+            'flex': 'Flex',
+            'ranked': 'All Ranked',
+        }
+        queue_label = queue_label_map.get(queue_filter, 'SoloQ')
+
+        category_scores = []
+        for name, a, b in categories:
+            if abs(a - b) < 0.01:
+                category_scores.append((name, 0))
+            elif a > b:
+                category_scores.append((name, 1))
+            else:
+                category_scores.append((name, -1))
+
+        p1_points = sum(1 for _, s in category_scores if s == 1)
+        p2_points = sum(1 for _, s in category_scores if s == -1)
+        ties = sum(1 for _, s in category_scores if s == 0)
+
+        if p1_points > p2_points:
+            duel_winner = user1.display_name
+            duel_emoji = "🏆"
+        elif p2_points > p1_points:
+            duel_winner = user2.display_name
+            duel_emoji = "🥇"
+        else:
+            duel_winner = "Tie"
+            duel_emoji = "➖"
 
         embed = discord.Embed(
             title=f"⚔️ Player Comparison",
             description=f"{queue_label} • last {games} games",
             color=0x1F8EFA
+        )
+
+        embed.add_field(
+            name="🎯 Duel Score",
+            value=(
+                f"{duel_emoji} **Winner:** {duel_winner}\n"
+                f"**{user1.display_name}:** {p1_points} • **{user2.display_name}:** {p2_points} • **Ties:** {ties}"
+            ),
+            inline=False,
         )
 
         # Header blocks for each player (side by side)
@@ -788,17 +838,30 @@ class StatsCommands(commands.Cog):
                 return f"{int(v):5d}"
             return str(v)
 
-        perf_rows = []
-        perf_rows.append(f"{'Metric':<10} | {user1.display_name:<14} | {user2.display_name:<14} | Win")
-        perf_rows.append("-" * 50)
-        perf_rows.append(f"{'WR':<10} | {_fmt(snapshot1['winrate'],'pct'):<14} | {_fmt(snapshot2['winrate'],'pct'):<14} | {'◀' if snapshot1['winrate']>snapshot2['winrate'] else '▶' if snapshot2['winrate']>snapshot1['winrate'] else '–'}")
-        perf_rows.append(f"{'KDA':<10} | {_fmt(snapshot1['avg_kda']):<14} | {_fmt(snapshot2['avg_kda']):<14} | {'◀' if snapshot1['avg_kda']>snapshot2['avg_kda'] else '▶' if snapshot2['avg_kda']>snapshot1['avg_kda'] else '–'}")
-        perf_rows.append(f"{'KP':<10} | {_fmt(snapshot1['avg_kp']*100,'pct'):<14} | {_fmt(snapshot2['avg_kp']*100,'pct'):<14} | {'◀' if snapshot1['avg_kp']>snapshot2['avg_kp'] else '▶' if snapshot2['avg_kp']>snapshot1['avg_kp'] else '–'}")
-        perf_rows.append(f"{'CS/min':<10} | {_fmt(snapshot1['avg_cs_per_min']):<14} | {_fmt(snapshot2['avg_cs_per_min']):<14} | {'◀' if snapshot1['avg_cs_per_min']>snapshot2['avg_cs_per_min'] else '▶' if snapshot2['avg_cs_per_min']>snapshot1['avg_cs_per_min'] else '–'}")
-        perf_rows.append(f"{'Vision':<10} | {_fmt(snapshot1['avg_vision']):<14} | {_fmt(snapshot2['avg_vision']):<14} | {'◀' if snapshot1['avg_vision']>snapshot2['avg_vision'] else '▶' if snapshot2['avg_vision']>snapshot1['avg_vision'] else '–'}")
-        perf_rows.append(f"{'DMG':<10} | {snapshot1['avg_damage']:>10,.0f}     | {snapshot2['avg_damage']:>10,.0f}     | {'◀' if snapshot1['avg_damage']>snapshot2['avg_damage'] else '▶' if snapshot2['avg_damage']>snapshot1['avg_damage'] else '–'}")
-        table = "\n".join(perf_rows)
-        embed.add_field(name="📈 Performance", value=f"```\n{table}\n```", inline=False)
+        if compact:
+            compact_lines = []
+            for n, a, b in categories:
+                if n == "Winrate":
+                    compact_lines.append(f"{n}: **{a:.1f}%** vs **{b:.1f}%**")
+                elif n == "KP%":
+                    compact_lines.append(f"{n}: **{a*100:.1f}%** vs **{b*100:.1f}%**")
+                elif n == "DMG":
+                    compact_lines.append(f"{n}: **{a:,.0f}** vs **{b:,.0f}**")
+                else:
+                    compact_lines.append(f"{n}: **{a:.2f}** vs **{b:.2f}**")
+            embed.add_field(name="📈 Performance", value="\n".join(compact_lines), inline=False)
+        else:
+            perf_rows = []
+            perf_rows.append(f"{'Metric':<10} | {user1.display_name:<14} | {user2.display_name:<14} | Win")
+            perf_rows.append("-" * 50)
+            perf_rows.append(f"{'WR':<10} | {_fmt(snapshot1['winrate'],'pct'):<14} | {_fmt(snapshot2['winrate'],'pct'):<14} | {'◀' if snapshot1['winrate']>snapshot2['winrate'] else '▶' if snapshot2['winrate']>snapshot1['winrate'] else '–'}")
+            perf_rows.append(f"{'KDA':<10} | {_fmt(snapshot1['avg_kda']):<14} | {_fmt(snapshot2['avg_kda']):<14} | {'◀' if snapshot1['avg_kda']>snapshot2['avg_kda'] else '▶' if snapshot2['avg_kda']>snapshot1['avg_kda'] else '–'}")
+            perf_rows.append(f"{'KP':<10} | {_fmt(snapshot1['avg_kp']*100,'pct'):<14} | {_fmt(snapshot2['avg_kp']*100,'pct'):<14} | {'◀' if snapshot1['avg_kp']>snapshot2['avg_kp'] else '▶' if snapshot2['avg_kp']>snapshot1['avg_kp'] else '–'}")
+            perf_rows.append(f"{'CS/min':<10} | {_fmt(snapshot1['avg_cs_per_min']):<14} | {_fmt(snapshot2['avg_cs_per_min']):<14} | {'◀' if snapshot1['avg_cs_per_min']>snapshot2['avg_cs_per_min'] else '▶' if snapshot2['avg_cs_per_min']>snapshot1['avg_cs_per_min'] else '–'}")
+            perf_rows.append(f"{'Vision':<10} | {_fmt(snapshot1['avg_vision']):<14} | {_fmt(snapshot2['avg_vision']):<14} | {'◀' if snapshot1['avg_vision']>snapshot2['avg_vision'] else '▶' if snapshot2['avg_vision']>snapshot1['avg_vision'] else '–'}")
+            perf_rows.append(f"{'DMG':<10} | {snapshot1['avg_damage']:>10,.0f}     | {snapshot2['avg_damage']:>10,.0f}     | {'◀' if snapshot1['avg_damage']>snapshot2['avg_damage'] else '▶' if snapshot2['avg_damage']>snapshot1['avg_damage'] else '–'}")
+            table = "\n".join(perf_rows)
+            embed.add_field(name="📈 Performance", value=f"```\n{table}\n```", inline=False)
 
         # Top roles/champs
         embed.add_field(name="🧭 Top Roles", value=_format_roles(snapshot1['roles'], snapshot1['games']), inline=True)
@@ -821,13 +884,14 @@ class StatsCommands(commands.Cog):
         embed.add_field(name="🏅 Edges", value=edges, inline=False)
         embed.set_footer(text=f"Requested by {interaction.user.name}")
 
-        message = await interaction.followup.send(embed=embed)
+        message = await interaction.followup.send(embed=embed, ephemeral=private)
 
-        await asyncio.sleep(90)
-        try:
-            await message.delete()
-        except:
-            pass
+        if not private:
+            await asyncio.sleep(90 if compact else 120)
+            try:
+                await message.delete()
+            except:
+                pass
 
 async def setup(bot: commands.Bot, riot_api: RiotAPI, guild_id: int):
     """Setup stats commands"""
