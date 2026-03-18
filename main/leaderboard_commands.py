@@ -11,6 +11,7 @@ import logging
 import asyncio
 from datetime import datetime
 import math
+import time
 
 from database import get_db
 from riot_api import RiotAPI, CHAMPION_ID_TO_NAME
@@ -20,6 +21,8 @@ DEFAULT_RANK_LEADERBOARD_CHANNEL_ID = 1483141413666296038
 RANK_PAGE_SIZE = 10
 DAILY_RESET_HOURS = 24
 SNAPSHOT_RETENTION_HOURS = 24 * 7
+RANK_CACHE_TTL_SECONDS = 300
+RANK_MANUAL_REFRESH_COOLDOWN_SECONDS = 45
 
 async def loading_animation(interaction, messages=None):
     """Helper function for loading animation"""
@@ -217,10 +220,26 @@ class RankPersistentView(discord.ui.View):
             await interaction.response.send_message("❌ This button only works in a server.", ephemeral=True)
             return
 
-        await interaction.response.send_message(
-            "ℹ️ Ranking updates automatically every 1 hour.",
-            ephemeral=True,
-        )
+        await interaction.response.defer()
+        try:
+            result = await self.cog._update_or_create_rank_embed(interaction.guild, force_refresh=True)
+            status = result.get('status', 'updated')
+            if status == 'cooldown':
+                remaining = int(result.get('cooldown_remaining', 0))
+                await interaction.followup.send(
+                    f"⏳ Refresh cooldown: wait about {remaining}s.",
+                    ephemeral=True,
+                )
+            elif status == 'in_progress':
+                await interaction.followup.send(
+                    "⏳ Refresh already in progress. Try again in a moment.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send("✅ Leaderboard refreshed.", ephemeral=True)
+        except Exception as e:
+            logger.error("❌ Persistent refresh failed for guild %s: %s", interaction.guild.id, e)
+            await interaction.followup.send("❌ Refresh failed. Try again in a moment.", ephemeral=True)
 
     @discord.ui.button(label="Setup Account", style=discord.ButtonStyle.success, emoji="🔗", custom_id="rank_setup_button")
     async def setup_account_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -236,6 +255,8 @@ class LeaderboardCommands(commands.Cog):
         self.guild = discord.Object(id=guild_id)
         self._persistent_rank_pages = {}
         self._persistent_rank_cache = {}
+        self._persistent_rank_last_fetch_at = {}
+        self._persistent_rank_refresh_locks = {}
         self.persistent_rank_view = RankPersistentView(self)
         self.bot.add_view(self.persistent_rank_view)
 
@@ -281,6 +302,43 @@ class LeaderboardCommands(commands.Cog):
             db.set_guild_setting(guild_id, 'rank_leaderboard_region', str(region).lower())
         else:
             db.set_guild_setting(guild_id, 'rank_leaderboard_region', 'all')
+
+    async def _get_or_refresh_persistent_rank_data(self, guild: discord.Guild, region: Optional[str], force_refresh: bool = False) -> tuple[list, str, int]:
+        """Return ranked data using cache, with guarded refresh to protect bot performance."""
+        guild_id = guild.id
+        now = time.time()
+        cached = self._persistent_rank_cache.get(guild_id)
+        last_fetch = float(self._persistent_rank_last_fetch_at.get(guild_id, 0))
+        cache_age = now - last_fetch
+
+        if cached is not None and not force_refresh and cache_age <= RANK_CACHE_TTL_SECONDS:
+            return cached, 'cache', 0
+
+        if cached is not None and force_refresh and cache_age <= RANK_MANUAL_REFRESH_COOLDOWN_SECONDS:
+            remaining = max(1, int(RANK_MANUAL_REFRESH_COOLDOWN_SECONDS - cache_age))
+            return cached, 'cooldown', remaining
+
+        lock = self._persistent_rank_refresh_locks.setdefault(guild_id, asyncio.Lock())
+        if lock.locked() and cached is not None:
+            return cached, 'in_progress', 0
+
+        async with lock:
+            now = time.time()
+            cached = self._persistent_rank_cache.get(guild_id)
+            last_fetch = float(self._persistent_rank_last_fetch_at.get(guild_id, 0))
+            cache_age = now - last_fetch
+
+            if cached is not None and not force_refresh and cache_age <= RANK_CACHE_TTL_SECONDS:
+                return cached, 'cache', 0
+
+            if cached is not None and force_refresh and cache_age <= RANK_MANUAL_REFRESH_COOLDOWN_SECONDS:
+                remaining = max(1, int(RANK_MANUAL_REFRESH_COOLDOWN_SECONDS - cache_age))
+                return cached, 'cooldown', remaining
+
+            ranked_members = await self._collect_ranked_members(guild, region=region)
+            self._persistent_rank_cache[guild_id] = ranked_members
+            self._persistent_rank_last_fetch_at[guild_id] = time.time()
+            return ranked_members, 'refreshed', 0
 
     def _maybe_reset_daily_snapshots(self, guild_id: int):
         """Reset ranked snapshot window by persisted global UTC day, not process uptime."""
@@ -611,10 +669,7 @@ class LeaderboardCommands(commands.Cog):
                 await self._update_or_create_rank_embed(guild)
                 return
 
-        ranked_members = self._persistent_rank_cache.get(guild.id)
-        if ranked_members is None:
-            ranked_members = await self._collect_ranked_members(guild, region=region)
-            self._persistent_rank_cache[guild.id] = ranked_members
+        ranked_members, _, _ = await self._get_or_refresh_persistent_rank_data(guild, region=region, force_refresh=False)
 
         total_pages = max(1, math.ceil(len(ranked_members) / RANK_PAGE_SIZE))
         current_page = int(self._persistent_rank_pages.get(guild.id, 1))
@@ -632,7 +687,7 @@ class LeaderboardCommands(commands.Cog):
         )
         await message.edit(embed=embed, view=self.persistent_rank_view)
 
-    async def _update_or_create_rank_embed(self, guild: discord.Guild):
+    async def _update_or_create_rank_embed(self, guild: discord.Guild, force_refresh: bool = False):
         """Update persistent ranked leaderboard embed, or create it if missing."""
         db = get_db()
         region = self._get_persistent_rank_region(guild.id)
@@ -667,8 +722,11 @@ class LeaderboardCommands(commands.Cog):
             logger.warning("⚠️ Rank leaderboard channel not found in guild %s: %s", guild.id, channel_id)
             return
 
-        ranked_members = await self._collect_ranked_members(guild, region=region)
-        self._persistent_rank_cache[guild.id] = ranked_members
+        ranked_members, fetch_status, cooldown_remaining = await self._get_or_refresh_persistent_rank_data(
+            guild,
+            region=region,
+            force_refresh=force_refresh,
+        )
         total_pages = max(1, math.ceil(len(ranked_members) / RANK_PAGE_SIZE))
         current_page = int(self._persistent_rank_pages.get(guild.id, 1))
         current_page = max(1, min(current_page, total_pages))
@@ -691,10 +749,11 @@ class LeaderboardCommands(commands.Cog):
             try:
                 message = await channel.fetch_message(message_id)
                 await message.edit(embed=embed, view=view)
-                self._save_ranked_snapshots(guild.id, ranked_members)
-                self._mark_rank_refresh(guild.id)
+                if fetch_status == 'refreshed':
+                    self._save_ranked_snapshots(guild.id, ranked_members)
+                    self._mark_rank_refresh(guild.id)
                 logger.info("✅ Updated persistent rank leaderboard embed for guild %s", guild.id)
-                return
+                return {'status': fetch_status, 'cooldown_remaining': cooldown_remaining}
             except discord.NotFound:
                 pass
             except Exception as e:
@@ -702,9 +761,11 @@ class LeaderboardCommands(commands.Cog):
 
         message = await channel.send(embed=embed, view=view)
         db.set_guild_setting(guild.id, 'rank_leaderboard_message_id', str(message.id))
-        self._save_ranked_snapshots(guild.id, ranked_members)
-        self._mark_rank_refresh(guild.id)
+        if fetch_status == 'refreshed':
+            self._save_ranked_snapshots(guild.id, ranked_members)
+            self._mark_rank_refresh(guild.id)
         logger.info("✅ Created persistent rank leaderboard embed for guild %s", guild.id)
+        return {'status': fetch_status, 'cooldown_remaining': cooldown_remaining}
 
     @tasks.loop(hours=1)
     async def auto_update_rank_leaderboard_embed(self):
