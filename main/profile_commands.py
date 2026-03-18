@@ -1642,6 +1642,33 @@ class ProfileCommands(commands.Cog):
             ephemeral=True
         )
 
+    @app_commands.command(name="unlinkacc", description="Unlink one selected Riot account")
+    @app_commands.describe(
+        riot_id="Riot ID to unlink (Name#TAG)",
+        region="Optional region when the same Riot ID exists on multiple regions"
+    )
+    @app_commands.choices(region=[
+        app_commands.Choice(name="EUNE", value="eune"),
+        app_commands.Choice(name="EUW", value="euw"),
+        app_commands.Choice(name="NA", value="na"),
+        app_commands.Choice(name="KR", value="kr"),
+        app_commands.Choice(name="BR", value="br"),
+        app_commands.Choice(name="JP", value="jp"),
+        app_commands.Choice(name="LAN", value="lan"),
+        app_commands.Choice(name="LAS", value="las"),
+        app_commands.Choice(name="OCE", value="oce"),
+        app_commands.Choice(name="TR", value="tr"),
+        app_commands.Choice(name="RU", value="ru"),
+        app_commands.Choice(name="PH", value="ph"),
+        app_commands.Choice(name="SG", value="sg"),
+        app_commands.Choice(name="TH", value="th"),
+        app_commands.Choice(name="TW", value="tw"),
+        app_commands.Choice(name="VN", value="vn"),
+    ])
+    async def unlinkacc(self, interaction: discord.Interaction, riot_id: str, region: Optional[str] = None):
+        """Unlink only one selected account (safe alternative to /unlink)."""
+        await self.unlink(interaction, riot_id=riot_id, region=region)
+
     @app_commands.command(name="forcelink", description="[OWNER ONLY] Force link a Riot account without verification")
     @app_commands.describe(
         user="The Discord user to link for",
