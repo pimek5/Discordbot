@@ -1530,9 +1530,31 @@ class ProfileCommands(commands.Cog):
             # Cancel keep-alive task once we've sent the final response
             keep_alive_task.cancel()
 
-    @app_commands.command(name="unlink", description="Unlink your Riot account")
-    async def unlink(self, interaction: discord.Interaction):
-        """Unlink Riot account"""
+    @app_commands.command(name="unlink", description="Unlink one account or all your linked Riot accounts")
+    @app_commands.describe(
+        riot_id="Specific Riot ID to unlink (Name#TAG). Leave empty to unlink all accounts.",
+        region="Optional region when the same Riot ID exists on multiple regions"
+    )
+    @app_commands.choices(region=[
+        app_commands.Choice(name="EUNE", value="eune"),
+        app_commands.Choice(name="EUW", value="euw"),
+        app_commands.Choice(name="NA", value="na"),
+        app_commands.Choice(name="KR", value="kr"),
+        app_commands.Choice(name="BR", value="br"),
+        app_commands.Choice(name="JP", value="jp"),
+        app_commands.Choice(name="LAN", value="lan"),
+        app_commands.Choice(name="LAS", value="las"),
+        app_commands.Choice(name="OCE", value="oce"),
+        app_commands.Choice(name="TR", value="tr"),
+        app_commands.Choice(name="RU", value="ru"),
+        app_commands.Choice(name="PH", value="ph"),
+        app_commands.Choice(name="SG", value="sg"),
+        app_commands.Choice(name="TH", value="th"),
+        app_commands.Choice(name="TW", value="tw"),
+        app_commands.Choice(name="VN", value="vn"),
+    ])
+    async def unlink(self, interaction: discord.Interaction, riot_id: Optional[str] = None, region: Optional[str] = None):
+        """Unlink selected Riot account or all linked accounts."""
         db = get_db()
         
         user = db.get_user_by_discord_id(interaction.user.id)
@@ -1544,21 +1566,79 @@ class ProfileCommands(commands.Cog):
             )
             return
         
-        # Get account for confirmation message
-        account = db.get_primary_account(user['id'])
-        
-        if not account:
+        all_accounts = db.get_user_accounts(user['id'])
+
+        if not all_accounts:
             await interaction.response.send_message(
                 "❌ No linked account found!",
                 ephemeral=True
             )
             return
-        
-        # Delete account
-        db.delete_account(user['id'])
-        
+
+        # If no specific Riot ID provided, keep old behavior: unlink all accounts.
+        if not riot_id:
+            deleted_count = len(all_accounts)
+            db.delete_account(user['id'])
+            await interaction.response.send_message(
+                f"✅ Unlinked all linked accounts ({deleted_count}).",
+                ephemeral=True
+            )
+            return
+
+        if '#' not in riot_id:
+            await interaction.response.send_message(
+                "❌ Invalid Riot ID format! Use `Name#TAG`.",
+                ephemeral=True
+            )
+            return
+
+        game_name, tagline = riot_id.split('#', 1)
+        region_filter = region.lower() if region else None
+
+        candidates = [
+            acc for acc in all_accounts
+            if acc['riot_id_game_name'].lower() == game_name.lower()
+            and acc['riot_id_tagline'].lower() == tagline.lower()
+            and (region_filter is None or acc['region'].lower() == region_filter)
+        ]
+
+        if not candidates:
+            await interaction.response.send_message(
+                f"❌ Account **{riot_id}**{f' ({region.upper()})' if region else ''} is not linked to your profile.",
+                ephemeral=True
+            )
+            return
+
+        if len(candidates) > 1 and not region_filter:
+            regions = ", ".join(sorted({acc['region'].upper() for acc in candidates}))
+            await interaction.response.send_message(
+                f"❌ Multiple accounts match **{riot_id}**. Specify `region` ({regions}).",
+                ephemeral=True
+            )
+            return
+
+        target = candidates[0]
+        deleted = db.delete_specific_account(
+            user['id'],
+            target['riot_id_game_name'],
+            target['riot_id_tagline'],
+            target['region']
+        )
+
+        if not deleted:
+            await interaction.response.send_message(
+                "❌ Failed to unlink selected account. Try again.",
+                ephemeral=True
+            )
+            return
+
+        # Ensure user still has a primary account if any accounts remain.
+        remaining_accounts = db.get_user_accounts(user['id'])
+        if remaining_accounts and not any(acc.get('primary_account') for acc in remaining_accounts):
+            db.set_primary_account(user['id'], remaining_accounts[0]['id'])
+
         await interaction.response.send_message(
-            f"✅ Unlinked {account['riot_id_game_name']}#{account['riot_id_tagline']}",
+            f"✅ Unlinked **{target['riot_id_game_name']}#{target['riot_id_tagline']}** ({target['region'].upper()}).",
             ephemeral=True
         )
 
