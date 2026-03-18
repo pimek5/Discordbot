@@ -1097,9 +1097,9 @@ async def before_change_status():
     """Wait until bot is ready before starting status rotation"""
     await bot.wait_until_ready()
 
-@tasks.loop(hours=2)
+@tasks.loop(hours=1)
 async def auto_update_ranks():
-    """Automatically update all members' rank and region roles every 2 hours"""
+    """Automatically update all members' rank and region roles every 1 hour"""
     try:
         print("🔄 Starting automatic rank/region role update...")
         guild = bot.get_guild(GUILD_ID)
@@ -1184,7 +1184,7 @@ async def auto_update_ranks():
 async def before_auto_update_ranks():
     """Wait for bot to be ready before starting the task"""
     await bot.wait_until_ready()
-    print("✅ Auto rank update task will start in 2 hours")
+    print("✅ Auto rank update task started (every 1 hour)")
 
 # ================================
 #   AUTOMATIC RANK STATS EMBED UPDATE

@@ -143,6 +143,50 @@ class RankPersistentView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
 
+    @discord.ui.select(
+        custom_id="rank_region_picker",
+        placeholder="🌍 Pick region filter",
+        min_values=1,
+        max_values=1,
+        options=[
+            discord.SelectOption(label="All regions", value="all", emoji="🌐"),
+            discord.SelectOption(label="EUW", value="euw", emoji="🇪🇺"),
+            discord.SelectOption(label="EUNE", value="eune", emoji="🇪🇺"),
+            discord.SelectOption(label="NA", value="na", emoji="🇺🇸"),
+            discord.SelectOption(label="KR", value="kr", emoji="🇰🇷"),
+            discord.SelectOption(label="CN", value="cn", emoji="🇨🇳"),
+            discord.SelectOption(label="JP", value="jp", emoji="🇯🇵"),
+            discord.SelectOption(label="BR", value="br", emoji="🇧🇷"),
+            discord.SelectOption(label="LAN", value="lan", emoji="🇲🇽"),
+            discord.SelectOption(label="LAS", value="las", emoji="🇦🇷"),
+            discord.SelectOption(label="OCE", value="oce", emoji="🇦🇺"),
+            discord.SelectOption(label="RU", value="ru", emoji="🇷🇺"),
+            discord.SelectOption(label="TR", value="tr", emoji="🇹🇷"),
+            discord.SelectOption(label="SG", value="sg", emoji="🇸🇬"),
+            discord.SelectOption(label="PH", value="ph", emoji="🇵🇭"),
+            discord.SelectOption(label="TH", value="th", emoji="🇹🇭"),
+            discord.SelectOption(label="TW", value="tw", emoji="🇹🇼"),
+            discord.SelectOption(label="VN", value="vn", emoji="🇻🇳"),
+        ],
+    )
+    async def region_picker(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This selector only works in a server.", ephemeral=True)
+            return
+
+        selected = (select.values or ["all"])[0]
+        selected_region = None if selected == "all" else selected
+        await interaction.response.defer()
+
+        try:
+            self.cog._set_persistent_rank_region(interaction.guild.id, selected_region)
+            self.cog._persistent_rank_pages[interaction.guild.id] = 1
+            self.cog._persistent_rank_cache.pop(interaction.guild.id, None)
+            await self.cog._update_or_create_rank_embed(interaction.guild)
+        except Exception as e:
+            logger.error("❌ Persistent region picker failed for guild %s: %s", interaction.guild.id, e)
+            await interaction.followup.send("❌ Could not change region filter. Try again.", ephemeral=True)
+
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, custom_id="rank_prev_button")
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.guild:
@@ -220,6 +264,23 @@ class LeaderboardCommands(commands.Cog):
         """Persist last successful rank leaderboard refresh timestamp."""
         db = get_db()
         db.set_guild_setting(guild_id, 'rank_leaderboard_last_refresh_at', datetime.utcnow().isoformat())
+
+    def _get_persistent_rank_region(self, guild_id: int) -> Optional[str]:
+        """Get saved region filter for persistent rank leaderboard."""
+        db = get_db()
+        value = db.get_guild_setting(guild_id, 'rank_leaderboard_region')
+        if not value:
+            return None
+        normalized = str(value).strip().lower()
+        return normalized if normalized and normalized != 'all' else None
+
+    def _set_persistent_rank_region(self, guild_id: int, region: Optional[str]):
+        """Set saved region filter for persistent rank leaderboard."""
+        db = get_db()
+        if region:
+            db.set_guild_setting(guild_id, 'rank_leaderboard_region', str(region).lower())
+        else:
+            db.set_guild_setting(guild_id, 'rank_leaderboard_region', 'all')
 
     def _maybe_reset_daily_snapshots(self, guild_id: int):
         """Reset ranked snapshot window by persisted global UTC day, not process uptime."""
@@ -529,6 +590,7 @@ class LeaderboardCommands(commands.Cog):
     async def _change_persistent_rank_page(self, guild: discord.Guild, delta: int, message: Optional[discord.Message] = None):
         """Change persistent leaderboard page and update the configured message."""
         db = get_db()
+        region = self._get_persistent_rank_region(guild.id)
         if message is None:
             message_id_raw = db.get_guild_setting(guild.id, 'rank_leaderboard_message_id')
             if not message_id_raw or not str(message_id_raw).isdigit():
@@ -551,7 +613,7 @@ class LeaderboardCommands(commands.Cog):
 
         ranked_members = self._persistent_rank_cache.get(guild.id)
         if ranked_members is None:
-            ranked_members = await self._collect_ranked_members(guild)
+            ranked_members = await self._collect_ranked_members(guild, region=region)
             self._persistent_rank_cache[guild.id] = ranked_members
 
         total_pages = max(1, math.ceil(len(ranked_members) / RANK_PAGE_SIZE))
@@ -562,6 +624,7 @@ class LeaderboardCommands(commands.Cog):
         embed = self._build_ranked_embed(
             guild,
             ranked_members,
+            region=region,
             requested_by="Auto update",
             page=next_page,
             page_size=RANK_PAGE_SIZE,
@@ -572,6 +635,7 @@ class LeaderboardCommands(commands.Cog):
     async def _update_or_create_rank_embed(self, guild: discord.Guild):
         """Update persistent ranked leaderboard embed, or create it if missing."""
         db = get_db()
+        region = self._get_persistent_rank_region(guild.id)
 
         self._maybe_reset_daily_snapshots(guild.id)
 
@@ -603,7 +667,7 @@ class LeaderboardCommands(commands.Cog):
             logger.warning("⚠️ Rank leaderboard channel not found in guild %s: %s", guild.id, channel_id)
             return
 
-        ranked_members = await self._collect_ranked_members(guild)
+        ranked_members = await self._collect_ranked_members(guild, region=region)
         self._persistent_rank_cache[guild.id] = ranked_members
         total_pages = max(1, math.ceil(len(ranked_members) / RANK_PAGE_SIZE))
         current_page = int(self._persistent_rank_pages.get(guild.id, 1))
@@ -613,6 +677,7 @@ class LeaderboardCommands(commands.Cog):
         embed = self._build_ranked_embed(
             guild,
             ranked_members,
+            region=region,
             requested_by="Auto update",
             page=current_page,
             page_size=RANK_PAGE_SIZE,
