@@ -1,6 +1,6 @@
 ﻿"""
 Profile Commands Module
-/link, /verify, /profile, /unlink, /forcelink, /forceunlink
+/link, /verifyacc, /profile, /unlink, /forcelink, /forceunlink
 """
 
 import discord
@@ -529,7 +529,7 @@ class ProfileCommands(commands.Cog):
         
         embed.add_field(
             name="✅ Step 3: Verify",
-            value=f"After changing your icon, use `/verifyacc` (or `/verify`) within **10 minutes**",
+            value=f"After changing your icon, use `/verifyacc` within **10 minutes**",
             inline=False
         )
         
@@ -729,11 +729,6 @@ class ProfileCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="verify", description="Complete account verification")
-    async def verify(self, interaction: discord.Interaction):
-        """Alias for /verifyacc to avoid command-name confusion."""
-        await self.verifyacc(interaction)
-    
     @app_commands.command(name="setmain", description="Set your main Riot account")
     @app_commands.describe(riot_id="Riot ID of the account to set as main (Name#TAG)")
     async def setmain(self, interaction: discord.Interaction, riot_id: str):
@@ -795,7 +790,7 @@ class ProfileCommands(commands.Cog):
         if not target_account.get('verified'):
             await interaction.followup.send(
                 f"❌ The account **{riot_id}** must be verified before it can be set as primary!\n"
-                f"Use `/verify` to verify this account first.",
+                f"Use `/verifyacc` to verify this account first.",
                 ephemeral=True
             )
             return
@@ -1400,7 +1395,7 @@ class ProfileCommands(commands.Cog):
             else:
                 embed.add_field(
                     name=f"📘 Champion Mastery",
-                    value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
+                    value="No mastery data available yet.\nPlay some games and use `/verifyacc` to update!",
                     inline=False
                 )
         
@@ -3695,7 +3690,7 @@ class ProfileView(discord.ui.View):
         else:
             embed.add_field(
                 name=f"📘 Champion Mastery",
-                value="No mastery data available yet.\nPlay some games and use `/verify` to update!",
+                value="No mastery data available yet.\nPlay some games and use `/verifyacc` to update!",
                 inline=False
             )
         

@@ -77,7 +77,7 @@ class CommandsCategoryView(discord.ui.View):
                 inline=False
             )
             embed.add_field(
-                name="/verify",
+                name="/verifyacc",
                 value="Verify account ownership by changing profile icon",
                 inline=False
             )

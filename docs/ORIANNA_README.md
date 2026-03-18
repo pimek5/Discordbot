@@ -33,7 +33,7 @@ Complete League of Legends player profile, statistics, and leaderboard system in
 /link <riot_id> <tag> [region]
 Link your Riot account (e.g., /link Player NA1 na)
 
-/verify <code>
+/verifyacc <code>
 Complete verification with 6-character code from League Client
 
 /profile [user]
@@ -176,7 +176,7 @@ Uses `ThreadedConnectionPool` with 1-10 connections to prevent connection exhaus
 1. User runs `/link` command
 2. Bot generates 6-character code, stores in `verification_codes` table
 3. User enters code in League Client (Settings → Verification)
-4. User runs `/verify` with the code
+4. User runs `/verifyacc` with the code
 5. Bot verifies via Riot API, creates mastery snapshot
 
 ## Riot API

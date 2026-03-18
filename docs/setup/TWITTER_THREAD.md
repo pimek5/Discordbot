@@ -109,7 +109,7 @@ Perfect for smurfs & region hoppers! 🌍
 🎯 Full Command List:
 
 /link - Link Riot account
-/verify - Verify ownership
+/verifyacc - Verify ownership
 /profile - Detailed dashboard
 /stats - Performance graphs
 /compare - Player vs player

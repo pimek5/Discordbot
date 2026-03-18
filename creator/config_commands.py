@@ -220,7 +220,7 @@ class ProfilesConfigView(BaseConfigView):
         
         embed.add_field(
             name="Available Commands",
-            value="`/profile`, `/stats`, `/verify`, `/link`, `/unlink`",
+            value="`/profile`, `/stats`, `/verifyacc`, `/link`, `/unlink`",
             inline=False
         )
         

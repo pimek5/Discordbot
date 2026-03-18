@@ -136,7 +136,7 @@ class RankTopView(discord.ui.View):
     @discord.ui.button(label="Setup Account", style=discord.ButtonStyle.success, emoji="🔗")
     async def setup_account_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
-            "Start account setup with `/link` and then verify it with `/verify`.",
+            "Start account setup with `/link` and then verify it with `/verifyacc`.",
             ephemeral=True,
         )
 
@@ -243,7 +243,7 @@ class RankPersistentView(discord.ui.View):
     @discord.ui.button(label="Setup Account", style=discord.ButtonStyle.success, emoji="🔗", custom_id="rank_setup_button")
     async def setup_account_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
-            "Start account setup with `/link` and then verify it with `/verify`.",
+            "Start account setup with `/link` and then verify it with `/verifyacc`.",
             ephemeral=True,
         )
 

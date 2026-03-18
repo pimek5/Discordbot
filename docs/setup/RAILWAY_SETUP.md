@@ -68,7 +68,7 @@ W Discord użyj komend:
 
 ```
 /link <twoje_riot_id> <tag> [region]
-/verify <kod_z_league_client>
+/verifyacc <kod_z_league_client>
 /profile
 /stats <champion>
 /top <champion>
