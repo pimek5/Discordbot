@@ -184,8 +184,7 @@ class RankPersistentView(discord.ui.View):
         try:
             self.cog._set_persistent_rank_region(interaction.guild.id, selected_region)
             self.cog._persistent_rank_pages[interaction.guild.id] = 1
-            self.cog._persistent_rank_cache.pop(interaction.guild.id, None)
-            await self.cog._update_or_create_rank_embed(interaction.guild)
+            await self.cog._update_or_create_rank_embed(interaction.guild, force_refresh=False)
         except Exception as e:
             logger.error("❌ Persistent region picker failed for guild %s: %s", interaction.guild.id, e)
             await interaction.followup.send("❌ Could not change region filter. Try again.", ephemeral=True)
@@ -303,12 +302,59 @@ class LeaderboardCommands(commands.Cog):
         else:
             db.set_guild_setting(guild_id, 'rank_leaderboard_region', 'all')
 
+    def _rank_cache_key(self, guild_id: int, region: Optional[str]) -> tuple[int, str]:
+        """Build cache key for guild + region."""
+        return (guild_id, (region or 'all').lower())
+
+    def _rank_priority_value(self, account_rank_data: dict) -> int:
+        """Compute deterministic rank priority for sorting leaderboard entries."""
+        rank_priority = {
+            'CHALLENGER': 9, 'GRANDMASTER': 8, 'MASTER': 7,
+            'DIAMOND': 6, 'EMERALD': 5, 'PLATINUM': 4,
+            'GOLD': 3, 'SILVER': 2, 'BRONZE': 1, 'IRON': 0
+        }
+        division_priority = {'I': 4, 'II': 3, 'III': 2, 'IV': 1}
+
+        tier = account_rank_data.get('tier', 'UNRANKED')
+        rank = account_rank_data.get('rank', 'I')
+        lp = int(account_rank_data.get('lp', 0))
+        tier_priority = rank_priority.get(tier, -1)
+        div_priority = division_priority.get(rank, 0) if tier not in ['MASTER', 'GRANDMASTER', 'CHALLENGER'] else 4
+        return tier_priority * 1000 + div_priority * 100 + lp
+
+    def _build_region_subset_from_cached_all(self, ranked_members_all: list, region: str) -> list:
+        """Build regional leaderboard quickly from cached all-regions data."""
+        target_region = region.lower()
+        subset = []
+
+        for entry in ranked_members_all:
+            region_accounts = [
+                a for a in entry.get('accounts', [])
+                if str(a.get('region', '')).lower() == target_region
+            ]
+            if not region_accounts:
+                continue
+
+            best_account = max(region_accounts, key=self._rank_priority_value)
+            best_priority = self._rank_priority_value(best_account)
+            subset.append({
+                'member': entry['member'],
+                'data': dict(best_account),
+                'priority': best_priority,
+                'accounts': region_accounts,
+                'aggregate_progress': entry.get('aggregate_progress'),
+            })
+
+        subset.sort(key=lambda x: x['priority'], reverse=True)
+        return subset
+
     async def _get_or_refresh_persistent_rank_data(self, guild: discord.Guild, region: Optional[str], force_refresh: bool = False) -> tuple[list, str, int]:
         """Return ranked data using cache, with guarded refresh to protect bot performance."""
         guild_id = guild.id
+        cache_key = self._rank_cache_key(guild_id, region)
         now = time.time()
-        cached = self._persistent_rank_cache.get(guild_id)
-        last_fetch = float(self._persistent_rank_last_fetch_at.get(guild_id, 0))
+        cached = self._persistent_rank_cache.get(cache_key)
+        last_fetch = float(self._persistent_rank_last_fetch_at.get(cache_key, 0))
         cache_age = now - last_fetch
 
         if cached is not None and not force_refresh and cache_age <= RANK_CACHE_TTL_SECONDS:
@@ -318,14 +364,26 @@ class LeaderboardCommands(commands.Cog):
             remaining = max(1, int(RANK_MANUAL_REFRESH_COOLDOWN_SECONDS - cache_age))
             return cached, 'cooldown', remaining
 
+        # Fast path: if region is selected and all-regions cache is fresh, derive regional subset without API calls.
+        if region and not force_refresh:
+            all_key = self._rank_cache_key(guild_id, None)
+            cached_all = self._persistent_rank_cache.get(all_key)
+            all_last_fetch = float(self._persistent_rank_last_fetch_at.get(all_key, 0))
+            all_cache_age = now - all_last_fetch
+            if cached_all is not None and all_cache_age <= RANK_CACHE_TTL_SECONDS:
+                derived = self._build_region_subset_from_cached_all(cached_all, region)
+                self._persistent_rank_cache[cache_key] = derived
+                self._persistent_rank_last_fetch_at[cache_key] = now
+                return derived, 'cache', 0
+
         lock = self._persistent_rank_refresh_locks.setdefault(guild_id, asyncio.Lock())
         if lock.locked() and cached is not None:
             return cached, 'in_progress', 0
 
         async with lock:
             now = time.time()
-            cached = self._persistent_rank_cache.get(guild_id)
-            last_fetch = float(self._persistent_rank_last_fetch_at.get(guild_id, 0))
+            cached = self._persistent_rank_cache.get(cache_key)
+            last_fetch = float(self._persistent_rank_last_fetch_at.get(cache_key, 0))
             cache_age = now - last_fetch
 
             if cached is not None and not force_refresh and cache_age <= RANK_CACHE_TTL_SECONDS:
@@ -335,9 +393,20 @@ class LeaderboardCommands(commands.Cog):
                 remaining = max(1, int(RANK_MANUAL_REFRESH_COOLDOWN_SECONDS - cache_age))
                 return cached, 'cooldown', remaining
 
+            if region and not force_refresh:
+                all_key = self._rank_cache_key(guild_id, None)
+                cached_all = self._persistent_rank_cache.get(all_key)
+                all_last_fetch = float(self._persistent_rank_last_fetch_at.get(all_key, 0))
+                all_cache_age = now - all_last_fetch
+                if cached_all is not None and all_cache_age <= RANK_CACHE_TTL_SECONDS:
+                    derived = self._build_region_subset_from_cached_all(cached_all, region)
+                    self._persistent_rank_cache[cache_key] = derived
+                    self._persistent_rank_last_fetch_at[cache_key] = now
+                    return derived, 'cache', 0
+
             ranked_members = await self._collect_ranked_members(guild, region=region)
-            self._persistent_rank_cache[guild_id] = ranked_members
-            self._persistent_rank_last_fetch_at[guild_id] = time.time()
+            self._persistent_rank_cache[cache_key] = ranked_members
+            self._persistent_rank_last_fetch_at[cache_key] = time.time()
             return ranked_members, 'refreshed', 0
 
     def _maybe_reset_daily_snapshots(self, guild_id: int):
@@ -1011,7 +1080,9 @@ class LeaderboardCommands(commands.Cog):
                         await interaction.channel.send(embed=embed)
                 else:
                     raise
-            self._persistent_rank_cache[interaction.guild.id] = ranked_members
+            cache_key = self._rank_cache_key(interaction.guild.id, region)
+            self._persistent_rank_cache[cache_key] = ranked_members
+            self._persistent_rank_last_fetch_at[cache_key] = time.time()
             self._persistent_rank_pages[interaction.guild.id] = 1
             self._save_ranked_snapshots(interaction.guild.id, ranked_members)
             self._mark_rank_refresh(interaction.guild.id)
