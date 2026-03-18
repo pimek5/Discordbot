@@ -521,19 +521,25 @@ class ProfileCommands(commands.Cog):
         )
         
         embed.add_field(
-            name="🖼️ Step 2: Change Profile Icon",
-            value=f"Click your profile picture and set icon to: **#{verification_icon}**\n"
+            name="🖼️ Step 2: Change Profile Icon (Settings only)",
+            value=f"1. Click your avatar in League Client\n"
+                  f"2. Go to **Settings → Profile Icon**\n"
+                  f"3. Select icon: **#{verification_icon}**\n"
+                  f"4. Click **Save** (no need to play games!)\n\n"
                   f"[Preview Icon](https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{verification_icon}.jpg)",
             inline=False
         )
         
         embed.add_field(
-            name="✅ Step 3: Verify",
-            value=f"After changing your icon, use `/verifyacc` within **10 minutes**",
+            name="✅ Step 3: Verify (Auto-checks every 5 seconds)",
+            value=f"After saving icon, use `/verifyacc` and **wait**\n"
+                  f"• Bot polls Riot API every 5 seconds\n"
+                  f"• Verification completes automatically when detected\n"
+                  f"• **Timeout: 10 minutes** from now",
             inline=False
         )
         
-        embed.set_footer(text=f"Your current icon: #{current_icon} | Verification expires in 10 minutes")
+        embed.set_footer(text=f"Your current icon: #{current_icon} | Verification expires in 10 minutes | No gameplay required!")
         embed.set_thumbnail(url=f"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{verification_icon}.jpg")
         
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -628,9 +634,12 @@ class ProfileCommands(commands.Cog):
             time_left = max(0, (verification['expires_at'] - datetime.now()).total_seconds() / 60)
             
             embed = discord.Embed(
-                title="❌ Verification Expired",
-                description="Verification window ended before your profile icon matched the required icon.",
-                color=0xFF0000
+                title="⏳ Verification Timeout",
+                description=f"Icon change didn't sync within 10 minutes. This can happen if:\n"
+                           f"• Riot servers were slow to update\n"
+                           f"• Icon change didn't save properly\n\n"
+                           f"The good news: Just try again!",
+                color=0xFF9900
             )
             
             embed.add_field(
@@ -646,17 +655,17 @@ class ProfileCommands(commands.Cog):
             )
             
             embed.add_field(
-                name="⏱️ Time Remaining",
-                value=f"**{int(time_left)}** minutes",
-                inline=True
+                name="🔄 Try again:",
+                value=f"1. In League Client → Settings → Profile Icon\n"
+                      f"2. Make sure icon is set to **#{expected_icon}** and **Save**\n"
+                      f"3. Run `/verifyacc` again (new 10-minute window)\n"
+                      f"4. Wait for auto-verification (checks every 5 seconds)",
+                inline=False
             )
             
             embed.add_field(
-                name="📝 What to do?",
-                value=f"1. Open League Client\n"
-                      f"2. Change your profile icon to **#{expected_icon}**\n"
-                      f"3. Run `/link` to generate a new verification icon\n"
-                      f"4. Use `/verifyacc` and keep the icon unchanged until success",
+                name="💡 Tip",
+                value="If it keeps timing out, try `/link` to get a different icon number and retry.",
                 inline=False
             )
             
