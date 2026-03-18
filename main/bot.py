@@ -1501,7 +1501,13 @@ async def sync_commands(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     
     try:
-        # Sync commands
+        # Sync current guild first so command option changes are visible immediately.
+        guild_synced_count = 0
+        if interaction.guild:
+            synced_guild = await bot.tree.sync(guild=interaction.guild)
+            guild_synced_count = len(synced_guild)
+
+        # Sync global commands as well (can take longer to propagate).
         synced = await bot.tree.sync()
         
         embed = discord.Embed(
@@ -1509,6 +1515,12 @@ async def sync_commands(interaction: discord.Interaction):
             description=f"Successfully synced **{len(synced)}** commands to Discord.",
             color=0x00FF00
         )
+        if interaction.guild:
+            embed.add_field(
+                name="🏠 This Server",
+                value=f"Synced **{guild_synced_count}** commands instantly for this guild.",
+                inline=False
+            )
         embed.add_field(
             name="ℹ️ Note",
             value="Global command sync can take up to 1 hour to propagate across all servers.",
@@ -1516,7 +1528,10 @@ async def sync_commands(interaction: discord.Interaction):
         )
         
         await interaction.followup.send(embed=embed, ephemeral=True)
-        print(f"✅ Commands manually synced by {interaction.user.name}: {len(synced)} commands")
+        print(
+            f"✅ Commands manually synced by {interaction.user.name}: "
+            f"guild={guild_synced_count}, global={len(synced)}"
+        )
         
     except Exception as e:
         await interaction.followup.send(
