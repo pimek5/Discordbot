@@ -982,11 +982,25 @@ def create_bot():
     @bot.event
     async def setup_hook():
         bot.add_view(HelperView())
+
+        # Always sync globally so commands are available even without HELPER_GUILD_ID.
+        try:
+            synced_global = await bot.tree.sync()
+            logger.info("Synced %s helper commands globally", len(synced_global))
+        except Exception as e:
+            logger.warning("Global command sync failed: %s", e)
+
+        # If guild is configured, also sync guild-scoped for faster propagation.
         if GUILD_ID:
-            guild_obj = discord.Object(id=int(GUILD_ID))
-            bot.tree.copy_global_to(guild=guild_obj)
-            synced = await bot.tree.sync(guild=guild_obj)
-            logger.info("Synced %s helper commands to guild %s", len(synced), GUILD_ID)
+            try:
+                guild_obj = discord.Object(id=int(GUILD_ID))
+                bot.tree.copy_global_to(guild=guild_obj)
+                synced_guild = await bot.tree.sync(guild=guild_obj)
+                logger.info("Synced %s helper commands to guild %s", len(synced_guild), GUILD_ID)
+            except Exception as e:
+                logger.warning("Guild command sync failed for %s: %s", GUILD_ID, e)
+        else:
+            logger.warning("HELPER_GUILD_ID is not set; only global sync is active")
 
     async def close_http_session():
         if hasattr(bot, "http_session") and bot.http_session and not bot.http_session.closed:
