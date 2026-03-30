@@ -38,6 +38,158 @@ logger = logging.getLogger('profile_commands')
 # Use new Application Emojis
 RANK_EMOJIS = RANK_EMOJIS_NEW
 
+# ==================== AUTOLINK UI CLASSES ====================
+
+class AutolinkSelect(discord.ui.Select):
+    """Select menu for choosing which Discord connection to link"""
+    
+    def __init__(self, connections: List[Dict[str, Any]], riot_api: RiotAPI):
+        self.riot_api = riot_api
+        
+        options = []
+        for conn in connections:
+            riot_id = conn['name']
+            region = conn.get('metadata', {}).get('region', 'unknown')
+            label = f"{riot_id} ({region.upper()})" if region != 'unknown' else riot_id
+            options.append(discord.SelectOption(label=label, value=riot_id, description=f"Region: {region}"))
+        
+        super().__init__(
+            placeholder="Select a League of Legends account to link...",
+            min_values=1,
+            max_values=min(3, len(options)),
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        """Handle account selection and linking"""
+        await interaction.response.defer(ephemeral=True)
+        
+        selected_accounts = self.values
+        db = get_db()
+        
+        success_count = 0
+        failed_accounts = []
+        
+        for riot_id in selected_accounts:
+            try:
+                if '#' not in riot_id:
+                    failed_accounts.append((riot_id, "Invalid format - missing #"))
+                    continue
+                
+                game_name, tag_line = riot_id.split('#', 1)
+                
+                # Get account from Riot API
+                logger.info(f"🔍 Auto-linking: {game_name}#{tag_line}")
+                account_data = await self.riot_api.get_account_by_riot_id(game_name, tag_line)
+                
+                if not account_data:
+                    failed_accounts.append((riot_id, "Account not found on Riot API"))
+                    continue
+                
+                puuid = account_data['puuid']
+                
+                # Find which region they play on
+                detected_region = await self.riot_api.find_summoner_region(puuid)
+                if not detected_region:
+                    failed_accounts.append((riot_id, "Could not detect region"))
+                    continue
+                
+                # Get summoner data
+                summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, detected_region)
+                if not summoner_data:
+                    failed_accounts.append((riot_id, f"Could not fetch summoner data from {detected_region}"))
+                    continue
+                
+                # Direct link without verification (auto-link from Discord connections)
+                user_id = db.get_or_create_user(interaction.user.id)
+                db.add_league_account(
+                    user_id,
+                    detected_region,
+                    game_name,
+                    tag_line,
+                    puuid,
+                    summoner_id=None,
+                    verified=True  # Auto-verified from Discord connections
+                )
+                
+                # Get initial mastery snapshot
+                mastery_data = await self.riot_api.get_champion_mastery(puuid, detected_region, 200)
+                if mastery_data:
+                    for champ in mastery_data:
+                        db.update_champion_mastery(
+                            user_id,
+                            champ['championId'],
+                            champ['championPoints'],
+                            champ['championLevel'],
+                            champ.get('chestGranted', False),
+                            champ.get('tokensEarned', 0),
+                            champ.get('lastPlayTime')
+                        )
+                
+                # Add to guild members
+                if interaction.guild:
+                    db.add_guild_member(interaction.guild.id, user_id)
+                
+                # Update roles
+                try:
+                    from bot import update_user_rank_roles
+                    if interaction.guild:
+                        await update_user_rank_roles(interaction.user.id, interaction.guild.id)
+                    else:
+                        await update_user_rank_roles(interaction.user.id)
+                except Exception as e:
+                    logger.warning(f"Failed to update rank roles: {e}")
+                
+                logger.info(f"✅ Auto-linked: {game_name}#{tag_line} ({detected_region})")
+                success_count += 1
+                
+            except Exception as e:
+                logger.error(f"❌ Error linking {riot_id}: {e}")
+                failed_accounts.append((riot_id, str(e)))
+        
+        # Build response embed
+        embed = discord.Embed(
+            title="🎮 Discord Connections Auto-Link Result",
+            description=f"Linked {success_count}/{len(selected_accounts)} account(s)" if success_count > 0 else "No accounts were linked",
+            color=0x00FF00 if success_count > 0 else 0xFF0000
+        )
+        
+        if success_count > 0:
+            linked_list = "\n".join([f"✅ **{acc}**" for acc in selected_accounts[:success_count]])
+            embed.add_field(
+                name="✅ Successfully Linked",
+                value=linked_list,
+                inline=False
+            )
+        
+        if failed_accounts:
+            failed_list = "\n".join([f"❌ **{acc[0]}** - {acc[1]}" for acc in failed_accounts])
+            embed.add_field(
+                name="❌ Failed to Link",
+                value=failed_list,
+                inline=False
+            )
+        
+        embed.add_field(
+            name="🚀 What's Next?",
+            value="• `/profile` - View your complete stats\n"
+                  "• `/matches` - See recent match history\n"
+                  "• `/lp` - Track your LP gains\n",
+            inline=False
+        )
+        
+        embed.set_footer(text="Auto-linked accounts from your Discord connections!")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+class AutolinkView(discord.ui.View):
+    """View for autolink select menu"""
+    
+    def __init__(self, connections: List[Dict[str, Any]], riot_api: RiotAPI):
+        super().__init__()
+        self.add_item(AutolinkSelect(connections, riot_api))
+
 def generate_verification_code() -> str:
     """Generate a random 6-character verification code"""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -581,6 +733,101 @@ class ProfileCommands(commands.Cog):
         embed.set_thumbnail(url=f"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{verification_icon}.jpg")
         
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="autolink", description="Link accounts from your Discord connections")
+    async def autolink(self, interaction: discord.Interaction):
+        """Automatically link League of Legends accounts from Discord connections"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Fetch user's Discord connections (requires connected accounts in Discord)
+            # Using the interaction user's discord ID to check their connections
+            user_connections = await interaction.user.connections()
+            
+            # Filter League of Legends connections
+            lol_connections = [conn for conn in user_connections if conn.type == 'leagueoflegends']
+            
+            if not lol_connections:
+                embed = discord.Embed(
+                    title="❌ No League of Legends Connections Found",
+                    description="You don't have any League of Legends accounts connected to your Discord account.",
+                    color=0xFF0000
+                )
+                
+                embed.add_field(
+                    name="🔗 How to Connect Your Account:",
+                    value="1. Open Discord Settings\n"
+                          "2. Go to **Connections**\n"
+                          "3. Click on League of Legends icon\n"
+                          "4. Sign in with your Riot account\n"
+                          "5. Authorize the connection\n"
+                          "6. Come back and use `/autolink`",
+                    inline=False
+                )
+                
+                embed.set_footer(text="After connecting your account to Discord, run /autolink again!")
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            # Parse League connections into Riot IDs
+            autolink_connections = []
+            for conn in lol_connections:
+                # conn.name is the "Riot ID" - e.g., "Username#TAG"
+                riot_id = conn.name
+                # conn.metadata might contain region info
+                region = conn.metadata.get('region', 'euw') if hasattr(conn, 'metadata') and conn.metadata else 'euw'
+                
+                autolink_connections.append({
+                    'name': riot_id,
+                    'metadata': {'region': region}
+                })
+            
+            logger.info(f"✅ Found {len(autolink_connections)} League of Legends connection(s) for {interaction.user}")
+            
+            # Create select menu for accounts
+            embed = discord.Embed(
+                title="🎮 Select Accounts to Link",
+                description=f"Found **{len(autolink_connections)}** League of Legends account(s) linked to your Discord. "
+                           f"Select which to link to Kassalytics (you can select multiple):",
+                color=0x1F8EFA
+            )
+            
+            embed.add_field(
+                name="📊 Your Connected Accounts:",
+                value="\n".join([f"• **{c['name']}** ({c['metadata'].get('region', 'N/A').upper()})" 
+                                for c in autolink_connections]),
+                inline=False
+            )
+            
+            embed.set_footer(text="Select below to auto-link selected accounts")
+            
+            view = AutolinkView(autolink_connections, self.riot_api)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"❌ Error in autolink: {e}", exc_info=True)
+            
+            embed = discord.Embed(
+                title="❌ Error Retrieving Connections",
+                description=f"Could not fetch your Discord connections. Error: {str(e)}",
+                color=0xFF0000
+            )
+            
+            embed.add_field(
+                name="💡 Try the manual method:",
+                value="Use `/link Name#TAG region` to manually link your account",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🔗 Make sure you:",
+                value="1. Have connected League of Legends to your Discord\n"
+                      "2. Have given the bot permission to read connections\n"
+                      "3. Are using the command in a guild (not DM)",
+                inline=False
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
     
     @app_commands.command(name="verifyacc", description="Complete account verification")
     async def verifyacc(self, interaction: discord.Interaction):

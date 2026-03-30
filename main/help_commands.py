@@ -39,6 +39,12 @@ class HelpView(discord.ui.View):
         )
         
         embed.add_field(
+            name="/autolink",
+            value="Auto-link accounts from your Discord connections\n`/autolink`\n• Finds League of Legends accounts connected to your Discord\n• Select multiple accounts to link\n• No verification needed - instant linking",
+            inline=False
+        )
+        
+        embed.add_field(
             name="/verifyacc",
             value="Complete account verification and update roles\n`/verifyacc`",
             inline=False
