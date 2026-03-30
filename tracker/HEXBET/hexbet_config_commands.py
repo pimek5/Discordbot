@@ -339,7 +339,6 @@ class HexbetConfig(commands.Cog):
         self.config_db = get_hexbet_config_db()
 
     config_group = app_commands.Group(name="hexconfig", description="Configure HEXBET for this server")
-    webhooks_group = app_commands.Group(name="hexwebhooks", description="Manage HEXBET webhooks")
 
     @config_group.command(name="setup", description="Interactive setup for HEXBET channels and settings")
     @app_commands.checks.has_permissions(administrator=True)
@@ -358,43 +357,6 @@ class HexbetConfig(commands.Cog):
             return
         view = HexbetMainView(interaction.guild_id, self.config_db, interaction.guild)
         await interaction.response.send_message(embed=view.build_embed(), view=view, ephemeral=True)
-
-    # -- webhook slash commands (keep for CLI users) --
-    @webhooks_group.command(name="add", description="Add a webhook endpoint")
-    @app_commands.describe(webhook_url="Webhook URL (https://...)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def add_webhook(self, interaction: discord.Interaction, webhook_url: str):
-        if not (webhook_url.startswith('http://') or webhook_url.startswith('https://')):
-            await interaction.response.send_message("\u274c Invalid URL.", ephemeral=True)
-            return
-        try:
-            if not self.config_db.get_guild_config(interaction.guild_id):
-                self.config_db.set_guild_config(interaction.guild_id)
-            wid = self.config_db.add_webhook(interaction.guild_id, webhook_url)
-            await interaction.response.send_message(f"\u2705 Webhook added (ID: {wid}).", ephemeral=True)
-        except Exception as ex:
-            await interaction.response.send_message(f"\u274c Error: {ex}", ephemeral=True)
-
-    @webhooks_group.command(name="list", description="List all active webhooks")
-    async def list_webhooks(self, interaction: discord.Interaction):
-        webhooks = self.config_db.get_guild_webhooks(interaction.guild_id)
-        if not webhooks:
-            await interaction.response.send_message("\u274c No webhooks configured.", ephemeral=True)
-            return
-        e = discord.Embed(title="\U0001fa9d HEXBET Webhooks", color=0x3498DB)
-        for wh in webhooks:
-            masked = wh['webhook_url'][:30] + "..." if len(wh['webhook_url']) > 30 else wh['webhook_url']
-            e.add_field(name=f"#{wh['id']}", value=f"`{masked}`", inline=False)
-        await interaction.response.send_message(embed=e, ephemeral=True)
-
-    @webhooks_group.command(name="remove", description="Remove a webhook")
-    @app_commands.describe(webhook_id="Webhook ID from /hexwebhooks list")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def remove_webhook(self, interaction: discord.Interaction, webhook_id: int):
-        if self.config_db.remove_webhook(webhook_id, interaction.guild_id):
-            await interaction.response.send_message(f"\u2705 Webhook #{webhook_id} removed.", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"\u274c Webhook #{webhook_id} not found.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
