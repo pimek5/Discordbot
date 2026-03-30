@@ -1881,32 +1881,43 @@ class Hexbet(commands.Cog):
                 parts.append(f"{_RED} {smurf_red}")
             smurf_str = " | ".join(parts)
 
-        # Objectives projected — distributed between teams based on edge
+        # Objectives projected — game rules:
+        # Grubs (x1 set) + Herald (x1) go to ONE team only
+        # Drakes: max 4 total between both teams
+        # Baron/Elder: can repeat, go to heavily favored team
         _DRAKE = "<:infernaldrake:1488169753007624283>"
         _HERALD = "<:riftherald:1488169758292443206>"
         _BARON = "<:baronnashor:1488169738675687576>"
+        _GRUB = "<:grub:1488169746443665509>"
 
         diff = chance_blue - chance_red  # positive = blue favored
         if abs(diff) < 6:
-            blue_objs = f"{_HERALD}{_DRAKE}"
-            red_objs = f"{_HERALD}{_DRAKE}"
+            # Coin flip — drakes split, nobody gets herald/grubs/baron projection
+            blue_objs = f"{_DRAKE}{_DRAKE}"
+            red_objs = f"{_DRAKE}{_DRAKE}"
         elif diff >= 20:
-            blue_objs = f"{_HERALD}{_DRAKE}{_DRAKE}{_BARON}"
+            # Blue dominant — gets grubs, herald, 3 drakes, baron
+            blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}"
             red_objs = f"{_DRAKE}"
         elif diff >= 12:
-            blue_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
+            # Blue favored — gets grubs, herald, 3 drakes
+            blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}"
             red_objs = f"{_DRAKE}"
         elif diff > 0:
+            # Blue slight edge — gets herald, 2 drakes
             blue_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
-            red_objs = f"{_HERALD}{_DRAKE}"
+            red_objs = f"{_DRAKE}{_DRAKE}"
         elif diff <= -20:
+            # Red dominant
             blue_objs = f"{_DRAKE}"
-            red_objs = f"{_HERALD}{_DRAKE}{_DRAKE}{_BARON}"
+            red_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}"
         elif diff <= -12:
+            # Red favored
             blue_objs = f"{_DRAKE}"
-            red_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
+            red_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}"
         else:
-            blue_objs = f"{_HERALD}{_DRAKE}"
+            # Red slight edge
+            blue_objs = f"{_DRAKE}{_DRAKE}"
             red_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
 
         objectives_str = f"{blue_objs} {_BLUE} | {_RED} {red_objs}"
