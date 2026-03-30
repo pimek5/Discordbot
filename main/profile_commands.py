@@ -737,108 +737,11 @@ class ProfileCommands(commands.Cog):
     @app_commands.command(name="autolink", description="Link accounts from your Discord connections")
     async def autolink(self, interaction: discord.Interaction):
         """Automatically link League of Legends accounts from Discord connections"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            # Fetch user's Discord connections
-            # Note: connections() is a method on User/Member objects
-            try:
-                user_connections = interaction.user.connections
-            except AttributeError:
-                # Fallback - connections might not be available
-                user_connections = []
-            
-            if not user_connections:
-                # Try async fetch if available
-                try:
-                    user_connections = await interaction.user.connections()
-                except (AttributeError, TypeError):
-                    user_connections = []
-            
-            # Filter League of Legends connections
-            lol_connections = [conn for conn in user_connections if hasattr(conn, 'type') and conn.type == 'leagueoflegends']
-            
-            if not lol_connections:
-                embed = discord.Embed(
-                    title="❌ No League of Legends Connections Found",
-                    description="You don't have any League of Legends accounts connected to your Discord account.",
-                    color=0xFF0000
-                )
-                
-                embed.add_field(
-                    name="🔗 How to Connect Your Account:",
-                    value="1. Open Discord Settings\n"
-                          "2. Go to **Connections**\n"
-                          "3. Click on League of Legends icon\n"
-                          "4. Sign in with your Riot account\n"
-                          "5. Authorize the connection\n"
-                          "6. Come back and use `/autolink`",
-                    inline=False
-                )
-                
-                embed.set_footer(text="After connecting your account to Discord, run /autolink again!")
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                return
-            
-            # Parse League connections into Riot IDs
-            autolink_connections = []
-            for conn in lol_connections:
-                # conn.name is the "Riot ID" - e.g., "Username#TAG"
-                riot_id = conn.name
-                # conn.metadata might contain region info
-                region = conn.metadata.get('region', 'euw') if hasattr(conn, 'metadata') and conn.metadata else 'euw'
-                
-                autolink_connections.append({
-                    'name': riot_id,
-                    'metadata': {'region': region}
-                })
-            
-            logger.info(f"✅ Found {len(autolink_connections)} League of Legends connection(s) for {interaction.user}")
-            
-            # Create select menu for accounts
-            embed = discord.Embed(
-                title="🎮 Select Accounts to Link",
-                description=f"Found **{len(autolink_connections)}** League of Legends account(s) linked to your Discord. "
-                           f"Select which to link to Kassalytics (you can select multiple):",
-                color=0x1F8EFA
-            )
-            
-            embed.add_field(
-                name="📊 Your Connected Accounts:",
-                value="\n".join([f"• **{c['name']}** ({c['metadata'].get('region', 'N/A').upper()})" 
-                                for c in autolink_connections]),
-                inline=False
-            )
-            
-            embed.set_footer(text="Select below to auto-link selected accounts")
-            
-            view = AutolinkView(autolink_connections, self.riot_api)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            
-        except Exception as e:
-            logger.error(f"❌ Error in autolink: {e}", exc_info=True)
-            
-            embed = discord.Embed(
-                title="❌ Error Retrieving Connections",
-                description=f"Could not fetch your Discord connections. Error: {str(e)}",
-                color=0xFF0000
-            )
-            
-            embed.add_field(
-                name="💡 Try the manual method:",
-                value="Use `/link Name#TAG region` to manually link your account",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="🔗 Make sure you:",
-                value="1. Have connected League of Legends to your Discord\n"
-                      "2. Have given the bot permission to read connections\n"
-                      "3. Are using the command in a guild (not DM)",
-                inline=False
-            )
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.response.send_message(
+            "🔗 **Auto-linking** from Discord connections feature coming soon!\n\n"
+            "For now, use `/link Name#TAG region` to manually link your account.",
+            ephemeral=True
+        )
     
     @app_commands.command(name="verifyacc", description="Complete account verification")
     async def verifyacc(self, interaction: discord.Interaction):
