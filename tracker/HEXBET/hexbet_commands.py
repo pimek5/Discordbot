@@ -173,6 +173,8 @@ class Hexbet(commands.Cog):
         self.db = db
         self.config_db = get_hexbet_config_db()
         self.webhook_manager = get_webhook_manager()
+        self._gm_cutoff_cache: dict[str, tuple[int, float]] = {}
+        self._gm_cutoff_ttl_seconds = 300
         self.db.ensure_hexbet_tables()
         self.featured_task.start()
         self.leaderboard_task.start()
@@ -185,6 +187,36 @@ class Hexbet(commands.Cog):
         self.bot.loop.create_task(self._restore_persistent_views())
         self.bot.loop.create_task(self._load_pro_players())
         self.bot.loop.create_task(self._load_champion_roles())  # Load champion roles from ddragon
+
+    async def _get_grandmaster_cutoff_lp(self, region: str) -> Optional[int]:
+        """Return current Grandmaster cutoff LP (minimum LP in GM) for a region."""
+        region_key = (region or '').lower()
+        if not region_key:
+            return None
+
+        now_ts = time.time()
+        cached = self._gm_cutoff_cache.get(region_key)
+        if cached:
+            cached_cutoff, cached_at = cached
+            if (now_ts - cached_at) < self._gm_cutoff_ttl_seconds:
+                return cached_cutoff
+
+        gm_data = await self.riot_api.get_grandmaster_league(region_key)
+        entries = gm_data.get('entries', []) if gm_data else []
+        lp_values = []
+
+        for entry in entries:
+            try:
+                lp_values.append(int(entry.get('leaguePoints', 0)))
+            except (TypeError, ValueError):
+                continue
+
+        if not lp_values:
+            return None
+
+        cutoff_lp = min(lp_values)
+        self._gm_cutoff_cache[region_key] = (cutoff_lp, now_ts)
+        return cutoff_lp
     
     async def _restore_persistent_views(self):
         """Restore persistent views for open matches after bot restart"""
@@ -693,11 +725,20 @@ class Hexbet(commands.Cog):
                     score_red = self._team_score(red_ordered)
                     logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
                     
-                    # Check if average LP > 700 for special bet
+                    # Special bet requirement: lobby avg LP must reach current GM cutoff for region
                     all_players = blue_ordered + red_ordered
                     avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
-                    is_special_bet = avg_lp > 700
-                    logger.info(f"📈 Average LP: {avg_lp:.0f} LP - Special bet: {is_special_bet}")
+                    gm_cutoff_lp = await self._get_grandmaster_cutoff_lp(region)
+                    if gm_cutoff_lp is None:
+                        is_special_bet = False
+                        logger.warning(
+                            f"⚠️ Could not fetch Grandmaster cutoff for {region.upper()} - disabling special bet for game {game_id}"
+                        )
+                    else:
+                        is_special_bet = avg_lp >= gm_cutoff_lp
+                        logger.info(
+                            f"📈 Avg LP: {avg_lp:.0f} | GM cutoff ({region.upper()}): {gm_cutoff_lp} | Special bet: {is_special_bet}"
+                        )
                     
                     confidence = self._odds_confidence(blue_ordered, red_ordered)
                     odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
@@ -713,7 +754,7 @@ class Hexbet(commands.Cog):
                         {'players': blue_ordered, 'odds': odds_blue},
                         {'players': red_ordered, 'odds': odds_red},
                         game_data.get('gameStartTime', 0),
-                        special_bet=is_special_bet,  # Special if avg LP > 1000
+                        special_bet=is_special_bet,
                         guild_id=guild_id
                     )
                     if not match_id and not force:
