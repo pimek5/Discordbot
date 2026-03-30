@@ -734,14 +734,141 @@ class ProfileCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="autolink", description="Link accounts from your Discord connections")
-    async def autolink(self, interaction: discord.Interaction):
-        """Automatically link League of Legends accounts from Discord connections"""
-        await interaction.response.send_message(
-            "🔗 **Auto-linking** from Discord connections feature coming soon!\n\n"
-            "For now, use `/link Name#TAG region` to manually link your account.",
-            ephemeral=True
+    @app_commands.command(name="autolink", description="Quick-link your Riot account (no icon verification needed)")
+    @app_commands.describe(
+        riot_id="Your Riot ID from Discord Connections (Name#TAG)"
+    )
+    async def autolink(self, interaction: discord.Interaction, riot_id: str):
+        """Quick-link a Riot account without icon verification.
+        Use the Riot ID shown in your Discord Connections."""
+        await interaction.response.defer(ephemeral=True)
+        
+        db = get_db()
+        
+        # Parse Riot ID
+        if '#' not in riot_id:
+            await interaction.followup.send(
+                "❌ Invalid Riot ID format! Use: `Name#TAG`\n"
+                "💡 Copy your Riot ID from **Discord Settings → Connections → Riot Games**",
+                ephemeral=True
+            )
+            return
+        
+        game_name, tag_line = riot_id.split('#', 1)
+        
+        # Get account from Riot API
+        logger.info(f"🔍 Auto-linking: {game_name}#{tag_line}")
+        account_data = await self.riot_api.get_account_by_riot_id(game_name, tag_line)
+        
+        if not account_data:
+            await interaction.followup.send(
+                f"❌ Could not find account **{riot_id}** on Riot API!\n"
+                "Make sure you copied the exact Riot ID from your Discord connections.",
+                ephemeral=True
+            )
+            return
+        
+        puuid = account_data['puuid']
+        
+        # Find region
+        detected_region = await self.riot_api.find_summoner_region(puuid)
+        if not detected_region:
+            await interaction.followup.send(
+                f"❌ Could not detect region for **{riot_id}**. Try `/link` with manual region selection.",
+                ephemeral=True
+            )
+            return
+        
+        # Get summoner data
+        summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, detected_region)
+        if not summoner_data:
+            await interaction.followup.send(
+                f"❌ Could not fetch summoner data from {detected_region.upper()}. Try again later.",
+                ephemeral=True
+            )
+            return
+        
+        # Check if already linked
+        user_id = db.get_or_create_user(interaction.user.id)
+        existing_accounts = db.get_user_accounts(user_id)
+        if existing_accounts:
+            for acc in existing_accounts:
+                if acc.get('puuid') == puuid:
+                    await interaction.followup.send(
+                        f"ℹ️ Account **{game_name}#{tag_line}** is already linked!",
+                        ephemeral=True
+                    )
+                    return
+        
+        # Direct link - no icon verification needed (trusted from Discord connections)
+        db.add_league_account(
+            user_id,
+            detected_region,
+            game_name,
+            tag_line,
+            puuid,
+            summoner_id=None,
+            verified=True
         )
+        
+        # Get initial mastery snapshot
+        mastery_data = await self.riot_api.get_champion_mastery(puuid, detected_region, 200)
+        if mastery_data:
+            for champ in mastery_data:
+                db.update_champion_mastery(
+                    user_id,
+                    champ['championId'],
+                    champ['championPoints'],
+                    champ['championLevel'],
+                    champ.get('chestGranted', False),
+                    champ.get('tokensEarned', 0),
+                    champ.get('lastPlayTime')
+                )
+            logger.info(f"✅ Saved {len(mastery_data)} champion masteries for autolink")
+        
+        # Add to guild members
+        if interaction.guild:
+            db.add_guild_member(interaction.guild.id, user_id)
+        
+        # Update rank/region roles
+        try:
+            from bot import update_user_rank_roles
+            if interaction.guild:
+                await update_user_rank_roles(interaction.user.id, interaction.guild.id)
+            else:
+                await update_user_rank_roles(interaction.user.id)
+        except Exception as e:
+            logger.warning(f"Failed to update rank roles: {e}")
+        
+        logger.info(f"✅ Auto-linked: {game_name}#{tag_line} ({detected_region}) for {interaction.user}")
+        
+        # Success embed
+        embed = discord.Embed(
+            title="✅ Account Linked Successfully!",
+            description=f"**{game_name}#{tag_line}** has been linked to your Discord account.",
+            color=0x00FF00
+        )
+        
+        summoner_level = summoner_data.get('summonerLevel', 0)
+        embed.add_field(
+            name="🎮 Account Info",
+            value=f"📍 Region: **{detected_region.upper()}**\n"
+                  f"📊 Level: **{summoner_level}**",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🚀 What's Next?",
+            value="• `/profile` - View your complete stats\n"
+                  "• `/matches` - See recent match history\n"
+                  "• `/lp` - Track your LP gains\n"
+                  "• `/autolink Name#TAG` - Link more accounts",
+            inline=False
+        )
+        
+        embed.set_footer(text="🔗 Linked via Discord Connections (no verification needed)")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     @app_commands.command(name="verifyacc", description="Complete account verification")
     async def verifyacc(self, interaction: discord.Interaction):

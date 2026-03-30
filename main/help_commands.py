@@ -40,7 +40,7 @@ class HelpView(discord.ui.View):
         
         embed.add_field(
             name="/autolink",
-            value="Auto-link accounts from your Discord connections\n`/autolink`\n• Finds League of Legends accounts connected to your Discord\n• Select multiple accounts to link\n• No verification needed - instant linking",
+            value="Quick-link your Riot account (no icon verification)\n`/autolink riot_id:Name#TAG`\n• Copy your Riot ID from Discord Settings → Connections\n• No icon change needed - instant linking",
             inline=False
         )
         

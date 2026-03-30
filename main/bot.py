@@ -881,11 +881,10 @@ class MyBot(commands.Bot):
         self.tree.add_command(server_group, guild=primary_guild)
         print("✅ Mod and Server commands registered for guild only")
         
-        # Copy autolink to guild tree for instant availability
-        autolink_cmd = self.tree.get_command('autolink')
-        if autolink_cmd:
-            self.tree.add_command(autolink_cmd, guild=primary_guild, override=True)
-            print("✅ /autolink copied to guild tree for instant sync")
+        # Copy ALL global commands to guild for instant availability
+        # (global sync can take up to 1 hour, guild sync is instant)
+        self.tree.copy_global_to(guild=primary_guild)
+        print("✅ Global commands copied to guild tree for instant sync")
         
         # Sync guild-specific commands only (avoid duplicate global+guild command copies)
         print(f"🔧 Syncing guild-specific commands to primary guild {GUILD_ID}...")
