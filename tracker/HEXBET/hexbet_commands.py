@@ -846,12 +846,19 @@ class Hexbet(commands.Cog):
                 continue
             
             winner = 'blue' if winner_team == 100 else 'red'
+            timeline_summary = None
+            try:
+                timeline_data = await self.riot_api.get_match_timeline(match_ref, region)
+                timeline_summary = self._extract_timeline_analytics(info, timeline_data)
+            except Exception as tl_err:
+                logger.warning(f"⚠️ Failed to extract timeline analytics for {match_ref}: {tl_err}")
+
             payouts = self.db.settle_match(match['id'], winner)
             for user_id, amount, payout, won in payouts:
                 if payout:
                     self.db.update_balance(user_id, payout)
                 self.db.record_result(user_id, amount, payout, won)
-            await self._update_match_message(match, winner, payouts)
+            await self._update_match_message(match, winner, payouts, timeline_summary=timeline_summary)
             logger.info(f"✅ Settled match {match['game_id']} - Winner: {winner.upper()}")
             
             # Send webhook notification for bet result
@@ -892,12 +899,15 @@ class Hexbet(commands.Cog):
                     if winners_count > 0:
                         winner_list = [f"<@{uid}>: +{payout}" for uid, _, payout, won in payouts if won]
                         log_embed.add_field(name="Payouts", value="\n".join(winner_list[:10]), inline=False)
+
+                    if timeline_summary:
+                        log_embed.add_field(name="📉 Timeline Analytics", value=timeline_summary, inline=False)
                     
                     await log_channel.send(embed=log_embed)
             except Exception as e:
                 logger.warning(f"Failed to log settlement: {e}")
 
-    async def _update_match_message(self, match: dict, winner: str, payouts: List[tuple]):
+    async def _update_match_message(self, match: dict, winner: str, payouts: List[tuple], timeline_summary: Optional[str] = None):
         """Update match message to show final result and send notifications"""
         # Get all guild messages for this match
         match_messages = self.db.get_match_messages(match['id'])
@@ -937,6 +947,9 @@ class Hexbet(commands.Cog):
                         f"**Total Payout:** {total_payout}"
                     )
                     embed.add_field(name="📊 Bet Results", value=results_text, inline=False)
+
+                    if timeline_summary:
+                        embed.add_field(name="📉 Timeline Analytics", value=timeline_summary, inline=False)
                     
                     # Remove betting view
                     await msg.edit(embed=embed, view=None)
@@ -1765,6 +1778,149 @@ class Hexbet(commands.Cog):
                 cells.append(label)
         return "Timeline: " + " - ".join(cells)
 
+    def _build_live_timeline_analytics(self, game_duration_min: int, chance_blue: float, chance_red: float,
+                                       blue: List[dict], red: List[dict]) -> str:
+        """Build compact live-phase analytics based on current game minute and team edge."""
+        if game_duration_min < 14:
+            phase = "Early game"
+            focus = "Lane priority, first drake/Herald setup"
+        elif game_duration_min < 28:
+            phase = "Mid game"
+            focus = "Soul-point and Baron setup windows"
+        else:
+            phase = "Late game"
+            focus = "Baron/Elder control usually decides the result"
+
+        edge = abs(chance_blue - chance_red)
+        if edge < 6:
+            volatility = "High"
+        elif edge < 12:
+            volatility = "Medium"
+        else:
+            volatility = "Low"
+
+        if chance_blue > chance_red:
+            favored = "Blue"
+        elif chance_red > chance_blue:
+            favored = "Red"
+        else:
+            favored = "Even"
+
+        smurf_blue = self._smurf_summary(blue)
+        smurf_red = self._smurf_summary(red)
+
+        return (
+            f"**Phase:** {phase} ({game_duration_min}m)\n"
+            f"**Favored Side:** {favored} (edge {edge:.1f}%) • **Volatility:** {volatility}\n"
+            f"**Focus:** {focus}\n"
+            f"**Risk Markers:** Blue {smurf_blue} • Red {smurf_red}"
+        )
+
+    def _extract_timeline_analytics(self, match_info: dict, timeline_data: Optional[dict]) -> Optional[str]:
+        """Extract concise post-game analytics from Match-V5 timeline payload."""
+        if not timeline_data or not isinstance(timeline_data, dict):
+            return None
+
+        info = timeline_data.get('info', {})
+        frames = info.get('frames', [])
+        if not frames:
+            return None
+
+        participant_team = {}
+        for p in match_info.get('participants', []):
+            pid = p.get('participantId')
+            tid = p.get('teamId')
+            if isinstance(pid, int) and tid in (100, 200):
+                participant_team[pid] = tid
+
+        kills = {100: 0, 200: 0}
+        dragons = {100: 0, 200: 0}
+        heralds = {100: 0, 200: 0}
+        barons = {100: 0, 200: 0}
+        first_blood_ms = None
+        first_blood_team = None
+
+        for frame in frames:
+            for event in frame.get('events', []):
+                event_type = event.get('type')
+
+                if event_type == 'CHAMPION_KILL':
+                    killer_id = event.get('killerId')
+                    killer_team = event.get('killerTeamId')
+                    if killer_team not in (100, 200) and isinstance(killer_id, int):
+                        killer_team = participant_team.get(killer_id)
+                    if killer_team in (100, 200):
+                        kills[killer_team] += 1
+                        if first_blood_ms is None:
+                            first_blood_ms = event.get('timestamp')
+                            first_blood_team = killer_team
+
+                elif event_type == 'ELITE_MONSTER_KILL':
+                    monster_type = event.get('monsterType')
+                    killer_team = event.get('killerTeamId')
+                    killer_id = event.get('killerId')
+                    if killer_team not in (100, 200) and isinstance(killer_id, int):
+                        killer_team = participant_team.get(killer_id)
+                    if killer_team not in (100, 200):
+                        continue
+
+                    if monster_type == 'DRAGON':
+                        dragons[killer_team] += 1
+                    elif monster_type == 'RIFTHERALD':
+                        heralds[killer_team] += 1
+                    elif monster_type == 'BARON_NASHOR':
+                        barons[killer_team] += 1
+
+        frame_15 = None
+        for frame in frames:
+            if frame.get('timestamp', 0) <= 900000:
+                frame_15 = frame
+            else:
+                break
+
+        gold_15_blue = 0
+        gold_15_red = 0
+        if frame_15:
+            participant_frames = frame_15.get('participantFrames', {})
+            for pid_raw, pf in participant_frames.items():
+                try:
+                    pid = int(pid_raw)
+                except (TypeError, ValueError):
+                    continue
+                team_id = participant_team.get(pid)
+                total_gold = int(pf.get('totalGold', 0) or 0)
+                if team_id == 100:
+                    gold_15_blue += total_gold
+                elif team_id == 200:
+                    gold_15_red += total_gold
+
+        gold_diff = gold_15_blue - gold_15_red
+        if gold_diff > 0:
+            gold_line = f"Gold@15: Blue +{gold_diff:,}"
+        elif gold_diff < 0:
+            gold_line = f"Gold@15: Red +{abs(gold_diff):,}"
+        else:
+            gold_line = "Gold@15: Even"
+
+        game_duration_min = max(1, int((match_info.get('gameDuration', 0) or 0) / 60))
+        total_kills = kills[100] + kills[200]
+        kill_pace = total_kills / game_duration_min
+
+        if first_blood_ms is not None and first_blood_team in (100, 200):
+            fb_min = int(first_blood_ms // 60000)
+            fb_sec = int((first_blood_ms % 60000) // 1000)
+            fb_side = 'Blue' if first_blood_team == 100 else 'Red'
+            fb_line = f"First blood: {fb_side} {fb_min}:{fb_sec:02d}"
+        else:
+            fb_line = "First blood: N/A"
+
+        return (
+            f"{fb_line}\n"
+            f"Objectives: Drakes {dragons[100]}-{dragons[200]} | Herald {heralds[100]}-{heralds[200]} | Baron {barons[100]}-{barons[200]}\n"
+            f"{gold_line}\n"
+            f"Kill pace: {kill_pace:.2f}/min ({kills[100]}-{kills[200]})"
+        )
+
     def _smurf_summary(self, team: List[dict]) -> int:
         return sum(1 for p in team if p.get('smurf_risk'))
 
@@ -1840,6 +1996,8 @@ class Hexbet(commands.Cog):
             except Exception as e:
                 logger.warning(f"Failed to get betting timer: {e}")
         
+        game_duration_min = None
+
         # Calculate actual game duration from PostgreSQL timestamp
         if game_start_at:
             try:
@@ -1925,6 +2083,16 @@ class Hexbet(commands.Cog):
                 value=f"Blue flagged: **{smurf_blue}** | Red flagged: **{smurf_red}**",
                 inline=False,
             )
+
+        if game_duration_min is not None:
+            timeline_analytics = self._build_live_timeline_analytics(
+                game_duration_min,
+                chance_blue,
+                chance_red,
+                blue,
+                red,
+            )
+            embed.add_field(name="📉 Match Timeline Analytics", value=timeline_analytics, inline=False)
         
         # Get current bets if match exists
         bet_info = ""

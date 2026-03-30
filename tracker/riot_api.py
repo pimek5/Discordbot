@@ -773,6 +773,44 @@ class RiotAPI:
         
         logger.warning(f"⚠️ Failed to get match details after {retries} attempts")
         return None
+
+    async def get_match_timeline(self, match_id: str, region: str,
+                                 retries: int = 5) -> Optional[Dict]:
+        """Get detailed timeline data for a completed match - Match-V5 timeline endpoint."""
+        if not self.api_key:
+            return None
+
+        routing = RIOT_REGIONS.get(region.lower(), 'europe')
+        url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
+
+        for attempt in range(retries):
+            try:
+                timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        elif response.status == 404:
+                            return None
+                        elif response.status == 429:
+                            await asyncio.sleep(2)
+                            continue
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️ Timeout getting match timeline (attempt {attempt + 1}/{retries})")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except aiohttp.ClientError as e:
+                logger.warning(f"🌐 Network error getting match timeline (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2)
+                continue
+            except Exception as e:
+                logger.error(f"❌ Error getting match timeline: {e}")
+                return None
+
+        logger.warning(f"⚠️ Failed to get match timeline after {retries} attempts")
+        return None
     
     async def get_active_game(self, puuid: str, region: str, 
                              summoner_id: Optional[str] = None,

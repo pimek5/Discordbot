@@ -42,6 +42,44 @@ def generate_verification_code() -> str:
     """Generate a random 6-character verification code"""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
+
+def build_live_status_value(active_game: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Build concise live game status text for profile embeds."""
+    if not active_game:
+        return None
+
+    game_data = active_game.get('game', {})
+    game_account = active_game.get('account', {})
+    participants = game_data.get('participants', [])
+
+    player_data = next((p for p in participants if p.get('puuid') == game_account.get('puuid')), None)
+
+    game_queue_id = game_data.get('gameQueueConfigId', 0)
+    game_length = int(game_data.get('gameLength', 0) // 60)
+    queue_names = {
+        420: "Ranked Solo",
+        440: "Ranked Flex",
+        400: "Normal Draft",
+        430: "Normal Blind",
+        450: "ARAM",
+        490: "Quickplay",
+        700: "Clash",
+        1700: "Arena",
+    }
+    queue_name = queue_names.get(game_queue_id, "Custom")
+
+    if player_data and 'championName' in player_data:
+        champion_name = player_data.get('championName', 'Unknown')
+    else:
+        champion_id = player_data.get('championId', 0) if player_data else 0
+        champion_name = CHAMPION_ID_TO_NAME.get(champion_id, f"Champion {champion_id}")
+
+    champ_emoji = get_champion_emoji(champion_name)
+    if game_length > 0:
+        return f"🔴 **IN GAME** ({game_length} min)\n**Mode:** {queue_name}\n{champ_emoji} **{champion_name}**"
+
+    return f"🔴 **IN GAME**\n**Mode:** {queue_name}\n{champ_emoji} **{champion_name}**"
+
 # ==================== STATISTICS HELPER FUNCTIONS ====================
 
 def calculate_match_stats(matches: list, puuid: str) -> dict:
@@ -1581,6 +1619,14 @@ class ProfileCommands(commands.Cog):
                 if game_data:
                     active_game = {'game': game_data, 'account': acc}
                     break
+
+            live_status = build_live_status_value(active_game)
+            if live_status:
+                embed.add_field(
+                    name="🎮 Live Status",
+                    value=live_status,
+                    inline=False
+                )
 
             # Create interactive view with buttons
             view = ProfileView(
@@ -3410,51 +3456,13 @@ class ProfileView(discord.ui.View):
         )
         
         # === LIVE STATUS (if in game) ===
-        if self.active_game:
-            game_data = self.active_game['game']
-            game_account = self.active_game['account']
-            participants = game_data.get('participants', [])
-            
-            # Find player data
-            player_data = None
-            for p in participants:
-                if p.get('puuid') == game_account['puuid']:
-                    player_data = p
-                    break
-            
-            # Check streamer mode
-            is_streamer_mode = False
-            if player_data:
-                customization = player_data.get('gameCustomization', {})
-                if 'clientSideToggleASolution' in str(customization):
-                    is_streamer_mode = True
-            
-            if is_streamer_mode:
-                embed.add_field(
-                    name="🎮 Live Status",
-                    value=f"🔴 **IN GAME**\n🔒 Streamer Mode: ON",
-                    inline=True
-                )
-            else:
-                game_queue_id = game_data.get('gameQueueConfigId', 0)
-                game_length = game_data.get('gameLength', 0) // 60
-                
-                queue_names = {
-                    420: "Ranked Solo", 440: "Ranked Flex", 400: "Normal Draft",
-                    430: "Normal Blind", 450: "ARAM", 490: "Quickplay",
-                    700: "Clash", 1700: "Arena"
-                }
-                queue_name = queue_names.get(game_queue_id, "Custom")
-                
-                champion_id = player_data.get('championId', 0) if player_data else 0
-                champion_name = CHAMPION_ID_TO_NAME.get(champion_id, f"Champion {champion_id}")
-                champ_emoji = get_champion_emoji(champion_name)
-                
-                embed.add_field(
-                    name="🎮 Live Status",
-                    value=f"🔴 **IN GAME** ({game_length} min)\n**Mode:** {queue_name}\n{champ_emoji} **{champion_name}**",
-                    inline=True
-                )
+        live_status = build_live_status_value(self.active_game)
+        if live_status:
+            embed.add_field(
+                name="🎮 Live Status",
+                value=live_status,
+                inline=True
+            )
         
         # Top Champions section (by mastery points from database)
         if self.champ_stats and len(self.champ_stats) > 0:
