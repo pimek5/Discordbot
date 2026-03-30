@@ -3820,19 +3820,53 @@ class Hexbet(commands.Cog):
     
     @app_commands.command(name="hxpool", description="(Admin) Populate high-elo player pool")
     @app_commands.describe(
-        sample_size="Number of random players to fetch per tier/region (default: 50)"
+        sample_size="Number of random players per tier/region (5-30, default: 20)"
     )
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def hxpool(self, interaction: discord.Interaction, sample_size: int = 50):
+    async def hxpool(self, interaction: discord.Interaction, sample_size: int = 20):
         """Fetch random high-elo players (Challenger/GM/Master/Diamond) and add to pool"""
         await interaction.response.defer(ephemeral=True)
         
         try:
+            requested_sample_size = sample_size
+            sample_size = max(5, min(sample_size, 30))
+
+            if sample_size != requested_sample_size:
+                await interaction.followup.send(
+                    f"ℹ️ sample_size adjusted from {requested_sample_size} to {sample_size} (allowed range: 5-30).",
+                    ephemeral=True
+                )
+
             logger.info(f"🔄 hxpool command started by {interaction.user} with sample_size={sample_size}")
-            await interaction.followup.send("🔄 Fetching random high-elo players from all regions...", ephemeral=True)
+            await interaction.followup.send(
+                "🔄 Fetching high-elo players from Riot API (Challenger/GM/Master/Diamond)...",
+                ephemeral=True
+            )
+
             fetched, summary = await self._fetch_and_update_pool(sample_size=sample_size)
             logger.info(f"✅ hxpool completed: {fetched} players fetched")
-            await interaction.followup.send(summary, ephemeral=False)
+
+            if fetched == 0:
+                logger.warning("⚠️ /hxpool fetched 0 players from Riot API, running verified fallback")
+                await self._add_verified_to_pool_auto()
+
+                conn = self.db.get_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT COUNT(*) FROM hexbet_high_elo_pool")
+                        pool_count = cur.fetchone()[0]
+                finally:
+                    self.db.return_connection(conn)
+
+                fallback_msg = (
+                    "⚠️ Riot API fetch returned 0 players.\n"
+                    "✅ Ran fallback: added/updated verified players in pool.\n"
+                    f"📦 Current pool size: **{pool_count}**\n\n"
+                    "Possible causes: API rate limit (429), expired API key, or temporary Riot API issues."
+                )
+                await interaction.followup.send(fallback_msg, ephemeral=False)
+            else:
+                await interaction.followup.send(summary, ephemeral=False)
         except Exception as e:
             logger.error(f"❌ Error populating pool: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)

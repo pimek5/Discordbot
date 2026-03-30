@@ -782,14 +782,19 @@ class TrackerDatabase:
                 
                 if not all_players:
                     return []
-                
-                # Weighted random selection using priority_boost
+
+                # Weighted random selection WITHOUT replacement to avoid duplicate scans.
                 import random
-                weights = [p[3] for p in all_players]  # Extract boost values
-                
-                # Use random.choices with weights (Python 3.6+)
-                selected = random.choices(all_players, weights=weights, k=min(limit, len(all_players)))
-                
+                target_count = min(limit, len(all_players))
+                remaining = list(all_players)
+                selected = []
+
+                while remaining and len(selected) < target_count:
+                    weights = [max(float(p[3] or 0), 0.01) for p in remaining]
+                    pick = random.choices(remaining, weights=weights, k=1)[0]
+                    selected.append(pick)
+                    remaining.remove(pick)
+
                 return selected
         finally:
             self.return_connection(conn)
