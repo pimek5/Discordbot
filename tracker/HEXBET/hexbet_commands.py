@@ -1847,10 +1847,35 @@ class Hexbet(commands.Cog):
         smurf_blue = self._smurf_summary(blue)
         smurf_red = self._smurf_summary(red)
 
+        # Calculate average LP (economy indicator)
+        avg_lp_blue = sum(p.get('lp', 0) for p in blue) / len(blue) if blue else 0
+        avg_lp_red = sum(p.get('lp', 0) for p in red) / len(red) if red else 0
+        lp_diff = avg_lp_blue - avg_lp_red
+        
+        if abs(lp_diff) < 50:
+            economy_str = "Even"
+        elif lp_diff > 0:
+            economy_str = f"Blue +{int(abs(lp_diff))} LP"
+        else:
+            economy_str = f"Red +{int(abs(lp_diff))} LP"
+
+        # Estimate objectives potential based on teamcomp
+        # Count carries vs utility
+        blue_carries = sum(1 for p in blue if p.get('role_name') in ['ADC', 'MID'])
+        red_carries = sum(1 for p in red if p.get('role_name') in ['ADC', 'MID'])
+        
+        if abs(blue_carries - red_carries) <= 1:
+            objectives_str = "Balanced"
+        elif blue_carries > red_carries:
+            objectives_str = "Blue favored"
+        else:
+            objectives_str = "Red favored"
+
         return (
             f"**Phase:** {phase} ({game_duration_min}m)\n"
             f"**Favored Side:** {favored} (edge {edge:.1f}%) • **Volatility:** {volatility}\n"
-            f"**Risk Markers:** Blue {smurf_blue} • Red {smurf_red}"
+            f"**Economy:** {economy_str}\n"
+            f"**Objectives:** {objectives_str} • **Risk Markers:** {smurf_blue}🔵 {smurf_red}🔴"
         )
 
     def _extract_timeline_analytics(self, match_info: dict, timeline_data: Optional[dict]) -> Optional[str]:
