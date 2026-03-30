@@ -740,12 +740,23 @@ class ProfileCommands(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # Fetch user's Discord connections (requires connected accounts in Discord)
-            # Using the interaction user's discord ID to check their connections
-            user_connections = await interaction.user.connections()
+            # Fetch user's Discord connections
+            # Note: connections() is a method on User/Member objects
+            try:
+                user_connections = interaction.user.connections
+            except AttributeError:
+                # Fallback - connections might not be available
+                user_connections = []
+            
+            if not user_connections:
+                # Try async fetch if available
+                try:
+                    user_connections = await interaction.user.connections()
+                except (AttributeError, TypeError):
+                    user_connections = []
             
             # Filter League of Legends connections
-            lol_connections = [conn for conn in user_connections if conn.type == 'leagueoflegends']
+            lol_connections = [conn for conn in user_connections if hasattr(conn, 'type') and conn.type == 'leagueoflegends']
             
             if not lol_connections:
                 embed = discord.Embed(
