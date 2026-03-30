@@ -1852,12 +1852,15 @@ class Hexbet(commands.Cog):
         avg_lp_red = sum(p.get('lp', 0) for p in red) / len(red) if red else 0
         lp_diff = avg_lp_blue - avg_lp_red
 
+        _BLUE = "<:BlueSide:1457209225976484014>"
+        _RED = "<:RedSide:1457209221031395472>"
+
         if abs(lp_diff) < 50:
             rank_gap_str = "Even"
         elif lp_diff > 0:
-            rank_gap_str = f"🔵 +{int(abs(lp_diff))} LP"
+            rank_gap_str = f"{_BLUE} +{int(abs(lp_diff))} LP"
         else:
-            rank_gap_str = f"🔴 +{int(abs(lp_diff))} LP"
+            rank_gap_str = f"{_RED} +{int(abs(lp_diff))} LP"
 
         # Swing potential (how likely result can flip)
         if edge < 6:
@@ -1873,38 +1876,46 @@ class Hexbet(commands.Cog):
         else:
             parts = []
             if smurf_blue:
-                parts.append(f"<:BlueSide:1457209225976484014> {smurf_blue}")
+                parts.append(f"{_BLUE} {smurf_blue}")
             if smurf_red:
-                parts.append(f"<:RedSide:1457209221031395472> {smurf_red}")
+                parts.append(f"{_RED} {smurf_red}")
             smurf_str = " | ".join(parts)
 
-        # Objectives potential (comp-based left🔵 | right🔴 format)
+        # Objectives projected — distributed between teams based on edge
         _DRAKE = "<:infernaldrake:1488169753007624283>"
         _HERALD = "<:riftherald:1488169758292443206>"
         _BARON = "<:baronnashor:1488169738675687576>"
-        _ELDER = "<:elderdrake:1488169745365729411>"
 
-        # Estimate based on win chance - stronger team projects more objectives
-        def _obj_strip(chance: float) -> str:
-            """Build an objective strip based on win probability."""
-            if chance >= 65:
-                return f"{_HERALD}{_DRAKE}{_DRAKE}{_BARON}"
-            elif chance >= 55:
-                return f"{_HERALD}{_DRAKE}{_DRAKE}"
-            elif chance >= 48:
-                return f"{_HERALD}{_DRAKE}"
-            else:
-                return f"{_DRAKE}"
+        diff = chance_blue - chance_red  # positive = blue favored
+        if abs(diff) < 6:
+            blue_objs = f"{_HERALD}{_DRAKE}"
+            red_objs = f"{_HERALD}{_DRAKE}"
+        elif diff >= 20:
+            blue_objs = f"{_HERALD}{_DRAKE}{_DRAKE}{_BARON}"
+            red_objs = f"{_DRAKE}"
+        elif diff >= 12:
+            blue_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
+            red_objs = f"{_DRAKE}"
+        elif diff > 0:
+            blue_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
+            red_objs = f"{_HERALD}{_DRAKE}"
+        elif diff <= -20:
+            blue_objs = f"{_DRAKE}"
+            red_objs = f"{_HERALD}{_DRAKE}{_DRAKE}{_BARON}"
+        elif diff <= -12:
+            blue_objs = f"{_DRAKE}"
+            red_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
+        else:
+            blue_objs = f"{_HERALD}{_DRAKE}"
+            red_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
 
-        blue_objs = _obj_strip(chance_blue)
-        red_objs = _obj_strip(chance_red)
-        objectives_str = f"{blue_objs} 🔵 | 🔴 {red_objs}"
+        objectives_str = f"{blue_objs} {_BLUE} | {_RED} {red_objs}"
 
         return (
             f"**Phase:** {phase} ({game_duration_min}m) — **Favored:** {favored}\n"
             f"**Flip Chance:** {swing_str}\n"
             f"**Rank Gap:** {rank_gap_str}\n"
-            f"**Projected Objectives:** {objectives_str}\n"
+            f"**Objectives:** {objectives_str}\n"
             f"**Suspicious:** {smurf_str}"
         )
 
