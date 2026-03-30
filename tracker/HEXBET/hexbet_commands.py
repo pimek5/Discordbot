@@ -1824,13 +1824,10 @@ class Hexbet(commands.Cog):
         """Build compact live-phase analytics based on current game minute and team edge."""
         if game_duration_min < 14:
             phase = "Early game"
-            focus = "Lane priority, first drake/Herald setup"
         elif game_duration_min < 28:
             phase = "Mid game"
-            focus = "Soul-point and Baron setup windows"
         else:
             phase = "Late game"
-            focus = "Baron/Elder control usually decides the result"
 
         edge = abs(chance_blue - chance_red)
         if edge < 6:
@@ -1853,7 +1850,6 @@ class Hexbet(commands.Cog):
         return (
             f"**Phase:** {phase} ({game_duration_min}m)\n"
             f"**Favored Side:** {favored} (edge {edge:.1f}%) • **Volatility:** {volatility}\n"
-            f"**Focus:** {focus}\n"
             f"**Risk Markers:** Blue {smurf_blue} • Red {smurf_red}"
         )
 
