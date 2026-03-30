@@ -1,5 +1,38 @@
 # 🎮 HEXRTBRXEN Discord Bot Project
 
+## 🌟 Production API Overview (HEXRTBRXEN BOT)
+
+HEXRTBRXEN BOT is a Discord-based League of Legends platform focused on verified player identity, transparent performance analytics, and fair community competition.
+It connects Riot accounts to Discord profiles through a user-driven verification flow, then provides ranked, match, and mastery insights in a clear format for everyday use.
+
+### What makes HEXRTBRXEN BOT valuable
+
+- ✅ **Account ownership verification** to reduce impersonation and fake account claims
+- 📈 **Actionable player insights**: ranked context, LP movement, recent performance, and mastery trends
+- 🏆 **Community engagement tools**: server leaderboards, comparisons, and role synchronization
+- 🌍 **Reliable multi-region support** with automatic region fallback for robust lookups
+- 🔒 **Responsible data handling**: only user-requested, feature-relevant Riot data is queried
+
+### Production-readiness and reliability
+
+- Rate-limit-aware request handling
+- Retry and timeout logic for transient API/network failures
+- Adaptive verification polling to reduce unnecessary API pressure
+- Permission-gated admin operations for safer server management
+- Clear communication of Riot API limitations (no misleading unsupported claims)
+
+### Typical user flows
+
+1. A user links a Riot account and verifies ownership in-client.
+2. The bot syncs profile and ranked context in Discord.
+3. The user tracks LP and match patterns over time.
+4. The community uses transparent leaderboards and comparison features.
+
+### Why Production API access is needed
+
+Production access enables stable, low-latency service for real user traffic and ensures consistent account verification and analytics during peak usage.
+HEXRTBRXEN BOT is designed around legitimate player-facing use cases and follows Riot API constraints with transparent data boundaries.
+
 ## 📦 Project Structure - 2 Separate Bots
 
 ### Bot 1: HEXRTBRXEN (Main Bot)
@@ -348,7 +381,7 @@ Private project. Unauthorized use prohibited.
 
 ---
 
-**Bot Version:** 3.0.0  
-**Last Updated:** 2025-12-01  
-**Python:** 3.11+  
+**Bot Version:** 3.1.0  
+**Last Updated:** 2026-03-30  
+**Python:** 3.12+  
 **discord.py:** 2.x
