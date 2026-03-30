@@ -1847,35 +1847,65 @@ class Hexbet(commands.Cog):
         smurf_blue = self._smurf_summary(blue)
         smurf_red = self._smurf_summary(red)
 
-        # Calculate average LP (economy indicator)
+        # Calculate average LP (rank gap indicator)
         avg_lp_blue = sum(p.get('lp', 0) for p in blue) / len(blue) if blue else 0
         avg_lp_red = sum(p.get('lp', 0) for p in red) / len(red) if red else 0
         lp_diff = avg_lp_blue - avg_lp_red
-        
-        if abs(lp_diff) < 50:
-            economy_str = "Even"
-        elif lp_diff > 0:
-            economy_str = f"Blue +{int(abs(lp_diff))} LP"
-        else:
-            economy_str = f"Red +{int(abs(lp_diff))} LP"
 
-        # Estimate objectives potential based on teamcomp
-        # Count carries vs utility
-        blue_carries = sum(1 for p in blue if p.get('role_name') in ['ADC', 'MID'])
-        red_carries = sum(1 for p in red if p.get('role_name') in ['ADC', 'MID'])
-        
-        if abs(blue_carries - red_carries) <= 1:
-            objectives_str = "Balanced"
-        elif blue_carries > red_carries:
-            objectives_str = "Blue favored"
+        if abs(lp_diff) < 50:
+            rank_gap_str = "Even"
+        elif lp_diff > 0:
+            rank_gap_str = f"🔵 +{int(abs(lp_diff))} LP"
         else:
-            objectives_str = "Red favored"
+            rank_gap_str = f"🔴 +{int(abs(lp_diff))} LP"
+
+        # Swing potential (how likely result can flip)
+        if edge < 6:
+            swing_str = "High — anything can happen"
+        elif edge < 12:
+            swing_str = "Medium — one big fight decides"
+        else:
+            swing_str = "Low — heavy favorite"
+
+        # Suspicious players label
+        if smurf_blue == 0 and smurf_red == 0:
+            smurf_str = "None flagged"
+        else:
+            parts = []
+            if smurf_blue:
+                parts.append(f"<:BlueSide:1457209225976484014> {smurf_blue}")
+            if smurf_red:
+                parts.append(f"<:RedSide:1457209221031395472> {smurf_red}")
+            smurf_str = " | ".join(parts)
+
+        # Objectives potential (comp-based left🔵 | right🔴 format)
+        _DRAKE = "<:infernaldrake:1488169753007624283>"
+        _HERALD = "<:riftherald:1488169758292443206>"
+        _BARON = "<:baronnashor:1488169738675687576>"
+        _ELDER = "<:elderdrake:1488169745365729411>"
+
+        # Estimate based on win chance - stronger team projects more objectives
+        def _obj_strip(chance: float) -> str:
+            """Build an objective strip based on win probability."""
+            if chance >= 65:
+                return f"{_HERALD}{_DRAKE}{_DRAKE}{_BARON}"
+            elif chance >= 55:
+                return f"{_HERALD}{_DRAKE}{_DRAKE}"
+            elif chance >= 48:
+                return f"{_HERALD}{_DRAKE}"
+            else:
+                return f"{_DRAKE}"
+
+        blue_objs = _obj_strip(chance_blue)
+        red_objs = _obj_strip(chance_red)
+        objectives_str = f"{blue_objs} 🔵 | 🔴 {red_objs}"
 
         return (
-            f"**Phase:** {phase} ({game_duration_min}m)\n"
-            f"**Favored Side:** {favored} (edge {edge:.1f}%) • **Volatility:** {volatility}\n"
-            f"**Economy:** {economy_str}\n"
-            f"**Objectives:** {objectives_str} • **Risk Markers:** {smurf_blue}🔵 {smurf_red}🔴"
+            f"**Phase:** {phase} ({game_duration_min}m) — **Favored:** {favored}\n"
+            f"**Flip Chance:** {swing_str}\n"
+            f"**Rank Gap:** {rank_gap_str}\n"
+            f"**Projected Objectives:** {objectives_str}\n"
+            f"**Suspicious:** {smurf_str}"
         )
 
     def _extract_timeline_analytics(self, match_info: dict, timeline_data: Optional[dict]) -> Optional[str]:
@@ -1976,9 +2006,27 @@ class Hexbet(commands.Cog):
         else:
             fb_line = "First blood: N/A"
 
+        # Build objective emoji strips (left = blue, right = red)
+        _EMOJIS = {
+            'drake':   '<:infernaldrake:1488169753007624283>',
+            'herald':  '<:riftherald:1488169758292443206>',
+            'baron':   '<:baronnashor:1488169738675687576>',
+            'elder':   '<:elderdrake:1488169745365729411>',
+        }
+        blue_obj_strip = (
+            _EMOJIS['herald'] * heralds[100]
+            + _EMOJIS['drake'] * dragons[100]
+            + _EMOJIS['baron'] * barons[100]
+        ) or '—'
+        red_obj_strip = (
+            _EMOJIS['herald'] * heralds[200]
+            + _EMOJIS['drake'] * dragons[200]
+            + _EMOJIS['baron'] * barons[200]
+        ) or '—'
+
         return (
             f"{fb_line}\n"
-            f"Objectives: Drakes {dragons[100]}-{dragons[200]} | Herald {heralds[100]}-{heralds[200]} | Baron {barons[100]}-{barons[200]}\n"
+            f"<:BlueSide:1457209225976484014> {blue_obj_strip} | {red_obj_strip} <:RedSide:1457209221031395472>\n"
             f"{gold_line}\n"
             f"Kill pace: {kill_pace:.2f}/min ({kills[100]}-{kills[200]})"
         )
@@ -2131,9 +2179,11 @@ class Hexbet(commands.Cog):
         )
         
         # Team statistics comparison
+        blue_rank_emoji = rank_emoji(blue_tier_name)
+        red_rank_emoji = rank_emoji(red_tier_name)
         stats_comparison = (
-            f"**Blue:** {blue_tier_name} • {blue_avg_lp:.0f} LP avg • {blue_avg_wr:.1f}% WR\n"
-            f"**Red:** {red_tier_name} • {red_avg_lp:.0f} LP avg • {red_avg_wr:.1f}% WR"
+            f"<:BlueSide:1457209225976484014> {blue_rank_emoji} **{blue_tier_name}** • {blue_avg_lp:.0f} LP avg • {blue_avg_wr:.1f}% WR\n"
+            f"<:RedSide:1457209221031395472> {red_rank_emoji} **{red_tier_name}** • {red_avg_lp:.0f} LP avg • {red_avg_wr:.1f}% WR"
         )
         embed.add_field(name="📊 Team Stats", value=stats_comparison, inline=False)
 
