@@ -19,8 +19,8 @@ W Railway dashboard:
 W Railway → Variables → New Variable:
 
 ```
-DATABASE_URL=postgresql://postgres:VeNZZTCabRnROGyGHQbVSBcLlIIhYDuB@postgres.railway.internal:5432/railway
-RIOT_API_KEY=RGAPI-1e3fc1a2-2d4a-4c7f-bde6-3001fd12df09
+DATABASE_URL=postgresql://user:password@host:5432/database
+RIOT_API_KEY=RGAPI-your-riot-api-key
 BOT_TOKEN=(twój istniejący token)
 ```
 

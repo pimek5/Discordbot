@@ -156,7 +156,7 @@ import leaderboard_commands
 
 # Orianna configuration
 DATABASE_URL = os.getenv('DATABASE_URL')
-RIOT_API_KEY = os.getenv('RIOT_API_KEY', 'RGAPI-1e3fc1a2-2d4a-4c7f-bde6-3001fd12df09')
+RIOT_API_KEY = os.getenv('RIOT_API_KEY')
 GUILD_ID = 1153027935553454191  # Your server ID for slash commands
 
 # Global instances

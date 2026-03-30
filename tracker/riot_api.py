@@ -115,8 +115,7 @@ class RiotAPI:
             'X-Riot-Token': api_key
         }
         if api_key:
-            logger.info(f"🔑 API Key loaded: {api_key[:10]}...{api_key[-4:]} (len={len(api_key)})")
-            logger.info(f"🔑 FULL KEY FOR DEBUG: {api_key}")
+            logger.info("🔑 Tracker Riot API key loaded from environment")
         else:
             logger.error("❌ No API key provided!")
 
