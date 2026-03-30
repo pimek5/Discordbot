@@ -87,17 +87,30 @@ class AutolinkSelect(discord.ui.Select):
                     continue
                 
                 puuid = account_data['puuid']
-                
-                # Find which region they play on
-                detected_region = await self.riot_api.find_summoner_region(puuid)
-                if not detected_region:
-                    failed_accounts.append((riot_id, "Could not detect region"))
-                    continue
-                
-                # Get summoner data
-                summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, detected_region)
-                if not summoner_data:
-                    failed_accounts.append((riot_id, f"Could not fetch summoner data from {detected_region}"))
+                routing = account_data.get('_routing')
+
+                # Build candidate regions from routing first, then full platform scan.
+                routing_candidates = []
+                if routing:
+                    routing_candidates = [r for r, rout in RIOT_REGIONS.items() if rout == routing]
+
+                all_platform_regions = list(dict.fromkeys(PLATFORM_ROUTES.keys()))
+                region_candidates = []
+                for reg in routing_candidates + all_platform_regions:
+                    if reg not in region_candidates:
+                        region_candidates.append(reg)
+
+                detected_region = None
+                summoner_data = None
+                for candidate_region in region_candidates:
+                    data = await self.riot_api.get_summoner_by_puuid(puuid, candidate_region)
+                    if data:
+                        detected_region = candidate_region
+                        summoner_data = data
+                        break
+
+                if not detected_region or not summoner_data:
+                    failed_accounts.append((riot_id, "Could not detect playable region"))
                     continue
                 
                 # Direct link without verification (auto-link from Discord connections)
