@@ -1889,6 +1889,7 @@ class Hexbet(commands.Cog):
         _HERALD = "<:riftherald:1488169758292443206>"
         _BARON = "<:baronnashor:1488169738675687576>"
         _GRUB = "<:grub:1488169746443665509>"
+        _ELDER = "<:elderdrake:1488169745365729411>"
 
         diff = chance_blue - chance_red  # positive = blue favored
         if abs(diff) < 6:
@@ -1896,21 +1897,21 @@ class Hexbet(commands.Cog):
             blue_objs = f"{_DRAKE}{_DRAKE}"
             red_objs = f"{_DRAKE}{_DRAKE}"
         elif diff >= 20:
-            # Blue dominant — gets grubs, herald, 3 drakes, baron
-            blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}"
+            # Blue dominant — grubs, herald, 3 drakes (soul), baron, elder
+            blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}{_ELDER}"
             red_objs = f"{_DRAKE}"
         elif diff >= 12:
-            # Blue favored — gets grubs, herald, 3 drakes
+            # Blue favored — grubs, herald, 3 drakes
             blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}"
             red_objs = f"{_DRAKE}"
         elif diff > 0:
-            # Blue slight edge — gets herald, 2 drakes
+            # Blue slight edge — herald, 2 drakes
             blue_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
             red_objs = f"{_DRAKE}{_DRAKE}"
         elif diff <= -20:
-            # Red dominant
+            # Red dominant — grubs, herald, 3 drakes (soul), baron, elder
             blue_objs = f"{_DRAKE}"
-            red_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}"
+            red_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}{_ELDER}"
         elif diff <= -12:
             # Red favored
             blue_objs = f"{_DRAKE}"
