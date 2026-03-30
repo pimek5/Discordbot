@@ -1893,28 +1893,28 @@ class Hexbet(commands.Cog):
 
         diff = chance_blue - chance_red  # positive = blue favored
         if abs(diff) < 6:
-            # Coin flip — drakes split, nobody gets herald/grubs/baron projection
+            # Coin flip — drakes split 2/2
             blue_objs = f"{_DRAKE}{_DRAKE}"
             red_objs = f"{_DRAKE}{_DRAKE}"
         elif diff >= 20:
-            # Blue dominant — grubs, herald, 3 drakes (soul), baron, elder
-            blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}{_ELDER}"
-            red_objs = f"{_DRAKE}"
+            # Blue dominant — 4 drakes (soul) + baron + elder, red gets 3
+            blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}{_ELDER}"
+            red_objs = f"{_DRAKE}{_DRAKE}{_DRAKE}"
         elif diff >= 12:
-            # Blue favored — grubs, herald, 3 drakes
+            # Blue favored — grubs, herald, 3 drakes, red gets 2
             blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}"
-            red_objs = f"{_DRAKE}"
+            red_objs = f"{_DRAKE}{_DRAKE}"
         elif diff > 0:
-            # Blue slight edge — herald, 2 drakes
+            # Blue slight edge — herald, 2 drakes, red gets 2
             blue_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
             red_objs = f"{_DRAKE}{_DRAKE}"
         elif diff <= -20:
-            # Red dominant — grubs, herald, 3 drakes (soul), baron, elder
-            blue_objs = f"{_DRAKE}"
-            red_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}{_ELDER}"
+            # Red dominant — 4 drakes (soul) + baron + elder, blue gets 3
+            blue_objs = f"{_DRAKE}{_DRAKE}{_DRAKE}"
+            red_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}{_ELDER}"
         elif diff <= -12:
             # Red favored
-            blue_objs = f"{_DRAKE}"
+            blue_objs = f"{_DRAKE}{_DRAKE}"
             red_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}"
         else:
             # Red slight edge
