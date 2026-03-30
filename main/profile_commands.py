@@ -3290,6 +3290,11 @@ class ProfileView(discord.ui.View):
         self.queue_filter = "all"  # Filter for all views: all, soloq, flex, normals, other
         self.ranks_page = 0  # Page for ranks view
         self.message = None  # Will store the message to delete later
+        self._update_livegame_button_state()
+
+    def _update_livegame_button_state(self):
+        """Set Livegame button style based on current live game availability."""
+        self.livegame_button.style = discord.ButtonStyle.success if self.active_game else discord.ButtonStyle.danger
     
     async def on_timeout(self):
         """Called when the view times out - delete the message"""
@@ -4555,6 +4560,108 @@ class ProfileView(discord.ui.View):
             embed.description = "No chart data available. Play some games first!"
             return embed, None
 
+    async def create_livegame_embed(self) -> discord.Embed:
+        """Create embed with detailed live game information."""
+        if not self.active_game:
+            return discord.Embed(
+                title="🔴 Livegame",
+                description=f"{self.target_user.display_name} is currently not in a live game.",
+                color=0x2B2D31
+            )
+
+        game_data = self.active_game.get('game', {})
+        game_account = self.active_game.get('account', {})
+        participants = game_data.get('participants', [])
+        player_data = next((p for p in participants if p.get('puuid') == game_account.get('puuid')), None)
+
+        game_queue_id = game_data.get('gameQueueConfigId', 0)
+        game_length_sec = int(game_data.get('gameLength', 0))
+        game_length_min = game_length_sec // 60
+        game_length_remain = game_length_sec % 60
+
+        queue_names = {
+            420: "Ranked Solo",
+            440: "Ranked Flex",
+            400: "Normal Draft",
+            430: "Normal Blind",
+            450: "ARAM",
+            490: "Quickplay",
+            700: "Clash",
+            1700: "Arena",
+        }
+        queue_name = queue_names.get(game_queue_id, "Custom")
+
+        champion_name = "Unknown"
+        if player_data and 'championName' in player_data:
+            champion_name = player_data.get('championName', 'Unknown')
+        elif player_data:
+            champion_id = player_data.get('championId', 0)
+            champion_name = CHAMPION_ID_TO_NAME.get(champion_id, f"Champion {champion_id}")
+
+        champ_emoji = get_champion_emoji(champion_name)
+        region_text = (game_account.get('region') or 'unknown').upper()
+        player_team_id = player_data.get('teamId') if player_data else None
+        ally_count = len([p for p in participants if p.get('teamId') == player_team_id]) if player_team_id else 0
+        enemy_count = len([p for p in participants if p.get('teamId') != player_team_id]) if player_team_id else 0
+
+        embed = discord.Embed(
+            title="🔴 Livegame",
+            description=(
+                f"**{self.target_user.display_name}** is currently in game\n"
+                f"{champ_emoji} **{champion_name}**"
+            ),
+            color=0xE74C3C
+        )
+
+        embed.add_field(
+            name="🎮 Match Info",
+            value=(
+                f"**Mode:** {queue_name}\n"
+                f"**Duration:** {game_length_min}:{game_length_remain:02d}\n"
+                f"**Region:** {region_text}"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="👥 Lobby",
+            value=(
+                f"**Participants:** {len(participants)}/10\n"
+                f"**Allies:** {ally_count}\n"
+                f"**Enemies:** {enemy_count}"
+            ),
+            inline=True
+        )
+
+        if participants:
+            allies = []
+            enemies = []
+            for p in participants:
+                pid = p.get('teamId')
+                champ_id = p.get('championId', 0)
+                champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f"Champion {champ_id}")
+                line = f"{get_champion_emoji(champ_name)} {champ_name}"
+                if pid == player_team_id:
+                    allies.append(line)
+                else:
+                    enemies.append(line)
+
+            if allies:
+                embed.add_field(
+                    name="🟦 Allies",
+                    value="\n".join(allies[:5]),
+                    inline=True
+                )
+            if enemies:
+                embed.add_field(
+                    name="🟥 Enemies",
+                    value="\n".join(enemies[:5]),
+                    inline=True
+                )
+
+        embed.set_footer(text=f"{self.target_user.display_name} • Live Spectator")
+        return embed
+
     @discord.ui.button(label="Profile", style=discord.ButtonStyle.primary, emoji="👤", row=0)
     async def profile_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Switch to profile view"""
@@ -4602,6 +4709,27 @@ class ProfileView(discord.ui.View):
         self.ranks_page = 0  # Reset to first page
         self.update_navigation_buttons()  # Update button visibility
         embed = await self.create_ranks_embed()
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
+
+    @discord.ui.button(label="Livegame", style=discord.ButtonStyle.danger, emoji="🔴", row=0)
+    async def livegame_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Switch to livegame view"""
+        self._update_livegame_button_state()
+
+        if not self.active_game:
+            await interaction.response.send_message(
+                f"❌ {self.target_user.display_name} nie jest teraz w grze.",
+                ephemeral=True
+            )
+            return
+
+        if self.current_view == "livegame":
+            await interaction.response.defer()
+            return
+
+        self.current_view = "livegame"
+        self.update_navigation_buttons()
+        embed = await self.create_livegame_embed()
         await interaction.response.edit_message(embed=embed, view=self, attachments=[])
 
     @discord.ui.button(label="LP", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji(name="LP", id=1436591112025407590), row=2)
@@ -4656,6 +4784,9 @@ class ProfileView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
             else:
                 await interaction.response.edit_message(embed=embed, attachments=[], view=self)
+        elif self.current_view == "livegame":
+            embed = await self.create_livegame_embed()
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         else:  # ranks
             embed = await self.create_ranks_embed()
             await interaction.response.edit_message(embed=embed, view=self, attachments=[])
@@ -4684,6 +4815,9 @@ class ProfileView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
             else:
                 await interaction.response.edit_message(embed=embed, attachments=[], view=self)
+        elif self.current_view == "livegame":
+            embed = await self.create_livegame_embed()
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         else:  # ranks
             embed = await self.create_ranks_embed()
             await interaction.response.edit_message(embed=embed, view=self, attachments=[])
@@ -4712,6 +4846,9 @@ class ProfileView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
             else:
                 await interaction.response.edit_message(embed=embed, attachments=[], view=self)
+        elif self.current_view == "livegame":
+            embed = await self.create_livegame_embed()
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         else:  # ranks
             embed = await self.create_ranks_embed()
             await interaction.response.edit_message(embed=embed, view=self, attachments=[])
@@ -4740,6 +4877,9 @@ class ProfileView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
             else:
                 await interaction.response.edit_message(embed=embed, attachments=[], view=self)
+        elif self.current_view == "livegame":
+            embed = await self.create_livegame_embed()
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         else:  # ranks
             embed = await self.create_ranks_embed()
             await interaction.response.edit_message(embed=embed, view=self)
@@ -4768,6 +4908,9 @@ class ProfileView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, attachments=[chart_file], view=self)
             else:
                 await interaction.response.edit_message(embed=embed, attachments=[], view=self)
+        elif self.current_view == "livegame":
+            embed = await self.create_livegame_embed()
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[])
         else:  # ranks
             embed = await self.create_ranks_embed()
             await interaction.response.edit_message(embed=embed, view=self)
@@ -4807,6 +4950,7 @@ class ProfileView(discord.ui.View):
         
         # Show/hide and enable/disable based on current view
         in_ranks_view = self.current_view == "ranks"
+        self._update_livegame_button_state()
         
         # Update prev button
         self.ranks_prev_button.disabled = not in_ranks_view or self.ranks_page == 0
