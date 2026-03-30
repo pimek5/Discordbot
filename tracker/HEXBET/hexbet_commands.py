@@ -1882,44 +1882,57 @@ class Hexbet(commands.Cog):
             smurf_str = " | ".join(parts)
 
         # Objectives projected — game rules:
-        # Grubs (x1 set) + Herald (x1) go to ONE team only
-        # Drakes: max 4 total between both teams
-        # Baron/Elder: can repeat, go to heavily favored team
-        _DRAKE = "<:infernaldrake:1488169753007624283>"
+        # Objectives projected — each drake shown as a different type; 4 drakes = soul
+        _DRAKES = [
+            "<:infernaldrake:1488169753007624283>",
+            "<:oceandrake:1488169757063778455>",
+            "<:mountaindrake:1488169755780055110>",
+            "<:clouddrake:1488169743750922441>",
+            "<:hextechdrake:1488169749845119086>",
+            "<:chemtechdrake:1488169741226082445>",
+        ]
+        _SOUL = "<:Infernal_Dragon_soul:1488169751036428298>"
         _HERALD = "<:riftherald:1488169758292443206>"
         _BARON = "<:baronnashor:1488169738675687576>"
         _GRUB = "<:grub:1488169746443665509>"
         _ELDER = "<:elderdrake:1488169745365729411>"
 
+        def _drake_strip(n: int, offset: int = 0) -> str:
+            """Build n drake emojis with varied types. Appends soul emoji if n >= 4."""
+            strip = "".join(_DRAKES[(i + offset) % len(_DRAKES)] for i in range(n))
+            if n >= 4:
+                strip += _SOUL
+            return strip
+
         diff = chance_blue - chance_red  # positive = blue favored
         if abs(diff) < 6:
-            # Coin flip — drakes split 2/2
-            blue_objs = f"{_DRAKE}{_DRAKE}"
-            red_objs = f"{_DRAKE}{_DRAKE}"
+            # Even — 2 drakes each, different types between teams
+            blue_objs = _drake_strip(2, 0)
+            red_objs = _drake_strip(2, 2)
         elif diff >= 20:
-            # Blue dominant — 4 drakes (soul) + baron + elder, red gets 3
-            blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}{_ELDER}"
-            red_objs = f"{_DRAKE}{_DRAKE}{_DRAKE}"
+            # Blue dominant — 4 drakes → soul + baron + elder; red gets 3
+            blue_objs = f"{_GRUB}{_HERALD}" + _drake_strip(4, 0) + f"{_BARON}{_ELDER}"
+            red_objs = _drake_strip(3, 4)
         elif diff >= 12:
-            # Blue favored — grubs, herald, 3 drakes, red gets 2
-            blue_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}"
-            red_objs = f"{_DRAKE}{_DRAKE}"
+            # Blue favored — grubs, herald, 3 drakes; red gets 2
+            blue_objs = f"{_GRUB}{_HERALD}" + _drake_strip(3, 0)
+            red_objs = _drake_strip(2, 3)
         elif diff > 0:
-            # Blue slight edge — herald, 2 drakes, red gets 2
-            blue_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
-            red_objs = f"{_DRAKE}{_DRAKE}"
+            # Blue slight edge — herald, 2 drakes; red gets 2 different
+            blue_objs = f"{_HERALD}" + _drake_strip(2, 0)
+            red_objs = _drake_strip(2, 2)
         elif diff <= -20:
-            # Red dominant — 4 drakes (soul) + baron + elder, blue gets 3
-            blue_objs = f"{_DRAKE}{_DRAKE}{_DRAKE}"
-            red_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}{_DRAKE}{_BARON}{_ELDER}"
+            # Red dominant — 4 drakes → soul + baron + elder; blue gets 3
+            blue_objs = _drake_strip(3, 4)
+            red_objs = f"{_GRUB}{_HERALD}" + _drake_strip(4, 0) + f"{_BARON}{_ELDER}"
         elif diff <= -12:
             # Red favored
-            blue_objs = f"{_DRAKE}{_DRAKE}"
-            red_objs = f"{_GRUB}{_HERALD}{_DRAKE}{_DRAKE}{_DRAKE}"
+            blue_objs = _drake_strip(2, 3)
+            red_objs = f"{_GRUB}{_HERALD}" + _drake_strip(3, 0)
         else:
             # Red slight edge
-            blue_objs = f"{_DRAKE}{_DRAKE}"
-            red_objs = f"{_HERALD}{_DRAKE}{_DRAKE}"
+            blue_objs = _drake_strip(2, 2)
+            red_objs = f"{_HERALD}" + _drake_strip(2, 0)
 
         objectives_str = f"{blue_objs} {_BLUE} | {_RED} {red_objs}"
 
