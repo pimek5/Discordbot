@@ -769,15 +769,24 @@ class ProfileCommands(commands.Cog):
             return
         
         puuid = account_data['puuid']
+        routing = account_data.get('_routing')
         
-        # Find region
-        detected_region = await self.riot_api.find_summoner_region(puuid)
-        if not detected_region:
-            await interaction.followup.send(
-                f"❌ Could not detect region for **{riot_id}**. Try `/link` with manual region selection.",
-                ephemeral=True
-            )
-            return
+        # Determine region from routing
+        if routing:
+            # Get first region code that maps to this routing
+            detected_region = next((r for r, rout in RIOT_REGIONS.items() if rout == routing), None)
+            if not detected_region:
+                detected_region = 'euw'  # fallback
+            logger.info(f"🎯 Using region from routing: {detected_region}")
+        else:
+            # Fallback: try to detect region
+            detected_region = await self.riot_api.find_summoner_region(puuid)
+            if not detected_region:
+                await interaction.followup.send(
+                    f"❌ Could not detect region for **{riot_id}**. Try `/link` with manual region selection.",
+                    ephemeral=True
+                )
+                return
         
         # Get summoner data
         summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, detected_region)

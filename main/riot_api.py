@@ -115,7 +115,7 @@ class RiotAPI:
     async def get_account_by_riot_id(self, game_name: str, tag_line: str, 
                                      region: Optional[str] = None, 
                                      retries: int = 5) -> Optional[Dict]:
-        """Get account by Riot ID (Name#TAG)"""
+        """Get account by Riot ID (Name#TAG). Returns account data with '_routing' key."""
         if not self.api_key:
             return None
         
@@ -137,8 +137,10 @@ class RiotAPI:
                     async with aiohttp.ClientSession(timeout=timeout) as session:
                         async with session.get(url, headers=self.headers) as response:
                             if response.status == 200:
+                                data = await response.json()
+                                data['_routing'] = routing # Store the routing that succeeded
                                 logger.info(f"✅ Found account in {routing}: {game_name}#{tag_line}")
-                                return await response.json()
+                                return data
                             elif response.status == 404:
                                 logger.debug(f"🔍 Not found in routing {routing} (404) – trying next routing if available")
                                 break  # Try next routing
