@@ -19,7 +19,7 @@ matplotlib.use('Agg')  # Render charts headlessly
 import matplotlib.pyplot as plt
 
 from database import get_db
-from riot_api import RiotAPI, RIOT_REGIONS, get_champion_icon_url, get_rank_icon_url, CHAMPION_ID_TO_NAME
+from riot_api import RiotAPI, RIOT_REGIONS, PLATFORM_ROUTES, get_champion_icon_url, get_rank_icon_url, CHAMPION_ID_TO_NAME
 from emoji_dict import get_champion_emoji, get_rank_emoji, get_mastery_emoji, get_other_emoji, RANK_EMOJIS as RANK_EMOJIS_NEW
 from objective_icons import (
     get_objective_icon,
@@ -770,26 +770,39 @@ class ProfileCommands(commands.Cog):
         
         puuid = account_data['puuid']
         routing = account_data.get('_routing')
-        
-        # Determine region from routing
+
+        # Build candidate regions:
+        # 1) Regions matching account routing (if present)
+        # 2) Full platform scan fallback (for cases where routing is misleading)
+        routing_candidates = []
         if routing:
-            # Get first region code that maps to this routing
-            detected_region = next((r for r, rout in RIOT_REGIONS.items() if rout == routing), None)
-            if not detected_region:
-                detected_region = 'euw'  # fallback
-            logger.info(f"🎯 Using region from routing: {detected_region}")
-        else:
-            # Fallback: try to detect region
-            detected_region = await self.riot_api.find_summoner_region(puuid)
-            if not detected_region:
-                await interaction.followup.send(
-                    f"❌ Could not detect region for **{riot_id}**. Try `/link` with manual region selection.",
-                    ephemeral=True
-                )
-                return
-        
-        # Get summoner data
-        summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, detected_region)
+            routing_candidates = [r for r, rout in RIOT_REGIONS.items() if rout == routing]
+            logger.info(f"🎯 Routing candidate regions: {routing_candidates}")
+
+        all_platform_regions = list(dict.fromkeys(PLATFORM_ROUTES.keys()))
+
+        region_candidates = []
+        for reg in routing_candidates + all_platform_regions:
+            if reg not in region_candidates:
+                region_candidates.append(reg)
+
+        detected_region = None
+        summoner_data = None
+        for candidate_region in region_candidates:
+            data = await self.riot_api.get_summoner_by_puuid(puuid, candidate_region)
+            if data:
+                detected_region = candidate_region
+                summoner_data = data
+                logger.info(f"✅ Auto-detected playable region: {detected_region}")
+                break
+
+        if not detected_region or not summoner_data:
+            await interaction.followup.send(
+                f"❌ Could not detect playable region for **{riot_id}**. Try `/link` with manual region selection.",
+                ephemeral=True
+            )
+            return
+
         if not summoner_data:
             await interaction.followup.send(
                 f"❌ Could not fetch summoner data from {detected_region.upper()}. Try again later.",
