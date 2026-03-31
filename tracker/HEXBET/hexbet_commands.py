@@ -1944,64 +1944,94 @@ class Hexbet(commands.Cog):
         second_type = _DRAKE_ORDER[(seed + 1) % len(_DRAKE_ORDER)]
         rift_type = _DRAKE_ORDER[(seed + 2) % len(_DRAKE_ORDER)]
 
-        def _drake_strip(n: int, elder_count: int = 0) -> str:
-            """First two drakes unique, then rift drakes; add matching soul at 4+, then elders."""
-            if n <= 0 and elder_count <= 0:
+        def _spawned_regular_drakes() -> List[str]:
+            if game_duration_min < 5:
+                count = 0
+            elif game_duration_min < 10:
+                count = 1
+            elif game_duration_min < 15:
+                count = 2
+            elif game_duration_min < 20:
+                count = 3
+            elif game_duration_min < 25:
+                count = 4
+            elif game_duration_min < 30:
+                count = 5
+            elif game_duration_min < 35:
+                count = 6
+            else:
+                count = 7
+
+            drakes = []
+            if count >= 1:
+                drakes.append(first_type)
+            if count >= 2:
+                drakes.append(second_type)
+            if count >= 3:
+                drakes.extend([rift_type] * (count - 2))
+            return drakes
+
+        def _drake_strip(drake_types: List[str], elder_count: int = 0) -> str:
+            if not drake_types and elder_count <= 0:
                 return ""
-            parts = []
-            if n >= 1:
-                parts.append(_DRAKES[first_type])
-            if n >= 2:
-                parts.append(_DRAKES[second_type])
-            if n >= 3:
-                parts.extend([_DRAKES[rift_type]] * (n - 2))
-            if n >= 4:
+            parts = [_DRAKES[drake_type] for drake_type in drake_types]
+            if len(drake_types) >= 4:
                 parts.append(_SOULS[rift_type])
             if elder_count > 0:
                 parts.extend([_ELDER] * elder_count)
             return "".join(parts)
 
-        diff = chance_blue - chance_red  # positive = blue favored
-        if abs(diff) < 6:
-            # Even — split drakes, no unique neutral-objective edge
-            blue_drakes, red_drakes = 2, 2
-            blue_prefix, red_prefix = "", ""
-            blue_suffix, red_suffix = "", ""
-        elif diff >= 20:
-            # Blue dominant — 4 drakes → soul + baron + elder; red gets 3
-            blue_drakes, red_drakes = 4, 3
-            blue_prefix, red_prefix = f"{_GRUB}{_HERALD}", ""
-            blue_suffix, red_suffix = f"{_BARON}", ""
-        elif diff >= 12:
-            # Blue favored — grubs, herald, 3 drakes; red gets 2
-            blue_drakes, red_drakes = 3, 2
-            blue_prefix, red_prefix = f"{_GRUB}{_HERALD}", ""
-            blue_suffix, red_suffix = "", ""
-        elif diff > 0:
-            # Blue slight edge — herald, 2 drakes; red gets 2 different
-            blue_drakes, red_drakes = 2, 2
-            blue_prefix, red_prefix = f"{_HERALD}", ""
-            blue_suffix, red_suffix = "", ""
-        elif diff <= -20:
-            # Red dominant — 4 drakes → soul + baron + elder; blue gets 3
-            blue_drakes, red_drakes = 3, 4
-            blue_prefix, red_prefix = "", f"{_GRUB}{_HERALD}"
-            blue_suffix, red_suffix = "", f"{_BARON}"
-        elif diff <= -12:
-            # Red favored
-            blue_drakes, red_drakes = 2, 3
-            blue_prefix, red_prefix = "", f"{_GRUB}{_HERALD}"
-            blue_suffix, red_suffix = "", ""
-        else:
-            # Red slight edge
-            blue_drakes, red_drakes = 2, 2
-            blue_prefix, red_prefix = "", f"{_HERALD}"
-            blue_suffix, red_suffix = "", ""
+        all_spawned_drakes = _spawned_regular_drakes()
 
-        blue_elder = 1 if diff >= 20 and game_duration_min >= 32 else 0
-        red_elder = 1 if diff <= -20 and game_duration_min >= 32 else 0
-        blue_objs = f"{blue_prefix}{_drake_strip(blue_drakes, blue_elder)}{blue_suffix}"
-        red_objs = f"{red_prefix}{_drake_strip(red_drakes, red_elder)}{red_suffix}"
+        diff = chance_blue - chance_red  # positive = blue favored
+        total_regular_drakes = len(all_spawned_drakes)
+        if abs(diff) < 6:
+            blue_drakes = (total_regular_drakes + 1) // 2
+        elif diff > 0:
+            if edge >= 20:
+                blue_drakes = max(1, round(total_regular_drakes * 0.75))
+            elif edge >= 12:
+                blue_drakes = max(1, round(total_regular_drakes * 0.65))
+            else:
+                blue_drakes = max(1, round(total_regular_drakes * 0.60))
+        else:
+            if edge >= 20:
+                blue_drakes = min(total_regular_drakes - 1, round(total_regular_drakes * 0.25)) if total_regular_drakes else 0
+            elif edge >= 12:
+                blue_drakes = min(total_regular_drakes - 1, round(total_regular_drakes * 0.35)) if total_regular_drakes else 0
+            else:
+                blue_drakes = min(total_regular_drakes - 1, round(total_regular_drakes * 0.40)) if total_regular_drakes else 0
+        blue_drakes = max(0, min(total_regular_drakes, blue_drakes))
+        red_drakes = total_regular_drakes - blue_drakes
+
+        blue_drake_types = all_spawned_drakes[:blue_drakes]
+        red_drake_types = all_spawned_drakes[blue_drakes:]
+
+        blue_prefix, red_prefix = "", ""
+        blue_suffix, red_suffix = "", ""
+
+        if 6 <= game_duration_min < 20:
+            if diff >= 12:
+                blue_prefix += _GRUB
+            elif diff <= -12:
+                red_prefix += _GRUB
+
+        if 14 <= game_duration_min < 20:
+            if diff > 0:
+                blue_prefix += _HERALD
+            elif diff < 0:
+                red_prefix += _HERALD
+
+        if game_duration_min >= 20:
+            if diff >= 20 and game_duration_min >= 22:
+                blue_suffix += _BARON
+            elif diff <= -20 and game_duration_min >= 22:
+                red_suffix += _BARON
+
+        blue_elder = 1 if len(blue_drake_types) >= 4 and game_duration_min >= 35 and diff >= 20 else 0
+        red_elder = 1 if len(red_drake_types) >= 4 and game_duration_min >= 35 and diff <= -20 else 0
+        blue_objs = f"{blue_prefix}{_drake_strip(blue_drake_types, blue_elder)}{blue_suffix}" or '—'
+        red_objs = f"{red_prefix}{_drake_strip(red_drake_types, red_elder)}{red_suffix}" or '—'
 
         objectives_str = f"{blue_objs} {_BLUE} | {_RED} {red_objs}"
 
@@ -2035,6 +2065,7 @@ class Hexbet(commands.Cog):
         kills = {100: 0, 200: 0}
         dragon_types = {100: [], 200: []}
         global_dragon_types = []
+        grubs = {100: 0, 200: 0}
         heralds = {100: 0, 200: 0}
         barons = {100: 0, 200: 0}
         elders = {100: 0, 200: 0}
@@ -2081,6 +2112,8 @@ class Hexbet(commands.Cog):
                             dragon_type = dragon_map.get(dragon_subtype, 'infernal')
                             dragon_types[killer_team].append(dragon_type)
                             global_dragon_types.append(dragon_type)
+                    elif monster_type in ('HORDE', 'VOIDGRUB'):
+                        grubs[killer_team] += 1
                     elif monster_type == 'RIFTHERALD':
                         heralds[killer_team] += 1
                     elif monster_type == 'BARON_NASHOR':
@@ -2147,6 +2180,7 @@ class Hexbet(commands.Cog):
             'ocean': '<:Infernal_Dragon_soul:1488169751036428298>',
         }
         _HERALD = '<:riftherald:1488169758292443206>'
+        _GRUB = '<:grub:1488169746443665509>'
         _BARON = '<:baronnashor:1488169738675687576>'
         _ELDER = '<:elderdrake:1488169745365729411>'
 
@@ -2154,6 +2188,8 @@ class Hexbet(commands.Cog):
 
         def _team_objective_strip(team_id: int) -> str:
             parts = []
+            if grubs[team_id] > 0:
+                parts.append(_GRUB)
             parts.extend([_HERALD] * heralds[team_id])
             parts.extend(_DRAGON_EMOJIS[dragon_type] for dragon_type in dragon_types[team_id])
             if len(dragon_types[team_id]) >= 4 and rift_type:
