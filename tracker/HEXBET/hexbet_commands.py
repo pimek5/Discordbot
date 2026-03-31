@@ -6,6 +6,7 @@ import asyncio
 import aiohttp
 import logging
 import time
+import itertools
 from typing import Optional, List, Tuple
 
 from tracker_database import TrackerDatabase
@@ -1543,66 +1544,98 @@ class Hexbet(commands.Cog):
             'ADC': CFG_ROLE_EMOJIS.get('BOTTOM', '🎯'),
             'SUPPORT': CFG_ROLE_EMOJIS.get('UTILITY', '🛡️'),
         }
-        
-        # Assign predicted role to each player
-        role_buckets = {role: [] for role in ROLE_ORDER}
-        unassigned = []
-        duplicates = []  # Players with duplicate roles (2nd, 3rd on same role)
-        
-        for p in players:
-            champ_id = p.get('championId', 0)
-            spell1 = p.get('spell1Id', 0)
-            spell2 = p.get('spell2Id', 0)
-            
-            # Jungle override: if has Smite (spell 11), always jungle
-            if spell1 == 11 or spell2 == 11:
-                role_buckets['JUNGLE'].append(p)
-            elif champ_id in CHAMP_ROLES:
-                predicted_role = CHAMP_ROLES[champ_id]
-                role_buckets[predicted_role].append(p)
+
+        def _build_role_scores(player: dict) -> dict:
+            champ_id = player.get('championId', 0)
+            spell1 = player.get('spell1Id', 0)
+            spell2 = player.get('spell2Id', 0)
+            spells = {spell1, spell2}
+            scores = {role: 0 for role in ROLE_ORDER}
+
+            primary_role = CHAMP_ROLES.get(champ_id)
+            if primary_role:
+                scores[primary_role] += 8
+
+            for idx, alt_role in enumerate(CHAMP_CAN_FILL.get(champ_id, [])):
+                scores[alt_role] += max(5 - idx, 2)
+
+            # Strong signal: Smite means jungle in standard SR games.
+            if 11 in spells:
+                scores['JUNGLE'] += 100
+                for role in ROLE_ORDER:
+                    if role != 'JUNGLE':
+                        scores[role] -= 4
             else:
-                unassigned.append(p)
-        
-        # Build ordered list with fixed positions: 0=TOP, 1=JUNGLE, 2=MID, 3=ADC, 4=SUPPORT
-        # Each role gets its slot, if empty we'll fill later with unassigned/duplicates
-        ordered = [None] * 5  # Initialize 5 slots
-        
-        for idx, role in enumerate(ROLE_ORDER):
-            candidates = role_buckets[role]
-            if candidates:
-                # Place first candidate in their role's position
-                ordered[idx] = candidates[0]
-                # If multiple champions for same role, add extras to duplicates
-                if len(candidates) > 1:
-                    duplicates.extend(candidates[1:])
-        
-        # If a role slot is empty and we have multi-role champions that can fill it, use them
-        for idx, role in enumerate(ROLE_ORDER):
-            if ordered[idx] is None:
-                # Look for a multi-role champion in duplicates that can play this role
-                for i, player in enumerate(duplicates[:]):
-                    champ_id = player.get('championId', 0)
-                    if champ_id in CHAMP_CAN_FILL and role in CHAMP_CAN_FILL[champ_id]:
-                        ordered[idx] = duplicates.pop(i)
-                        break
-        
-        # Fill remaining empty slots with unassigned players first, then duplicates
-        fill_queue = unassigned + duplicates
-        for idx in range(5):
-            if ordered[idx] is None and fill_queue:
-                ordered[idx] = fill_queue.pop(0)
-        
-        # Assign role names and emojis based on POSITION
+                scores['JUNGLE'] -= 2
+
+            # Weaker spell-based hints.
+            if 12 in spells:  # Teleport
+                scores['TOP'] += 3
+                scores['MID'] += 1
+            if 14 in spells:  # Ignite
+                scores['MID'] += 2
+                scores['SUPPORT'] += 2
+                scores['TOP'] += 1
+            if 3 in spells:  # Exhaust
+                scores['SUPPORT'] += 4
+                scores['ADC'] += 1
+            if 7 in spells or 21 in spells or 1 in spells:  # Heal / Barrier / Cleanse
+                scores['ADC'] += 3
+                scores['SUPPORT'] += 1
+            if 6 in spells:  # Ghost
+                scores['TOP'] += 1
+                scores['ADC'] += 1
+
+            if primary_role == 'SUPPORT' and (3 in spells or 14 in spells):
+                scores['SUPPORT'] += 2
+            if primary_role == 'ADC' and (7 in spells or 21 in spells or 1 in spells):
+                scores['ADC'] += 2
+            if primary_role == 'TOP' and 12 in spells:
+                scores['TOP'] += 2
+            if primary_role == 'MID' and 14 in spells:
+                scores['MID'] += 1
+
+            return scores
+
+        if not players:
+            return []
+
+        score_matrix = [_build_role_scores(player) for player in players]
+        role_count = min(len(players), len(ROLE_ORDER))
+        roles_to_fill = ROLE_ORDER[:role_count]
+
+        best_perm = None
+        best_score = float('-inf')
+
+        for perm in itertools.permutations(range(len(players)), role_count):
+            total_score = sum(score_matrix[player_idx][role] for role, player_idx in zip(roles_to_fill, perm))
+            if total_score > best_score:
+                best_score = total_score
+                best_perm = perm
+
+        if best_perm is None:
+            best_perm = tuple(range(role_count))
+
+        used_players = set(best_perm)
+        ordered_assignments = [(player_idx, players[player_idx], role) for role, player_idx in zip(roles_to_fill, best_perm)]
+
+        for idx, player in enumerate(players):
+            if idx not in used_players:
+                best_role = max(ROLE_ORDER, key=lambda role: score_matrix[idx][role])
+                ordered_assignments.append((idx, player, best_role))
+
         final_ordered = []
-        for idx, player in enumerate(ordered):
-            if player is None:
-                continue  # Skip empty slots
+        for player_idx, player, role in ordered_assignments:
             p_copy = dict(player)
-            role = ROLE_ORDER[idx]
             p_copy['role_name'] = ROLE_NAMES[role]
             p_copy['role_emoji'] = ROLE_EMOJIS[role]
+            p_copy['role_confidence'] = score_matrix[player_idx][role]
             final_ordered.append(p_copy)
-        
+
+        if players:
+            summary = [f"{p.get('championId', '?')}->{p.get('role_name', '?')}" for p in final_ordered]
+            logger.debug(f"🎯 Optimized role assignment: {', '.join(summary)} | score={best_score}")
+
         return final_ordered
 
     async def _enrich_players(self, players: List[dict], region: str):
