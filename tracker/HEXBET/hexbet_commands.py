@@ -1820,7 +1820,7 @@ class Hexbet(commands.Cog):
         return "Timeline: " + " - ".join(cells)
 
     def _build_live_timeline_analytics(self, game_duration_min: int, chance_blue: float, chance_red: float,
-                                       blue: List[dict], red: List[dict]) -> str:
+                                       blue: List[dict], red: List[dict], include_suspicious: bool = True) -> str:
         """Build compact live-phase analytics based on current game minute and team edge."""
         if game_duration_min < 14:
             phase = "Early game"
@@ -1881,68 +1881,106 @@ class Hexbet(commands.Cog):
                 parts.append(f"{_RED} {smurf_red}")
             smurf_str = " | ".join(parts)
 
-        # Objectives projected — game rules:
-        # Objectives projected — each drake shown as a different type; 4 drakes = soul
-        _DRAKES = [
-            "<:infernaldrake:1488169753007624283>",
-            "<:oceandrake:1488169757063778455>",
-            "<:mountaindrake:1488169755780055110>",
-            "<:clouddrake:1488169743750922441>",
-            "<:hextechdrake:1488169749845119086>",
-            "<:chemtechdrake:1488169741226082445>",
-        ]
-        _SOUL = "<:Infernal_Dragon_soul:1488169751036428298>"
+        # Objectives projected — first 2 drakes differ, the rest match rift type, 4 drakes => soul
+        _DRAKES = {
+            'infernal': "<:infernaldrake:1488169753007624283>",
+            'ocean': "<:oceandrake:1488169757063778455>",
+            'mountain': "<:mountaindrake:1488169755780055110>",
+            'cloud': "<:clouddrake:1488169743750922441>",
+            'hextech': "<:hextechdrake:1488169749845119086>",
+            'chemtech': "<:chemtechdrake:1488169741226082445>",
+        }
+        _SOULS = {
+            'infernal': "<:Infernal_Dragon_soul:1488169751036428298>",
+            'mountain': "<:Mountain_Dragon_soul:1488169754320568484>",
+            'cloud': "<:Cloud_Dragon_soul:1488169742547030116>",
+            'hextech': "<:Hextech_Dragon_soul:1488169748226375844>",
+            'chemtech': "<:Chemtech_Dragon_soul:1488169739699355871>",
+            # Fallback until a dedicated ocean soul emoji is configured.
+            'ocean': "<:Infernal_Dragon_soul:1488169751036428298>",
+        }
+        _DRAKE_ORDER = ['infernal', 'ocean', 'mountain', 'cloud', 'hextech', 'chemtech']
         _HERALD = "<:riftherald:1488169758292443206>"
         _BARON = "<:baronnashor:1488169738675687576>"
         _GRUB = "<:grub:1488169746443665509>"
         _ELDER = "<:elderdrake:1488169745365729411>"
 
-        def _drake_strip(n: int, offset: int = 0) -> str:
-            """Build n drake emojis with varied types. Appends soul emoji if n >= 4."""
-            strip = "".join(_DRAKES[(i + offset) % len(_DRAKES)] for i in range(n))
+        # Derive one global drake sequence for this match preview.
+        seed = (game_duration_min // 3 + int(abs(chance_blue - chance_red))) % len(_DRAKE_ORDER)
+        first_type = _DRAKE_ORDER[seed]
+        second_type = _DRAKE_ORDER[(seed + 1) % len(_DRAKE_ORDER)]
+        rift_type = _DRAKE_ORDER[(seed + 2) % len(_DRAKE_ORDER)]
+
+        def _drake_strip(n: int, elder_count: int = 0) -> str:
+            """First two drakes unique, then rift drakes; add matching soul at 4+, then elders."""
+            if n <= 0 and elder_count <= 0:
+                return ""
+            parts = []
+            if n >= 1:
+                parts.append(_DRAKES[first_type])
+            if n >= 2:
+                parts.append(_DRAKES[second_type])
+            if n >= 3:
+                parts.extend([_DRAKES[rift_type]] * (n - 2))
             if n >= 4:
-                strip += _SOUL
-            return strip
+                parts.append(_SOULS[rift_type])
+            if elder_count > 0:
+                parts.extend([_ELDER] * elder_count)
+            return "".join(parts)
 
         diff = chance_blue - chance_red  # positive = blue favored
         if abs(diff) < 6:
-            # Even — 2 drakes each, different types between teams
-            blue_objs = _drake_strip(2, 0)
-            red_objs = _drake_strip(2, 2)
+            # Even — split drakes, no unique neutral-objective edge
+            blue_drakes, red_drakes = 2, 2
+            blue_prefix, red_prefix = "", ""
+            blue_suffix, red_suffix = "", ""
         elif diff >= 20:
             # Blue dominant — 4 drakes → soul + baron + elder; red gets 3
-            blue_objs = f"{_GRUB}{_HERALD}" + _drake_strip(4, 0) + f"{_BARON}{_ELDER}"
-            red_objs = _drake_strip(3, 4)
+            blue_drakes, red_drakes = 4, 3
+            blue_prefix, red_prefix = f"{_GRUB}{_HERALD}", ""
+            blue_suffix, red_suffix = f"{_BARON}", ""
         elif diff >= 12:
             # Blue favored — grubs, herald, 3 drakes; red gets 2
-            blue_objs = f"{_GRUB}{_HERALD}" + _drake_strip(3, 0)
-            red_objs = _drake_strip(2, 3)
+            blue_drakes, red_drakes = 3, 2
+            blue_prefix, red_prefix = f"{_GRUB}{_HERALD}", ""
+            blue_suffix, red_suffix = "", ""
         elif diff > 0:
             # Blue slight edge — herald, 2 drakes; red gets 2 different
-            blue_objs = f"{_HERALD}" + _drake_strip(2, 0)
-            red_objs = _drake_strip(2, 2)
+            blue_drakes, red_drakes = 2, 2
+            blue_prefix, red_prefix = f"{_HERALD}", ""
+            blue_suffix, red_suffix = "", ""
         elif diff <= -20:
             # Red dominant — 4 drakes → soul + baron + elder; blue gets 3
-            blue_objs = _drake_strip(3, 4)
-            red_objs = f"{_GRUB}{_HERALD}" + _drake_strip(4, 0) + f"{_BARON}{_ELDER}"
+            blue_drakes, red_drakes = 3, 4
+            blue_prefix, red_prefix = "", f"{_GRUB}{_HERALD}"
+            blue_suffix, red_suffix = "", f"{_BARON}"
         elif diff <= -12:
             # Red favored
-            blue_objs = _drake_strip(2, 3)
-            red_objs = f"{_GRUB}{_HERALD}" + _drake_strip(3, 0)
+            blue_drakes, red_drakes = 2, 3
+            blue_prefix, red_prefix = "", f"{_GRUB}{_HERALD}"
+            blue_suffix, red_suffix = "", ""
         else:
             # Red slight edge
-            blue_objs = _drake_strip(2, 2)
-            red_objs = f"{_HERALD}" + _drake_strip(2, 0)
+            blue_drakes, red_drakes = 2, 2
+            blue_prefix, red_prefix = "", f"{_HERALD}"
+            blue_suffix, red_suffix = "", ""
+
+        blue_elder = 1 if diff >= 20 and game_duration_min >= 32 else 0
+        red_elder = 1 if diff <= -20 and game_duration_min >= 32 else 0
+        blue_objs = f"{blue_prefix}{_drake_strip(blue_drakes, blue_elder)}{blue_suffix}"
+        red_objs = f"{red_prefix}{_drake_strip(red_drakes, red_elder)}{red_suffix}"
 
         objectives_str = f"{blue_objs} {_BLUE} | {_RED} {red_objs}"
 
-        return (
-            f"**Phase:** {phase} ({game_duration_min}m) — **Favored:** {favored}\n"
-            f"**Flip Chance:** {swing_str}\n"
-            f"**Rank Gap:** {rank_gap_str}\n"
-            f"**Objectives:** {objectives_str}\n"
-            f"**Suspicious:** {smurf_str}"
-        )
+        lines = [
+            f"**Phase:** {phase} ({game_duration_min}m) — **Favored:** {favored}",
+            f"**Flip Chance:** {swing_str}",
+            f"**Rank Gap:** {rank_gap_str}",
+            f"**Objectives:** {objectives_str}",
+        ]
+        if include_suspicious:
+            lines.append(f"**Suspicious:** {smurf_str}")
+        return "\n".join(lines)
 
     def _extract_timeline_analytics(self, match_info: dict, timeline_data: Optional[dict]) -> Optional[str]:
         """Extract concise post-game analytics from Match-V5 timeline payload."""
@@ -1962,9 +2000,11 @@ class Hexbet(commands.Cog):
                 participant_team[pid] = tid
 
         kills = {100: 0, 200: 0}
-        dragons = {100: 0, 200: 0}
+        dragon_types = {100: [], 200: []}
+        global_dragon_types = []
         heralds = {100: 0, 200: 0}
         barons = {100: 0, 200: 0}
+        elders = {100: 0, 200: 0}
         first_blood_ms = None
         first_blood_team = None
 
@@ -1993,7 +2033,21 @@ class Hexbet(commands.Cog):
                         continue
 
                     if monster_type == 'DRAGON':
-                        dragons[killer_team] += 1
+                        dragon_subtype = (event.get('monsterSubType') or '').upper()
+                        dragon_map = {
+                            'FIRE_DRAGON': 'infernal',
+                            'WATER_DRAGON': 'ocean',
+                            'EARTH_DRAGON': 'mountain',
+                            'AIR_DRAGON': 'cloud',
+                            'HEXTECH_DRAGON': 'hextech',
+                            'CHEMTECH_DRAGON': 'chemtech',
+                        }
+                        if dragon_subtype == 'ELDER_DRAGON':
+                            elders[killer_team] += 1
+                        else:
+                            dragon_type = dragon_map.get(dragon_subtype, 'infernal')
+                            dragon_types[killer_team].append(dragon_type)
+                            global_dragon_types.append(dragon_type)
                     elif monster_type == 'RIFTHERALD':
                         heralds[killer_team] += 1
                     elif monster_type == 'BARON_NASHOR':
@@ -2043,22 +2097,40 @@ class Hexbet(commands.Cog):
             fb_line = "First blood: N/A"
 
         # Build objective emoji strips (left = blue, right = red)
-        _EMOJIS = {
-            'drake':   '<:infernaldrake:1488169753007624283>',
-            'herald':  '<:riftherald:1488169758292443206>',
-            'baron':   '<:baronnashor:1488169738675687576>',
-            'elder':   '<:elderdrake:1488169745365729411>',
+        _DRAGON_EMOJIS = {
+            'infernal': '<:infernaldrake:1488169753007624283>',
+            'ocean': '<:oceandrake:1488169757063778455>',
+            'mountain': '<:mountaindrake:1488169755780055110>',
+            'cloud': '<:clouddrake:1488169743750922441>',
+            'hextech': '<:hextechdrake:1488169749845119086>',
+            'chemtech': '<:chemtechdrake:1488169741226082445>',
         }
-        blue_obj_strip = (
-            _EMOJIS['herald'] * heralds[100]
-            + _EMOJIS['drake'] * dragons[100]
-            + _EMOJIS['baron'] * barons[100]
-        ) or '—'
-        red_obj_strip = (
-            _EMOJIS['herald'] * heralds[200]
-            + _EMOJIS['drake'] * dragons[200]
-            + _EMOJIS['baron'] * barons[200]
-        ) or '—'
+        _SOUL_EMOJIS = {
+            'infernal': '<:Infernal_Dragon_soul:1488169751036428298>',
+            'mountain': '<:Mountain_Dragon_soul:1488169754320568484>',
+            'cloud': '<:Cloud_Dragon_soul:1488169742547030116>',
+            'hextech': '<:Hextech_Dragon_soul:1488169748226375844>',
+            'chemtech': '<:Chemtech_Dragon_soul:1488169739699355871>',
+            'ocean': '<:Infernal_Dragon_soul:1488169751036428298>',
+        }
+        _HERALD = '<:riftherald:1488169758292443206>'
+        _BARON = '<:baronnashor:1488169738675687576>'
+        _ELDER = '<:elderdrake:1488169745365729411>'
+
+        rift_type = global_dragon_types[2] if len(global_dragon_types) >= 3 else None
+
+        def _team_objective_strip(team_id: int) -> str:
+            parts = []
+            parts.extend([_HERALD] * heralds[team_id])
+            parts.extend(_DRAGON_EMOJIS[dragon_type] for dragon_type in dragon_types[team_id])
+            if len(dragon_types[team_id]) >= 4 and rift_type:
+                parts.append(_SOUL_EMOJIS[rift_type])
+            parts.extend([_ELDER] * elders[team_id])
+            parts.extend([_BARON] * barons[team_id])
+            return ''.join(parts) or '—'
+
+        blue_obj_strip = _team_objective_strip(100)
+        red_obj_strip = _team_objective_strip(200)
 
         return (
             f"{fb_line}\n"
@@ -2239,6 +2311,7 @@ class Hexbet(commands.Cog):
                 chance_red,
                 blue,
                 red,
+                include_suspicious=not (smurf_blue or smurf_red),
             )
             embed.add_field(name="📉 Match Timeline Analytics", value=timeline_analytics, inline=False)
         
