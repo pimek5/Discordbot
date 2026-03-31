@@ -192,7 +192,7 @@ LOG_CHANNEL_ID = 1408036991454417039
 TWITTER_USERNAME = "p1mek"
 TWEETS_CHANNEL_ID = 1414899834581680139  # Channel for posting tweets
 TWITTER_CHECK_INTERVAL = 3600  # Check every 1 hour (3600 seconds) - reduce API rate limit pressure
-TWITTER_MONITORING_ENABLED = os.getenv("TWITTER_MONITORING_ENABLED", "true").lower() == "true"  # Toggle via env var
+TWITTER_MONITORING_ENABLED = os.getenv("TWITTER_MONITORING_ENABLED", "false").lower() == "true"  # Disabled by default; enable explicitly via env var
 
 # Twitter API Configuration (add these to your .env file)
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")  # Add this to .env
@@ -3125,19 +3125,24 @@ async def twitter_post(interaction: discord.Interaction):
 @twitter_group.command(name="toggle", description="Toggle tweet monitoring on/off")
 async def twitter_toggle(interaction: discord.Interaction):
     """Start/stop tweet monitoring"""
+    global TWITTER_MONITORING_ENABLED
     if not has_mod_role(interaction):
         await interaction.response.send_message("❌ No permission", ephemeral=True)
         return
     
     try:
-        if check_for_new_tweets.is_running():
-            check_for_new_tweets.stop()
+        TWITTER_MONITORING_ENABLED = not TWITTER_MONITORING_ENABLED
+
+        if not TWITTER_MONITORING_ENABLED:
+            if check_for_new_tweets.is_running():
+                check_for_new_tweets.stop()
             await interaction.response.send_message("⏸️ Tweet monitoring **stopped**", ephemeral=True)
-            print(f"⏸️ Tweet monitoring stopped")
+            print("⏸️ Tweet monitoring stopped")
         else:
-            check_for_new_tweets.start()
+            if not check_for_new_tweets.is_running():
+                check_for_new_tweets.start()
             await interaction.response.send_message("▶️ Tweet monitoring **started**", ephemeral=True)
-            print(f"▶️ Tweet monitoring started")
+            print("▶️ Tweet monitoring started")
     except Exception as e:
         await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
@@ -3504,7 +3509,8 @@ async def check_for_new_tweets():
     
     # Skip if monitoring disabled
     if not TWITTER_MONITORING_ENABLED:
-        print(f"⏸️ Twitter monitoring is disabled (set TWITTER_MONITORING_ENABLED=true to enable)")
+        if check_for_new_tweets.is_running():
+            check_for_new_tweets.stop()
         return
     
     try:
@@ -6134,7 +6140,7 @@ async def on_ready():
     asyncio.create_task(auto_migrate_puuids())
     
     # Start tweet monitoring
-    if not check_for_new_tweets.is_running():
+    if TWITTER_MONITORING_ENABLED and not check_for_new_tweets.is_running():
         check_for_new_tweets.start()
         print(f"🐦 Started monitoring @{TWITTER_USERNAME} for new tweets")
     
