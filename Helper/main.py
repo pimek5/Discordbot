@@ -1,6 +1,8 @@
 import os
 import asyncio
 import logging
+import json
+import random
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, quote
 import aiohttp
@@ -14,6 +16,7 @@ SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
 UNSOLVED_TAG_ID = 1464379721272787069  # Tag applied when thread is unsolved/created
 STREAM_ROLE_ID = 1470171489096564736  # Role granted while streaming
 STREAM_LIST_CHANNEL_ID = 1470173597157818559  # Channel for streaming roster embed
+RANKDLE_POOL_FILE = os.path.join(os.path.dirname(__file__), "rankdle_pool.json")
 AUTO_TRIAGE_KEYWORDS = {
     "bug": ["bug", "error", "crash", "exception", "failed", "traceback"],
     "install": ["install", "setup", "launcher", "open", "start", "cannot launch"],
@@ -273,6 +276,236 @@ def create_bot():
         ("listening", "error reports"),
         ("playing", "📌 forum triage"),
     ]
+    bot.rankdle_sessions = {}
+
+    RANKDLE_RANKS = [
+        "IRON",
+        "BRONZE",
+        "SILVER",
+        "GOLD",
+        "PLATINUM",
+        "DIAMOND",
+        "MASTER",
+        "GRANDMASTER",
+        "CHALLENGER",
+    ]
+    RANKDLE_INDEX = {rank: idx for idx, rank in enumerate(RANKDLE_RANKS)}
+    RANKDLE_EMOJIS = {
+        "IRON": "🪨",
+        "BRONZE": "🥉",
+        "SILVER": "🥈",
+        "GOLD": "🥇",
+        "PLATINUM": "🔷",
+        "DIAMOND": "💎",
+        "MASTER": "🟪",
+        "GRANDMASTER": "🟥",
+        "CHALLENGER": "👑",
+    }
+
+    def load_rankdle_pool() -> list[dict]:
+        if not os.path.exists(RANKDLE_POOL_FILE):
+            return []
+        try:
+            with open(RANKDLE_POOL_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return [item for item in data if isinstance(item, dict)]
+        except Exception as e:
+            logger.warning("Failed to load rankdle pool: %s", e)
+        return []
+
+    def save_rankdle_pool(pool: list[dict]):
+        try:
+            with open(RANKDLE_POOL_FILE, "w", encoding="utf-8") as f:
+                json.dump(pool, f, ensure_ascii=True, indent=2)
+        except Exception as e:
+            logger.error("Failed to save rankdle pool: %s", e)
+
+    def rank_label(rank: str) -> str:
+        upper = (rank or "").upper()
+        return f"{RANKDLE_EMOJIS.get(upper, '🎯')} {upper}"
+
+    def build_rankdle_clip_embed(session: dict) -> discord.Embed:
+        idx = session["current_index"]
+        clip = session["clips"][idx]
+        total = len(session["clips"])
+        stars = session.get("stars", 0)
+
+        embed = discord.Embed(
+            title=f"🎮 Rank Guess • Clip {idx + 1}/{total}",
+            description=(
+                f"Watch clip: {clip.get('url')}\n"
+                "Choose the rank you think this play belongs to."
+            ),
+            color=discord.Color.blurple(),
+        )
+        if clip.get("source"):
+            embed.add_field(name="Source", value=clip["source"], inline=False)
+        embed.set_footer(text=f"Stars: {stars} | Exact: ⭐⭐ | One rank off: ⭐")
+        return embed
+
+    def build_rankdle_result_embed(session: dict) -> discord.Embed:
+        total_clips = len(session["clips"])
+        max_stars = total_clips * 2
+        stars = session.get("stars", 0)
+
+        embed = discord.Embed(
+            title="🏁 Rank Guess Result",
+            description=f"Score: **{stars}/{max_stars}** stars",
+            color=discord.Color.green() if stars >= max(2, total_clips) else discord.Color.orange(),
+        )
+
+        lines = []
+        for i, row in enumerate(session.get("history", []), 1):
+            line = (
+                f"{i}. Guess: {rank_label(row['guess'])} | "
+                f"Correct: {rank_label(row['correct'])} | +{row['stars']}⭐"
+            )
+            lines.append(line)
+
+        embed.add_field(name="Rounds", value="\n".join(lines) if lines else "No rounds played", inline=False)
+        return embed
+
+    class RankdleSelect(discord.ui.Select):
+        def __init__(self, owner_id: int):
+            options = [discord.SelectOption(label=rank.title(), value=rank) for rank in RANKDLE_RANKS]
+            super().__init__(
+                placeholder="Choose rank...",
+                min_values=1,
+                max_values=1,
+                options=options,
+                custom_id="helper_rankdle_select",
+            )
+            self.owner_id = owner_id
+
+        async def callback(self, interaction: discord.Interaction):
+            if interaction.user.id != self.owner_id:
+                await interaction.response.send_message("This game session is not yours.", ephemeral=True)
+                return
+
+            session = bot.rankdle_sessions.get(self.owner_id)
+            if not session:
+                await interaction.response.send_message("Session expired. Start a new one with /rankdle_play", ephemeral=True)
+                return
+
+            guess = self.values[0]
+            idx = session["current_index"]
+            clip = session["clips"][idx]
+            correct = clip.get("rank", "IRON")
+
+            diff = abs(RANKDLE_INDEX.get(guess, 0) - RANKDLE_INDEX.get(correct, 0))
+            stars = 2 if diff == 0 else 1 if diff == 1 else 0
+            session["stars"] += stars
+            session.setdefault("history", []).append({"guess": guess, "correct": correct, "stars": stars})
+
+            if idx + 1 >= len(session["clips"]):
+                final_embed = build_rankdle_result_embed(session)
+                bot.rankdle_sessions.pop(self.owner_id, None)
+                await interaction.response.edit_message(embed=final_embed, view=None)
+                return
+
+            session["current_index"] += 1
+            next_embed = build_rankdle_clip_embed(session)
+            next_view = RankdleView(self.owner_id)
+            await interaction.response.edit_message(embed=next_embed, view=next_view)
+
+    class RankdleView(discord.ui.View):
+        def __init__(self, owner_id: int):
+            super().__init__(timeout=600)
+            self.add_item(RankdleSelect(owner_id))
+
+    rank_choices = [app_commands.Choice(name=rank.title(), value=rank) for rank in RANKDLE_RANKS]
+
+    @bot.tree.command(name="rankdle_addclip", description="Add a clip to Helper rank guessing pool")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(url="Clip video URL", rank="Correct rank", source="Optional source/credit")
+    @app_commands.choices(rank=rank_choices)
+    async def rankdle_addclip(interaction: discord.Interaction, url: str, rank: app_commands.Choice[str], source: Optional[str] = None):
+        await interaction.response.defer(ephemeral=True)
+
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            await interaction.followup.send("❌ Invalid URL. Use http/https link.", ephemeral=True)
+            return
+
+        pool = load_rankdle_pool()
+        if any((entry.get("url") or "").strip() == url.strip() for entry in pool):
+            await interaction.followup.send("ℹ️ Clip already exists in pool.", ephemeral=True)
+            return
+
+        pool.append(
+            {
+                "url": url.strip(),
+                "rank": rank.value,
+                "source": (source or "").strip(),
+                "added_by": interaction.user.id,
+                "added_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        save_rankdle_pool(pool)
+        await interaction.followup.send(
+            f"✅ Added clip to pool. Rank: {rank_label(rank.value)}\nPool size: **{len(pool)}**",
+            ephemeral=True,
+        )
+
+    @bot.tree.command(name="rankdle_pool", description="Show stats for Helper rank guessing pool")
+    async def rankdle_pool(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        pool = load_rankdle_pool()
+
+        embed = discord.Embed(title="🎬 Rank Guess Pool", color=discord.Color.blurple())
+        embed.add_field(name="Total clips", value=str(len(pool)), inline=False)
+
+        if pool:
+            counts = {rank: 0 for rank in RANKDLE_RANKS}
+            for entry in pool:
+                rank = (entry.get("rank") or "").upper()
+                if rank in counts:
+                    counts[rank] += 1
+            lines = [f"{rank_label(rank)}: {count}" for rank, count in counts.items() if count > 0]
+            embed.add_field(name="By rank", value="\n".join(lines) if lines else "No rank metadata", inline=False)
+            sample = pool[-1]
+            embed.add_field(
+                name="Last added",
+                value=f"{rank_label(sample.get('rank', 'IRON'))}\n{sample.get('url', 'N/A')}",
+                inline=False,
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @bot.tree.command(name="rankdle_play", description="Play rank guessing game from Helper clip pool")
+    @app_commands.describe(rounds="Number of clips to guess (default 3)")
+    async def rankdle_play(interaction: discord.Interaction, rounds: Optional[int] = 3):
+        await interaction.response.defer(ephemeral=True)
+        pool = load_rankdle_pool()
+        if not pool:
+            await interaction.followup.send(
+                "❌ Pool is empty. Add clips first with /rankdle_addclip.",
+                ephemeral=True,
+            )
+            return
+
+        rounds = max(1, min(int(rounds or 3), 10))
+        if len(pool) < rounds:
+            await interaction.followup.send(
+                f"❌ Not enough clips in pool ({len(pool)}). Need at least {rounds}.",
+                ephemeral=True,
+            )
+            return
+
+        clips = random.sample(pool, rounds)
+        session = {
+            "clips": clips,
+            "current_index": 0,
+            "stars": 0,
+            "history": [],
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+        bot.rankdle_sessions[interaction.user.id] = session
+
+        embed = build_rankdle_clip_embed(session)
+        view = RankdleView(interaction.user.id)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def get_http_session() -> aiohttp.ClientSession:
         if not hasattr(bot, "http_session") or bot.http_session.closed:
