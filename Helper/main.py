@@ -325,6 +325,16 @@ def create_bot():
         upper = (rank or "").upper()
         return f"{RANKDLE_EMOJIS.get(upper, '🎯')} {upper}"
 
+    def normalize_rankdle_rank(rank_name: str) -> str:
+        value = (rank_name or "").strip().upper().replace(" ", "")
+        if value == "GRANDMASTER":
+            return "GRANDMASTER"
+        if value in RANKDLE_INDEX:
+            return value
+        if value == "UNRANKED":
+            return "IRON"
+        return "IRON"
+
     def build_rankdle_clip_embed(session: dict) -> discord.Embed:
         idx = session["current_index"]
         clip = session["clips"][idx]
@@ -506,6 +516,192 @@ def create_bot():
         embed = build_rankdle_clip_embed(session)
         view = RankdleView(interaction.user.id)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @bot.tree.command(name="rankdle_scrape", description="Scrape today's Rankdle LoL clips into local pool")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def rankdle_scrape(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        base_url = "https://rankdle.com"
+        session = await get_http_session()
+
+        try:
+            # 1) Create guest token
+            async with session.post(
+                f"{base_url}/api/auth/createuser",
+                json={},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status != 200:
+                    await interaction.followup.send(
+                        f"❌ createuser failed ({resp.status}).",
+                        ephemeral=True,
+                    )
+                    return
+                create_data = await resp.json(content_type=None)
+            user_token = create_data.get("token")
+            if not user_token:
+                await interaction.followup.send("❌ Rankdle token missing from createuser response.", ephemeral=True)
+                return
+
+            # 2) Daily token and game list
+            async with session.get(
+                f"{base_url}/api/auth/getgamesdata",
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status != 200:
+                    await interaction.followup.send(
+                        f"❌ getgamesdata failed ({resp.status}).",
+                        ephemeral=True,
+                    )
+                    return
+                games_data = await resp.json(content_type=None)
+            daily_token = games_data.get("currDailyToken")
+            if not daily_token:
+                await interaction.followup.send("❌ Rankdle daily token missing.", ephemeral=True)
+                return
+
+            # 3) Rank metadata (needed for valid guess payload format)
+            rank_headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {user_token}",
+            }
+            async with session.get(
+                f"{base_url}/api/auth/getgamesrankdata",
+                headers=rank_headers,
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status != 200:
+                    await interaction.followup.send(
+                        f"❌ getgamesrankdata failed ({resp.status}).",
+                        ephemeral=True,
+                    )
+                    return
+                rank_data = await resp.json(content_type=None)
+
+            iron_guess = (((rank_data.get("gamesRankData") or {}).get("lol") or {}).get("iron"))
+            if not iron_guess:
+                await interaction.followup.send("❌ Could not resolve LoL rank metadata from Rankdle API.", ephemeral=True)
+                return
+
+            # 4) Start today's LoL reel
+            play_headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {user_token}",
+                "RankdleDaily": f"Bearer {daily_token}",
+            }
+            async with session.post(
+                f"{base_url}/api/user/playgamereel",
+                headers=play_headers,
+                json={"game": "lol", "dailyId": None},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status != 200:
+                    await interaction.followup.send(
+                        f"❌ playgamereel failed ({resp.status}).",
+                        ephemeral=True,
+                    )
+                    return
+                reel_data = await resp.json(content_type=None)
+
+            reel_id = reel_data.get("id")
+            clips = reel_data.get("clips") or []
+            if not reel_id or not clips:
+                await interaction.followup.send("❌ No clips returned by Rankdle playgamereel.", ephemeral=True)
+                return
+
+            reel_index = int(reel_data.get("reelIndex", 0) or 0)
+            extracted = []
+
+            for offset, clip in enumerate(clips):
+                clip_id = clip.get("clipId")
+                if not clip_id:
+                    continue
+
+                # Submit a valid dummy guess so clip result endpoint reveals the correct rank.
+                guess_payload = {
+                    "clipId": clip_id,
+                    "reelId": reel_id,
+                    "reelIndex": reel_index + offset,
+                    "guess": iron_guess,
+                }
+                async with session.post(
+                    f"{base_url}/api/user/guesscliprank",
+                    headers=rank_headers,
+                    json=guess_payload,
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as _:
+                    pass
+
+                result_url = f"{base_url}/api/user/getclipresult/{clip_id}"
+                async with session.get(
+                    result_url,
+                    headers=rank_headers,
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as result_resp:
+                    if result_resp.status != 200:
+                        continue
+                    clip_result = await result_resp.json(content_type=None)
+
+                if not clip_result.get("success"):
+                    continue
+
+                resolved_url = (clip_result.get("url") or clip.get("clipLink") or "").strip()
+                resolved_rank = normalize_rankdle_rank(clip_result.get("rankName") or "")
+                if not resolved_url:
+                    continue
+
+                extracted.append({
+                    "url": resolved_url,
+                    "rank": resolved_rank,
+                    "source": "rankdle.com/lol",
+                })
+
+                # Advance reel state for next clip.
+                async with session.post(
+                    f"{base_url}/api/user/getnextsection",
+                    headers=rank_headers,
+                    json={"clipId": clip_id, "reelId": reel_id},
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as _:
+                    pass
+
+            if not extracted:
+                await interaction.followup.send("❌ Scrape finished but extracted 0 valid clips.", ephemeral=True)
+                return
+
+            pool = load_rankdle_pool()
+            existing_urls = {(entry.get("url") or "").strip() for entry in pool}
+            added = 0
+            for item in extracted:
+                if item["url"] in existing_urls:
+                    continue
+                pool.append(
+                    {
+                        "url": item["url"],
+                        "rank": item["rank"],
+                        "source": item["source"],
+                        "added_by": interaction.user.id,
+                        "added_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                existing_urls.add(item["url"])
+                added += 1
+
+            if added > 0:
+                save_rankdle_pool(pool)
+
+            lines = [f"• {rank_label(item['rank'])} -> {item['url']}" for item in extracted[:3]]
+            msg = (
+                f"✅ Rankdle scrape complete. Extracted: **{len(extracted)}** | Added: **{added}**\n"
+                f"Pool size: **{len(pool)}**\n"
+                + ("\n".join(lines) if lines else "")
+            )
+            await interaction.followup.send(msg, ephemeral=True)
+
+        except Exception as e:
+            logger.error("rankdle_scrape failed: %s", e, exc_info=True)
+            await interaction.followup.send(f"❌ rankdle_scrape failed: {e}", ephemeral=True)
 
     async def get_http_session() -> aiohttp.ClientSession:
         if not hasattr(bot, "http_session") or bot.http_session.closed:
