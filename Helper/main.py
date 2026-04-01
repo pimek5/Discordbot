@@ -3,6 +3,8 @@ import asyncio
 import logging
 import json
 import random
+import tempfile
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, quote
 import aiohttp
@@ -383,10 +385,7 @@ def create_bot():
         clip_date = state.get("date", "unknown")
         embed = discord.Embed(
             title=f"Rankdle Daily LoL - Clip {clip_index + 1}/3",
-            description=(
-                f"Watch clip: {clip.get('url', 'N/A')}\n"
-                "Vote with buttons below. One vote per user for this clip."
-            ),
+            description="Vote with buttons below. One vote per user for this clip.",
             color=discord.Color.blurple(),
             timestamp=datetime.now(timezone.utc),
         )
@@ -706,6 +705,81 @@ def create_bot():
             for rank in RANKDLE_RANKS:
                 self.add_item(RankdleDailyVoteButton(clip_index, rank))
 
+    async def _download_rankdle_clip_to_file(url: str, target_path: Path) -> bool:
+        """Download clip URL to target_path. Supports direct files and YouTube via yt-dlp."""
+        if not url:
+            return False
+
+        parsed = urlparse(url)
+        host = (parsed.netloc or "").lower()
+
+        # Direct media URLs can be downloaded with aiohttp.
+        if parsed.scheme in {"http", "https"} and any(url.lower().split("?")[0].endswith(ext) for ext in (".mp4", ".webm", ".mov", ".m4v")):
+            try:
+                session = await get_http_session()
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                    if resp.status != 200:
+                        return False
+                    with open(target_path, "wb") as f:
+                        async for chunk in resp.content.iter_chunked(1024 * 128):
+                            if chunk:
+                                f.write(chunk)
+                return target_path.exists() and target_path.stat().st_size > 0
+            except Exception as e:
+                logger.warning("Direct clip download failed: %s", e)
+                return False
+
+        # Provider links (e.g., YouTube) via yt-dlp.
+        try:
+            import yt_dlp  # type: ignore
+        except Exception:
+            logger.warning("yt-dlp is not installed; cannot download provider clip from host=%s", host)
+            return False
+
+        def _download_with_ytdlp() -> bool:
+            opts = {
+                "format": "mp4/bestvideo+bestaudio/best",
+                "merge_output_format": "mp4",
+                "outtmpl": str(target_path.with_suffix(".%(ext)s")),
+                "noplaylist": True,
+                "quiet": True,
+                "no_warnings": True,
+                "overwrites": True,
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+            if target_path.exists() and target_path.stat().st_size > 0:
+                return True
+            for candidate in target_path.parent.glob(f"{target_path.stem}.*"):
+                if candidate.suffix.lower() in {".mp4", ".webm", ".mov", ".m4v"} and candidate.stat().st_size > 0:
+                    candidate.replace(target_path)
+                    return True
+            return False
+
+        try:
+            return await asyncio.to_thread(_download_with_ytdlp)
+        except Exception as e:
+            logger.warning("yt-dlp clip download failed: %s", e)
+            return False
+
+    async def _send_rankdle_daily_clip_message(channel: discord.TextChannel, state: dict, clip_index: int) -> discord.Message:
+        embed = build_rankdle_daily_clip_embed(state, clip_index)
+        view = RankdleDailyVoteView(clip_index)
+        clip_url = (state["clips"][clip_index].get("url") or "").strip()
+
+        with tempfile.TemporaryDirectory(prefix="rankdle_clip_") as temp_dir:
+            temp_path = Path(temp_dir) / f"rankdle_{state.get('date', 'today')}_{clip_index + 1}.mp4"
+            downloaded = await _download_rankdle_clip_to_file(clip_url, temp_path)
+
+            if downloaded:
+                clip_file = discord.File(str(temp_path), filename=temp_path.name)
+                return await channel.send(embed=embed, file=clip_file, view=view)
+
+            logger.warning("Failed to download Rankdle clip for clip_index=%s url=%s", clip_index, clip_url)
+            fallback_embed = embed.copy()
+            fallback_embed.description = "Clip could not be downloaded for inline playback right now."
+            return await channel.send(embed=fallback_embed, view=view)
+
     async def post_rankdle_daily_embeds(state: dict):
         channel = bot.get_channel(RANKDLE_CHANNEL_ID)
         if channel is None:
@@ -719,10 +793,7 @@ def create_bot():
 
         message_ids = []
         for clip_index in range(min(3, len(state.get("clips") or []))):
-            embed = build_rankdle_daily_clip_embed(state, clip_index)
-            view = RankdleDailyVoteView(clip_index)
-            clip_url = (state["clips"][clip_index].get("url") or "").strip()
-            msg = await channel.send(content=clip_url or None, embed=embed, view=view)
+            msg = await _send_rankdle_daily_clip_message(channel, state, clip_index)
             message_ids.append(msg.id)
 
         state["messages"] = message_ids
@@ -763,10 +834,7 @@ def create_bot():
                     message_found = False
 
             if not message_found:
-                embed = build_rankdle_daily_clip_embed(state, clip_index)
-                view = RankdleDailyVoteView(clip_index)
-                clip_url = (clips[clip_index].get("url") or "").strip()
-                posted = await channel.send(content=clip_url or None, embed=embed, view=view)
+                posted = await _send_rankdle_daily_clip_message(channel, state, clip_index)
                 new_ids.append(posted.id)
                 restored_count += 1
 
