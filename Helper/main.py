@@ -17,6 +17,8 @@ UNSOLVED_TAG_ID = 1464379721272787069  # Tag applied when thread is unsolved/cre
 STREAM_ROLE_ID = 1470171489096564736  # Role granted while streaming
 STREAM_LIST_CHANNEL_ID = 1470173597157818559  # Channel for streaming roster embed
 RANKDLE_POOL_FILE = os.path.join(os.path.dirname(__file__), "rankdle_pool.json")
+RANKDLE_DAILY_STATE_FILE = os.path.join(os.path.dirname(__file__), "rankdle_daily_state.json")
+RANKDLE_CHANNEL_ID = 1488821138841800814
 AUTO_TRIAGE_KEYWORDS = {
     "bug": ["bug", "error", "crash", "exception", "failed", "traceback"],
     "install": ["install", "setup", "launcher", "open", "start", "cannot launch"],
@@ -291,15 +293,16 @@ def create_bot():
     ]
     RANKDLE_INDEX = {rank: idx for idx, rank in enumerate(RANKDLE_RANKS)}
     RANKDLE_EMOJIS = {
-        "IRON": "🪨",
-        "BRONZE": "🥉",
-        "SILVER": "🥈",
-        "GOLD": "🥇",
-        "PLATINUM": "🔷",
-        "DIAMOND": "💎",
-        "MASTER": "🟪",
-        "GRANDMASTER": "🟥",
-        "CHALLENGER": "👑",
+        "IRON": "<:rank_Iron:1485677690974371932>",
+        "BRONZE": "<:rank_Bronze:1485677682447351991>",
+        "SILVER": "<:rank_Silver:1485677694971674826>",
+        "GOLD": "<:rank_Gold:1485677688134963272>",
+        "PLATINUM": "<:rank_Platinum:1485677693541417090>",
+        "DIAMOND": "<:rank_Diamond:1485677685773566083>",
+        "MASTER": "<:rank_Master:1485677692123746304>",
+        "GRANDMASTER": "<:rank_Grandmaster:1485677689758023760>",
+        "CHALLENGER": "<:rank_Challenger:1485677683496190145>",
+        "EMERALD": "<:rank_Emerald:1485677686884925621>",
     }
 
     def load_rankdle_pool() -> list[dict]:
@@ -334,6 +337,225 @@ def create_bot():
         if value == "UNRANKED":
             return "IRON"
         return "IRON"
+
+    def load_rankdle_daily_state() -> dict:
+        if not os.path.exists(RANKDLE_DAILY_STATE_FILE):
+            return {"date": None, "clips": [], "messages": [], "votes": {}, "winners": {}}
+        try:
+            with open(RANKDLE_DAILY_STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    data.setdefault("date", None)
+                    data.setdefault("clips", [])
+                    data.setdefault("messages", [])
+                    data.setdefault("votes", {})
+                    data.setdefault("winners", {})
+                    return data
+        except Exception as e:
+            logger.warning("Failed to load rankdle daily state: %s", e)
+        return {"date": None, "clips": [], "messages": [], "votes": {}, "winners": {}}
+
+    def save_rankdle_daily_state(state: dict):
+        try:
+            with open(RANKDLE_DAILY_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=True, indent=2)
+        except Exception as e:
+            logger.error("Failed to save rankdle daily state: %s", e)
+
+    def build_rankdle_daily_stats_text(state: dict, clip_index: int) -> str:
+        key = str(clip_index)
+        votes = (state.get("votes") or {}).get(key, {})
+        winners = (state.get("winners") or {}).get(key, [])
+        clips = state.get("clips") or []
+        if clip_index >= len(clips):
+            return "No stats available yet."
+        correct_rank = clips[clip_index].get("rank", "IRON")
+        winners_mentions = " ".join([f"<@{uid}>" for uid in winners]) if winners else "None yet"
+        return (
+            f"Total votes: **{len(votes)}**\n"
+            f"Correct rank: {rank_label(correct_rank)}\n"
+            f"Correct guesses: **{len(winners)}**\n"
+            f"Winners: {winners_mentions}"
+        )
+
+    def build_rankdle_daily_clip_embed(state: dict, clip_index: int) -> discord.Embed:
+        clips = state.get("clips") or []
+        clip = clips[clip_index]
+        clip_region = (clip.get("region") or "GLOBAL").upper()
+        clip_date = state.get("date", "unknown")
+        embed = discord.Embed(
+            title=f"Rankdle Daily LoL - Clip {clip_index + 1}/3",
+            description=(
+                f"Watch clip: {clip.get('url', 'N/A')}\n"
+                "Vote with buttons below. One vote per user for this clip."
+            ),
+            color=discord.Color.blurple(),
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.add_field(name="Date", value=clip_date, inline=True)
+        embed.add_field(name="Clip", value=f"{clip_index + 1}/3", inline=True)
+        embed.add_field(name="Region", value=clip_region, inline=True)
+        embed.add_field(name="Stats", value=build_rankdle_daily_stats_text(state, clip_index), inline=False)
+        embed.set_footer(text=f"Day: {clip_date}")
+        return embed
+
+    def extract_rankdle_region(clip_payload: dict) -> str:
+        candidates = [
+            clip_payload.get("region"),
+            clip_payload.get("server"),
+            clip_payload.get("platform"),
+            clip_payload.get("locale"),
+            clip_payload.get("shard"),
+            clip_payload.get("cluster"),
+        ]
+        for value in candidates:
+            if isinstance(value, str) and value.strip():
+                normalized = value.strip().upper()
+                aliases = {
+                    "EUW1": "EUW",
+                    "EUN1": "EUNE",
+                    "NA1": "NA",
+                    "KR": "KR",
+                    "JP1": "JP",
+                    "BR1": "BR",
+                    "LA1": "LAN",
+                    "LA2": "LAS",
+                    "OC1": "OCE",
+                    "TR1": "TR",
+                    "RU": "RU",
+                    "SG2": "SG",
+                    "PH2": "PH",
+                    "TH2": "TH",
+                    "TW2": "TW",
+                    "VN2": "VN",
+                }
+                return aliases.get(normalized, normalized)
+        return "GLOBAL"
+
+    async def scrape_rankdle_daily_lol_clips() -> list[dict]:
+        base_url = "https://rankdle.com"
+        session = await get_http_session()
+
+        async with session.post(
+            f"{base_url}/api/auth/createuser",
+            json={},
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"createuser failed ({resp.status})")
+            create_data = await resp.json(content_type=None)
+        user_token = create_data.get("token")
+        if not user_token:
+            raise RuntimeError("Rankdle token missing from createuser response")
+
+        async with session.get(
+            f"{base_url}/api/auth/getgamesdata",
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"getgamesdata failed ({resp.status})")
+            games_data = await resp.json(content_type=None)
+        daily_token = games_data.get("currDailyToken")
+        if not daily_token:
+            raise RuntimeError("Rankdle daily token missing")
+
+        rank_headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {user_token}",
+        }
+        async with session.get(
+            f"{base_url}/api/auth/getgamesrankdata",
+            headers=rank_headers,
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"getgamesrankdata failed ({resp.status})")
+            rank_data = await resp.json(content_type=None)
+
+        iron_guess = (((rank_data.get("gamesRankData") or {}).get("lol") or {}).get("iron"))
+        if not iron_guess:
+            raise RuntimeError("Could not resolve LoL rank metadata")
+
+        play_headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {user_token}",
+            "RankdleDaily": f"Bearer {daily_token}",
+        }
+        async with session.post(
+            f"{base_url}/api/user/playgamereel",
+            headers=play_headers,
+            json={"game": "lol", "dailyId": None},
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"playgamereel failed ({resp.status})")
+            reel_data = await resp.json(content_type=None)
+
+        reel_id = reel_data.get("id")
+        clips = reel_data.get("clips") or []
+        if not reel_id or not clips:
+            raise RuntimeError("No clips returned by Rankdle playgamereel")
+
+        reel_index = int(reel_data.get("reelIndex", 0) or 0)
+        extracted = []
+
+        for offset, clip in enumerate(clips):
+            clip_id = clip.get("clipId")
+            if not clip_id:
+                continue
+
+            guess_payload = {
+                "clipId": clip_id,
+                "reelId": reel_id,
+                "reelIndex": reel_index + offset,
+                "guess": iron_guess,
+            }
+            async with session.post(
+                f"{base_url}/api/user/guesscliprank",
+                headers=rank_headers,
+                json=guess_payload,
+                timeout=aiohttp.ClientTimeout(total=20),
+            ):
+                pass
+
+            async with session.get(
+                f"{base_url}/api/user/getclipresult/{clip_id}",
+                headers=rank_headers,
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as result_resp:
+                if result_resp.status != 200:
+                    continue
+                clip_result = await result_resp.json(content_type=None)
+
+            if not clip_result.get("success"):
+                continue
+
+            resolved_url = (clip_result.get("url") or clip.get("clipLink") or "").strip()
+            resolved_rank = normalize_rankdle_rank(clip_result.get("rankName") or "")
+            if not resolved_url:
+                continue
+
+            merged_payload = {
+                **(clip if isinstance(clip, dict) else {}),
+                **(clip_result if isinstance(clip_result, dict) else {}),
+            }
+
+            extracted.append({
+                "url": resolved_url,
+                "rank": resolved_rank,
+                "region": extract_rankdle_region(merged_payload),
+                "source": "rankdle.com/lol",
+            })
+
+            async with session.post(
+                f"{base_url}/api/user/getnextsection",
+                headers=rank_headers,
+                json={"clipId": clip_id, "reelId": reel_id},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ):
+                pass
+
+        return extracted
 
     def build_rankdle_clip_embed(session: dict) -> discord.Embed:
         idx = session["current_index"]
@@ -424,6 +646,141 @@ def create_bot():
             super().__init__(timeout=600)
             self.add_item(RankdleSelect(owner_id))
 
+    class RankdleDailyVoteButton(discord.ui.Button):
+        def __init__(self, clip_index: int, rank: str):
+            super().__init__(
+                label=rank.title(),
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"helper_rankdle_daily_{clip_index}_{rank}",
+                row=0 if RANKDLE_INDEX[rank] < 5 else 1,
+                emoji=RANKDLE_EMOJIS.get(rank),
+            )
+            self.clip_index = clip_index
+            self.rank = rank
+
+        async def callback(self, interaction: discord.Interaction):
+            state = load_rankdle_daily_state()
+            today_key = datetime.now(timezone.utc).date().isoformat()
+
+            if state.get("date") != today_key or self.clip_index >= len(state.get("clips") or []):
+                await interaction.response.send_message("This daily vote is no longer active.", ephemeral=True)
+                return
+
+            key = str(self.clip_index)
+            votes = state.setdefault("votes", {}).setdefault(key, {})
+            user_key = str(interaction.user.id)
+            if user_key in votes:
+                await interaction.response.send_message(
+                    f"You already voted on this clip: {rank_label(votes[user_key])}",
+                    ephemeral=True,
+                )
+                return
+
+            votes[user_key] = self.rank
+            correct_rank = (state["clips"][self.clip_index].get("rank") or "IRON").upper()
+
+            winners = state.setdefault("winners", {}).setdefault(key, [])
+            guessed_correct = self.rank == correct_rank
+            if guessed_correct and user_key not in winners:
+                winners.append(user_key)
+
+            save_rankdle_daily_state(state)
+
+            try:
+                if interaction.message and interaction.message.embeds:
+                    updated = build_rankdle_daily_clip_embed(state, self.clip_index)
+                    await interaction.message.edit(embed=updated)
+            except Exception as e:
+                logger.warning("Failed to refresh Rankdle daily stats embed: %s", e)
+
+            if guessed_correct:
+                await interaction.response.send_message(
+                    f"Correct! {rank_label(correct_rank)}", ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"Wrong guess. Correct rank: {rank_label(correct_rank)}", ephemeral=True
+                )
+
+    class RankdleDailyVoteView(discord.ui.View):
+        def __init__(self, clip_index: int):
+            super().__init__(timeout=None)
+            for rank in RANKDLE_RANKS:
+                self.add_item(RankdleDailyVoteButton(clip_index, rank))
+
+    async def post_rankdle_daily_embeds(state: dict):
+        channel = bot.get_channel(RANKDLE_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(RANKDLE_CHANNEL_ID)
+            except Exception as e:
+                raise RuntimeError(f"Could not fetch Rankdle channel {RANKDLE_CHANNEL_ID}: {e}")
+
+        if not isinstance(channel, discord.TextChannel):
+            raise RuntimeError(f"Rankdle channel {RANKDLE_CHANNEL_ID} is not a text channel")
+
+        message_ids = []
+        for clip_index in range(min(3, len(state.get("clips") or []))):
+            embed = build_rankdle_daily_clip_embed(state, clip_index)
+            view = RankdleDailyVoteView(clip_index)
+            clip_url = (state["clips"][clip_index].get("url") or "").strip()
+            msg = await channel.send(content=clip_url or None, embed=embed, view=view)
+            message_ids.append(msg.id)
+
+        state["messages"] = message_ids
+        save_rankdle_daily_state(state)
+
+    async def ensure_rankdle_daily_content(force: bool = False) -> tuple[str, dict]:
+        today_key = datetime.now(timezone.utc).date().isoformat()
+        state = load_rankdle_daily_state()
+
+        if not force and state.get("date") == today_key and len(state.get("clips") or []) >= 3:
+            if len(state.get("messages") or []) >= 3:
+                return "already_posted", state
+            await post_rankdle_daily_embeds(state)
+            return "posted_missing_messages", state
+
+        extracted = await scrape_rankdle_daily_lol_clips()
+        if not extracted:
+            raise RuntimeError("Rankdle scrape returned 0 clips")
+
+        clips_for_day = extracted[:3]
+        if len(clips_for_day) < 3:
+            raise RuntimeError(f"Expected 3 clips, got {len(clips_for_day)}")
+
+        pool = load_rankdle_pool()
+        existing_urls = {(entry.get("url") or "").strip() for entry in pool}
+        added = 0
+        for item in extracted:
+            url = (item.get("url") or "").strip()
+            if not url or url in existing_urls:
+                continue
+            pool.append(
+                {
+                    "url": url,
+                    "rank": normalize_rankdle_rank(item.get("rank") or ""),
+                    "region": (item.get("region") or "GLOBAL").upper(),
+                    "source": item.get("source") or "rankdle.com/lol",
+                    "added_by": 0,
+                    "added_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            existing_urls.add(url)
+            added += 1
+        if added > 0:
+            save_rankdle_pool(pool)
+
+        state = {
+            "date": today_key,
+            "clips": clips_for_day,
+            "messages": [],
+            "votes": {},
+            "winners": {},
+        }
+        save_rankdle_daily_state(state)
+        await post_rankdle_daily_embeds(state)
+        return "created_new_day", state
+
     rank_choices = [app_commands.Choice(name=rank.title(), value=rank) for rank in RANKDLE_RANKS]
 
     @bot.tree.command(name="rankdle_addclip", description="Add a clip to Helper rank guessing pool")
@@ -447,6 +804,7 @@ def create_bot():
             {
                 "url": url.strip(),
                 "rank": rank.value,
+                "region": "GLOBAL",
                 "source": (source or "").strip(),
                 "added_by": interaction.user.id,
                 "added_at": datetime.now(timezone.utc).isoformat(),
@@ -521,187 +879,43 @@ def create_bot():
     @app_commands.checks.has_permissions(manage_guild=True)
     async def rankdle_scrape(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-
-        base_url = "https://rankdle.com"
-        session = await get_http_session()
-
         try:
-            # 1) Create guest token
-            async with session.post(
-                f"{base_url}/api/auth/createuser",
-                json={},
-                timeout=aiohttp.ClientTimeout(total=20),
-            ) as resp:
-                if resp.status != 200:
-                    await interaction.followup.send(
-                        f"❌ createuser failed ({resp.status}).",
-                        ephemeral=True,
-                    )
-                    return
-                create_data = await resp.json(content_type=None)
-            user_token = create_data.get("token")
-            if not user_token:
-                await interaction.followup.send("❌ Rankdle token missing from createuser response.", ephemeral=True)
-                return
-
-            # 2) Daily token and game list
-            async with session.get(
-                f"{base_url}/api/auth/getgamesdata",
-                timeout=aiohttp.ClientTimeout(total=20),
-            ) as resp:
-                if resp.status != 200:
-                    await interaction.followup.send(
-                        f"❌ getgamesdata failed ({resp.status}).",
-                        ephemeral=True,
-                    )
-                    return
-                games_data = await resp.json(content_type=None)
-            daily_token = games_data.get("currDailyToken")
-            if not daily_token:
-                await interaction.followup.send("❌ Rankdle daily token missing.", ephemeral=True)
-                return
-
-            # 3) Rank metadata (needed for valid guess payload format)
-            rank_headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {user_token}",
-            }
-            async with session.get(
-                f"{base_url}/api/auth/getgamesrankdata",
-                headers=rank_headers,
-                timeout=aiohttp.ClientTimeout(total=20),
-            ) as resp:
-                if resp.status != 200:
-                    await interaction.followup.send(
-                        f"❌ getgamesrankdata failed ({resp.status}).",
-                        ephemeral=True,
-                    )
-                    return
-                rank_data = await resp.json(content_type=None)
-
-            iron_guess = (((rank_data.get("gamesRankData") or {}).get("lol") or {}).get("iron"))
-            if not iron_guess:
-                await interaction.followup.send("❌ Could not resolve LoL rank metadata from Rankdle API.", ephemeral=True)
-                return
-
-            # 4) Start today's LoL reel
-            play_headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {user_token}",
-                "RankdleDaily": f"Bearer {daily_token}",
-            }
-            async with session.post(
-                f"{base_url}/api/user/playgamereel",
-                headers=play_headers,
-                json={"game": "lol", "dailyId": None},
-                timeout=aiohttp.ClientTimeout(total=20),
-            ) as resp:
-                if resp.status != 200:
-                    await interaction.followup.send(
-                        f"❌ playgamereel failed ({resp.status}).",
-                        ephemeral=True,
-                    )
-                    return
-                reel_data = await resp.json(content_type=None)
-
-            reel_id = reel_data.get("id")
-            clips = reel_data.get("clips") or []
-            if not reel_id or not clips:
-                await interaction.followup.send("❌ No clips returned by Rankdle playgamereel.", ephemeral=True)
-                return
-
-            reel_index = int(reel_data.get("reelIndex", 0) or 0)
-            extracted = []
-
-            for offset, clip in enumerate(clips):
-                clip_id = clip.get("clipId")
-                if not clip_id:
-                    continue
-
-                # Submit a valid dummy guess so clip result endpoint reveals the correct rank.
-                guess_payload = {
-                    "clipId": clip_id,
-                    "reelId": reel_id,
-                    "reelIndex": reel_index + offset,
-                    "guess": iron_guess,
-                }
-                async with session.post(
-                    f"{base_url}/api/user/guesscliprank",
-                    headers=rank_headers,
-                    json=guess_payload,
-                    timeout=aiohttp.ClientTimeout(total=20),
-                ) as _:
-                    pass
-
-                result_url = f"{base_url}/api/user/getclipresult/{clip_id}"
-                async with session.get(
-                    result_url,
-                    headers=rank_headers,
-                    timeout=aiohttp.ClientTimeout(total=20),
-                ) as result_resp:
-                    if result_resp.status != 200:
-                        continue
-                    clip_result = await result_resp.json(content_type=None)
-
-                if not clip_result.get("success"):
-                    continue
-
-                resolved_url = (clip_result.get("url") or clip.get("clipLink") or "").strip()
-                resolved_rank = normalize_rankdle_rank(clip_result.get("rankName") or "")
-                if not resolved_url:
-                    continue
-
-                extracted.append({
-                    "url": resolved_url,
-                    "rank": resolved_rank,
-                    "source": "rankdle.com/lol",
-                })
-
-                # Advance reel state for next clip.
-                async with session.post(
-                    f"{base_url}/api/user/getnextsection",
-                    headers=rank_headers,
-                    json={"clipId": clip_id, "reelId": reel_id},
-                    timeout=aiohttp.ClientTimeout(total=20),
-                ) as _:
-                    pass
-
-            if not extracted:
-                await interaction.followup.send("❌ Scrape finished but extracted 0 valid clips.", ephemeral=True)
-                return
-
-            pool = load_rankdle_pool()
-            existing_urls = {(entry.get("url") or "").strip() for entry in pool}
-            added = 0
-            for item in extracted:
-                if item["url"] in existing_urls:
-                    continue
-                pool.append(
-                    {
-                        "url": item["url"],
-                        "rank": item["rank"],
-                        "source": item["source"],
-                        "added_by": interaction.user.id,
-                        "added_at": datetime.now(timezone.utc).isoformat(),
-                    }
+            status, state = await ensure_rankdle_daily_content(force=False)
+            if status == "already_posted":
+                await interaction.followup.send(
+                    f"ℹ️ Daily clips already scraped today ({state.get('date')}) and posted in <#{RANKDLE_CHANNEL_ID}>.",
+                    ephemeral=True,
                 )
-                existing_urls.add(item["url"])
-                added += 1
+                return
 
-            if added > 0:
-                save_rankdle_pool(pool)
-
-            lines = [f"• {rank_label(item['rank'])} -> {item['url']}" for item in extracted[:3]]
-            msg = (
-                f"✅ Rankdle scrape complete. Extracted: **{len(extracted)}** | Added: **{added}**\n"
-                f"Pool size: **{len(pool)}**\n"
-                + ("\n".join(lines) if lines else "")
+            await interaction.followup.send(
+                (
+                    f"✅ Rankdle daily ready for {state.get('date')}\n"
+                    f"Clips: **{len(state.get('clips') or [])}**\n"
+                    f"Posted in <#{RANKDLE_CHANNEL_ID}>"
+                ),
+                ephemeral=True,
             )
-            await interaction.followup.send(msg, ephemeral=True)
-
         except Exception as e:
             logger.error("rankdle_scrape failed: %s", e, exc_info=True)
             await interaction.followup.send(f"❌ rankdle_scrape failed: {e}", ephemeral=True)
+
+    @tasks.loop(hours=2)
+    async def rankdle_auto_scrape_task():
+        try:
+            status, state = await ensure_rankdle_daily_content(force=False)
+            logger.info(
+                "Rankdle auto-scrape tick: status=%s date=%s clips=%s",
+                status,
+                state.get("date"),
+                len(state.get("clips") or []),
+            )
+        except Exception as e:
+            logger.warning("Rankdle auto-scrape failed: %s", e)
+
+    @rankdle_auto_scrape_task.before_loop
+    async def before_rankdle_auto_scrape_task():
+        await bot.wait_until_ready()
 
     async def get_http_session() -> aiohttp.ClientSession:
         if not hasattr(bot, "http_session") or bot.http_session.closed:
@@ -1308,6 +1522,8 @@ def create_bot():
             change_status.start()
         if not sync_streaming_roles_loop.is_running():
             sync_streaming_roles_loop.start()
+        if not rankdle_auto_scrape_task.is_running():
+            rankdle_auto_scrape_task.start()
         if GUILD_ID:
             guild = bot.get_guild(int(GUILD_ID))
             if guild:
@@ -1411,6 +1627,9 @@ def create_bot():
     @bot.event
     async def setup_hook():
         bot.add_view(HelperView())
+        state = load_rankdle_daily_state()
+        for clip_index in range(min(3, len(state.get("clips") or []))):
+            bot.add_view(RankdleDailyVoteView(clip_index))
 
         # Always sync globally so commands are available even without HELPER_GUILD_ID.
         try:
