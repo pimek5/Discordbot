@@ -381,11 +381,15 @@ def create_bot():
     def build_rankdle_daily_clip_embed(state: dict, clip_index: int) -> discord.Embed:
         clips = state.get("clips") or []
         clip = clips[clip_index]
+        clip_url = (clip.get("url") or "").strip()
         clip_region = (clip.get("region") or "GLOBAL").upper()
         clip_date = state.get("date", "unknown")
         embed = discord.Embed(
             title=f"Rankdle Daily LoL - Clip {clip_index + 1}/3",
-            description="Vote with buttons below. One vote per user for this clip.",
+            description=(
+                f"Watch clip: {clip_url}\n"
+                "Vote with buttons below. One vote per user for this clip."
+            ),
             color=discord.Color.blurple(),
             timestamp=datetime.now(timezone.utc),
         )
@@ -765,20 +769,7 @@ def create_bot():
     async def _send_rankdle_daily_clip_message(channel: discord.TextChannel, state: dict, clip_index: int) -> discord.Message:
         embed = build_rankdle_daily_clip_embed(state, clip_index)
         view = RankdleDailyVoteView(clip_index)
-        clip_url = (state["clips"][clip_index].get("url") or "").strip()
-
-        with tempfile.TemporaryDirectory(prefix="rankdle_clip_") as temp_dir:
-            temp_path = Path(temp_dir) / f"rankdle_{state.get('date', 'today')}_{clip_index + 1}.mp4"
-            downloaded = await _download_rankdle_clip_to_file(clip_url, temp_path)
-
-            if downloaded:
-                clip_file = discord.File(str(temp_path), filename=temp_path.name)
-                return await channel.send(embed=embed, file=clip_file, view=view)
-
-            logger.warning("Failed to download Rankdle clip for clip_index=%s url=%s", clip_index, clip_url)
-            fallback_embed = embed.copy()
-            fallback_embed.description = "Clip could not be downloaded for inline playback right now."
-            return await channel.send(embed=fallback_embed, view=view)
+        return await channel.send(embed=embed, view=view)
 
     async def post_rankdle_daily_embeds(state: dict):
         channel = bot.get_channel(RANKDLE_CHANNEL_ID)
