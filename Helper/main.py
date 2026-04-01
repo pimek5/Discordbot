@@ -369,11 +369,9 @@ def create_bot():
         clips = state.get("clips") or []
         if clip_index >= len(clips):
             return "No stats available yet."
-        correct_rank = clips[clip_index].get("rank", "IRON")
         winners_mentions = " ".join([f"<@{uid}>" for uid in winners]) if winners else "None yet"
         return (
             f"Total votes: **{len(votes)}**\n"
-            f"Correct rank: {rank_label(correct_rank)}\n"
             f"Correct guesses: **{len(winners)}**\n"
             f"Winners: {winners_mentions}"
         )
@@ -730,6 +728,52 @@ def create_bot():
         state["messages"] = message_ids
         save_rankdle_daily_state(state)
 
+    async def restore_rankdle_daily_messages(state: dict) -> tuple[int, int]:
+        """Restore missing Rankdle daily messages for current state.
+
+        Returns: (restored_count, reused_count)
+        """
+        channel = bot.get_channel(RANKDLE_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(RANKDLE_CHANNEL_ID)
+            except Exception as e:
+                raise RuntimeError(f"Could not fetch Rankdle channel {RANKDLE_CHANNEL_ID}: {e}")
+
+        if not isinstance(channel, discord.TextChannel):
+            raise RuntimeError(f"Rankdle channel {RANKDLE_CHANNEL_ID} is not a text channel")
+
+        clips = state.get("clips") or []
+        existing_ids = state.get("messages") or []
+        new_ids: list[int] = []
+        restored_count = 0
+        reused_count = 0
+
+        for clip_index in range(min(3, len(clips))):
+            existing_message_id = existing_ids[clip_index] if clip_index < len(existing_ids) else None
+            message_found = False
+
+            if existing_message_id:
+                try:
+                    await channel.fetch_message(int(existing_message_id))
+                    new_ids.append(int(existing_message_id))
+                    reused_count += 1
+                    message_found = True
+                except Exception:
+                    message_found = False
+
+            if not message_found:
+                embed = build_rankdle_daily_clip_embed(state, clip_index)
+                view = RankdleDailyVoteView(clip_index)
+                clip_url = (clips[clip_index].get("url") or "").strip()
+                posted = await channel.send(content=clip_url or None, embed=embed, view=view)
+                new_ids.append(posted.id)
+                restored_count += 1
+
+        state["messages"] = new_ids
+        save_rankdle_daily_state(state)
+        return restored_count, reused_count
+
     async def ensure_rankdle_daily_content(force: bool = False) -> tuple[str, dict]:
         today_key = datetime.now(timezone.utc).date().isoformat()
         state = load_rankdle_daily_state()
@@ -899,6 +943,32 @@ def create_bot():
         except Exception as e:
             logger.error("rankdle_scrape failed: %s", e, exc_info=True)
             await interaction.followup.send(f"❌ rankdle_scrape failed: {e}", ephemeral=True)
+
+    @bot.tree.command(name="rankdle_post", description="Restore today's Rankdle daily clips if messages were deleted")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def rankdle_post(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            today_key = datetime.now(timezone.utc).date().isoformat()
+            state = load_rankdle_daily_state()
+
+            # Ensure today's daily exists first.
+            if state.get("date") != today_key or len(state.get("clips") or []) < 3:
+                _, state = await ensure_rankdle_daily_content(force=False)
+
+            restored_count, reused_count = await restore_rankdle_daily_messages(state)
+            await interaction.followup.send(
+                (
+                    f"✅ Rankdle daily messages synced for **{state.get('date')}**\n"
+                    f"Restored missing: **{restored_count}**\n"
+                    f"Already present: **{reused_count}**\n"
+                    f"Channel: <#{RANKDLE_CHANNEL_ID}>"
+                ),
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error("rankdle_post failed: %s", e, exc_info=True)
+            await interaction.followup.send(f"❌ rankdle_post failed: {e}", ephemeral=True)
 
     @tasks.loop(hours=2)
     async def rankdle_auto_scrape_task():
