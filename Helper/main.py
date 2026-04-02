@@ -18,6 +18,10 @@ SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
 UNSOLVED_TAG_ID = 1464379721272787069  # Tag applied when thread is unsolved/created
 STREAM_ROLE_ID = 1470171489096564736  # Role granted while streaming
 STREAM_LIST_CHANNEL_ID = 1470173597157818559  # Channel for streaming roster embed
+THREAD_UPDATE_LOG_CHANNEL_ID = 1372734313594093638
+THREAD_UPDATE_NOTIFY_ROLE_ID = 1173564965152637018
+ORDER_BUTTON_URL = "https://ptb.discord.com/channels/1153027935553454191/1245400205063618570"
+REPORT_ISSUES_BUTTON_URL = "https://ptb.discord.com/channels/1153027935553454191/1264484659765448804"
 RANKDLE_POOL_FILE = os.path.join(os.path.dirname(__file__), "rankdle_pool.json")
 RANKDLE_DAILY_STATE_FILE = os.path.join(os.path.dirname(__file__), "rankdle_daily_state.json")
 RANKDLE_CHANNEL_ID = 1488821138841800814
@@ -205,6 +209,24 @@ def select_auto_triage_tag(forum: discord.ForumChannel, text: str) -> discord.Fo
     return None
 
 
+def _is_fantome_attachment(attachment: discord.Attachment) -> bool:
+    filename = (attachment.filename or "").lower().strip()
+    return filename.endswith(".fantome")
+
+
+def _is_image_attachment(attachment: discord.Attachment) -> bool:
+    content_type = (attachment.content_type or "").lower()
+    filename = (attachment.filename or "").lower().strip()
+    return content_type.startswith("image/") or filename.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
+
+
+class ThreadUpdateLinksView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(label="Order", style=discord.ButtonStyle.link, url=ORDER_BUTTON_URL))
+        self.add_item(discord.ui.Button(label="Report skin issues", style=discord.ButtonStyle.link, url=REPORT_ISSUES_BUTTON_URL))
+
+
 class HelperView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -273,6 +295,7 @@ def create_bot():
     bot.twitch_access_token_expires_at = None
     bot.twitch_live_cache = {}
     bot.twitch_api_warning_logged = False
+    bot.thread_update_processed_messages = set()
     bot.status_messages = [
         ("playing", "🧩 /help"),
         ("listening", "support requests"),
@@ -1678,6 +1701,83 @@ def create_bot():
     async def before_change_status():
         await bot.wait_until_ready()
 
+    async def _find_thread_preview_image(thread: discord.Thread, source_message: Optional[discord.Message] = None) -> Optional[str]:
+        candidate_messages: list[discord.Message] = []
+        if source_message is not None:
+            candidate_messages.append(source_message)
+
+        try:
+            starter_message = await thread.fetch_message(thread.id)
+            if starter_message not in candidate_messages:
+                candidate_messages.append(starter_message)
+        except Exception:
+            pass
+
+        try:
+            async for msg in thread.history(limit=15, oldest_first=True):
+                if msg not in candidate_messages:
+                    candidate_messages.append(msg)
+        except Exception:
+            pass
+
+        for msg in candidate_messages:
+            for attachment in msg.attachments:
+                if _is_image_attachment(attachment):
+                    return attachment.url
+        return None
+
+    def _thread_update_kind(thread: discord.Thread, force_posted: bool = False) -> str:
+        if force_posted:
+            return "Posted"
+        created_at = thread.created_at
+        if created_at is None:
+            return "Fixed"
+        age = datetime.now(timezone.utc) - created_at
+        return "Fixed" if age >= timedelta(days=1) else "Posted"
+
+    async def _post_thread_fantome_update(thread: discord.Thread, source_message: discord.Message, force_posted: bool = False):
+        if not isinstance(thread, discord.Thread):
+            return
+        if not thread.guild:
+            return
+
+        if source_message.id in bot.thread_update_processed_messages:
+            return
+
+        log_channel = bot.get_channel(THREAD_UPDATE_LOG_CHANNEL_ID)
+        if log_channel is None:
+            try:
+                log_channel = await bot.fetch_channel(THREAD_UPDATE_LOG_CHANNEL_ID)
+            except Exception as e:
+                logger.warning("Could not fetch thread update log channel: %s", e)
+                return
+
+        if not isinstance(log_channel, discord.TextChannel):
+            logger.warning("Thread update log channel %s is not a text channel", THREAD_UPDATE_LOG_CHANNEL_ID)
+            return
+
+        update_kind = _thread_update_kind(thread, force_posted=force_posted)
+        clean_name = thread.name.removeprefix("[Solved] ").strip()
+        thread_link = source_message.jump_url if source_message else thread.jump_url
+        preview_image = await _find_thread_preview_image(thread, source_message=source_message)
+
+        embed = discord.Embed(
+            title=f"{clean_name} {update_kind}",
+            description=f"[Open thread]({thread_link})",
+            color=discord.Color.green() if update_kind == "Fixed" else discord.Color.blurple(),
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.add_field(name="Thread", value=thread.mention, inline=True)
+        embed.add_field(name="Status", value=update_kind, inline=True)
+        embed.add_field(name="Channel", value=f"<#{thread.parent_id}>" if thread.parent_id else "Unknown", inline=True)
+        if preview_image:
+            embed.set_image(url=preview_image)
+
+        view = ThreadUpdateLinksView()
+        await log_channel.send(content=f"<@&{THREAD_UPDATE_NOTIFY_ROLE_ID}>", embed=embed, view=view)
+        bot.thread_update_processed_messages.add(source_message.id)
+        logger.info("Posted thread update log for thread=%s status=%s message=%s", thread.id, update_kind, source_message.id)
+
     @bot.event
     async def on_thread_create(thread: discord.Thread):
         if thread.parent_id != HELPER_FORUM_ID:
@@ -1714,8 +1814,29 @@ def create_bot():
                 thread.id,
                 triage_tag.name if triage_tag else "none"
             )
+
+            if starter_message and any(_is_fantome_attachment(att) for att in starter_message.attachments):
+                await _post_thread_fantome_update(thread, starter_message, force_posted=True)
         except Exception as e:
             logger.error("Failed to post helper embed: %s", e)
+
+    @bot.event
+    async def on_message(message: discord.Message):
+        if message.author.bot:
+            return
+        if not isinstance(message.channel, discord.Thread):
+            return
+        if message.guild is None:
+            return
+        if message.channel.parent_id != HELPER_FORUM_ID:
+            return
+        if not any(_is_fantome_attachment(att) for att in message.attachments):
+            return
+
+        try:
+            await _post_thread_fantome_update(message.channel, message, force_posted=False)
+        except Exception as e:
+            logger.error("Failed to post thread fantome update: %s", e)
 
     @bot.event
     async def on_presence_update(before: discord.Member, after: discord.Member):

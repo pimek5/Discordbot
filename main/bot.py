@@ -183,9 +183,6 @@ DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=10, connect=5, sock_read=5)
 MAX_INVITE_USERS = 16
 TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
 
-FIXES_CHANNEL_ID = 1372734313594093638
-NOTIFY_ROLE_ID = 1173564965152637018
-ISSUE_CHANNEL_ID = 1264484659765448804
 LOG_CHANNEL_ID = 1408036991454417039
 
 # Twitter Configuration
@@ -1878,62 +1875,6 @@ async def toggle_twitter(interaction: discord.Interaction):
         )
         logging.error(f"Error in toggle_twitter: {e}")
 
-# ================================
-#        FIXED MESSAGES
-# ================================
-class FixedMessageView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="🔔 Notify Me", style=discord.ButtonStyle.green)
-    async def notify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        role = interaction.guild.get_role(NOTIFY_ROLE_ID)
-        if not role:
-            await interaction.response.send_message("⚠️ Role not found.", ephemeral=True)
-            return
-
-        if role in interaction.user.roles:
-            await interaction.user.remove_roles(role)
-            await interaction.response.send_message("❌ Removed notification role.", ephemeral=True)
-            action = "removed"
-        else:
-            await interaction.user.add_roles(role)
-            await interaction.response.send_message("✅ You will now receive notifications.", ephemeral=True)
-            action = "added"
-
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            await log_channel.send(f"🔔 {interaction.user.mention} {action} Notify Me role via button.")
-
-    @discord.ui.button(label="🔧 Issue?", style=discord.ButtonStyle.blurple)
-    async def issue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        channel = interaction.guild.get_channel(ISSUE_CHANNEL_ID)
-        if channel:
-            await interaction.response.send_message(f"🔧 Please report the issue here: {channel.mention}", ephemeral=True)
-        else:
-            await interaction.response.send_message("⚠️ Issue channel not found.", ephemeral=True)
-
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            await log_channel.send(f"🔧 {interaction.user.mention} clicked Issue? button.")
-
-
-@bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    if payload.channel_id != FIXES_CHANNEL_ID:
-        return
-    if str(payload.emoji) not in ["✅", "❎"]:
-        channel = bot.get_channel(payload.channel_id)
-        message = await channel.fetch_message(payload.message_id)
-        await message.remove_reaction(payload.emoji, await bot.fetch_user(payload.user_id))
-        return
-
-    log_channel = bot.get_channel(LOG_CHANNEL_ID)
-    if log_channel:
-        user = await bot.fetch_user(payload.user_id)
-        channel = bot.get_channel(payload.channel_id)
-        message = await channel.fetch_message(payload.message_id)
-        await log_channel.send(f"📝 {user.mention} reacted with {payload.emoji} on [this message]({message.jump_url})")
 # ================================
 #       Thread manager
 # ================================
@@ -5646,16 +5587,7 @@ async def on_message(message):
             available_cogs = bot.cogs
             print(f"📋 Available cogs: {list(available_cogs.keys())}")
     
-    # Handle fixes-posts channel FIRST (before DM check)
-    if message.channel.id == FIXES_CHANNEL_ID and re.search(r'\bfixed\b', message.content, re.IGNORECASE):
-        try:
-            await message.add_reaction("✅")
-            await message.add_reaction("❎")
-            await message.reply("🎯 Fixed detected!", view=FixedMessageView())
-        except Exception as e:
-            print(f"Error handling Fixed message: {e}")
-    
-    # Ignore DMs after checking fixes
+    # Ignore DMs
     if not message.guild:
         await bot.process_commands(message)
         return
