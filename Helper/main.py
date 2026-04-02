@@ -18,6 +18,11 @@ SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
 UNSOLVED_TAG_ID = 1464379721272787069  # Tag applied when thread is unsolved/created
 STREAM_ROLE_ID = 1470171489096564736  # Role granted while streaming
 STREAM_LIST_CHANNEL_ID = 1470173597157818559  # Channel for streaming roster embed
+THREAD_UPDATE_IGNORED_PARENT_IDS = {
+    HELPER_FORUM_ID,
+    1329671504941682750,
+    1364052385470615602,
+}
 THREAD_UPDATE_LOG_CHANNEL_ID = 1372734313594093638
 THREAD_UPDATE_NOTIFY_ROLE_ID = 1173564965152637018
 ORDER_BUTTON_URL = "https://ptb.discord.com/channels/1153027935553454191/1245400205063618570"
@@ -1735,10 +1740,15 @@ def create_bot():
         age = datetime.now(timezone.utc) - created_at
         return "Fixed" if age >= timedelta(days=1) else "Posted"
 
+    def _should_ignore_thread_update(thread: discord.Thread) -> bool:
+        return thread.parent_id in THREAD_UPDATE_IGNORED_PARENT_IDS
+
     async def _post_thread_fantome_update(thread: discord.Thread, source_message: discord.Message, force_posted: bool = False):
         if not isinstance(thread, discord.Thread):
             return
         if not thread.guild:
+            return
+        if _should_ignore_thread_update(thread):
             return
 
         if source_message.id in bot.thread_update_processed_messages:
@@ -1780,13 +1790,7 @@ def create_bot():
 
     @bot.event
     async def on_thread_create(thread: discord.Thread):
-        if thread.parent_id != HELPER_FORUM_ID:
-            return
         try:
-            # Apply unsolved tag to new threads
-            forum = thread.parent
-            unsolved_tag = discord.utils.get(forum.available_tags, id=UNSOLVED_TAG_ID)
-
             starter_message = None
             try:
                 starter_message = await thread.fetch_message(thread.id)
@@ -1794,31 +1798,36 @@ def create_bot():
                 messages = [msg async for msg in thread.history(limit=1, oldest_first=True)]
                 starter_message = messages[0] if messages else None
 
-            triage_source = f"{thread.name}\n{starter_message.content if starter_message else ''}"
-            triage_tag = select_auto_triage_tag(forum, triage_source)
+            if thread.parent_id == HELPER_FORUM_ID:
+                # Apply unsolved tag to new support threads only.
+                forum = thread.parent
+                unsolved_tag = discord.utils.get(forum.available_tags, id=UNSOLVED_TAG_ID)
 
-            new_tags = list(thread.applied_tags)
-            if unsolved_tag and unsolved_tag not in new_tags:
-                new_tags.append(unsolved_tag)
-            if triage_tag and triage_tag not in new_tags:
-                new_tags.append(triage_tag)
+                triage_source = f"{thread.name}\n{starter_message.content if starter_message else ''}"
+                triage_tag = select_auto_triage_tag(forum, triage_source)
 
-            if len(new_tags) != len(thread.applied_tags):
-                await thread.edit(applied_tags=new_tags[:5])  # Max 5 tags
-            
-            helper_view = HelperView()
-            bot_avatar = bot.user.display_avatar.url if bot.user else None
-            await thread.send(embed=build_welcome_embed(bot_avatar), view=helper_view)
-            logger.info(
-                "Posted helper embed in thread %s (triage tag: %s)",
-                thread.id,
-                triage_tag.name if triage_tag else "none"
-            )
+                new_tags = list(thread.applied_tags)
+                if unsolved_tag and unsolved_tag not in new_tags:
+                    new_tags.append(unsolved_tag)
+                if triage_tag and triage_tag not in new_tags:
+                    new_tags.append(triage_tag)
+
+                if len(new_tags) != len(thread.applied_tags):
+                    await thread.edit(applied_tags=new_tags[:5])  # Max 5 tags
+
+                helper_view = HelperView()
+                bot_avatar = bot.user.display_avatar.url if bot.user else None
+                await thread.send(embed=build_welcome_embed(bot_avatar), view=helper_view)
+                logger.info(
+                    "Posted helper embed in thread %s (triage tag: %s)",
+                    thread.id,
+                    triage_tag.name if triage_tag else "none"
+                )
 
             if starter_message and any(_is_fantome_attachment(att) for att in starter_message.attachments):
                 await _post_thread_fantome_update(thread, starter_message, force_posted=True)
         except Exception as e:
-            logger.error("Failed to post helper embed: %s", e)
+            logger.error("Failed to process thread create flow: %s", e)
 
     @bot.event
     async def on_message(message: discord.Message):
@@ -1828,7 +1837,7 @@ def create_bot():
             return
         if message.guild is None:
             return
-        if message.channel.parent_id != HELPER_FORUM_ID:
+        if _should_ignore_thread_update(message.channel):
             return
         if not any(_is_fantome_attachment(att) for att in message.attachments):
             return
