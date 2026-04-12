@@ -1,7 +1,8 @@
 import os
+import re
 import logging
 from dataclasses import dataclass
-from typing import Optional, Dict, Set
+from typing import Optional, Dict, List
 
 import discord
 from discord.ext import commands
@@ -43,6 +44,8 @@ FLEX_GENERATOR_CHANNEL_ID = env_int("FLEX_GENERATOR_CHANNEL_ID")
 CUSTOM_GENERATOR_CHANNEL_ID = env_int("CUSTOM_GENERATOR_CHANNEL_ID")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+LFM_CHANNEL_ID = env_int("LFM_CHANNEL_ID")
+DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://glados.local/dashboard").strip()
 
 
 @dataclass
@@ -53,6 +56,339 @@ class CustomGroup:
     team1_voice_id: int
     team2_voice_id: int
     text_id: int
+
+
+@dataclass
+class SimpleTempChannel:
+    owner_id: int
+    prefix: str
+    voice_id: int
+    text_id: int
+
+
+class SingleValueModal(discord.ui.Modal):
+    def __init__(
+        self,
+        *,
+        title: str,
+        label: str,
+        placeholder: str,
+        max_length: int,
+        on_submit_handler,
+    ):
+        super().__init__(title=title)
+        self._on_submit_handler = on_submit_handler
+        self.value = discord.ui.TextInput(
+            label=label,
+            placeholder=placeholder,
+            required=True,
+            max_length=max_length,
+        )
+        self.add_item(self.value)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self._on_submit_handler(interaction, str(self.value.value).strip())
+
+
+class PermissionSelect(discord.ui.Select):
+    def __init__(self, parent_view: "TempVoiceControlView"):
+        self.parent_view = parent_view
+        options = [
+            discord.SelectOption(label="Lock", value="lock", description="Lock the channel", emoji="🔒"),
+            discord.SelectOption(label="Unlock", value="unlock", description="Unlock the channel", emoji="🔓"),
+            discord.SelectOption(label="Permit", value="permit", description="Permit user/role", emoji="✅"),
+            discord.SelectOption(label="Reject", value="reject", description="Reject user/role", emoji="⛔"),
+            discord.SelectOption(label="Invite", value="invite", description="Invite a user", emoji="📨"),
+        ]
+        super().__init__(
+            placeholder="Change channel permissions",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.parent_view.handle_permission_action(interaction, self.values[0])
+
+
+class SettingsSelect(discord.ui.Select):
+    def __init__(self, parent_view: "TempVoiceControlView"):
+        self.parent_view = parent_view
+        options = [
+            discord.SelectOption(label="Name", value="name", description="Change channel name", emoji="📝"),
+            discord.SelectOption(label="Limit", value="limit", description="Change user limit", emoji="👥"),
+            discord.SelectOption(label="Status", value="status", description="Set status tag", emoji="💬"),
+            discord.SelectOption(label="Game", value="game", description="Set game name", emoji="🎮"),
+            discord.SelectOption(label="LFM", value="lfm", description="Post looking-for-members", emoji="📣"),
+        ]
+        super().__init__(
+            placeholder="Change channel settings",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=2,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.parent_view.handle_settings_action(interaction, self.values[0])
+
+
+class TempVoiceControlView(discord.ui.View):
+    def __init__(
+        self,
+        *,
+        bot: "GLaDOSBot",
+        owner_id: int,
+        voice_ids: List[int],
+        text_id: int,
+        kind: str,
+    ):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.owner_id = owner_id
+        self.voice_ids = voice_ids
+        self.text_id = text_id
+        self.kind = kind
+
+        self.add_item(PermissionSelect(self))
+        self.add_item(SettingsSelect(self))
+
+        self.refresh_btn = discord.ui.Button(label="Load Settings", style=discord.ButtonStyle.primary, emoji="💾", row=3)
+        self.refresh_btn.callback = self.refresh_callback
+        self.add_item(self.refresh_btn)
+
+        self.dashboard_btn = discord.ui.Button(
+            label="Dashboard",
+            style=discord.ButtonStyle.link,
+            url=DASHBOARD_URL,
+            row=3,
+        )
+        self.add_item(self.dashboard_btn)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only channel owner can use this panel.", ephemeral=True)
+            return False
+        return True
+
+    def _get_voice_channels(self, guild: discord.Guild) -> List[discord.VoiceChannel]:
+        channels: List[discord.VoiceChannel] = []
+        for channel_id in self.voice_ids:
+            ch = guild.get_channel(channel_id)
+            if isinstance(ch, discord.VoiceChannel):
+                channels.append(ch)
+        return channels
+
+    def _get_primary_voice(self, guild: discord.Guild) -> Optional[discord.VoiceChannel]:
+        channels = self._get_voice_channels(guild)
+        return channels[0] if channels else None
+
+    def _get_text_channel(self, guild: discord.Guild) -> Optional[discord.TextChannel]:
+        ch = guild.get_channel(self.text_id)
+        return ch if isinstance(ch, discord.TextChannel) else None
+
+    @staticmethod
+    def _extract_member_id(raw: str) -> Optional[int]:
+        cleaned = raw.strip()
+        if cleaned.isdigit():
+            return int(cleaned)
+        match = re.search(r"(\d{15,22})", cleaned)
+        return int(match.group(1)) if match else None
+
+    async def refresh_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message("Panel is loaded and ready.", ephemeral=True)
+
+    async def handle_permission_action(self, interaction: discord.Interaction, action: str):
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message("Guild not found.", ephemeral=True)
+            return
+
+        voices = self._get_voice_channels(guild)
+        if not voices:
+            await interaction.response.send_message("Voice channel no longer exists.", ephemeral=True)
+            return
+
+        everyone = guild.default_role
+
+        if action == "lock":
+            for vc in voices:
+                await vc.set_permissions(everyone, connect=False)
+            await interaction.response.send_message("Channel locked.", ephemeral=True)
+            return
+
+        if action == "unlock":
+            for vc in voices:
+                await vc.set_permissions(everyone, connect=None)
+            await interaction.response.send_message("Channel unlocked.", ephemeral=True)
+            return
+
+        if action in {"permit", "invite", "reject"}:
+            label = "User mention or ID"
+            placeholder = "@user or 123456789012345678"
+
+            async def on_submit_member(modal_interaction: discord.Interaction, raw_value: str):
+                member_id = self._extract_member_id(raw_value)
+                if member_id is None:
+                    await modal_interaction.response.send_message("Invalid member value.", ephemeral=True)
+                    return
+
+                member = guild.get_member(member_id)
+                if member is None:
+                    await modal_interaction.response.send_message("Member not found in this server.", ephemeral=True)
+                    return
+
+                text = self._get_text_channel(guild)
+
+                if action in {"permit", "invite"}:
+                    for vc in voices:
+                        await vc.set_permissions(member, view_channel=True, connect=True, speak=True)
+                    if text:
+                        await text.set_permissions(member, view_channel=True, send_messages=True, read_message_history=True)
+                    await modal_interaction.response.send_message(f"Permitted {member.mention}.", ephemeral=True)
+                    return
+
+                # reject
+                for vc in voices:
+                    await vc.set_permissions(member, view_channel=False, connect=False)
+                if text:
+                    await text.set_permissions(member, view_channel=False, send_messages=False)
+                if member.voice and member.voice.channel and member.voice.channel.id in self.voice_ids:
+                    await member.move_to(None, reason="Rejected from temporary voice")
+                await modal_interaction.response.send_message(f"Rejected {member.mention}.", ephemeral=True)
+
+            modal = SingleValueModal(
+                title=f"{action.title()} Member",
+                label=label,
+                placeholder=placeholder,
+                max_length=64,
+                on_submit_handler=on_submit_member,
+            )
+            await interaction.response.send_modal(modal)
+            return
+
+        await interaction.response.send_message("Unsupported permission action.", ephemeral=True)
+
+    async def handle_settings_action(self, interaction: discord.Interaction, action: str):
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message("Guild not found.", ephemeral=True)
+            return
+
+        voices = self._get_voice_channels(guild)
+        primary = self._get_primary_voice(guild)
+        if not voices or primary is None:
+            await interaction.response.send_message("Voice channel no longer exists.", ephemeral=True)
+            return
+
+        if action == "name":
+            async def on_submit_name(modal_interaction: discord.Interaction, raw_value: str):
+                new_name = raw_value[:100]
+                for vc in voices:
+                    await vc.edit(name=new_name)
+                await modal_interaction.response.send_message(f"Channel renamed to **{new_name}**.", ephemeral=True)
+
+            modal = SingleValueModal(
+                title="Change Channel Name",
+                label="New name",
+                placeholder="duoq-yourname",
+                max_length=100,
+                on_submit_handler=on_submit_name,
+            )
+            await interaction.response.send_modal(modal)
+            return
+
+        if action == "limit":
+            async def on_submit_limit(modal_interaction: discord.Interaction, raw_value: str):
+                try:
+                    limit = int(raw_value)
+                except ValueError:
+                    await modal_interaction.response.send_message("Limit must be a number (0-99).", ephemeral=True)
+                    return
+
+                if limit < 0 or limit > 99:
+                    await modal_interaction.response.send_message("Limit must be between 0 and 99.", ephemeral=True)
+                    return
+
+                for vc in voices:
+                    await vc.edit(user_limit=limit)
+                await modal_interaction.response.send_message(f"User limit set to **{limit}**.", ephemeral=True)
+
+            modal = SingleValueModal(
+                title="Change User Limit",
+                label="User limit",
+                placeholder="0-99",
+                max_length=2,
+                on_submit_handler=on_submit_limit,
+            )
+            await interaction.response.send_modal(modal)
+            return
+
+        if action in {"status", "game"}:
+            title = "Set Status" if action == "status" else "Set Game"
+            placeholder = "ranked grind" if action == "status" else "league of legends"
+
+            async def on_submit_status(modal_interaction: discord.Interaction, raw_value: str):
+                base = raw_value.strip()
+                if not base:
+                    await modal_interaction.response.send_message("Value cannot be empty.", ephemeral=True)
+                    return
+                new_name = f"{base}"[:100]
+                await primary.edit(name=new_name)
+                await modal_interaction.response.send_message(f"Primary voice updated to **{new_name}**.", ephemeral=True)
+
+            modal = SingleValueModal(
+                title=title,
+                label="Value",
+                placeholder=placeholder,
+                max_length=100,
+                on_submit_handler=on_submit_status,
+            )
+            await interaction.response.send_modal(modal)
+            return
+
+        if action == "lfm":
+            if LFM_CHANNEL_ID is None:
+                await interaction.response.send_message("LFM channel is not configured.", ephemeral=True)
+                return
+
+            lfm_channel = guild.get_channel(LFM_CHANNEL_ID)
+            if not isinstance(lfm_channel, discord.TextChannel):
+                await interaction.response.send_message("Configured LFM channel not found.", ephemeral=True)
+                return
+
+            owner = guild.get_member(self.owner_id)
+            owner_name = owner.mention if owner else f"<@{self.owner_id}>"
+            links = "\n".join(f"- <#{vc.id}>" for vc in voices)
+
+            embed = discord.Embed(
+                title="LFM - Temporary Voice",
+                description=f"{owner_name} is looking for members.\n\n**Channels:**\n{links}",
+                color=discord.Color.gold(),
+            )
+            await lfm_channel.send(embed=embed)
+            await interaction.response.send_message("LFM posted.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("Unsupported settings action.", ephemeral=True)
+
+
+def build_owner_panel_embed(owner: discord.Member) -> discord.Embed:
+    embed = discord.Embed(
+        title="⚙️ Welcome to your temporary voice channel",
+        description=(
+            "Control your channel using the menus below\n"
+            "• Use dropdowns to manage settings and permissions\n"
+            "• Owner-only controls are enforced\n"
+            "• Use `/toggle_feature` style commands later if needed"
+        ),
+        color=discord.Color.dark_blue(),
+    )
+    embed.add_field(name="Channel Settings", value="Use the second dropdown for name/limit/status/game/LFM.", inline=False)
+    embed.add_field(name="Permissions", value="Use the first dropdown for lock/unlock/permit/reject/invite.", inline=False)
+    embed.set_footer(text=f"Owner: {owner.display_name}")
+    return embed
 
 
 class SharedDatabase:
@@ -111,7 +447,7 @@ class GLaDOSBot(commands.Bot):
         self.db = SharedDatabase(DATABASE_URL)
 
         # Single temporary channels (duo/flex)
-        self.simple_temp_channels: Set[int] = set()
+        self.simple_temp_channels: Dict[int, SimpleTempChannel] = {}
 
         # Custom groups
         self.custom_groups: Dict[int, CustomGroup] = {}
@@ -169,12 +505,16 @@ class GLaDOSBot(commands.Bot):
             group_key = self.voice_to_group[after.channel.id]
             await self._sync_member_custom_text_access(member, group_key)
 
-        # Cleanup duo/flex temp channels
+        # Cleanup duo/flex temp channels and their text panel channels
         if before.channel and before.channel.id in self.simple_temp_channels:
             if len(before.channel.members) == 0:
+                meta = self.simple_temp_channels.get(before.channel.id)
+                text_channel = member.guild.get_channel(meta.text_id) if meta else None
                 try:
                     await before.channel.delete(reason="Temporary channel empty")
-                    self.simple_temp_channels.discard(before.channel.id)
+                    if isinstance(text_channel, discord.TextChannel):
+                        await text_channel.delete(reason="Temporary channel empty")
+                    self.simple_temp_channels.pop(before.channel.id, None)
                     logger.info("Deleted empty temporary channel %s", before.channel.id)
                 except Exception as exc:
                     logger.error("Failed to delete temporary channel %s: %s", before.channel.id, exc)
@@ -193,10 +533,30 @@ class GLaDOSBot(commands.Bot):
                 category=category,
                 reason=f"Temporary {prefix} channel for {member}",
             )
-            self.simple_temp_channels.add(voice_channel.id)
+            text_channel = await member.guild.create_text_channel(
+                name=f"{channel_name}-chat"[:100],
+                category=category,
+                reason=f"Temporary {prefix} chat for {member}",
+            )
+
+            self.simple_temp_channels[voice_channel.id] = SimpleTempChannel(
+                owner_id=member.id,
+                prefix=prefix,
+                voice_id=voice_channel.id,
+                text_id=text_channel.id,
+            )
 
             if member.voice and member.voice.channel:
                 await member.move_to(voice_channel, reason="Move to temporary channel")
+
+            panel = TempVoiceControlView(
+                bot=self,
+                owner_id=member.id,
+                voice_ids=[voice_channel.id],
+                text_id=text_channel.id,
+                kind=prefix,
+            )
+            await text_channel.send(embed=build_owner_panel_embed(member), view=panel)
 
             logger.info("Created %s temporary channel %s for user %s", prefix, voice_channel.id, member.id)
         except Exception as exc:
@@ -277,6 +637,15 @@ class GLaDOSBot(commands.Bot):
                 await member.move_to(main_voice, reason="Move to custom temporary channel")
 
             await self._sync_member_custom_text_access(member, group_key)
+
+            panel = TempVoiceControlView(
+                bot=self,
+                owner_id=member.id,
+                voice_ids=[main_voice.id, team1_voice.id, team2_voice.id],
+                text_id=text_channel.id,
+                kind="custom",
+            )
+            await text_channel.send(embed=build_owner_panel_embed(member), view=panel)
 
             logger.info(
                 "Created custom temporary set for %s (main=%s, team1=%s, team2=%s, text=%s)",
@@ -361,6 +730,32 @@ class GLaDOSBot(commands.Bot):
         self.voice_to_group.pop(group.team1_voice_id, None)
         self.voice_to_group.pop(group.team2_voice_id, None)
 
+    def get_owner_panel_target(self, guild: discord.Guild, owner_id: int):
+        for meta in self.simple_temp_channels.values():
+            if meta.owner_id != owner_id:
+                continue
+            voice = guild.get_channel(meta.voice_id)
+            text = guild.get_channel(meta.text_id)
+            if isinstance(voice, discord.VoiceChannel) and isinstance(text, discord.TextChannel):
+                return [meta.voice_id], meta.text_id, meta.prefix
+
+        for group in self.custom_groups.values():
+            if group.owner_id != owner_id:
+                continue
+            main = guild.get_channel(group.main_voice_id)
+            team1 = guild.get_channel(group.team1_voice_id)
+            team2 = guild.get_channel(group.team2_voice_id)
+            text = guild.get_channel(group.text_id)
+            if (
+                isinstance(main, discord.VoiceChannel)
+                and isinstance(team1, discord.VoiceChannel)
+                and isinstance(team2, discord.VoiceChannel)
+                and isinstance(text, discord.TextChannel)
+            ):
+                return [group.main_voice_id, group.team1_voice_id, group.team2_voice_id], group.text_id, "custom"
+
+        return None, None, None
+
 
 bot = GLaDOSBot()
 
@@ -415,6 +810,37 @@ async def lfg_profile(interaction: discord.Interaction, user: Optional[discord.M
     embed.add_field(name="Flex", value=flex_rank, inline=True)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(
+    name="my_channel_panel",
+    description="Re-send owner control panel to your temporary text channel",
+    guild=discord.Object(id=GUILD_ID),
+)
+async def my_channel_panel(interaction: discord.Interaction):
+    if not interaction.guild or not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("Guild context is required.", ephemeral=True)
+        return
+
+    voice_ids, text_id, kind = bot.get_owner_panel_target(interaction.guild, interaction.user.id)
+    if not voice_ids or not text_id:
+        await interaction.response.send_message("You do not own an active temporary channel.", ephemeral=True)
+        return
+
+    text_channel = interaction.guild.get_channel(text_id)
+    if not isinstance(text_channel, discord.TextChannel):
+        await interaction.response.send_message("Panel text channel is unavailable.", ephemeral=True)
+        return
+
+    panel = TempVoiceControlView(
+        bot=bot,
+        owner_id=interaction.user.id,
+        voice_ids=voice_ids,
+        text_id=text_id,
+        kind=kind or "temp",
+    )
+    await text_channel.send(embed=build_owner_panel_embed(interaction.user), view=panel)
+    await interaction.response.send_message(f"Panel sent in {text_channel.mention}.", ephemeral=True)
 
 
 if __name__ == "__main__":
