@@ -315,6 +315,18 @@ class Hexbet(commands.Cog):
         except Exception as e:
             logger.warning(f"⚠️ Could not load champion roles: {e}")
 
+    def _has_staff_access(self, interaction: discord.Interaction) -> bool:
+        """Allow trusted HEXBET actions for configured roles or guild managers/admins."""
+        member = interaction.user
+        guild_perms = getattr(member, 'guild_permissions', None)
+        if guild_perms and (guild_perms.administrator or guild_perms.manage_guild):
+            return True
+
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        role_ids = {role.id for role in getattr(member, 'roles', [])}
+        return bool({staff_role_id, admin_role_id} & role_ids)
+
     def _balanced_odds(self, blue_players: List[dict], red_players: List[dict], bets: Optional[List[dict]] = None) -> Tuple[float, float]:
         """Price odds from team strength and betting flow to avoid persistent ~2.00 / ~2.00 lines."""
         score_blue = self._team_score(blue_players)
@@ -3642,12 +3654,8 @@ class Hexbet(commands.Cog):
     )
     async def hxfind(self, interaction: discord.Interaction, platform: Optional[str] = None, nickname: Optional[str] = None):
         """Find and post active high-elo game for betting"""
-        # Check if user has required roles
-        staff_role_id = 1153030265782927501
-        admin_role_id = 1274834684429209695
-        
-        user_role_ids = [role.id for role in interaction.user.roles]
-        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+        # Check if user has required permissions/roles
+        if not self._has_staff_access(interaction):
             await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
             return
         
@@ -3657,15 +3665,14 @@ class Hexbet(commands.Cog):
             await interaction.response.send_message(f"⏳ Already have {open_count}/3 active matches. Max limit reached.", ephemeral=True)
             return
         
-        await interaction.response.defer()
-        
         try:
             # If platform is 'custom', show manual entry modal
             if platform and platform.lower() == 'custom':
                 modal = ManualGameModal(self)
-                await interaction.followup.send("📝 Opening manual game entry form...", ephemeral=True)
                 await interaction.response.send_modal(modal)
                 return
+
+            await interaction.response.defer()
             
             # If nickname provided, handle priority game
             if nickname:
@@ -5616,12 +5623,8 @@ These players will now appear more frequently in betting matches!"""
     @app_commands.command(name="hxforce", description="Force close all open matches (ADMIN)")
     async def force_close_matches(self, interaction: discord.Interaction):
         """Force close all open matches and settled bets"""
-        # Check if user has required roles
-        staff_role_id = 1153030265782927501
-        admin_role_id = 1274834684429209695
-        
-        user_role_ids = [role.id for role in interaction.user.roles]
-        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+        # Check if user has required permissions/roles
+        if not self._has_staff_access(interaction):
             await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
             return
         
