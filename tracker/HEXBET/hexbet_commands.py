@@ -2277,7 +2277,7 @@ class Hexbet(commands.Cog):
         cells = []
         for i, label in enumerate(milestones):
             if i == idx:
-                cells.append(f"🔵{label}")
+                cells.append(f"📍{label}")
             else:
                 cells.append(label)
         return "Timeline: " + " - ".join(cells)
@@ -2466,8 +2466,6 @@ class Hexbet(commands.Cog):
         objectives_str = f"{blue_objs} {_BLUE} | {_RED} {red_objs}"
 
         lines = [
-            f"**Phase:** {phase} ({game_duration_min}m) — **Favored:** {favored}",
-            f"**Flip Chance:** {swing_str}",
             f"**Rank Gap:** {rank_gap_str}",
             f"**Objectives:** {objectives_str}",
         ]
