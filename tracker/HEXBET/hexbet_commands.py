@@ -162,6 +162,26 @@ def odds_from_scores(score_blue: float, score_red: float, confidence: float = 1.
     return odds_blue, odds_red
 
 
+def implied_blue_probability(odds_blue: float, odds_red: float) -> float:
+    """Convert two-way decimal odds into normalized blue-side implied probability."""
+    inv_blue = 1.0 / max(odds_blue, 1.01)
+    inv_red = 1.0 / max(odds_red, 1.01)
+    denom = inv_blue + inv_red
+    if denom <= 0:
+        return 0.5
+    return inv_blue / denom
+
+
+def odds_from_probability(prob_blue: float, margin: float = 1.02) -> Tuple[float, float]:
+    """Convert a blue win probability into two-way decimal odds with bookmaker margin."""
+    prob_blue = min(max(prob_blue, 0.12), 0.88)
+    prob_red = 1.0 - prob_blue
+
+    odds_blue = round(max(1.15, min(8.0, (1.0 / prob_blue) / margin)), 2)
+    odds_red = round(max(1.15, min(8.0, (1.0 / prob_red) / margin)), 2)
+    return odds_blue, odds_red
+
+
 def rank_emoji(tier: str) -> str:
     """Return configured rank emoji."""
     return CFG_RANK_EMOJIS.get(tier.upper(), '')
@@ -294,6 +314,144 @@ class Hexbet(commands.Cog):
             logger.info("✅ Loaded champion roles from ddragon")
         except Exception as e:
             logger.warning(f"⚠️ Could not load champion roles: {e}")
+
+    def _balanced_odds(self, blue_players: List[dict], red_players: List[dict], bets: Optional[List[dict]] = None) -> Tuple[float, float]:
+        """Price odds from team strength and betting flow to avoid persistent ~2.00 / ~2.00 lines."""
+        score_blue = self._team_score(blue_players)
+        score_red = self._team_score(red_players)
+        confidence = self._odds_confidence(blue_players, red_players)
+
+        base_blue_odds, base_red_odds = odds_from_scores(score_blue, score_red, confidence=confidence)
+        prob_blue = implied_blue_probability(base_blue_odds, base_red_odds)
+
+        # Keep a minimum edge toward the stronger side so equally-priced lines are rarer.
+        stronger_blue = score_blue >= score_red
+        min_edge = 0.015 + (0.03 * confidence)
+        edge = prob_blue - 0.5
+        if abs(edge) < min_edge:
+            prob_blue = 0.5 + (min_edge if stronger_blue else -min_edge)
+
+        # Market pressure: if one side attracts most stake, trim its probability slightly.
+        if bets:
+            blue_stake = sum(float(b.get('amount', 0) or 0) for b in bets if b.get('side') == 'blue')
+            red_stake = sum(float(b.get('amount', 0) or 0) for b in bets if b.get('side') == 'red')
+            total_stake = blue_stake + red_stake
+
+            if total_stake > 0:
+                blue_share = blue_stake / total_stake
+                market_edge = 0.5 - blue_share
+                liquidity = min(1.0, total_stake / 3000.0)
+                market_strength = 0.16 * liquidity
+                prob_blue += market_edge * market_strength
+
+        # Final clamp by confidence to avoid extreme prices on noisy data.
+        max_prob = 0.83 if confidence >= 0.8 else 0.78
+        min_prob = 1.0 - max_prob
+        prob_blue = min(max(prob_blue, min_prob), max_prob)
+
+        margin = 1.018 + ((1.0 - confidence) * 0.02)
+        return odds_from_probability(prob_blue, margin=margin)
+
+    async def _rebalance_match_odds(self, match_id: int):
+        """Recompute open-match odds using team strength and current betting distribution."""
+        match = next((m for m in self.db.get_open_matches(limit=20) if m.get('id') == match_id), None)
+        if not match:
+            return
+
+        blue_team = match.get('blue_team', {})
+        red_team = match.get('red_team', {})
+        if not isinstance(blue_team, dict) or not isinstance(red_team, dict):
+            return
+
+        blue_players = blue_team.get('players', [])
+        red_players = red_team.get('players', [])
+        bets = self.db.get_bets_for_match(match_id)
+
+        odds_blue, odds_red = self._balanced_odds(blue_players, red_players, bets=bets)
+        self.db.update_match_odds(match_id, odds_blue, odds_red)
+
+    def _phase_tag_weight(self, tag: str, game_minute: float) -> float:
+        """Return champion-class weight by game phase (early/mid/late)."""
+        t = (tag or '').strip().lower()
+        minute = max(0.0, game_minute)
+
+        if minute < 12:
+            early = {
+                'assassin': 1.20,
+                'fighter': 1.12,
+                'mage': 1.02,
+                'tank': 0.95,
+                'marksman': 0.90,
+                'support': 0.94,
+            }
+            return early.get(t, 1.0)
+
+        if minute < 25:
+            mid = {
+                'assassin': 1.05,
+                'fighter': 1.06,
+                'mage': 1.08,
+                'tank': 1.02,
+                'marksman': 1.03,
+                'support': 1.00,
+            }
+            return mid.get(t, 1.0)
+
+        late = {
+            'assassin': 0.92,
+            'fighter': 1.02,
+            'mage': 1.12,
+            'tank': 1.10,
+            'marksman': 1.18,
+            'support': 1.06,
+        }
+        return late.get(t, 1.0)
+
+    def _team_phase_strength(self, players: List[dict], game_minute: float) -> float:
+        """Estimate team strength for current phase from champion tags."""
+        if not players:
+            return 1.0
+
+        total = 0.0
+        counted = 0
+        for p in players:
+            champ_id = p.get('championId')
+            champ_meta = CHAMP_ROLES_CACHE.get(champ_id, {}) if champ_id is not None else {}
+            tags = champ_meta.get('tags', []) if isinstance(champ_meta, dict) else []
+
+            if not tags:
+                # Fallback neutral value if champion tags are unavailable.
+                total += 1.0
+                counted += 1
+                continue
+
+            weights = [self._phase_tag_weight(tag, game_minute) for tag in tags]
+            if not weights:
+                continue
+            total += sum(weights) / len(weights)
+            counted += 1
+
+        if counted == 0:
+            return 1.0
+        return total / counted
+
+    def _apply_live_game_drift(self, blue_players: List[dict], red_players: List[dict], odds_blue: float, odds_red: float, game_minute: float) -> Tuple[float, float]:
+        """Adjust odds with in-game phase dynamics based on comp scaling and elapsed time."""
+        base_prob_blue = implied_blue_probability(odds_blue, odds_red)
+        base_edge = base_prob_blue - 0.5
+
+        blue_phase = self._team_phase_strength(blue_players, game_minute)
+        red_phase = self._team_phase_strength(red_players, game_minute)
+        phase_edge = blue_phase - red_phase
+
+        # As game progresses, pre-game edge gets slightly stronger and comp scaling matters more.
+        time_factor = min(1.0, max(0.0, game_minute / 35.0))
+        prob_blue = 0.5 + (base_edge * (1.0 + 0.35 * time_factor)) + (phase_edge * (0.06 + 0.06 * time_factor))
+
+        # Keep odds realistic and avoid overreaction.
+        prob_blue = min(max(prob_blue, 0.14), 0.86)
+        margin = 1.015
+        return odds_from_probability(prob_blue, margin=margin)
     
     def _get_channel_id(self, guild_id: int, channel_type: str) -> int:
         """Get channel ID from config or fallback to default"""
@@ -505,10 +663,7 @@ class Hexbet(commands.Cog):
             logger.info(f"⏭️ Skipping spectate game {game_id} - one team fully streamer mode")
             return False
 
-        score_blue = self._team_score(blue_ordered)
-        score_red = self._team_score(red_ordered)
-        confidence = self._odds_confidence(blue_ordered, red_ordered)
-        odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
+        odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
 
         chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
         chance_red = round(100 - chance_blue, 1)
@@ -985,8 +1140,7 @@ class Hexbet(commands.Cog):
                             f"📈 Avg LP: {avg_lp:.0f} | GM cutoff ({region.upper()}): {gm_cutoff_lp} | Special bet: {is_special_bet}"
                         )
                     
-                    confidence = self._odds_confidence(blue_ordered, red_ordered)
-                    odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
+                    odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                     chance_red = round(100 - chance_blue, 1)
                     
@@ -1425,10 +1579,40 @@ class Hexbet(commands.Cog):
                     game_start_time_ms = int(start_dt.timestamp() * 1000)
                 except:
                     game_start_time_ms = 0
-            
+
+            game_duration_minutes = None
             if game_start_time_ms > 0:
                 current_time_ms = time.time() * 1000
                 game_duration_minutes = (current_time_ms - game_start_time_ms) / 1000 / 60
+
+            blue_team = match.get('blue_team', {})
+            red_team = match.get('red_team', {})
+            if isinstance(blue_team, dict) and isinstance(red_team, dict) and game_duration_minutes is not None:
+                blue_players = blue_team.get('players', [])
+                red_players = red_team.get('players', [])
+                current_blue_odds = float(blue_team.get('odds', 1.5))
+                current_red_odds = float(red_team.get('odds', 1.5))
+
+                new_blue_odds, new_red_odds = self._apply_live_game_drift(
+                    blue_players,
+                    red_players,
+                    current_blue_odds,
+                    current_red_odds,
+                    game_duration_minutes,
+                )
+
+                # Avoid noisy DB writes if the move is negligible.
+                if abs(new_blue_odds - current_blue_odds) >= 0.02 or abs(new_red_odds - current_red_odds) >= 0.02:
+                    self.db.update_match_odds(match['id'], new_blue_odds, new_red_odds)
+                    logger.info(
+                        "📈 Live odds drift for match %s (%0.1fm): blue %sx -> %sx | red %sx -> %sx",
+                        game_id,
+                        game_duration_minutes,
+                        current_blue_odds,
+                        new_blue_odds,
+                        current_red_odds,
+                        new_red_odds,
+                    )
 
                 # Rebuild embed so timeline and marker sections update consistently.
                 await self._refresh_match_embed(match['id'])
@@ -3637,8 +3821,7 @@ class Hexbet(commands.Cog):
                         await interaction.followup.send("⚠️ A special bet is already active. Wait for it to finish first.", ephemeral=True)
                         return
                     
-                    confidence = self._odds_confidence(blue_ordered, red_ordered)
-                    odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
+                    odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
                     chance_blue = score_blue / (score_blue + score_red) * 100
                     chance_red = 100 - chance_blue
                     
@@ -3804,10 +3987,8 @@ class Hexbet(commands.Cog):
                     
                     # Recalculate odds if requested
                     if recalc_odds:
-                        score_blue = self._team_score(blue_players)
-                        score_red = self._team_score(red_players)
-                        confidence = self._odds_confidence(blue_players, red_players)
-                        odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
+                        bets = self.db.get_bets_for_match(match['id'])
+                        odds_blue, odds_red = self._balanced_odds(blue_players, red_players, bets=bets)
                         
                         # Update in database
                         self.db.update_match_odds(match['id'], odds_blue, odds_red)
@@ -5741,12 +5922,8 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
             # Apply lobby-wide average for streamer mode
             all_players = blue_ordered + red_ordered
             self.cog._apply_lobby_average(all_players)
-            
-            score_blue = self.cog._team_score(blue_ordered)
-            score_red = self.cog._team_score(red_ordered)
-            
-            confidence = self.cog._odds_confidence(blue_ordered, red_ordered)
-            odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
+
+            odds_blue, odds_red = self.cog._balanced_odds(blue_ordered, red_ordered)
             chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
             chance_red = round(100 - chance_blue, 1)
             
@@ -5895,6 +6072,7 @@ class BetModal(discord.ui.Modal, title='Place Your Bet'):
             
             # Auto-refresh the match embed with updated bet totals
             try:
+                await self.cog._rebalance_match_odds(self.match_id)
                 await self.cog._refresh_match_embed(self.match_id)
             except Exception as e:
                 logger.warning(f"Failed to auto-refresh embed: {e}")
@@ -6274,7 +6452,11 @@ class BetView(discord.ui.View):
         if not await self._is_betting_open(interaction):
             return
         balance = self.cog.db.get_balance(interaction.user.id)
-        modal = BetModal('blue', self.odds_blue, balance, self.match_id, self.cog)
+        match = next((m for m in self.cog.db.get_open_matches(limit=20) if m.get('id') == self.match_id), None)
+        current_odds = self.odds_blue
+        if match and isinstance(match.get('blue_team'), dict):
+            current_odds = float(match['blue_team'].get('odds', self.odds_blue))
+        modal = BetModal('blue', current_odds, balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(emoji="<:RedSide:1457209221031395472>", label="Bet Red", style=discord.ButtonStyle.secondary, custom_id="hexbet_red")
@@ -6283,7 +6465,11 @@ class BetView(discord.ui.View):
         if not await self._is_betting_open(interaction):
             return
         balance = self.cog.db.get_balance(interaction.user.id)
-        modal = BetModal('red', self.odds_red, balance, self.match_id, self.cog)
+        match = next((m for m in self.cog.db.get_open_matches(limit=20) if m.get('id') == self.match_id), None)
+        current_odds = self.odds_red
+        if match and isinstance(match.get('red_team'), dict):
+            current_odds = float(match['red_team'].get('odds', self.odds_red))
+        modal = BetModal('red', current_odds, balance, self.match_id, self.cog)
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="📊 Game Length", style=discord.ButtonStyle.secondary, custom_id="hexbet_ou")

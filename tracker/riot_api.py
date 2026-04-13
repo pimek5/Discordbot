@@ -7,6 +7,7 @@ import aiohttp
 import asyncio
 from typing import Optional, Dict, List
 import logging
+from urllib.parse import quote, unquote
 
 logger = logging.getLogger('riot_api')
 
@@ -43,6 +44,16 @@ PLATFORM_ROUTES = {
     'th': 'th2',
     'tw': 'tw2',
     'vn': 'vn2'
+}
+
+# Some SEA platform hosts are intermittently unreachable in certain environments.
+# If a primary SEA platform route fails DNS/connectivity, try these alternatives.
+SEA_PLATFORM_FALLBACKS = {
+    'ph2': ['sg2', 'tw2', 'vn2'],
+    'th2': ['sg2', 'tw2', 'vn2'],
+    'sg2': ['tw2', 'vn2'],
+    'tw2': ['sg2', 'vn2'],
+    'vn2': ['sg2', 'tw2'],
 }
 
 # DDragon for champion data
@@ -108,6 +119,15 @@ def platform_to_region(platform: str) -> str:
     return 'euw'
 
 
+def expand_platform_candidates(primary_platform: str) -> List[str]:
+    """Return ordered platform candidates with SEA failover routes when applicable."""
+    candidates = [primary_platform]
+    for fallback in SEA_PLATFORM_FALLBACKS.get(primary_platform, []):
+        if fallback not in candidates:
+            candidates.append(fallback)
+    return candidates
+
+
 class RiotAPI:
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -165,17 +185,32 @@ class RiotAPI:
         """Get account by Riot ID (Name#TAG)"""
         if not self.api_key:
             return None
+
+        # Callers may pass URL-encoded values (e.g. "LR%20Rekkles").
+        # Normalize once and then encode safely for path usage.
+        normalized_game_name = unquote((game_name or "").strip())
+        normalized_tag_line = unquote((tag_line or "").strip())
+        if not normalized_game_name or not normalized_tag_line:
+            logger.warning("⚠️ Missing Riot ID values for account lookup")
+            return None
+        encoded_game_name = quote(normalized_game_name, safe='')
+        encoded_tag_line = quote(normalized_tag_line, safe='')
         
         # Build routing list: if region specified, try its routing first then fallback to all others
+        routing_priority = ['europe', 'americas', 'asia', 'sea']
         if region:
             primary_routing = RIOT_REGIONS.get(region.lower())
-            all_routings = list(set(RIOT_REGIONS.values()))
-            regions_to_try = [r for r in [primary_routing] + all_routings if r]
+            regions_to_try = []
+            if primary_routing:
+                regions_to_try.append(primary_routing)
+            for routing in routing_priority:
+                if routing not in regions_to_try:
+                    regions_to_try.append(routing)
         else:
-            regions_to_try = list(set(RIOT_REGIONS.values()))
+            regions_to_try = routing_priority.copy()
         
         for routing in regions_to_try:
-            url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+            url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_game_name}/{encoded_tag_line}"
             
             for attempt in range(retries):
                 try:
@@ -184,7 +219,7 @@ class RiotAPI:
                     async with aiohttp.ClientSession(timeout=timeout) as session:
                         async with session.get(url, headers=self.headers) as response:
                             if response.status == 200:
-                                logger.info(f"✅ Found account in {routing}: {game_name}#{tag_line}")
+                                logger.info(f"✅ Found account in {routing}: {normalized_game_name}#{normalized_tag_line}")
                                 return await response.json()
                             elif response.status == 404:
                                 logger.debug(f"🔍 Not found in routing {routing} (404) – trying next routing if available")
@@ -198,7 +233,7 @@ class RiotAPI:
                                 logger.warning(f"⚠️ Unexpected status {response.status} from {routing}: {text[:120]}")
                                 break
                 except asyncio.TimeoutError:
-                    logger.warning(f"⏱️ Timeout (routing {routing}) attempt {attempt + 1}/{retries} for {game_name}#{tag_line}")
+                    logger.warning(f"⏱️ Timeout (routing {routing}) attempt {attempt + 1}/{retries} for {normalized_game_name}#{normalized_tag_line}")
                     if attempt < retries - 1:
                         await asyncio.sleep(2)
                     continue
@@ -211,7 +246,7 @@ class RiotAPI:
                     logger.error(f"❌ Error getting account: {e}")
                     break
         
-        logger.warning(f"⚠️ Account not found after trying routings: {game_name}#{tag_line}")
+            logger.warning(f"⚠️ Account not found after trying routings: {normalized_game_name}#{normalized_tag_line}")
         return None
 
     async def get_puuid_by_riot_id(self, game_name: str, tag_line: str, region: Optional[str] = None) -> Optional[str]:
@@ -425,46 +460,52 @@ class RiotAPI:
             return None
         
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
-        # Try new PUUID-based endpoint first
-        url = f"https://{platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
-        
-        logger.info(f"🔍 Fetching ranked stats directly with PUUID from {platform}")
-        
-        for attempt in range(retries):
-            try:
-                timeout = aiohttp.ClientTimeout(total=30, connect=10)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url, headers=self.headers) as response:
-                        if response.status == 200:
-                            ranked_data = await response.json()
-                            logger.info(f"✅ Got ranked stats via PUUID: {len(ranked_data)} entries")
-                            return ranked_data
-                        elif response.status == 404:
-                            logger.info(f"📭 No ranked data found (404) - player may be unranked")
-                            return []  # No ranked data found
-                        elif response.status == 429:
-                            logger.warning(f"⏳ Rate limited (attempt {attempt + 1}/{retries})")
-                            await asyncio.sleep(2)
-                            continue
-                        else:
-                            error_text = await response.text()
-                            logger.error(f"❌ Unexpected status {response.status}: {error_text[:200]}")
-                            return []
-            except asyncio.TimeoutError:
-                logger.warning(f"⏱️ Timeout getting ranked stats (attempt {attempt + 1}/{retries})")
-                if attempt < retries - 1:
-                    await asyncio.sleep(2)
-                continue
-            except aiohttp.ClientError as e:
-                logger.warning(f"🌐 Network error getting ranked stats (attempt {attempt + 1}/{retries}): {e}")
-                if attempt < retries - 1:
-                    await asyncio.sleep(2)
-                continue
-            except Exception as e:
-                logger.error(f"❌ Error getting ranked stats: {e}")
-                return []
-        
-        logger.warning(f"⚠️ Failed to get ranked stats after {retries} attempts")
+        platforms_to_try = expand_platform_candidates(platform)
+
+        for candidate_platform in platforms_to_try:
+            url = f"https://{candidate_platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
+            logger.info(f"🔍 Fetching ranked stats directly with PUUID from {candidate_platform}")
+
+            for attempt in range(retries):
+                try:
+                    timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(url, headers=self.headers) as response:
+                            if response.status == 200:
+                                ranked_data = await response.json()
+                                logger.info(f"✅ Got ranked stats via PUUID: {len(ranked_data)} entries")
+                                return ranked_data
+                            elif response.status == 404:
+                                logger.info(f"📭 No ranked data found (404) - player may be unranked")
+                                return []
+                            elif response.status == 429:
+                                logger.warning(f"⏳ Rate limited on {candidate_platform} (attempt {attempt + 1}/{retries})")
+                                await asyncio.sleep(2)
+                                continue
+                            else:
+                                error_text = await response.text()
+                                logger.error(f"❌ Unexpected status {response.status} from {candidate_platform}: {error_text[:200]}")
+                                break
+                except asyncio.TimeoutError:
+                    logger.warning(f"⏱️ Timeout getting ranked stats from {candidate_platform} (attempt {attempt + 1}/{retries})")
+                    if attempt < retries - 1:
+                        await asyncio.sleep(2)
+                    continue
+                except aiohttp.ClientError as e:
+                    err = str(e)
+                    is_dns_error = 'Name or service not known' in err or 'getaddrinfo' in err or 'nodename nor servname' in err
+                    logger.warning(f"🌐 Network error getting ranked stats from {candidate_platform} (attempt {attempt + 1}/{retries}): {e}")
+                    if is_dns_error:
+                        logger.warning(f"↪️ Host {candidate_platform}.api.riotgames.com unreachable, trying fallback platform")
+                        break
+                    if attempt < retries - 1:
+                        await asyncio.sleep(2)
+                    continue
+                except Exception as e:
+                    logger.error(f"❌ Error getting ranked stats: {e}")
+                    return []
+
+        logger.warning(f"⚠️ Failed to get ranked stats after trying platforms: {', '.join(platforms_to_try)}")
         return []
     
     async def get_ranked_stats(self, summoner_id: str, region: str, 
@@ -472,37 +513,47 @@ class RiotAPI:
         """Get ranked statistics using summoner ID - DEPRECATED, use get_ranked_stats_by_puuid instead"""
         if not self.api_key:
             return None
-        
+
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
-        url = f"https://{platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
-        
-        for attempt in range(retries):
-            try:
-                timeout = aiohttp.ClientTimeout(total=30, connect=10)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url, headers=self.headers) as response:
-                        if response.status == 200:
-                            return await response.json()
-                        elif response.status == 404:
-                            return []  # No ranked data found
-                        elif response.status == 429:
-                            await asyncio.sleep(2)
-                            continue
-            except asyncio.TimeoutError:
-                logger.warning(f"⏱️ Timeout getting ranked stats (attempt {attempt + 1}/{retries})")
-                if attempt < retries - 1:
-                    await asyncio.sleep(2)
-                continue
-            except aiohttp.ClientError as e:
-                logger.warning(f"🌐 Network error getting ranked stats (attempt {attempt + 1}/{retries}): {e}")
-                if attempt < retries - 1:
-                    await asyncio.sleep(2)
-                continue
-            except Exception as e:
-                logger.error(f"❌ Error getting ranked stats: {e}")
-                return None
-        
-        logger.warning(f"⚠️ Failed to get ranked stats after {retries} attempts")
+        platforms_to_try = expand_platform_candidates(platform)
+
+        for candidate_platform in platforms_to_try:
+            url = f"https://{candidate_platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+            for attempt in range(retries):
+                try:
+                    timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(url, headers=self.headers) as response:
+                            if response.status == 200:
+                                return await response.json()
+                            elif response.status == 404:
+                                return []
+                            elif response.status == 429:
+                                await asyncio.sleep(2)
+                                continue
+                            else:
+                                # Non-retryable status for this platform; move to fallback if available.
+                                break
+                except asyncio.TimeoutError:
+                    logger.warning(f"⏱️ Timeout getting ranked stats from {candidate_platform} (attempt {attempt + 1}/{retries})")
+                    if attempt < retries - 1:
+                        await asyncio.sleep(2)
+                    continue
+                except aiohttp.ClientError as e:
+                    err = str(e)
+                    is_dns_error = 'Name or service not known' in err or 'getaddrinfo' in err or 'nodename nor servname' in err
+                    logger.warning(f"🌐 Network error getting ranked stats from {candidate_platform} (attempt {attempt + 1}/{retries}): {e}")
+                    if is_dns_error:
+                        logger.warning(f"↪️ Host {candidate_platform}.api.riotgames.com unreachable, trying fallback platform")
+                        break
+                    if attempt < retries - 1:
+                        await asyncio.sleep(2)
+                    continue
+                except Exception as e:
+                    logger.error(f"❌ Error getting ranked stats: {e}")
+                    return None
+
+        logger.warning(f"⚠️ Failed to get ranked stats after trying platforms: {', '.join(platforms_to_try)}")
         return None
     
     async def get_challenger_league(self, region: str, queue: str = 'RANKED_SOLO_5x5', retries: int = 3) -> Optional[Dict]:
@@ -862,12 +913,20 @@ class RiotAPI:
                             logger.warning(f"⚠️ Rate limit hit, retrying...")
                             await asyncio.sleep(1)
                             continue
+                        elif response.status in [500, 502, 503, 504]:
+                            # Riot edge occasionally returns transient HTML gateway errors.
+                            wait_s = 1 + attempt
+                            logger.warning(f"⚠️ Spectator transient {response.status} on {platform} (attempt {attempt + 1}/{retries}), retrying in {wait_s}s")
+                            if attempt < retries - 1:
+                                await asyncio.sleep(wait_s)
+                                continue
+                            return None
                         elif response.status in [400, 403]:
                             # 400/403 = Normal errors (bad request, invalid token, timeout) - silent return
                             return None
                         else:
                             text = await response.text()
-                            logger.error(f"❌ Spectator API error {response.status}: {text[:200]}")
+                            logger.warning(f"⚠️ Spectator API non-retryable {response.status} on {platform}: {text[:160]}")
                             return None
             except asyncio.TimeoutError:
                 logger.warning(f"⏱️ Timeout getting active game (attempt {attempt + 1}/{retries})")
@@ -916,6 +975,13 @@ class RiotAPI:
                             logger.warning(f"⚠️ Rate limit hit, waiting {retry_after}s before retry...")
                             await asyncio.sleep(retry_after)
                             continue
+                        elif response.status in [500, 502, 503, 504]:
+                            wait_s = 1 + attempt
+                            logger.warning(f"⚠️ Spectator transient {response.status} on {platform} (attempt {attempt + 1}/{retries}), retrying in {wait_s}s")
+                            if attempt < retries - 1:
+                                await asyncio.sleep(wait_s)
+                                continue
+                            return None
                         else:
                             logger.warning(f"⚠️ Unexpected status code: {response.status}")
                             text = await response.text()
