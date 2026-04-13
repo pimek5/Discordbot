@@ -7,6 +7,7 @@ import aiohttp
 import logging
 import time
 import itertools
+import os
 from typing import Optional, List, Tuple
 
 from tracker_database import TrackerDatabase
@@ -166,6 +167,30 @@ def rank_emoji(tier: str) -> str:
     return CFG_RANK_EMOJIS.get(tier.upper(), '')
 
 
+def build_opgg_summoner_url(region: str, riot_id: str) -> str:
+    """Build OP.GG summoner profile URL in modern format: /pl/lol/summoners/{region}/{name-tag}."""
+    import urllib.parse
+
+    if '#' in riot_id:
+        game_name, tag_line = riot_id.split('#', 1)
+    else:
+        game_name, tag_line = riot_id, ""
+
+    slug = f"{game_name}-{tag_line}" if tag_line else game_name
+    encoded_slug = urllib.parse.quote(slug, safe='')
+    return f"https://op.gg/pl/lol/summoners/{region}/{encoded_slug}"
+
+
+def build_opgg_multisearch_url(region: str, riot_ids: List[str]) -> str:
+    """Build OP.GG multisearch URL with URL-encoded summoners query."""
+    import urllib.parse
+
+    summoners_param = ','.join(riot_ids)
+    # OP.GG accepts '+' for spaces in query and expects encoded '#', commas, and unicode.
+    summoners_encoded = urllib.parse.quote_plus(summoners_param, safe='')
+    return f"https://op.gg/pl/lol/multisearch/{region}?summoners={summoners_encoded}"
+
+
 class Hexbet(commands.Cog):
     
     def __init__(self, bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
@@ -176,6 +201,9 @@ class Hexbet(commands.Cog):
         self.webhook_manager = get_webhook_manager()
         self._gm_cutoff_cache: dict[str, tuple[int, float]] = {}
         self._gm_cutoff_ttl_seconds = 300
+        self.primary_guild_id = int(os.getenv('DISCORD_GUILD_ID', '0') or 0)
+        self.spectate_targets = {}
+        self.spectate_seen_games = set()
         self.db.ensure_hexbet_tables()
         self.featured_task.start()
         self.leaderboard_task.start()
@@ -184,6 +212,7 @@ class Hexbet(commands.Cog):
         self.check_embed_task.start()
         self.live_score_update_task.start()  # Update live odds every 5 minutes
         self.pool_update_task.start()  # Auto-update player pool every hour
+        self.spectate_task.start()  # Monitor watched players and prioritize their games
         self.bot.loop.create_task(self._ensure_champions())
         self.bot.loop.create_task(self._restore_persistent_views())
         self.bot.loop.create_task(self._load_pro_players())
@@ -377,6 +406,221 @@ class Hexbet(commands.Cog):
         self.check_embed_task.cancel()
         self.live_score_update_task.cancel()
         self.pool_update_task.cancel()
+        self.spectate_task.cancel()
+
+    @commands.Cog.listener()
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
+        """If a HEXBET message is deleted on the primary guild, delete mirrors on all other guilds."""
+        if not payload.guild_id or not payload.message_id:
+            return
+
+        if self.primary_guild_id and payload.guild_id != self.primary_guild_id:
+            return
+
+        match_id = self.db.get_match_id_by_message(payload.guild_id, payload.message_id)
+        if not match_id:
+            return
+
+        match_messages = self.db.get_match_messages(match_id)
+        if not match_messages:
+            return
+
+        logger.info(f"🧹 Primary HEXBET message deleted (match={match_id}). Propagating to mirrored guilds...")
+        for guild_id, channel_id, message_id in match_messages:
+            if guild_id == payload.guild_id and message_id == payload.message_id:
+                continue
+
+            try:
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    continue
+                msg = await channel.fetch_message(message_id)
+                await msg.delete()
+                logger.info(f"✅ Deleted mirrored HEXBET message {message_id} in guild {guild_id}")
+            except discord.NotFound:
+                logger.info(f"ℹ️ Mirrored HEXBET message {message_id} in guild {guild_id} already removed")
+            except Exception as exc:
+                logger.warning(f"⚠️ Failed to delete mirrored HEXBET message {message_id} in guild {guild_id}: {exc}")
+
+        self.db.clear_match_messages(match_id)
+
+    async def _create_priority_match_from_game(
+        self,
+        guild_id: int,
+        platform: str,
+        region: str,
+        game_data: dict,
+        featured_player: str,
+        force_non_special: bool,
+    ) -> bool:
+        bet_channel_id = self._get_channel_id(guild_id, 'bet')
+        channel = self.bot.get_channel(bet_channel_id)
+        if not channel:
+            logger.error(f"❌ Bet channel {bet_channel_id} not found for guild {guild_id}")
+            return False
+
+        game_id = game_data.get('gameId')
+        if not game_id:
+            return False
+
+        open_matches = self.db.get_open_matches()
+        if any(m.get('game_id') == game_id for m in open_matches):
+            logger.info(f"ℹ️ Game {game_id} is already posted")
+            return False
+
+        # Prioritize this game by replacing an open match on the same platform.
+        for match in open_matches:
+            if match.get('platform') != platform:
+                continue
+
+            bets = self.db.get_bets_for_match(match['id'])
+            for bet in bets:
+                self.db.update_balance(bet['user_id'], bet['amount'])
+
+            self.db.settle_match(match['id'], winner='cancel')
+
+            channel_id = match.get('channel_id')
+            message_id = match.get('message_id')
+            if channel_id and message_id:
+                try:
+                    old_channel = self.bot.get_channel(channel_id)
+                    if old_channel:
+                        old_msg = await old_channel.fetch_message(message_id)
+                        await old_msg.delete()
+                except Exception:
+                    pass
+            break
+
+        blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+        red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+
+        blue_ordered = self._assign_roles(blue_team)
+        red_ordered = self._assign_roles(red_team)
+
+        await self._enrich_players(blue_ordered, region)
+        await self._enrich_players(red_ordered, region)
+        self._apply_lobby_average(blue_ordered + red_ordered)
+
+        if all(p.get('streamer_mode', False) for p in blue_ordered) or all(p.get('streamer_mode', False) for p in red_ordered):
+            logger.info(f"⏭️ Skipping spectate game {game_id} - one team fully streamer mode")
+            return False
+
+        score_blue = self._team_score(blue_ordered)
+        score_red = self._team_score(red_ordered)
+        confidence = self._odds_confidence(blue_ordered, red_ordered)
+        odds_blue, odds_red = odds_from_scores(score_blue, score_red, confidence=confidence)
+
+        chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+        chance_red = round(100 - chance_blue, 1)
+
+        all_players = blue_ordered + red_ordered
+        avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
+        gm_cutoff_lp = await self._get_grandmaster_cutoff_lp(region)
+        meets_special_requirements = gm_cutoff_lp is not None and avg_lp >= gm_cutoff_lp
+        is_special_bet = (not force_non_special) and meets_special_requirements
+
+        match_id = self.db.create_hexbet_match(
+            game_id,
+            platform,
+            bet_channel_id,
+            {'players': blue_ordered, 'odds': odds_blue},
+            {'players': red_ordered, 'odds': odds_red},
+            game_data.get('gameStartTime', 0),
+            special_bet=is_special_bet,
+            guild_id=guild_id,
+        )
+        if not match_id:
+            return False
+
+        embed = self._build_embed(
+            game_id,
+            platform,
+            blue_ordered,
+            red_ordered,
+            odds_blue,
+            odds_red,
+            chance_blue,
+            chance_red,
+            featured_player=featured_player,
+            match_id=match_id,
+            game_start_at=game_data.get('gameStartTime'),
+        )
+        msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
+        self.db.set_match_message(match_id, msg.id)
+
+        logger.info(
+            f"✅ Spectate posted priority game {game_id} for {featured_player} (special={is_special_bet}, meets_requirements={meets_special_requirements})"
+        )
+        return True
+
+    @tasks.loop(minutes=1)
+    async def spectate_task(self):
+        if not self.spectate_targets:
+            return
+
+        region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr', 'br1': 'br', 'la1': 'lan', 'la2': 'las', 'oc1': 'oce', 'tr1': 'tr', 'ru': 'ru', 'jp1': 'jp'}
+
+        for target in list(self.spectate_targets.values()):
+            guild_id = target['guild_id']
+            platform = target['platform']
+            region = region_map.get(platform, 'euw')
+            query_name = target['name']
+
+            try:
+                riot_lookup = query_name
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT riot_id FROM hexbet_verified_players
+                    WHERE LOWER(player_name) = LOWER(%s)
+                    LIMIT 1
+                    """,
+                    (query_name,),
+                )
+                row = cur.fetchone()
+                cur.close()
+                self.db.return_connection(conn)
+                if row and row[0]:
+                    riot_lookup = row[0]
+
+                if '#' in riot_lookup:
+                    game_name, tag_line = riot_lookup.split('#', 1)
+                    puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line, platform)
+                else:
+                    summoner = await self.riot_api.get_summoner_by_name(riot_lookup, region)
+                    puuid = summoner.get('puuid') if summoner else None
+
+                if not puuid:
+                    continue
+
+                game_data = await self.riot_api.get_active_game(puuid, region)
+                if not game_data:
+                    continue
+
+                game_id = game_data.get('gameId')
+                if not game_id or game_id in self.spectate_seen_games:
+                    continue
+
+                posted = await self._create_priority_match_from_game(
+                    guild_id=guild_id,
+                    platform=platform,
+                    region=region,
+                    game_data=game_data,
+                    featured_player=riot_lookup,
+                    force_non_special=target.get('force_non_special', True),
+                )
+
+                if posted:
+                    self.spectate_seen_games.add(game_id)
+                    if len(self.spectate_seen_games) > 200:
+                        self.spectate_seen_games = set(list(self.spectate_seen_games)[-100:])
+            except Exception as exc:
+                logger.warning(f"⚠️ Spectate monitor error for {query_name}: {exc}")
+
+    @spectate_task.before_loop
+    async def before_spectate(self):
+        await self.bot.wait_until_ready()
 
     @tasks.loop(minutes=FEATURED_INTERVAL)
     async def featured_task(self):
@@ -3967,6 +4211,96 @@ class Hexbet(commands.Cog):
             await self._add_verified_to_pool_auto()
         except Exception as e:
             logger.error(f"❌ Error updating verified players: {e}", exc_info=True)
+
+        # Also refresh rank/LP/WR for hxpro accounts
+        try:
+            logger.info("🔄 Refreshing HEXPRO account stats...")
+            updated_players, updated_accounts = await self._refresh_verified_pro_accounts_auto()
+            logger.info(f"✅ HEXPRO refresh completed: {updated_players} players, {updated_accounts} accounts updated")
+        except Exception as e:
+            logger.error(f"❌ Error refreshing HEXPRO accounts: {e}", exc_info=True)
+
+    async def _refresh_verified_pro_accounts_auto(self) -> Tuple[int, int]:
+        """Refresh rank/LP/W/L/WR for accounts linked to verified players."""
+        conn = self.db.get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT vp.id, vp.riot_id, vp.player_name,
+                       COALESCE(array_agg(DISTINCT pa.riot_id) FILTER (WHERE pa.riot_id IS NOT NULL), '{}')
+                FROM hexbet_verified_players vp
+                LEFT JOIN hexbet_pro_accounts pa ON pa.pro_player_id = vp.id
+                GROUP BY vp.id, vp.riot_id, vp.player_name
+                ORDER BY vp.id
+                """
+            )
+            players = cur.fetchall()
+        finally:
+            cur.close()
+            self.db.return_connection(conn)
+
+        if not players:
+            return 0, 0
+
+        updated_players = 0
+        updated_accounts = 0
+
+        for idx, (player_id, primary_riot_id, player_name, linked_riot_ids) in enumerate(players):
+            if idx > 0 and idx % 10 == 0:
+                await asyncio.sleep(0.8)
+
+            riot_ids = [r for r in (linked_riot_ids or []) if r]
+            if primary_riot_id and primary_riot_id not in riot_ids:
+                riot_ids.append(primary_riot_id)
+
+            account_updates = []
+            for riot_id in riot_ids:
+                if '#' not in riot_id:
+                    continue
+
+                game_name, tag_line = riot_id.split('#', 1)
+
+                try:
+                    puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line)
+                    if not puuid:
+                        continue
+
+                    stats = None
+                    for region in ['euw', 'eune', 'kr', 'na', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp', 'ph', 'sg', 'th', 'tw', 'vn']:
+                        stats = await self.riot_api.get_ranked_stats_by_puuid(puuid, region)
+                        if stats:
+                            break
+
+                    if not stats:
+                        continue
+
+                    tier, _division, wr = pick_rank_entry(stats)
+                    soloq_entry = next((s for s in stats if s.get('queueType') == 'RANKED_SOLO_5x5'), stats[0])
+
+                    account_updates.append(
+                        {
+                            'riot_id': riot_id,
+                            'rank': tier,
+                            'lp': soloq_entry.get('leaguePoints', 0),
+                            'wins': soloq_entry.get('wins', 0),
+                            'losses': soloq_entry.get('losses', 0),
+                            'wr': wr,
+                        }
+                    )
+                except Exception as exc:
+                    logger.debug(f"⚠️ HEXPRO refresh failed for {riot_id}: {exc}")
+                    continue
+
+            if not account_updates:
+                continue
+
+            upserted = self.db.add_pro_accounts(player_id, account_updates)
+            if upserted > 0:
+                updated_players += 1
+                updated_accounts += upserted
+
+        return updated_players, updated_accounts
     
     async def _add_verified_to_pool_auto(self):
         """Auto-add verified players to pool (called from pool_update_task)"""
@@ -4153,6 +4487,22 @@ class Hexbet(commands.Cog):
                 await interaction.followup.send(summary, ephemeral=False)
         except Exception as e:
             logger.error(f"❌ Error populating pool: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="hxproupdate", description="(Admin) Refresh HEXPRO player account stats")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxproupdate(self, interaction: discord.Interaction):
+        """Manually refresh rank/LP/W/L/WR for verified hxpro players."""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            updated_players, updated_accounts = await self._refresh_verified_pro_accounts_auto()
+            await interaction.followup.send(
+                f"✅ HEXPRO stats refresh done: **{updated_players}** players, **{updated_accounts}** accounts updated.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error(f"❌ Error in hxproupdate command: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     @app_commands.command(name="hxpool_add_verified", description="(Admin) Add verified pro/streamer players to pool")
@@ -4526,10 +4876,8 @@ These players will now appear more frequently in betting matches!"""
                 in_game_str = f"🎮 {queue_type}" if in_game else "⏹️ Not in game"
                 embed.add_field(name="InGame Status", value=in_game_str, inline=True)
                 
-                # OP.GG link
-                import urllib.parse
-                encoded_name = urllib.parse.quote(riot_id)
-                opgg_url = f"https://www.op.gg/summoners/{region}/{encoded_name}"
+                # OP.GG link (new format)
+                opgg_url = build_opgg_summoner_url(region, riot_id)
                 embed.add_field(name="OP.GG", value=f"[View Profile]({opgg_url})", inline=False)
                 
                 await interaction.followup.send(embed=embed, ephemeral=True)
@@ -4537,6 +4885,86 @@ These players will now appear more frequently in betting matches!"""
         except Exception as e:
             logger.error(f"Error in hxplayer: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="hxspectate", description="Monitor a player and prioritize posting their live game")
+    @app_commands.describe(
+        action="start/stop/list monitoring",
+        name="Player display name or RiotID (gameName#tagLine)",
+        platform="Platform shard (euw1, eun1, na1, kr...)"
+    )
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="Start", value="start"),
+            app_commands.Choice(name="Stop", value="stop"),
+            app_commands.Choice(name="List", value="list"),
+        ],
+        platform=[
+            app_commands.Choice(name="EUW", value="euw1"),
+            app_commands.Choice(name="EUNE", value="eun1"),
+            app_commands.Choice(name="NA", value="na1"),
+            app_commands.Choice(name="KR", value="kr"),
+            app_commands.Choice(name="BR", value="br1"),
+            app_commands.Choice(name="LAN", value="la1"),
+            app_commands.Choice(name="LAS", value="la2"),
+            app_commands.Choice(name="OCE", value="oc1"),
+            app_commands.Choice(name="TR", value="tr1"),
+            app_commands.Choice(name="RU", value="ru"),
+            app_commands.Choice(name="JP", value="jp1"),
+        ],
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxspectate(
+        self,
+        interaction: discord.Interaction,
+        action: str = "start",
+        name: Optional[str] = None,
+        platform: str = "euw1",
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        guild_id = interaction.guild_id
+        if not guild_id:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        if action == "list":
+            targets = [
+                t for t in self.spectate_targets.values() if t.get('guild_id') == guild_id
+            ]
+            if not targets:
+                await interaction.followup.send("ℹ️ No active spectate monitors in this server.", ephemeral=True)
+                return
+
+            lines = [f"• **{t['name']}** on `{t['platform']}`" for t in targets]
+            await interaction.followup.send("📡 Active hxspectate monitors:\n" + "\n".join(lines), ephemeral=True)
+            return
+
+        if not name:
+            await interaction.followup.send("❌ `name` is required for start/stop.", ephemeral=True)
+            return
+
+        key = (guild_id, name.lower().strip(), platform.lower().strip())
+
+        if action == "stop":
+            removed = self.spectate_targets.pop(key, None)
+            if removed:
+                await interaction.followup.send(f"🛑 Stopped monitoring **{name}** on `{platform}`.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"ℹ️ Monitor not found for **{name}** on `{platform}`.", ephemeral=True)
+            return
+
+        self.spectate_targets[key] = {
+            'guild_id': guild_id,
+            'name': name.strip(),
+            'platform': platform.lower().strip(),
+            # If special requirements (GM cutoff average) are not met, the posted match is regular.
+            'force_non_special': False,
+            'requested_by': interaction.user.id,
+        }
+        await interaction.followup.send(
+            f"✅ Monitoring **{name}** on `{platform}`. If they are in game, HEXBET will prioritize posting that match.",
+            ephemeral=True,
+        )
 
     @hxpost.error
     async def hxpost_error(self, interaction: discord.Interaction, error):
@@ -5044,7 +5472,7 @@ These players will now appear more frequently in betting matches!"""
             )
             embed.add_field(
                 name="⚙️ Setup After Invite",
-                value="Use `/hexconfig setup` to configure channels on your server",
+                value="Use `/hxconfig setup` to configure channels on your server",
                 inline=False
             )
             embed.set_footer(text=f"Bot ID: {self.bot.user.id}")
@@ -5899,11 +6327,8 @@ class BetView(discord.ui.View):
                 await interaction.response.send_message("❌ No player names found", ephemeral=True)
                 return
             
-            # Create multisearch URL with URL encoding
-            import urllib.parse
-            summoners_param = ','.join(names)
-            summoners_encoded = urllib.parse.quote(summoners_param)
-            url = f"https://www.op.gg/multisearch/{region}?summoners={summoners_encoded}"
+            # Create multisearch URL with modern OP.GG route
+            url = build_opgg_multisearch_url(region, names)
             
             embed = discord.Embed(
                 title="🔗 OP.GG Multisearch",

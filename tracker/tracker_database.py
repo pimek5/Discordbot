@@ -459,6 +459,50 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
+    def get_match_id_by_message(self, guild_id: int, message_id: int) -> Optional[int]:
+        """Resolve match_id from a guild-specific HEXBET message id."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT match_id
+                    FROM hexbet_match_messages
+                    WHERE guild_id = %s AND message_id = %s
+                    LIMIT 1
+                    """,
+                    (guild_id, message_id),
+                )
+                row = cur.fetchone()
+                if row:
+                    return row[0]
+
+                # Backward compatibility fallback for legacy single-message records.
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM hexbet_matches
+                    WHERE message_id = %s
+                    LIMIT 1
+                    """,
+                    (message_id,),
+                )
+                fallback = cur.fetchone()
+                return fallback[0] if fallback else None
+        finally:
+            self.return_connection(conn)
+
+    def clear_match_messages(self, match_id: int):
+        """Delete all stored message mappings for a match after cross-guild cleanup."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM hexbet_match_messages WHERE match_id = %s", (match_id,))
+                cur.execute("UPDATE hexbet_matches SET message_id = NULL WHERE id = %s", (match_id,))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
     def update_match_odds(self, match_id: int, odds_blue: float, odds_red: float):
         """Update match odds in database"""
         conn = self.get_connection()

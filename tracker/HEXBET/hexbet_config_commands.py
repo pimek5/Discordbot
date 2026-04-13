@@ -334,11 +334,11 @@ class WebhookRemoveModal(discord.ui.Modal, title="Remove Webhook"):
 class HexbetConfig(commands.Cog):
     """HEXBET configuration commands"""
 
+    config_group = app_commands.Group(name="hxconfig", description="Configure HEXBET for this server")
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.config_db = get_hexbet_config_db()
-
-    config_group = app_commands.Group(name="hexconfig", description="Configure HEXBET for this server")
 
     @config_group.command(name="setup", description="Interactive setup for HEXBET channels and settings")
     @app_commands.checks.has_permissions(administrator=True)
@@ -351,7 +351,7 @@ class HexbetConfig(commands.Cog):
         config = self.config_db.get_guild_config(interaction.guild_id)
         if not config:
             await interaction.response.send_message(
-                "\u274c HEXBET not configured yet. Use `/hexconfig setup` to get started.",
+                "❌ HEXBET not configured yet. Use `/hxconfig setup` to get started.",
                 ephemeral=True,
             )
             return
