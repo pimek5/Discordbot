@@ -13,11 +13,13 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger(__name__)
 
 # Import from our existing API
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../apis'))
+apis_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'apis'))
+if apis_dir not in sys.path:
+    sys.path.insert(0, apis_dir)
 try:
     from dpm_api_pro import get_pro_accounts_async
-except ImportError:
-    logger.warning("Could not import dpm_api_pro, using inline fallback")
+except Exception as e:
+    logger.info("dpm_api_pro import unavailable (%s), using inline fallback", e)
     get_pro_accounts_async = None
 
 

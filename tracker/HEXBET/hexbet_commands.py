@@ -4200,6 +4200,13 @@ class Hexbet(commands.Cog):
                 logger.info(f"📊 {region} Challenger: got {len(entries)} entries, sampling {len(sampled)}")
                 
                 for idx, entry in enumerate(sampled):
+                    puuid = entry.get('puuid')
+                    if puuid:
+                        all_players.append((puuid, region, 'challenger', entry.get('leaguePoints', 0)))
+                        total_fetched += 1
+                        region_count += 1
+                        continue
+
                     summoner_id = entry.get('summonerId')
                     if summoner_id:
                         diagnostics['summoner_lookup_attempts'] += 1
@@ -4232,6 +4239,13 @@ class Hexbet(commands.Cog):
                 
                 gm_start = region_count
                 for idx, entry in enumerate(sampled):
+                    puuid = entry.get('puuid')
+                    if puuid:
+                        all_players.append((puuid, region, 'grandmaster', entry.get('leaguePoints', 0)))
+                        total_fetched += 1
+                        region_count += 1
+                        continue
+
                     summoner_id = entry.get('summonerId')
                     if summoner_id:
                         diagnostics['summoner_lookup_attempts'] += 1
@@ -4263,6 +4277,13 @@ class Hexbet(commands.Cog):
                 
                 master_start = region_count
                 for idx, entry in enumerate(sampled):
+                    puuid = entry.get('puuid')
+                    if puuid:
+                        all_players.append((puuid, region, 'master', entry.get('leaguePoints', 0)))
+                        total_fetched += 1
+                        region_count += 1
+                        continue
+
                     summoner_id = entry.get('summonerId')
                     if summoner_id:
                         diagnostics['summoner_lookup_attempts'] += 1
@@ -4293,6 +4314,13 @@ class Hexbet(commands.Cog):
                 
                 dia_start = region_count
                 for idx, entry in enumerate(sampled):
+                    puuid = entry.get('puuid')
+                    if puuid:
+                        all_players.append((puuid, region, 'diamond', entry.get('leaguePoints', 0)))
+                        total_fetched += 1
+                        region_count += 1
+                        continue
+
                     summoner_id = entry.get('summonerId')
                     if summoner_id:
                         diagnostics['summoner_lookup_attempts'] += 1

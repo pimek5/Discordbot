@@ -7,6 +7,7 @@ import aiohttp
 import asyncio
 from typing import Optional, Dict, List
 import logging
+import time
 from urllib.parse import quote, unquote
 
 logger = logging.getLogger('riot_api')
@@ -134,10 +135,18 @@ class RiotAPI:
         self.headers = {
             'X-Riot-Token': api_key
         }
+        # Temporary platform cooldowns to avoid hammering Spectator on transient outages.
+        self._spectator_platform_backoff_until: Dict[str, float] = {}
         if api_key:
             logger.info("🔑 Tracker Riot API key loaded from environment")
         else:
             logger.error("❌ No API key provided!")
+
+    def _spectator_platform_on_cooldown(self, platform: str) -> bool:
+        return time.monotonic() < self._spectator_platform_backoff_until.get(platform, 0)
+
+    def _set_spectator_platform_cooldown(self, platform: str, seconds: int) -> None:
+        self._spectator_platform_backoff_until[platform] = time.monotonic() + max(1, seconds)
 
     async def get_featured_games(self, platform: str = 'euw1', retries: int = 3) -> Optional[Dict]:
         """Get featured games (public matches) from spectator/v5 featured-games"""
@@ -691,9 +700,19 @@ class RiotAPI:
                     async with session.get(url, headers=self.headers) as response:
                         if response.status == 200:
                             return await response.json()
+                        elif response.status == 404:
+                            return None
                         elif response.status == 429:
-                            await asyncio.sleep(2)
+                            retry_after = int(response.headers.get('Retry-After', 2) or 2)
+                            await asyncio.sleep(min(max(retry_after, 1), 5))
                             continue
+                        elif response.status in [500, 502, 503, 504]:
+                            if attempt < retries - 1:
+                                await asyncio.sleep(1 + attempt)
+                                continue
+                            return None
+                        else:
+                            return None
             except Exception as e:
                 logger.debug(f"Error getting summoner by ID: {e}")
                 if attempt < retries - 1:
@@ -895,6 +914,8 @@ class RiotAPI:
             return None
         
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        if self._spectator_platform_on_cooldown(platform):
+            return None
         url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
         
         for attempt in range(retries):
@@ -920,6 +941,7 @@ class RiotAPI:
                             if attempt < retries - 1:
                                 await asyncio.sleep(wait_s)
                                 continue
+                            self._set_spectator_platform_cooldown(platform, 45)
                             return None
                         elif response.status in [400, 403]:
                             # 400/403 = Normal errors (bad request, invalid token, timeout) - silent return
@@ -938,6 +960,7 @@ class RiotAPI:
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
                 continue
+                self._set_spectator_platform_cooldown(platform, 30)
             except Exception as e:
                 logger.error(f"❌ Error getting active game: {e}")
                 return None
@@ -951,6 +974,8 @@ class RiotAPI:
             return None
         
         platform = PLATFORM_ROUTES.get(region.lower(), 'euw1')
+        if self._spectator_platform_on_cooldown(platform):
+            return None
         url = f"https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{summoner_id}"
         
         logger.info(f"🔍 Calling Spectator API for summoner {summoner_id[:10]}... on {platform}")
@@ -981,6 +1006,7 @@ class RiotAPI:
                             if attempt < retries - 1:
                                 await asyncio.sleep(wait_s)
                                 continue
+                            self._set_spectator_platform_cooldown(platform, 45)
                             return None
                         else:
                             logger.warning(f"⚠️ Unexpected status code: {response.status}")
@@ -997,6 +1023,7 @@ class RiotAPI:
                 if attempt < retries - 1:
                     await asyncio.sleep(1)
                 continue
+                self._set_spectator_platform_cooldown(platform, 30)
             except Exception as e:
                 logger.error(f"❌ Error getting active game: {e}")
                 return None
