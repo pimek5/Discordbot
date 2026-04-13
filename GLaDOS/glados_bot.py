@@ -1,4 +1,5 @@
 import os
+import asyncio
 import re
 import logging
 from dataclasses import dataclass
@@ -20,6 +21,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("GLaDOS")
 
+EMPTY_CHANNEL_DELETE_DELAY = 3
+DUO_CHANNEL_LIMIT = 2
+FLEX_CHANNEL_LIMIT = 5
+CUSTOM_MAIN_CHANNEL_LIMIT = 20
+CUSTOM_TEAM_CHANNEL_LIMIT = 5
+
 
 def env_int(name: str) -> Optional[int]:
     value = os.getenv(name, "").strip()
@@ -32,7 +39,23 @@ def env_int(name: str) -> Optional[int]:
         return None
 
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
+def env_token(name: str) -> str:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return ""
+
+    # Common Railway copy/paste issue: token surrounded with quotes.
+    if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
+        raw = raw[1:-1].strip()
+
+    # Discord.py expects raw token without the "Bot " prefix.
+    if raw.lower().startswith("bot "):
+        raw = raw[4:].strip()
+
+    return raw
+
+
+DISCORD_TOKEN = env_token("DISCORD_TOKEN")
 GUILD_ID = env_int("GUILD_ID") or 1318383232785453076
 
 DUO_CATEGORY_ID = env_int("DUO_CATEGORY_ID") or 1492683548329508904
@@ -441,17 +464,20 @@ class GLaDOSBot(commands.Bot):
         intents.guilds = True
         intents.members = True
         intents.voice_states = True
+        intents.message_content = False
 
-        super().__init__(command_prefix="!", intents=intents, help_command=None)
+        super().__init__(command_prefix=commands.when_mentioned, intents=intents, help_command=None)
 
         self.db = SharedDatabase(DATABASE_URL)
 
         # Single temporary channels (duo/flex)
         self.simple_temp_channels: Dict[int, SimpleTempChannel] = {}
+        self.simple_cleanup_tasks: Dict[int, asyncio.Task] = {}
 
         # Custom groups
         self.custom_groups: Dict[int, CustomGroup] = {}
         self.voice_to_group: Dict[int, int] = {}
+        self.custom_cleanup_tasks: Dict[int, asyncio.Task] = {}
 
     async def setup_hook(self):
         guild = discord.Object(id=GUILD_ID)
@@ -462,6 +488,10 @@ class GLaDOSBot(commands.Bot):
     async def on_ready(self):
         logger.info("Logged in as %s (%s)", self.user, self.user.id)
         logger.info("Connected to %d guild(s)", len(self.guilds))
+
+        guild = self.get_guild(GUILD_ID)
+        if guild is not None:
+            await self._pin_generator_channels(guild)
 
         if self.db.enabled():
             if self.db.healthcheck():
@@ -498,26 +528,21 @@ class GLaDOSBot(commands.Bot):
         if before.channel and before.channel.id in self.voice_to_group:
             group_key = self.voice_to_group[before.channel.id]
             await self._sync_member_custom_text_access(member, group_key)
-            await self._cleanup_custom_group_if_empty(group_key)
+            self._schedule_custom_cleanup(group_key)
 
         # Dynamic custom chat access: update for join / move
         if after.channel and after.channel.id in self.voice_to_group:
             group_key = self.voice_to_group[after.channel.id]
+            self._cancel_custom_cleanup(group_key)
             await self._sync_member_custom_text_access(member, group_key)
 
-        # Cleanup duo/flex temp channels and their text panel channels
+        # Cleanup duo/flex temp channels and their text panel channels after a delay
         if before.channel and before.channel.id in self.simple_temp_channels:
             if len(before.channel.members) == 0:
-                meta = self.simple_temp_channels.get(before.channel.id)
-                text_channel = member.guild.get_channel(meta.text_id) if meta else None
-                try:
-                    await before.channel.delete(reason="Temporary channel empty")
-                    if isinstance(text_channel, discord.TextChannel):
-                        await text_channel.delete(reason="Temporary channel empty")
-                    self.simple_temp_channels.pop(before.channel.id, None)
-                    logger.info("Deleted empty temporary channel %s", before.channel.id)
-                except Exception as exc:
-                    logger.error("Failed to delete temporary channel %s: %s", before.channel.id, exc)
+                self._schedule_simple_cleanup(before.channel.id)
+
+        if after.channel and after.channel.id in self.simple_temp_channels:
+            self._cancel_simple_cleanup(after.channel.id)
 
     async def _create_and_move_simple(self, member: discord.Member, category_id: int, prefix: str):
         category = member.guild.get_channel(category_id)
@@ -526,11 +551,13 @@ class GLaDOSBot(commands.Bot):
             return
 
         channel_name = f"{prefix}-{member.display_name}"[:100]
+        user_limit = DUO_CHANNEL_LIMIT if prefix == "duoq" else FLEX_CHANNEL_LIMIT
 
         try:
             voice_channel = await member.guild.create_voice_channel(
                 name=channel_name,
                 category=category,
+                user_limit=user_limit,
                 reason=f"Temporary {prefix} channel for {member}",
             )
             text_channel = await member.guild.create_text_channel(
@@ -557,6 +584,7 @@ class GLaDOSBot(commands.Bot):
                 kind=prefix,
             )
             await text_channel.send(embed=build_owner_panel_embed(member), view=panel)
+            await self._pin_generator_channels(member.guild)
 
             logger.info("Created %s temporary channel %s for user %s", prefix, voice_channel.id, member.id)
         except Exception as exc:
@@ -597,18 +625,21 @@ class GLaDOSBot(commands.Bot):
                 name=f"custom-{base_name}"[:100],
                 category=category,
                 overwrites=overwrites,
+                user_limit=CUSTOM_MAIN_CHANNEL_LIMIT,
                 reason=f"Custom temporary channels for {member}",
             )
             team1_voice = await member.guild.create_voice_channel(
                 name=f"custom-{base_name}-team-1"[:100],
                 category=category,
                 overwrites=overwrites,
+                user_limit=CUSTOM_TEAM_CHANNEL_LIMIT,
                 reason=f"Custom temporary channels for {member}",
             )
             team2_voice = await member.guild.create_voice_channel(
                 name=f"custom-{base_name}-team-2"[:100],
                 category=category,
                 overwrites=overwrites,
+                user_limit=CUSTOM_TEAM_CHANNEL_LIMIT,
                 reason=f"Custom temporary channels for {member}",
             )
             text_channel = await member.guild.create_text_channel(
@@ -646,6 +677,7 @@ class GLaDOSBot(commands.Bot):
                 kind="custom",
             )
             await text_channel.send(embed=build_owner_panel_embed(member), view=panel)
+            await self._pin_generator_channels(member.guild)
 
             logger.info(
                 "Created custom temporary set for %s (main=%s, team1=%s, team2=%s, text=%s)",
@@ -723,12 +755,73 @@ class GLaDOSBot(commands.Bot):
         logger.info("Deleted empty custom temporary group %s", group_key)
 
     def _remove_custom_group_mappings(self, group_key: int):
+        self._cancel_custom_cleanup(group_key)
         group = self.custom_groups.pop(group_key, None)
         if not group:
             return
         self.voice_to_group.pop(group.main_voice_id, None)
         self.voice_to_group.pop(group.team1_voice_id, None)
         self.voice_to_group.pop(group.team2_voice_id, None)
+
+    def _schedule_simple_cleanup(self, channel_id: int):
+        self._cancel_simple_cleanup(channel_id)
+        self.simple_cleanup_tasks[channel_id] = self.loop.create_task(self._delayed_simple_cleanup(channel_id))
+
+    def _cancel_simple_cleanup(self, channel_id: int):
+        task = self.simple_cleanup_tasks.pop(channel_id, None)
+        if task and not task.done():
+            task.cancel()
+
+    async def _delayed_simple_cleanup(self, channel_id: int):
+        try:
+            await asyncio.sleep(EMPTY_CHANNEL_DELETE_DELAY)
+
+            meta = self.simple_temp_channels.get(channel_id)
+            if not meta:
+                return
+
+            guild = self.get_guild(GUILD_ID)
+            if guild is None:
+                return
+
+            voice_channel = guild.get_channel(channel_id)
+            text_channel = guild.get_channel(meta.text_id)
+
+            if isinstance(voice_channel, discord.VoiceChannel) and len(voice_channel.members) > 0:
+                return
+
+            try:
+                if isinstance(voice_channel, discord.VoiceChannel):
+                    await voice_channel.delete(reason=f"Temporary channel empty for {EMPTY_CHANNEL_DELETE_DELAY} seconds")
+                if isinstance(text_channel, discord.TextChannel):
+                    await text_channel.delete(reason=f"Temporary channel empty for {EMPTY_CHANNEL_DELETE_DELAY} seconds")
+                self.simple_temp_channels.pop(channel_id, None)
+                await self._pin_generator_channels(guild)
+                logger.info("Deleted empty temporary channel %s after %s seconds", channel_id, EMPTY_CHANNEL_DELETE_DELAY)
+            except Exception as exc:
+                logger.error("Failed to delete temporary channel %s: %s", channel_id, exc)
+        except asyncio.CancelledError:
+            logger.debug("Cancelled cleanup for temporary channel %s", channel_id)
+        finally:
+            self.simple_cleanup_tasks.pop(channel_id, None)
+
+    def _schedule_custom_cleanup(self, group_key: int):
+        self._cancel_custom_cleanup(group_key)
+        self.custom_cleanup_tasks[group_key] = self.loop.create_task(self._delayed_custom_cleanup(group_key))
+
+    def _cancel_custom_cleanup(self, group_key: int):
+        task = self.custom_cleanup_tasks.pop(group_key, None)
+        if task and not task.done():
+            task.cancel()
+
+    async def _delayed_custom_cleanup(self, group_key: int):
+        try:
+            await asyncio.sleep(EMPTY_CHANNEL_DELETE_DELAY)
+            await self._cleanup_custom_group_if_empty(group_key)
+        except asyncio.CancelledError:
+            logger.debug("Cancelled cleanup for custom group %s", group_key)
+        finally:
+            self.custom_cleanup_tasks.pop(group_key, None)
 
     def get_owner_panel_target(self, guild: discord.Guild, owner_id: int):
         for meta in self.simple_temp_channels.values():
@@ -755,6 +848,27 @@ class GLaDOSBot(commands.Bot):
                 return [group.main_voice_id, group.team1_voice_id, group.team2_voice_id], group.text_id, "custom"
 
         return None, None, None
+
+    async def _pin_generator_channels(self, guild: discord.Guild):
+        generator_specs = [
+            (DUO_GENERATOR_CHANNEL_ID, DUO_CATEGORY_ID),
+            (FLEX_GENERATOR_CHANNEL_ID, FLEX_CATEGORY_ID),
+            (CUSTOM_GENERATOR_CHANNEL_ID, CUSTOM_CATEGORY_ID),
+        ]
+
+        for channel_id, category_id in generator_specs:
+            if not channel_id or not category_id:
+                continue
+
+            channel = guild.get_channel(channel_id)
+            category = guild.get_channel(category_id)
+            if not isinstance(channel, discord.VoiceChannel) or not isinstance(category, discord.CategoryChannel):
+                continue
+
+            try:
+                await channel.move(category=category, beginning=True, offset=0, sync_permissions=False)
+            except Exception as exc:
+                logger.error("Failed to pin generator channel %s to top of category %s: %s", channel_id, category_id, exc)
 
 
 bot = GLaDOSBot()
@@ -846,5 +960,10 @@ async def my_channel_panel(interaction: discord.Interaction):
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
         raise RuntimeError("DISCORD_TOKEN is missing in environment")
+
+    if " " in DISCORD_TOKEN or len(DISCORD_TOKEN) < 50:
+        raise RuntimeError(
+            "DISCORD_TOKEN appears invalid. Use the raw bot token from Discord Developer Portal, without quotes and without 'Bot ' prefix."
+        )
 
     bot.run(DISCORD_TOKEN)

@@ -2557,23 +2557,15 @@ class Hexbet(commands.Cog):
                     riot_id = scraped['riot_id']
                     game_name, tag_line = riot_id.split('#', 1)
                     
-                    # Get PUUID from Riot API
-                    account_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
-                    headers = {'X-Riot-Token': self.riot_api.api_key}
-                    
-                    import aiohttp
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(account_url, headers=headers) as response:
-                            if response.status != 200:
-                                logger.warning(f"Failed to fetch PUUID for {riot_id}: {response.status}")
-                                continue
-                            
-                            account_data = await response.json()
-                            puuid = account_data.get('puuid')
+                    # Get PUUID from Riot API (all regional routings)
+                    puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line)
+                    if not puuid:
+                        logger.warning(f"Failed to fetch PUUID for {riot_id}")
+                        continue
                     
                     # Get ranked stats - try multiple regions
                     stats = None
-                    for region in ['euw', 'kr', 'na', 'eun', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp', 'ph', 'sg', 'th', 'tw', 'vn']:
+                    for region in ['euw', 'kr', 'na', 'eune', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp', 'ph', 'sg', 'th', 'tw', 'vn']:
                         try:
                             stats = await self.riot_api.get_ranked_stats_by_puuid(puuid, region)
                             if stats:
@@ -3740,25 +3732,34 @@ class Hexbet(commands.Cog):
             logger.error(f"Error in force settle: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
     
-    async def _fetch_and_update_pool(self, sample_size: int = 50) -> Tuple[int, str]:
+    async def _fetch_and_update_pool(self, sample_size: int = 50) -> Tuple[int, str, dict]:
         """
         Fetch random high-elo players and update database
-        Returns: (total_players_fetched, summary_string)
+        Returns: (total_players_fetched, summary_string, diagnostics)
         """
         if not self.riot_api.api_key:
             logger.error("❌ No Riot API key configured!")
-            return (0, "❌ Error: No Riot API key configured")
+            return (0, "❌ Error: No Riot API key configured", {'error': 'missing_api_key'})
         
         regions = ['euw', 'eune', 'na', 'kr']
         all_players = []
         total_fetched = 0
         summary_lines = []
+        diagnostics = {
+            'regions_processed': 0,
+            'league_endpoints_ok': 0,
+            'league_endpoints_empty': 0,
+            'league_entries_sampled': 0,
+            'summoner_lookup_attempts': 0,
+            'summoner_lookup_successes': 0,
+        }
         
         logger.info(f"🔄 Starting pool fetch: {len(regions)} regions, sample_size={sample_size}")
         logger.info(f"📝 Regions will be processed sequentially to avoid rate limits")
         
         for idx, region in enumerate(regions, 1):
             region_count = 0
+            diagnostics['regions_processed'] += 1
             logger.info(f"🌍 Processing region {idx}/{len(regions)}: {region.upper()}")
             
             # Challenger
@@ -3767,16 +3768,20 @@ class Hexbet(commands.Cog):
             if chall_data and chall_data.get('entries'):
                 entries = chall_data['entries']
                 sampled = random.sample(entries, min(sample_size, len(entries)))
+                diagnostics['league_endpoints_ok'] += 1
+                diagnostics['league_entries_sampled'] += len(sampled)
                 logger.info(f"📊 {region} Challenger: got {len(entries)} entries, sampling {len(sampled)}")
                 
                 for idx, entry in enumerate(sampled):
                     summoner_id = entry.get('summonerId')
                     if summoner_id:
+                        diagnostics['summoner_lookup_attempts'] += 1
                         summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
                         if summoner and summoner.get('puuid'):
                             all_players.append((summoner['puuid'], region, 'challenger', entry.get('leaguePoints', 0)))
                             total_fetched += 1
                             region_count += 1
+                            diagnostics['summoner_lookup_successes'] += 1
                     
                     # Rate limit between individual summoner fetches
                     if idx % 10 == 0 and idx > 0:
@@ -3784,6 +3789,7 @@ class Hexbet(commands.Cog):
                 
                 logger.info(f"✅ {region} Challenger: fetched {region_count}/{len(sampled)} players")
             else:
+                diagnostics['league_endpoints_empty'] += 1
                 logger.warning(f"⚠️ {region} Challenger: No data returned")
             await asyncio.sleep(1.2)  # Rate limit
             
@@ -3793,23 +3799,28 @@ class Hexbet(commands.Cog):
             if gm_data and gm_data.get('entries'):
                 entries = gm_data['entries']
                 sampled = random.sample(entries, min(sample_size, len(entries)))
+                diagnostics['league_endpoints_ok'] += 1
+                diagnostics['league_entries_sampled'] += len(sampled)
                 logger.info(f"📊 {region} Grandmaster: got {len(entries)} entries, sampling {len(sampled)}")
                 
                 gm_start = region_count
                 for idx, entry in enumerate(sampled):
                     summoner_id = entry.get('summonerId')
                     if summoner_id:
+                        diagnostics['summoner_lookup_attempts'] += 1
                         summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
                         if summoner and summoner.get('puuid'):
                             all_players.append((summoner['puuid'], region, 'grandmaster', entry.get('leaguePoints', 0)))
                             total_fetched += 1
                             region_count += 1
+                            diagnostics['summoner_lookup_successes'] += 1
                         
                         if idx % 10 == 0 and idx > 0:
                             await asyncio.sleep(0.5)
                 
                 logger.info(f"✅ {region} Grandmaster: fetched {region_count - gm_start}/{len(sampled)} players")
             else:
+                diagnostics['league_endpoints_empty'] += 1
                 logger.warning(f"⚠️ {region} Grandmaster: No data returned")
             await asyncio.sleep(1.2)
             
@@ -3819,23 +3830,28 @@ class Hexbet(commands.Cog):
             if master_data and master_data.get('entries'):
                 entries = master_data['entries']
                 sampled = random.sample(entries, min(sample_size, len(entries)))
+                diagnostics['league_endpoints_ok'] += 1
+                diagnostics['league_entries_sampled'] += len(sampled)
                 logger.info(f"📊 {region} Master: got {len(entries)} entries, sampling {len(sampled)}")
                 
                 master_start = region_count
                 for idx, entry in enumerate(sampled):
                     summoner_id = entry.get('summonerId')
                     if summoner_id:
+                        diagnostics['summoner_lookup_attempts'] += 1
                         summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
                         if summoner and summoner.get('puuid'):
                             all_players.append((summoner['puuid'], region, 'master', entry.get('leaguePoints', 0)))
                             total_fetched += 1
                             region_count += 1
+                            diagnostics['summoner_lookup_successes'] += 1
                         
                         if idx % 10 == 0 and idx > 0:
                             await asyncio.sleep(0.5)
                 
                 logger.info(f"✅ {region} Master: fetched {region_count - master_start}/{len(sampled)} players")
             else:
+                diagnostics['league_endpoints_empty'] += 1
                 logger.warning(f"⚠️ {region} Master: No data returned")
             await asyncio.sleep(1.2)
             
@@ -3844,23 +3860,28 @@ class Hexbet(commands.Cog):
             dia_data = await self.riot_api.get_diamond_players(region, division='I', page=1)
             if dia_data and isinstance(dia_data, list):
                 sampled = random.sample(dia_data, min(sample_size, len(dia_data)))
+                diagnostics['league_endpoints_ok'] += 1
+                diagnostics['league_entries_sampled'] += len(sampled)
                 logger.info(f"📊 {region} Diamond I: got {len(dia_data)} entries, sampling {len(sampled)}")
                 
                 dia_start = region_count
                 for idx, entry in enumerate(sampled):
                     summoner_id = entry.get('summonerId')
                     if summoner_id:
+                        diagnostics['summoner_lookup_attempts'] += 1
                         summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
                         if summoner and summoner.get('puuid'):
                             all_players.append((summoner['puuid'], region, 'diamond', entry.get('leaguePoints', 0)))
                             total_fetched += 1
                             region_count += 1
+                            diagnostics['summoner_lookup_successes'] += 1
                         
                         if idx % 10 == 0 and idx > 0:
                             await asyncio.sleep(0.5)
                 
                 logger.info(f"✅ {region} Diamond I: fetched {region_count - dia_start}/{len(sampled)} players")
             else:
+                diagnostics['league_endpoints_empty'] += 1
                 logger.warning(f"⚠️ {region} Diamond I: No data returned")
             await asyncio.sleep(1.2)
             
@@ -3907,22 +3928,36 @@ class Hexbet(commands.Cog):
                     for region, tier, count in stats:
                         summary += f"• {region.upper()} {tier}: {count}\n"
                     
-                    return (len(all_players), summary)
+                    return (len(all_players), summary, diagnostics)
             finally:
                 self.db.return_connection(conn)
         
-        return (0, "⚠️ No players fetched")
+        if diagnostics['league_entries_sampled'] == 0:
+            zero_reason = "Riot league endpoints returned no entries. Most likely: API key issue, rate limiting, or Riot API outage."
+        elif diagnostics['summoner_lookup_attempts'] > 0 and diagnostics['summoner_lookup_successes'] == 0:
+            zero_reason = "League endpoints returned entries, but every summoner lookup failed. Most likely: summoner endpoint rate limiting or platform API issue."
+        else:
+            zero_reason = "No players were persisted from the sampled league entries."
+
+        diagnostic_summary = (
+            "⚠️ No players fetched\n"
+            f"League endpoints with data: {diagnostics['league_endpoints_ok']} | empty: {diagnostics['league_endpoints_empty']}\n"
+            f"Sampled entries: {diagnostics['league_entries_sampled']}\n"
+            f"Summoner lookups: {diagnostics['summoner_lookup_successes']}/{diagnostics['summoner_lookup_attempts']}\n"
+            f"Reason: {zero_reason}"
+        )
+        return (0, diagnostic_summary, diagnostics)
 
     @tasks.loop(hours=1)
     async def pool_update_task(self):
         """Auto-update player pool every hour"""
         try:
             logger.info("🔄 Hourly player pool update started...")
-            fetched, summary = await self._fetch_and_update_pool(sample_size=50)
+            fetched, summary, diagnostics = await self._fetch_and_update_pool(sample_size=50)
             if fetched > 0:
                 logger.info(f"✅ Pool update completed: {fetched} players added")
             else:
-                logger.warning("⚠️ Pool update completed but no new players")
+                logger.warning(f"⚠️ Pool update completed but no new players: {summary}")
         except Exception as e:
             logger.error(f"❌ Error in pool_update_task: {e}", exc_info=True)
         
@@ -4092,7 +4127,7 @@ class Hexbet(commands.Cog):
                 ephemeral=True
             )
 
-            fetched, summary = await self._fetch_and_update_pool(sample_size=sample_size)
+            fetched, summary, diagnostics = await self._fetch_and_update_pool(sample_size=sample_size)
             logger.info(f"✅ hxpool completed: {fetched} players fetched")
 
             if fetched == 0:
@@ -4111,7 +4146,7 @@ class Hexbet(commands.Cog):
                     "⚠️ Riot API fetch returned 0 players.\n"
                     "✅ Ran fallback: added/updated verified players in pool.\n"
                     f"📦 Current pool size: **{pool_count}**\n\n"
-                    "Possible causes: API rate limit (429), expired API key, or temporary Riot API issues."
+                    f"{summary}"
                 )
                 await interaction.followup.send(fallback_msg, ephemeral=False)
             else:

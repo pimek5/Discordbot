@@ -213,6 +213,27 @@ class RiotAPI:
         
         logger.warning(f"⚠️ Account not found after trying routings: {game_name}#{tag_line}")
         return None
+
+    async def get_puuid_by_riot_id(self, game_name: str, tag_line: str, region: Optional[str] = None) -> Optional[str]:
+        """Compatibility helper used by HEXBET commands.
+
+        Accepts either a short region code (euw, na, kr) or platform route (euw1, na1, kr)
+        and returns the account PUUID.
+        """
+        normalized_region = (region or "").lower().strip()
+        if normalized_region in PLATFORM_ROUTES.values():
+            normalized_region = platform_to_region(normalized_region)
+
+        account = await self.get_account_by_riot_id(game_name, tag_line, normalized_region or None)
+        if not account:
+            return None
+
+        puuid = account.get('puuid')
+        if not puuid:
+            logger.warning("⚠️ Account response missing puuid for %s#%s", game_name, tag_line)
+            return None
+
+        return puuid
     
     async def find_summoner_region(self, puuid: str, retries: int = 2) -> Optional[str]:
         """Auto-detect which region a summoner plays on - uses routing endpoints"""
