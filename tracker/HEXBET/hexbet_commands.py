@@ -1928,6 +1928,7 @@ class Hexbet(commands.Cog):
             p['lp'] = lp
             p['wins'] = wins
             p['losses'] = losses
+            p['has_api_rank_data'] = bool(stats)
             games = wins + losses
 
             # Anti-smurf heuristic marker used in embed transparency.
@@ -2030,9 +2031,10 @@ class Hexbet(commands.Cog):
         else:
             avg_division = 'I'
         
-        # Apply to ALL streamer mode players in lobby (balanced to lobby average)
+        # Apply only to streamer-mode players without usable API rank data.
+        # If API returned rank stats for hidden-name players, keep those real values.
         for p in all_players:
-            if p.get('streamer_mode', False):
+            if p.get('streamer_mode', False) and not p.get('has_api_rank_data', False):
                 p['wr'] = avg_wr
                 p['lp'] = int(avg_lp)
                 p['tier'] = avg_tier
@@ -4886,18 +4888,18 @@ These players will now appear more frequently in betting matches!"""
             logger.error(f"Error in hxplayer: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
-    @app_commands.command(name="hxspectate", description="Monitor a player and prioritize posting their live game")
+    def _is_staff_or_admin(self, interaction: discord.Interaction) -> bool:
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        user_role_ids = [role.id for role in interaction.user.roles]
+        return staff_role_id in user_role_ids or admin_role_id in user_role_ids
+
+    @app_commands.command(name="hxspectate", description="Start monitoring a player and prioritize posting their live game")
     @app_commands.describe(
-        action="start/stop/list monitoring",
         name="Player display name or RiotID (gameName#tagLine)",
         platform="Platform shard (euw1, eun1, na1, kr...)"
     )
     @app_commands.choices(
-        action=[
-            app_commands.Choice(name="Start", value="start"),
-            app_commands.Choice(name="Stop", value="stop"),
-            app_commands.Choice(name="List", value="list"),
-        ],
         platform=[
             app_commands.Choice(name="EUW", value="euw1"),
             app_commands.Choice(name="EUNE", value="eun1"),
@@ -4912,47 +4914,18 @@ These players will now appear more frequently in betting matches!"""
             app_commands.Choice(name="JP", value="jp1"),
         ],
     )
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def hxspectate(
-        self,
-        interaction: discord.Interaction,
-        action: str = "start",
-        name: Optional[str] = None,
-        platform: str = "euw1",
-    ):
-        await interaction.response.defer(ephemeral=True)
+    async def hxspectate(self, interaction: discord.Interaction, name: str, platform: str = "euw1"):
+        if not self._is_staff_or_admin(interaction):
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
 
+        await interaction.response.defer(ephemeral=True)
         guild_id = interaction.guild_id
         if not guild_id:
             await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
             return
 
-        if action == "list":
-            targets = [
-                t for t in self.spectate_targets.values() if t.get('guild_id') == guild_id
-            ]
-            if not targets:
-                await interaction.followup.send("ℹ️ No active spectate monitors in this server.", ephemeral=True)
-                return
-
-            lines = [f"• **{t['name']}** on `{t['platform']}`" for t in targets]
-            await interaction.followup.send("📡 Active hxspectate monitors:\n" + "\n".join(lines), ephemeral=True)
-            return
-
-        if not name:
-            await interaction.followup.send("❌ `name` is required for start/stop.", ephemeral=True)
-            return
-
         key = (guild_id, name.lower().strip(), platform.lower().strip())
-
-        if action == "stop":
-            removed = self.spectate_targets.pop(key, None)
-            if removed:
-                await interaction.followup.send(f"🛑 Stopped monitoring **{name}** on `{platform}`.", ephemeral=True)
-            else:
-                await interaction.followup.send(f"ℹ️ Monitor not found for **{name}** on `{platform}`.", ephemeral=True)
-            return
-
         self.spectate_targets[key] = {
             'guild_id': guild_id,
             'name': name.strip(),
@@ -4965,6 +4938,77 @@ These players will now appear more frequently in betting matches!"""
             f"✅ Monitoring **{name}** on `{platform}`. If they are in game, HEXBET will prioritize posting that match.",
             ephemeral=True,
         )
+
+    @app_commands.command(name="hxspectatestop", description="Stop monitoring a player")
+    @app_commands.describe(
+        name="Player display name or RiotID (gameName#tagLine)",
+        platform="Optional: stop only this platform (default: stop all platforms for that name)"
+    )
+    @app_commands.choices(
+        platform=[
+            app_commands.Choice(name="EUW", value="euw1"),
+            app_commands.Choice(name="EUNE", value="eun1"),
+            app_commands.Choice(name="NA", value="na1"),
+            app_commands.Choice(name="KR", value="kr"),
+            app_commands.Choice(name="BR", value="br1"),
+            app_commands.Choice(name="LAN", value="la1"),
+            app_commands.Choice(name="LAS", value="la2"),
+            app_commands.Choice(name="OCE", value="oc1"),
+            app_commands.Choice(name="TR", value="tr1"),
+            app_commands.Choice(name="RU", value="ru"),
+            app_commands.Choice(name="JP", value="jp1"),
+        ],
+    )
+    async def hxspectatestop(self, interaction: discord.Interaction, name: str, platform: Optional[str] = None):
+        if not self._is_staff_or_admin(interaction):
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild_id
+        if not guild_id:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        removed = 0
+        if platform:
+            key = (guild_id, name.lower().strip(), platform.lower().strip())
+            if self.spectate_targets.pop(key, None):
+                removed = 1
+        else:
+            keys_to_remove = [
+                key for key, target in self.spectate_targets.items()
+                if target.get('guild_id') == guild_id and target.get('name', '').lower().strip() == name.lower().strip()
+            ]
+            for key in keys_to_remove:
+                self.spectate_targets.pop(key, None)
+            removed = len(keys_to_remove)
+
+        if removed:
+            scope = f" on `{platform}`" if platform else " on all platforms"
+            await interaction.followup.send(f"🛑 Stopped monitoring **{name}**{scope}.", ephemeral=True)
+        else:
+            await interaction.followup.send(f"ℹ️ Monitor not found for **{name}**.", ephemeral=True)
+
+    @app_commands.command(name="hxspectatelist", description="List active spectate monitors")
+    async def hxspectatelist(self, interaction: discord.Interaction):
+        if not self._is_staff_or_admin(interaction):
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild_id
+        if not guild_id:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        targets = [t for t in self.spectate_targets.values() if t.get('guild_id') == guild_id]
+        if not targets:
+            await interaction.followup.send("ℹ️ No active spectate monitors in this server.", ephemeral=True)
+            return
+
+        lines = [f"• **{t['name']}** on `{t['platform']}`" for t in targets]
+        await interaction.followup.send("📡 Active hxspectate monitors:\n" + "\n".join(lines), ephemeral=True)
 
     @hxpost.error
     async def hxpost_error(self, interaction: discord.Interaction, error):

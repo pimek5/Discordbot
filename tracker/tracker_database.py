@@ -388,7 +388,7 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False, betting_window_minutes: int = 2, guild_id: int = None) -> int:
+    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False, betting_window_minutes: int = 3, guild_id: int = None) -> int:
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
