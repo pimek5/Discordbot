@@ -1,1 +1,0 @@
-"""LoLBets core package."""
