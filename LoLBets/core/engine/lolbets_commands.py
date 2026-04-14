@@ -1,0 +1,6783 @@
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+import random
+import asyncio
+import aiohttp
+import logging
+import time
+import itertools
+import os
+from typing import Optional, List, Tuple
+
+from tracker_database import TrackerDatabase
+from riot_api import RiotAPI, platform_to_region, CHAMPION_ID_TO_NAME
+from LoLBets.core.engine.config import (
+    ROLE_EMOJIS as CFG_ROLE_EMOJIS,
+    RANK_EMOJIS as CFG_RANK_EMOJIS,
+    CHAMPION_EMOJIS as CFG_CHAMPION_EMOJIS,
+)
+from LoLBets.core.engine.pro_players import (
+    load_pro_players_from_api, 
+    is_pro_player, 
+    is_streamer_player,
+    get_pro_emoji,
+    get_streamer_emoji,
+    get_player_badge_emoji
+)
+from LoLBets.core.engine.lolpros_scraper import check_and_verify_player
+from LoLBets.core.engine.dpm_scraper import scrape_dpm_pro_accounts
+from LoLBets.core.engine.lolbets_config_database import get_hexbet_config_db
+from LoLBets.core.engine.lolbets_webhooks import get_webhook_manager
+from LoLBets.core.engine.lolbets_hub_menu import HexbetMainMenuView
+from LoLBets.core.engine.lolbets_achievements import AchievementChecker, UserAchievements
+from LoLBets.core.engine.lolbets_history_filter import BetHistoryView, BetAnalyticsView
+from LoLBets.core.engine.lolbets_h2h_stats import HeadToHeadAnalyzer, H2HView
+
+logger = logging.getLogger('lolbets')
+
+# Global cache for champion roles from ddragon
+CHAMP_ROLES_CACHE = {}
+
+async def load_champion_roles_from_ddragon():
+    """Load champion position data from Data Dragon API - called at bot startup"""
+    global CHAMP_ROLES_CACHE
+    try:
+        # Get latest version
+        async with aiohttp.ClientSession() as session:
+            async with session.get('https://ddragon.leagueoflegends.com/api/versions.json') as resp:
+                versions = await resp.json()
+                latest_version = versions[0]
+            
+            # Get champion data - this now includes role information
+            champion_url = f'https://ddragon.leagueoflegends.com/cdn/{latest_version}/data/en_US/champion.json'
+            async with session.get(champion_url) as resp:
+                data = await resp.json()
+                
+                # Build role mappings from ddragon
+                # Note: ddragon provides 'classes' or similar tags, we'll use primary position
+                for champ_name, champ_data in data['data'].items():
+                    try:
+                        champ_id = int(champ_data['key'])
+                        # Store champion data for reference
+                        CHAMP_ROLES_CACHE[champ_id] = {
+                            'name': champ_name,
+                            'title': champ_data.get('title', ''),
+                            'tags': champ_data.get('tags', [])  # Classes/tags from ddragon
+                        }
+                    except (KeyError, ValueError):
+                        continue
+        
+        logger.info(f"✅ Loaded {len(CHAMP_ROLES_CACHE)} champions from ddragon")
+        logger.info(f"📊 Sample: {list(CHAMP_ROLES_CACHE.items())[:3]}")  # Log first 3 for debugging
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to load champion data from ddragon: {e}")
+        return False
+
+# Default fallback channel IDs (used if guild not configured)
+DEFAULT_BET_CHANNEL_ID = 1398977064261910580
+DEFAULT_LEADERBOARD_CHANNEL_ID = 1398985421014306856
+DEFAULT_BET_LOGS_CHANNEL_ID = 1398986567988674704
+
+# Task intervals
+FEATURED_INTERVAL = 5  # minutes - how often to check for and post new matches (faster to maintain 3 slots)
+LEADERBOARD_INTERVAL = 10  # minutes - how often to refresh leaderboard
+SETTLE_CHECK_SECONDS = 120  # 2 minutes - how often to check if matches are ready to settle
+CLEANUP_INTERVAL = 1  # minute - how often to delete old settled bets
+MIN_MINUTES_BEFORE_SETTLE = 12  # 12 minutes - minimum game duration before settlement check
+POLL_INTERVAL_SECONDS = 300  # 5 minutes - avoid rate limits
+MAX_PLAYERS_TO_SCAN = 100  # Maximum players to scan per featured check (increased to find more games)
+
+ROLE_LABELS = [
+    ("Top", CFG_ROLE_EMOJIS.get('TOP', '🗻')),
+    ("Jungle", CFG_ROLE_EMOJIS.get('JUNGLE', '🌿')),
+    ("Mid", CFG_ROLE_EMOJIS.get('MIDDLE', '🌀')),
+    ("ADC", CFG_ROLE_EMOJIS.get('BOTTOM', '🎯')),
+    ("Support", CFG_ROLE_EMOJIS.get('UTILITY', '🛡️')),
+]
+
+TIER_SCORE = {
+    'IRON': 1,
+    'BRONZE': 2,
+    'SILVER': 3,
+    'GOLD': 4,
+    'PLATINUM': 5,
+    'EMERALD': 6,
+    'DIAMOND': 7,
+    'MASTER': 8,
+    'GRANDMASTER': 9,
+    'CHALLENGER': 10,
+    'UNRANKED': 1,
+}
+
+DIVISION_SCORE = {
+    'IV': 0.1,
+    'III': 0.2,
+    'II': 0.3,
+    'I': 0.4,
+}
+
+
+def region_to_riot_region(region: str) -> str:
+    """Convert region code to riot region for API calls"""
+    riot_region_map = {
+        'br': 'americas', 'eune': 'europe', 'euw': 'europe',
+        'jp': 'asia', 'kr': 'asia', 'lan': 'americas', 'las': 'americas',
+        'na': 'americas', 'oce': 'sea', 'tr': 'europe', 'ru': 'europe'
+    }
+    return riot_region_map.get(region.lower(), 'europe')
+
+
+def pick_rank_entry(stats: List[dict]) -> Tuple[str, str, float]:
+    if not stats:
+        return 'UNRANKED', '', 50.0
+    solo = [s for s in stats if s.get('queueType') == 'RANKED_SOLO_5x5']
+    entry = solo[0] if solo else stats[0]
+    wins = entry.get('wins', 0)
+    losses = entry.get('losses', 0)
+    games = wins + losses
+    wr = round((wins / games) * 100, 1) if games else 50.0
+    return entry.get('tier', 'UNRANKED').upper(), entry.get('rank', '').upper(), wr
+
+
+def odds_from_scores(score_blue: float, score_red: float, confidence: float = 1.0) -> Tuple[float, float]:
+    total = max(score_blue + score_red, 0.01)
+    prob_blue = score_blue / total
+
+    # Confidence-aware calibration: low confidence pulls probability toward 50/50.
+    confidence = min(max(confidence, 0.45), 1.0)
+    edge = prob_blue - 0.5
+    calibrated_edge = edge * confidence
+    prob_blue = 0.5 + calibrated_edge
+
+    # Dynamic bounds: allow stronger favorites only when edge is clear.
+    max_prob = min(0.78, 0.62 + abs(calibrated_edge) * 0.8)
+    min_prob = 1 - max_prob
+    prob_blue = min(max(prob_blue, min_prob), max_prob)
+    prob_red = 1 - prob_blue
+
+    # Tiny bookmaker margin to avoid flat 1.00 edge cases.
+    margin = 1.015
+    odds_blue = round(1 / prob_blue, 2)
+    odds_red = round(1 / prob_red, 2)
+    odds_blue = round(max(1.2, odds_blue / margin), 2)
+    odds_red = round(max(1.2, odds_red / margin), 2)
+    return odds_blue, odds_red
+
+
+def implied_blue_probability(odds_blue: float, odds_red: float) -> float:
+    """Convert two-way decimal odds into normalized blue-side implied probability."""
+    inv_blue = 1.0 / max(odds_blue, 1.01)
+    inv_red = 1.0 / max(odds_red, 1.01)
+    denom = inv_blue + inv_red
+    if denom <= 0:
+        return 0.5
+    return inv_blue / denom
+
+
+def odds_from_probability(prob_blue: float, margin: float = 1.02) -> Tuple[float, float]:
+    """Convert a blue win probability into two-way decimal odds with bookmaker margin."""
+    prob_blue = min(max(prob_blue, 0.12), 0.88)
+    prob_red = 1.0 - prob_blue
+
+    odds_blue = round(max(1.15, min(8.0, (1.0 / prob_blue) / margin)), 2)
+    odds_red = round(max(1.15, min(8.0, (1.0 / prob_red) / margin)), 2)
+    return odds_blue, odds_red
+
+
+def rank_emoji(tier: str) -> str:
+    """Return configured rank emoji."""
+    return CFG_RANK_EMOJIS.get(tier.upper(), '')
+
+
+def build_opgg_summoner_url(region: str, riot_id: str) -> str:
+    """Build OP.GG summoner profile URL in modern format: /pl/lol/summoners/{region}/{name-tag}."""
+    import urllib.parse
+
+    if '#' in riot_id:
+        game_name, tag_line = riot_id.split('#', 1)
+    else:
+        game_name, tag_line = riot_id, ""
+
+    slug = f"{game_name}-{tag_line}" if tag_line else game_name
+    encoded_slug = urllib.parse.quote(slug, safe='')
+    return f"https://op.gg/pl/lol/summoners/{region}/{encoded_slug}"
+
+
+def build_opgg_multisearch_url(region: str, riot_ids: List[str]) -> str:
+    """Build OP.GG multisearch URL with URL-encoded summoners query."""
+    import urllib.parse
+
+    summoners_param = ','.join(riot_ids)
+    # OP.GG accepts '+' for spaces in query and expects encoded '#', commas, and unicode.
+    summoners_encoded = urllib.parse.quote_plus(summoners_param, safe='')
+    return f"https://op.gg/pl/lol/multisearch/{region}?summoners={summoners_encoded}"
+
+
+class Hexbet(commands.Cog):
+    
+    def __init__(self, bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
+        self.bot = bot
+        self.riot_api = riot_api
+        self.db = db
+        self.config_db = get_hexbet_config_db()
+        self.webhook_manager = get_webhook_manager()
+        self._gm_cutoff_cache: dict[str, tuple[int, float]] = {}
+        self._gm_cutoff_ttl_seconds = 300
+        self.primary_guild_id = int(os.getenv('DISCORD_GUILD_ID', '0') or 0)
+        self.spectate_targets = {}
+        self.spectate_seen_games = set()
+        self.db.ensure_hexbet_tables()
+        self.featured_task.start()
+        self.leaderboard_task.start()
+        self.settle_task.start()
+        self.cleanup_task.start()
+        self.check_embed_task.start()
+        self.live_score_update_task.start()  # Update live odds every 5 minutes
+        self.pool_update_task.start()  # Auto-update player pool every hour
+        self.spectate_task.start()  # Monitor watched players and prioritize their games
+        self.bot.loop.create_task(self._ensure_champions())
+        self.bot.loop.create_task(self._restore_persistent_views())
+        self.bot.loop.create_task(self._load_pro_players())
+        self.bot.loop.create_task(self._load_champion_roles())  # Load champion roles from ddragon
+
+    async def _get_grandmaster_cutoff_lp(self, region: str) -> Optional[int]:
+        """Return current Grandmaster cutoff LP (minimum LP in GM) for a region."""
+        region_key = (region or '').lower()
+        if not region_key:
+            return None
+
+        now_ts = time.time()
+        cached = self._gm_cutoff_cache.get(region_key)
+        if cached:
+            cached_cutoff, cached_at = cached
+            if (now_ts - cached_at) < self._gm_cutoff_ttl_seconds:
+                return cached_cutoff
+
+        gm_data = await self.riot_api.get_grandmaster_league(region_key)
+        entries = gm_data.get('entries', []) if gm_data else []
+        lp_values = []
+
+        for entry in entries:
+            try:
+                lp_values.append(int(entry.get('leaguePoints', 0)))
+            except (TypeError, ValueError):
+                continue
+
+        if not lp_values:
+            return None
+
+        cutoff_lp = min(lp_values)
+        self._gm_cutoff_cache[region_key] = (cutoff_lp, now_ts)
+        return cutoff_lp
+    
+    async def _restore_persistent_views(self):
+        """Restore persistent views for open matches after bot restart"""
+        await self.bot.wait_until_ready()
+        try:
+            matches = self.db.get_open_matches()
+            for match in matches:
+                match_id = match['id']
+                blue_team = match.get('blue_team', {})
+                red_team = match.get('red_team', {})
+                if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                    odds_blue = blue_team.get('odds', 1.5)
+                    odds_red = red_team.get('odds', 1.5)
+                    blue_players = blue_team.get('players', [])
+                    red_players = red_team.get('players', [])
+                    platform = match.get('platform', 'euw1')
+                    view = BetView(match_id, odds_blue, odds_red, self, platform, blue_players, red_players)
+                    self.bot.add_view(view)
+            logger.info(f"✅ Restored {len(matches)} persistent views")
+        except Exception as e:
+            logger.error(f"Failed to restore persistent views: {e}")
+
+    async def _ensure_champions(self):
+        try:
+            if not CHAMPION_ID_TO_NAME:
+                from riot_api import load_champion_data
+                await load_champion_data()
+        except Exception as e:
+            logger.warning(f"⚠️ Could not pre-load champion data: {e}")
+    
+    async def _load_pro_players(self):
+        """Load pro players database on startup"""
+        await self.bot.wait_until_ready()
+        try:
+            await load_pro_players_from_api()
+            logger.info("✅ Loaded pro players database")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load pro players: {e}")
+    
+    async def _load_champion_roles(self):
+        """Load champion roles from ddragon on startup"""
+        await self.bot.wait_until_ready()
+        try:
+            await load_champion_roles_from_ddragon()
+            logger.info("✅ Loaded champion roles from ddragon")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load champion roles: {e}")
+
+    def _has_staff_access(self, interaction: discord.Interaction) -> bool:
+        """Allow trusted HEXBET actions for configured roles or guild managers/admins."""
+        member = interaction.user
+        guild_perms = getattr(member, 'guild_permissions', None)
+        if guild_perms and (guild_perms.administrator or guild_perms.manage_guild):
+            return True
+
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        role_ids = {role.id for role in getattr(member, 'roles', [])}
+        return bool({staff_role_id, admin_role_id} & role_ids)
+
+    def _balanced_odds(self, blue_players: List[dict], red_players: List[dict], bets: Optional[List[dict]] = None) -> Tuple[float, float]:
+        """Price odds from team strength and betting flow to avoid persistent ~2.00 / ~2.00 lines."""
+        score_blue = self._team_score(blue_players)
+        score_red = self._team_score(red_players)
+        confidence = self._odds_confidence(blue_players, red_players)
+
+        base_blue_odds, base_red_odds = odds_from_scores(score_blue, score_red, confidence=confidence)
+        prob_blue = implied_blue_probability(base_blue_odds, base_red_odds)
+
+        # Keep a minimum edge toward the stronger side so equally-priced lines are rarer.
+        stronger_blue = score_blue >= score_red
+        min_edge = 0.015 + (0.03 * confidence)
+        edge = prob_blue - 0.5
+        if abs(edge) < min_edge:
+            prob_blue = 0.5 + (min_edge if stronger_blue else -min_edge)
+
+        # Market pressure: if one side attracts most stake, trim its probability slightly.
+        if bets:
+            blue_stake = sum(float(b.get('amount', 0) or 0) for b in bets if b.get('side') == 'blue')
+            red_stake = sum(float(b.get('amount', 0) or 0) for b in bets if b.get('side') == 'red')
+            total_stake = blue_stake + red_stake
+
+            if total_stake > 0:
+                blue_share = blue_stake / total_stake
+                market_edge = 0.5 - blue_share
+                liquidity = min(1.0, total_stake / 3000.0)
+                market_strength = 0.16 * liquidity
+                prob_blue += market_edge * market_strength
+
+        # Final clamp by confidence to avoid extreme prices on noisy data.
+        max_prob = 0.83 if confidence >= 0.8 else 0.78
+        min_prob = 1.0 - max_prob
+        prob_blue = min(max(prob_blue, min_prob), max_prob)
+
+        margin = 1.018 + ((1.0 - confidence) * 0.02)
+        return odds_from_probability(prob_blue, margin=margin)
+
+    async def _rebalance_match_odds(self, match_id: int):
+        """Recompute open-match odds using team strength and current betting distribution."""
+        match = next((m for m in self.db.get_open_matches(limit=20) if m.get('id') == match_id), None)
+        if not match:
+            return
+
+        blue_team = match.get('blue_team', {})
+        red_team = match.get('red_team', {})
+        if not isinstance(blue_team, dict) or not isinstance(red_team, dict):
+            return
+
+        blue_players = blue_team.get('players', [])
+        red_players = red_team.get('players', [])
+        bets = self.db.get_bets_for_match(match_id)
+
+        odds_blue, odds_red = self._balanced_odds(blue_players, red_players, bets=bets)
+        self.db.update_match_odds(match_id, odds_blue, odds_red)
+
+    def _phase_tag_weight(self, tag: str, game_minute: float) -> float:
+        """Return champion-class weight by game phase (early/mid/late)."""
+        t = (tag or '').strip().lower()
+        minute = max(0.0, game_minute)
+
+        if minute < 12:
+            early = {
+                'assassin': 1.20,
+                'fighter': 1.12,
+                'mage': 1.02,
+                'tank': 0.95,
+                'marksman': 0.90,
+                'support': 0.94,
+            }
+            return early.get(t, 1.0)
+
+        if minute < 25:
+            mid = {
+                'assassin': 1.05,
+                'fighter': 1.06,
+                'mage': 1.08,
+                'tank': 1.02,
+                'marksman': 1.03,
+                'support': 1.00,
+            }
+            return mid.get(t, 1.0)
+
+        late = {
+            'assassin': 0.92,
+            'fighter': 1.02,
+            'mage': 1.12,
+            'tank': 1.10,
+            'marksman': 1.18,
+            'support': 1.06,
+        }
+        return late.get(t, 1.0)
+
+    def _team_phase_strength(self, players: List[dict], game_minute: float) -> float:
+        """Estimate team strength for current phase from champion tags."""
+        if not players:
+            return 1.0
+
+        total = 0.0
+        counted = 0
+        for p in players:
+            champ_id = p.get('championId')
+            champ_meta = CHAMP_ROLES_CACHE.get(champ_id, {}) if champ_id is not None else {}
+            tags = champ_meta.get('tags', []) if isinstance(champ_meta, dict) else []
+
+            if not tags:
+                # Fallback neutral value if champion tags are unavailable.
+                total += 1.0
+                counted += 1
+                continue
+
+            weights = [self._phase_tag_weight(tag, game_minute) for tag in tags]
+            if not weights:
+                continue
+            total += sum(weights) / len(weights)
+            counted += 1
+
+        if counted == 0:
+            return 1.0
+        return total / counted
+
+    def _apply_live_game_drift(self, blue_players: List[dict], red_players: List[dict], odds_blue: float, odds_red: float, game_minute: float) -> Tuple[float, float]:
+        """Adjust odds with in-game phase dynamics based on comp scaling and elapsed time."""
+        base_prob_blue = implied_blue_probability(odds_blue, odds_red)
+        base_edge = base_prob_blue - 0.5
+
+        blue_phase = self._team_phase_strength(blue_players, game_minute)
+        red_phase = self._team_phase_strength(red_players, game_minute)
+        phase_edge = blue_phase - red_phase
+
+        # As game progresses, pre-game edge gets slightly stronger and comp scaling matters more.
+        time_factor = min(1.0, max(0.0, game_minute / 35.0))
+        prob_blue = 0.5 + (base_edge * (1.0 + 0.35 * time_factor)) + (phase_edge * (0.06 + 0.06 * time_factor))
+
+        # Keep odds realistic and avoid overreaction.
+        prob_blue = min(max(prob_blue, 0.14), 0.86)
+        margin = 1.015
+        return odds_from_probability(prob_blue, margin=margin)
+    
+    def _get_channel_id(self, guild_id: int, channel_type: str) -> int:
+        """Get channel ID from config or fallback to default"""
+        config = self.config_db.get_guild_config(guild_id)
+        if config:
+            if channel_type == 'bet':
+                return config.get('bet_channel_id') or DEFAULT_BET_CHANNEL_ID
+            elif channel_type == 'leaderboard':
+                return config.get('leaderboard_channel_id') or DEFAULT_LEADERBOARD_CHANNEL_ID
+            elif channel_type == 'logs':
+                return config.get('bet_logs_channel_id') or DEFAULT_BET_LOGS_CHANNEL_ID
+        # Fallback to defaults
+        if channel_type == 'bet':
+            return DEFAULT_BET_CHANNEL_ID
+        elif channel_type == 'leaderboard':
+            return DEFAULT_LEADERBOARD_CHANNEL_ID
+        elif channel_type == 'logs':
+            return DEFAULT_BET_LOGS_CHANNEL_ID
+        return DEFAULT_BET_CHANNEL_ID
+
+    async def cleanup_old_bets(self):
+        """Delete settled matches and their bets immediately"""
+        try:
+            # Get ALL settled matches (no time filter - delete immediately)
+            old_matches = self.db.get_old_settled_matches(minutes=0)
+            
+            logger.info(f"🔍 Cleanup check: found {len(old_matches)} settled matches")
+            
+            if old_matches:
+                logger.info(f"🗑️ Found {len(old_matches)} settled matches to cleanup")
+                
+                # Delete Discord messages based on match type and age
+                for match in old_matches:
+                    match_id = match.get('id')
+                    channel_id = match.get('channel_id')
+                    message_id = match.get('message_id')
+                    winner = match.get('winner')
+                    updated_at = match.get('updated_at')
+                    
+                    logger.info(f"🗑️ Processing match {match_id}: winner={winner}, updated_at={updated_at}")
+                    
+                    # Calculate time since settlement
+                    from datetime import datetime, timezone
+                    now = datetime.now(timezone.utc)
+                    # Make updated_at timezone-aware if it's naive
+                    if updated_at.tzinfo is None:
+                        updated_at = updated_at.replace(tzinfo=timezone.utc)
+                    time_since_settlement = (now - updated_at).total_seconds() / 60  # in minutes
+                    
+                    should_delete = False
+                    
+                    # Remakes and cancelled matches - delete immediately
+                    if winner in ['refunded', 'cancel', 'cancelled']:
+                        should_delete = True
+                    # Normal settled matches (blue/red) - delete after 3 minutes
+                    elif winner in ['blue', 'red'] and time_since_settlement >= 3:
+                        should_delete = True
+                    
+                    if should_delete and channel_id and message_id:
+                        # Delete from all guilds (multi-guild support)
+                        match_messages = self.db.get_match_messages(match_id)
+                        if match_messages:
+                            for guild_id, ch_id, msg_id in match_messages:
+                                try:
+                                    channel = self.bot.get_channel(ch_id)
+                                    if channel:
+                                        message = await channel.fetch_message(msg_id)
+                                        await message.delete()
+                                        logger.info(f"✅ Deleted {winner} match message {msg_id} in guild {guild_id} after {time_since_settlement:.1f} minutes")
+                                    else:
+                                        logger.warning(f"⚠️ Channel {ch_id} not found in guild {guild_id}")
+                                except discord.NotFound:
+                                    logger.info(f"ℹ️ Message {msg_id} already deleted in guild {guild_id}")
+                                except Exception as e:
+                                    logger.error(f"❌ Failed to delete message {msg_id} in guild {guild_id}: {e}")
+                        else:
+                            # Fallback to old single message_id system
+                            try:
+                                channel = self.bot.get_channel(channel_id)
+                                if channel:
+                                    message = await channel.fetch_message(message_id)
+                                    await message.delete()
+                                    logger.info(f"✅ Deleted {winner} match message {message_id} after {time_since_settlement:.1f} minutes")
+                                else:
+                                    logger.warning(f"⚠️ Channel {channel_id} not found")
+                            except discord.NotFound:
+                                logger.info(f"ℹ️ Message {message_id} already deleted")
+                            except Exception as e:
+                                logger.error(f"❌ Failed to delete message {message_id}: {e}")
+                    else:
+                        if not should_delete:
+                            logger.info(f"ℹ️ Keeping message for match {match_id} (winner: {winner}, age: {time_since_settlement:.1f} min)")
+                        else:
+                            logger.warning(f"⚠️ Match {match_id} has no channel_id or message_id")
+            
+            # Now delete from database (no time filter)
+            deleted_matches, deleted_bets = self.db.cleanup_old_bets(minutes=0)
+            logger.info(f"🗑️ Cleanup result: {deleted_matches} matches, {deleted_bets} bets deleted from DB")
+            
+            if deleted_matches == 0 and deleted_bets == 0:
+                logger.info("ℹ️ No settled matches to cleanup")
+        except Exception as e:
+            logger.error(f"❌ Failed to cleanup old bets: {e}", exc_info=True)
+
+    def cog_unload(self):
+        self.featured_task.cancel()
+        self.leaderboard_task.cancel()
+        self.settle_task.cancel()
+        self.cleanup_task.cancel()
+        self.check_embed_task.cancel()
+        self.live_score_update_task.cancel()
+        self.pool_update_task.cancel()
+        self.spectate_task.cancel()
+
+    @commands.Cog.listener()
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
+        """If a HEXBET message is deleted on the primary guild, delete mirrors on all other guilds."""
+        if not payload.guild_id or not payload.message_id:
+            return
+
+        if self.primary_guild_id and payload.guild_id != self.primary_guild_id:
+            return
+
+        match_id = await asyncio.to_thread(
+            self.db.get_match_id_by_message,
+            payload.guild_id,
+            payload.message_id,
+        )
+        if not match_id:
+            return
+
+        match_messages = await asyncio.to_thread(self.db.get_match_messages, match_id)
+        if not match_messages:
+            return
+
+        logger.info(f"🧹 Primary HEXBET message deleted (match={match_id}). Propagating to mirrored guilds...")
+        for guild_id, channel_id, message_id in match_messages:
+            if guild_id == payload.guild_id and message_id == payload.message_id:
+                continue
+
+            try:
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    continue
+                msg = await channel.fetch_message(message_id)
+                await msg.delete()
+                logger.info(f"✅ Deleted mirrored HEXBET message {message_id} in guild {guild_id}")
+            except discord.NotFound:
+                logger.info(f"ℹ️ Mirrored HEXBET message {message_id} in guild {guild_id} already removed")
+            except Exception as exc:
+                logger.warning(f"⚠️ Failed to delete mirrored HEXBET message {message_id} in guild {guild_id}: {exc}")
+
+        await asyncio.to_thread(self.db.clear_match_messages, match_id)
+
+    async def _create_priority_match_from_game(
+        self,
+        guild_id: int,
+        platform: str,
+        region: str,
+        game_data: dict,
+        featured_player: str,
+        force_non_special: bool,
+    ) -> bool:
+        bet_channel_id = self._get_channel_id(guild_id, 'bet')
+        channel = self.bot.get_channel(bet_channel_id)
+        if not channel:
+            logger.error(f"❌ Bet channel {bet_channel_id} not found for guild {guild_id}")
+            return False
+
+        game_id = game_data.get('gameId')
+        if not game_id:
+            return False
+
+        open_matches = self.db.get_open_matches()
+        if any(m.get('game_id') == game_id for m in open_matches):
+            logger.info(f"ℹ️ Game {game_id} is already posted")
+            return False
+
+        # Prioritize this game by replacing an open match on the same guild/platform.
+        for match in open_matches:
+            if match.get('guild_id') != guild_id:
+                continue
+            if match.get('platform') != platform:
+                continue
+
+            self.db.refund_match(match['id'])
+
+            channel_id = match.get('channel_id')
+            message_id = match.get('message_id')
+            if channel_id and message_id:
+                try:
+                    old_channel = self.bot.get_channel(channel_id)
+                    if old_channel:
+                        old_msg = await old_channel.fetch_message(message_id)
+                        await old_msg.delete()
+                except Exception:
+                    pass
+            break
+
+        blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+        red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+
+        blue_ordered = self._assign_roles(blue_team)
+        red_ordered = self._assign_roles(red_team)
+
+        await self._enrich_players(blue_ordered, region)
+        await self._enrich_players(red_ordered, region)
+        self._apply_lobby_average(blue_ordered + red_ordered)
+
+        if all(p.get('streamer_mode', False) for p in blue_ordered) or all(p.get('streamer_mode', False) for p in red_ordered):
+            logger.info(f"⏭️ Skipping spectate game {game_id} - one team fully streamer mode")
+            return False
+
+        odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
+
+        chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+        chance_red = round(100 - chance_blue, 1)
+
+        all_players = blue_ordered + red_ordered
+        avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
+        gm_cutoff_lp = await self._get_grandmaster_cutoff_lp(region)
+        meets_special_requirements = gm_cutoff_lp is not None and avg_lp >= gm_cutoff_lp
+        is_special_bet = (not force_non_special) and meets_special_requirements
+
+        match_id = self.db.create_hexbet_match(
+            game_id,
+            platform,
+            bet_channel_id,
+            {'players': blue_ordered, 'odds': odds_blue},
+            {'players': red_ordered, 'odds': odds_red},
+            game_data.get('gameStartTime', 0),
+            special_bet=is_special_bet,
+            guild_id=guild_id,
+        )
+        if not match_id:
+            return False
+
+        embed = self._build_embed(
+            game_id,
+            platform,
+            blue_ordered,
+            red_ordered,
+            odds_blue,
+            odds_red,
+            chance_blue,
+            chance_red,
+            featured_player=featured_player,
+            match_id=match_id,
+            game_start_at=game_data.get('gameStartTime'),
+        )
+        msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
+        self.db.set_match_message(match_id, msg.id)
+
+        logger.info(
+            f"✅ Spectate posted priority game {game_id} for {featured_player} (special={is_special_bet}, meets_requirements={meets_special_requirements})"
+        )
+        return True
+
+    @tasks.loop(minutes=1)
+    async def spectate_task(self):
+        if not self.spectate_targets:
+            return
+
+        region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr', 'br1': 'br', 'la1': 'lan', 'la2': 'las', 'oc1': 'oce', 'tr1': 'tr', 'ru': 'ru', 'jp1': 'jp'}
+
+        for target in list(self.spectate_targets.values()):
+            guild_id = target['guild_id']
+            platform = target['platform']
+            region = region_map.get(platform, 'euw')
+            query_name = target['name']
+
+            try:
+                riot_lookup = query_name
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT riot_id FROM hexbet_verified_players
+                    WHERE LOWER(player_name) = LOWER(%s)
+                    LIMIT 1
+                    """,
+                    (query_name,),
+                )
+                row = cur.fetchone()
+                cur.close()
+                self.db.return_connection(conn)
+                if row and row[0]:
+                    riot_lookup = row[0]
+
+                if '#' in riot_lookup:
+                    game_name, tag_line = riot_lookup.split('#', 1)
+                    puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line, platform)
+                else:
+                    summoner = await self.riot_api.get_summoner_by_name(riot_lookup, region)
+                    puuid = summoner.get('puuid') if summoner else None
+
+                if not puuid:
+                    continue
+
+                game_data = await self.riot_api.get_active_game(puuid, region)
+                if not game_data:
+                    continue
+
+                game_id = game_data.get('gameId')
+                if not game_id or game_id in self.spectate_seen_games:
+                    continue
+
+                posted = await self._create_priority_match_from_game(
+                    guild_id=guild_id,
+                    platform=platform,
+                    region=region,
+                    game_data=game_data,
+                    featured_player=riot_lookup,
+                    force_non_special=target.get('force_non_special', True),
+                )
+
+                if posted:
+                    self.spectate_seen_games.add(game_id)
+                    if len(self.spectate_seen_games) > 200:
+                        self.spectate_seen_games = set(list(self.spectate_seen_games)[-100:])
+            except Exception as exc:
+                logger.warning(f"⚠️ Spectate monitor error for {query_name}: {exc}")
+
+    @spectate_task.before_loop
+    async def before_spectate(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=FEATURED_INTERVAL)
+    async def featured_task(self):
+        try:
+            logger.info("🔄 Featured task running...")
+            # Try to fill all 3 slots if empty
+            open_count = self.db.count_open_matches()
+            logger.info(f"📋 Featured task: {open_count}/3 matches active")
+            
+            # Post games until we have 3, but max 5 attempts to find games
+            posts_this_run = 0
+            max_posts = 5
+            
+            while open_count < 3 and posts_this_run < max_posts:
+                logger.info(f"📝 Posting new game (attempt {posts_this_run + 1}/{max_posts}, {open_count}/3 active)...")
+                await self.post_random_featured_game()
+                open_count = self.db.count_open_matches()
+                posts_this_run += 1
+                
+                if open_count >= 3:
+                    logger.info("✅ Reached 3 active matches")
+                    break
+                
+                # Delay between posts to avoid rate limit
+                if posts_this_run < max_posts and open_count < 3:
+                    logger.info("⏳ Rate limit protection: waiting 2 seconds...")
+                    await asyncio.sleep(2)
+        except Exception as e:
+            logger.error(f"❌ Error in featured_task: {e}", exc_info=True)
+
+    @tasks.loop(minutes=LEADERBOARD_INTERVAL)
+    async def leaderboard_task(self):
+        try:
+            logger.info("📊 Leaderboard task running...")
+            await self.refresh_leaderboard_embed()
+        except Exception as e:
+            logger.error(f"❌ Error in leaderboard_task: {e}", exc_info=True)
+
+    @tasks.loop(seconds=SETTLE_CHECK_SECONDS)
+    async def settle_task(self):
+        try:
+            logger.info("⚖️ Settle task running...")
+            await self.try_settle_match()
+        except Exception as e:
+            logger.error(f"❌ Error in settle_task: {e}", exc_info=True)
+
+    @tasks.loop(minutes=CLEANUP_INTERVAL)
+    async def cleanup_task(self):
+        """Delete settled bets older than 1 minute"""
+        try:
+            logger.info("🗑️ Cleanup task running...")
+            await self.cleanup_old_bets()
+        except Exception as e:
+            logger.error(f"❌ Error in cleanup_task: {e}", exc_info=True)
+
+    @tasks.loop(minutes=1)
+    async def check_embed_task(self):
+        """Check if featured embed exists on channel, if not post new game. Also update game time."""
+        try:
+            logger.info("🔍 Checking if featured embed exists...")
+            # Get open matches (use higher limit to include all)
+            open_matches = self.db.get_open_matches(limit=10)
+            logger.info(f"📊 Found {len(open_matches)} open matches total")
+            
+            for m in open_matches:
+                logger.info(f"  - Match {m.get('id')}: game_id={m.get('game_id')}, channel_id={m.get('channel_id')}, special_bet={m.get('special_bet', False)}")
+            
+            # If no matches, post new game (will be posted to all guilds)
+            if not open_matches:
+                logger.info("⚠️ No featured matches found, posting new game...")
+                await self.post_random_featured_game(force=False)
+                return
+            
+            # Update embeds on all guilds
+            for match in open_matches:
+                # Get all message_ids for this match across guilds
+                match_messages = self.db.get_match_messages(match['id'])
+                
+                if match_messages:
+                    # Multi-guild support: update each guild's message
+                    for guild_id, channel_id, message_id in match_messages:
+                        try:
+                            channel = self.bot.get_channel(channel_id)
+                            if not channel:
+                                logger.warning(f"⚠️ Channel {channel_id} not found for guild {guild_id}")
+                                continue
+                            
+                            msg = await channel.fetch_message(message_id)
+                            logger.info(f"✅ Featured embed {message_id} exists in guild {guild_id}")
+                            
+                            # Update game time in embed
+                            if msg.embeds:
+                                old_embed = msg.embeds[0]
+                                game_id = match['game_id']
+                                platform = match['platform']
+                                blue_team = match.get('blue_team', {})
+                                red_team = match.get('red_team', {})
+                                
+                                if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                                    blue_players = blue_team.get('players', [])
+                                    red_players = red_team.get('players', [])
+                                    
+                                    # Re-detect streamer mode based on RiotID presence
+                                    all_players = blue_players + red_players
+                                    for p in all_players:
+                                        riot_id_name = p.get('riotIdGameName', '').strip()
+                                        riot_id_tag = p.get('riotIdTagline', '').strip()
+                                        riot_id_combined = p.get('riotId', '').strip()
+                                        
+                                        # Check if player has visible riot ID (either split or combined format)
+                                        has_riot_id = bool(riot_id_name and riot_id_tag) or bool(riot_id_combined and '#' in riot_id_combined)
+                                        p['streamer_mode'] = not has_riot_id
+                                    
+                                    odds_blue = blue_team.get('odds', 1.5)
+                                    odds_red = red_team.get('odds', 1.5)
+                                    
+                                    chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                                    chance_red = round(100 - chance_blue, 1)
+                                    
+                                    is_special_bet = match.get('special_bet', False)
+                                    featured = "special" if is_special_bet else ""
+                                    game_start_at = match.get('game_start_at')
+                                    
+                                    new_embed = self._build_embed(
+                                        game_id, platform, blue_players, red_players,
+                                        odds_blue, odds_red, chance_blue, chance_red,
+                                        featured, match['id'], game_start_at
+                                    )
+                                    
+                                    await msg.edit(embed=new_embed)
+                                    logger.info(f"🕐 Updated game time for match {match['id']} in guild {guild_id}" + (f" (SPECIAL BET)" if is_special_bet else ""))
+                        
+                        except discord.NotFound:
+                            logger.warning(f"⚠️ Featured embed {message_id} not found in guild {guild_id}")
+                            # Note: Don't cancel immediately, check all guilds first
+                        except Exception as e:
+                            logger.error(f"❌ Error checking message {message_id} in guild {guild_id}: {e}")
+                else:
+                    # Fallback to old single message_id system
+                    message_id = match.get('message_id')
+                    channel_id = match.get('channel_id')
+                    if message_id and channel_id:
+                        try:
+                            channel = self.bot.get_channel(channel_id)
+                            if channel:
+                                msg = await channel.fetch_message(message_id)
+                                logger.info(f"✅ Featured embed {message_id} exists on channel (legacy)")
+                                # Same update logic as above...
+                            
+                        except discord.NotFound:
+                            logger.warning(f"⚠️ Featured embed {message_id} not found (legacy)")
+                            
+                            # Before canceling, verify if game is actually still ongoing
+                            try:
+                                game_id = match['game_id']
+                                platform = match['platform']
+                                region = platform_to_region(platform)
+                                match_ref = f"{platform.upper()}_{game_id}"
+                                
+                                # Try to get match details - if game ended, this will return data
+                                match_data = await self.riot_api.get_match_details(match_ref, region)
+                                
+                                if match_data and 'info' in match_data:
+                                    # Game has ended - safe to cancel and settle
+                                    logger.info(f"✅ Game {game_id} has ended, canceling match {match['id']}")
+                                    self.db.settle_match(match['id'], winner='cancel')
+                                    await self.post_random_featured_game(force=False)
+                                else:
+                                    # Game still ongoing or can't verify - DON'T cancel, just repost embed
+                                    logger.warning(f"⚠️ Game {game_id} status unknown, reposting embed instead of canceling")
+                                    await self.post_random_featured_game(force=False)
+                            except Exception as verify_error:
+                                # Can't verify game status - safer to NOT cancel
+                                logger.warning(f"⚠️ Could not verify game {game_id} status: {verify_error}. NOT canceling.")
+                                # Just try to post a new game without canceling
+                                await self.post_random_featured_game(force=False)
+                        except Exception as e:
+                            logger.error(f"❌ Error checking message {message_id}: {e}")
+        except Exception as e:
+            logger.error(f"❌ Error in check_embed_task: {e}", exc_info=True)
+
+    @tasks.loop(minutes=5)
+    async def live_score_update_task(self):
+        """Update odds every 5 minutes based on live game data"""
+        try:
+            matches = self.db.get_open_matches()
+            if not matches:
+                return
+            
+            logger.info(f"📊 Updating live scores for {len(matches)} match(es)...")
+            
+            for match in matches:
+                try:
+                    await self._update_live_odds(match)
+                except Exception as e:
+                    logger.warning(f"Failed to update live score for match {match.get('id')}: {e}")
+        except Exception as e:
+            logger.error(f"❌ Error in live_score_update_task: {e}", exc_info=True)
+
+    @featured_task.before_loop
+    async def before_featured(self):
+        await self.bot.wait_until_ready()
+
+    @leaderboard_task.before_loop
+    async def before_leaderboard(self):
+        await self.bot.wait_until_ready()
+
+    @settle_task.before_loop
+    async def before_settle(self):
+        await self.bot.wait_until_ready()
+
+    @cleanup_task.before_loop
+    async def before_cleanup(self):
+        await self.bot.wait_until_ready()
+
+    @live_score_update_task.before_loop
+    async def before_live_score_update(self):
+        await self.bot.wait_until_ready()
+
+    async def post_random_featured_game(self, force: bool = False, platform_choice: Optional[str] = None, guild_id: Optional[int] = None):
+        """Find and post a high-elo game by scanning active players from pool"""
+        try:
+            logger.info("🎮 post_random_featured_game called")
+            
+            # If no guild_id provided, use first guild
+            if not guild_id and self.bot.guilds:
+                guild_id = self.bot.guilds[0].id
+            
+            bet_channel_id = self._get_channel_id(guild_id, 'bet')
+            
+            # Check if we already have 3 active matches
+            open_count = self.db.count_open_matches()
+            logger.info(f"📊 Current open matches: {open_count}/3")
+            if open_count >= 3 and not force:
+                logger.info(f"ℹ️ Already have {open_count} active matches, skipping post")
+                return
+
+            # Map platform to region for database lookup
+            region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
+            platform = platform_choice or random.choice(['euw1', 'na1', 'kr', 'eun1'])
+            region = region_map.get(platform, 'euw')
+            
+            # Get random PUUIDs from high-elo pool (reduced limit to minimize rate limits)
+            puuids = self.db.get_random_high_elo_puuids(region, limit=MAX_PLAYERS_TO_SCAN)
+            if not puuids:
+                logger.warning(f"⚠️ No PUUIDs in pool for {region}")
+                return
+            
+            logger.info(f"🔍 Scanning {len(puuids)} high-elo players on {platform}...")
+            
+            # Check each PUUID for active game
+            games_checked = 0
+            rate_limit_backoff = 0.5  # Start with 0.5s delay
+            
+            for puuid, tier, lp, boost in puuids:
+                games_checked += 1
+                self.db.update_high_elo_last_checked(puuid)
+                
+                try:
+                    game_data = await self.riot_api.get_active_game(puuid, region)
+                    # Success - reset backoff
+                    rate_limit_backoff = 0.5
+                except Exception as e:
+                    if '429' in str(e) or 'rate limit' in str(e).lower():
+                        # Rate limited - exponential backoff
+                        rate_limit_backoff = min(rate_limit_backoff * 2, 5.0)  # Max 5 seconds
+                        logger.warning(f"⚠️ Rate limit hit, backing off to {rate_limit_backoff}s")
+                        await asyncio.sleep(rate_limit_backoff)
+                        continue
+                    game_data = None
+                
+                # Anti rate-limit: dynamic delay based on rate limit status
+                await asyncio.sleep(rate_limit_backoff)
+                
+                if game_data:
+                    game_id = game_data.get('gameId')
+                    queue_id = game_data.get('gameQueueConfigId')
+                    game_start_time = game_data.get('gameStartTime', 0)
+                    
+                    logger.info(f"🎯 Found game {game_id} with queue {queue_id} (player: {tier} {lp} LP)")
+                    
+                    # Get expected queue ID from current game mode
+                    from LoLBets.core.engine.config import GAME_MODE_QUEUE_MAP, GAME_MODE, MIN_TIER_PER_MODE
+                    expected_queue = GAME_MODE_QUEUE_MAP.get(GAME_MODE.lower())
+                    min_tier = MIN_TIER_PER_MODE.get(GAME_MODE.lower())
+                    
+                    # Map queue ID
+                    queue_map = {
+                        420: 'RANKED_SOLO_5x5',
+                        440: 'RANKED_FLEX_SR',
+                        700: 'CLASH',
+                    }
+                    queue_name = queue_map.get(queue_id, f'Queue {queue_id}')
+                    
+                    # For custom mode, accept any queue (manual input)
+                    if GAME_MODE.lower() == 'custom':
+                        logger.info(f"✏️ Custom mode - accepting any queue: {queue_name}")
+                    elif expected_queue and queue_name != expected_queue:
+                        logger.info(f"⏭️ Skipping game {game_id} - expected {expected_queue}, got {queue_name}")
+                        continue
+                    
+                    # Check game duration - skip if game is older than 15 minutes
+                    if game_start_time > 0:
+                        current_time_ms = time.time() * 1000
+                        game_duration_minutes = (current_time_ms - game_start_time) / 1000 / 60
+                        
+                        if game_duration_minutes > 15:
+                            logger.info(f"⏭️ Skipping game {game_id} - too old ({game_duration_minutes:.1f} minutes)")
+                            continue
+                        
+                        logger.info(f"⏱️ Game duration: {game_duration_minutes:.1f} minutes - accepting")
+                    
+                    logger.info(f"✅ Found active game: {game_id} ({tier} {lp} LP player)")
+                    
+                    channel = self.bot.get_channel(bet_channel_id)
+                    if not channel:
+                        logger.error(f"❌ Bet channel {bet_channel_id} not found for guild {guild_id}!")
+                        return
+
+                    blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+                    red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+
+                    logger.info(f"👥 Teams: {len(blue_team)} vs {len(red_team)} players")
+
+                    blue_ordered = self._assign_roles(blue_team)
+                    red_ordered = self._assign_roles(red_team)
+
+                    # Enrich both teams and calculate team-specific average for streamer mode
+                    logger.info("🔍 Enriching player data...")
+                    await self._enrich_players(blue_ordered, region)
+                    await self._enrich_players(red_ordered, region)
+                    
+                    # Apply lobby-wide average for streamer mode (fairer when teams have uneven ranked players)
+                    all_players = blue_ordered + red_ordered
+                    self._apply_lobby_average(all_players)
+                    
+                    # SKIP: Check if entire team is in streamer mode
+                    blue_all_streamer = all(p.get('streamer_mode', False) for p in blue_ordered)
+                    red_all_streamer = all(p.get('streamer_mode', False) for p in red_ordered)
+                    
+                    if blue_all_streamer or red_all_streamer:
+                        team_name = 'BLUE' if blue_all_streamer else 'RED'
+                        logger.warning(f"⏭️ Skipping game {game_id} - {team_name} team all in streamer mode, cannot create valid odds")
+                        continue
+
+                    score_blue = self._team_score(blue_ordered)
+                    score_red = self._team_score(red_ordered)
+                    logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
+                    
+                    # Special bet requirement: lobby avg LP must reach current GM cutoff for region
+                    all_players = blue_ordered + red_ordered
+                    avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
+                    gm_cutoff_lp = await self._get_grandmaster_cutoff_lp(region)
+                    if gm_cutoff_lp is None:
+                        is_special_bet = False
+                        logger.warning(
+                            f"⚠️ Could not fetch Grandmaster cutoff for {region.upper()} - disabling special bet for game {game_id}"
+                        )
+                    else:
+                        is_special_bet = avg_lp >= gm_cutoff_lp
+                        logger.info(
+                            f"📈 Avg LP: {avg_lp:.0f} | GM cutoff ({region.upper()}): {gm_cutoff_lp} | Special bet: {is_special_bet}"
+                        )
+                    
+                    odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
+                    chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                    chance_red = round(100 - chance_blue, 1)
+                    
+                    logger.info(f"💾 Creating match in database...")
+                    # Create match first to get match_id for bet tracking
+                    match_id = self.db.create_hexbet_match(
+                        game_id,
+                        platform,
+                        bet_channel_id,
+                        {'players': blue_ordered, 'odds': odds_blue},
+                        {'players': red_ordered, 'odds': odds_red},
+                        game_data.get('gameStartTime', 0),
+                        special_bet=is_special_bet,
+                        guild_id=guild_id
+                    )
+                    if not match_id and not force:
+                        logger.warning(f"⚠️ Match already exists for game {game_id}, skipping...")
+                        continue
+                    if not match_id and force:
+                        existing = self.db.get_open_match()
+                        if not existing:
+                            logger.warning("⚠️ Force flag set but no existing match found")
+                            return
+                        match_id = existing['id']
+                    
+                    logger.info(f"📝 Building embed for match {match_id}...")
+                    # Build embed with special label if high LP lobby
+                    featured_label = "special" if is_special_bet else ""
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_label, match_id, game_data.get('gameStartTime'))
+
+                    self.db.increment_high_elo_featured(puuid)
+                    view = BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered)
+                    
+                    # Post to all guilds with configured bet channels
+                    posted_count = 0
+                    for guild in self.bot.guilds:
+                        try:
+                            guild_bet_channel_id = self._get_channel_id(guild.id, 'bet')
+                            guild_channel = self.bot.get_channel(guild_bet_channel_id)
+                            
+                            if guild_channel:
+                                msg = await guild_channel.send(embed=embed, view=view)
+                                # Store message_id for this guild (multi-guild support)
+                                self.db.add_match_message(match_id, guild.id, guild_bet_channel_id, msg.id)
+                                # Also store in old system for backward compatibility (first guild only)
+                                if posted_count == 0:
+                                    self.db.set_match_message(match_id, msg.id)
+                                posted_count += 1
+                                logger.info(f"✅ Posted bet to guild {guild.name} (channel {guild_bet_channel_id}, msg {msg.id})")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to post bet to guild {guild.name}: {e}")
+                    
+                    logger.info(f"✅ Posted bet for game {game_id} with match_id {match_id} to {posted_count} guild(s)")
+                    
+                    return
+                
+                await asyncio.sleep(0.1)  # Small delay between checks
+            
+            logger.info(f"ℹ️ No active ranked games found among {len(puuids)} players (checked {games_checked} players)")
+        except Exception as e:
+            logger.error(f"Error posting featured game: {e}", exc_info=True)
+
+    async def try_settle_match(self):
+        """Check and settle all open matches that are ready"""
+        matches = self.db.get_open_matches()
+        if not matches:
+            return
+        
+        for match in matches:
+            start_time = match.get('start_time') or 0
+            if not start_time:
+                continue
+            # Wait until reasonable duration has passed to avoid early fetch
+            if (time.time() * 1000) - start_time < MIN_MINUTES_BEFORE_SETTLE * 60 * 1000:
+                continue
+            
+            platform = match.get('platform', 'euw1')
+            region = platform_to_region(platform)
+            match_ref = f"{platform.upper()}_{match['game_id']}"
+            try:
+                data = await self.riot_api.get_match_details(match_ref, region)
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to pull match details for settlement: {e}")
+                continue
+            
+            if not data or 'info' not in data:
+                continue
+            
+            info = data.get('info', {})
+            game_duration = info.get('gameDuration', 0)  # Duration in seconds
+            
+            # REFUND PROTECTION: Auto-refund if game < 180 seconds (3 minutes) = remake/afk
+            if game_duration < 180:
+                logger.info(f"🔄 Game {match['game_id']} is a REMAKE ({game_duration}s < 3min) - refunding all bets")
+                refunds = self.db.refund_match(match['id'])
+                
+                # Delete match messages from ALL guilds
+                match_messages = self.db.get_match_messages(match['id'])
+                for guild_id, channel_id, message_id in match_messages:
+                    try:
+                        channel = self.bot.get_channel(channel_id)
+                        if channel:
+                            msg = await channel.fetch_message(message_id)
+                            await msg.delete()
+                            logger.info(f"🗑️ Deleted remake match message {message_id} in guild {guild_id}")
+                    except discord.NotFound:
+                        logger.info(f"Message {message_id} in guild {guild_id} already deleted")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete remake message {message_id} in guild {guild_id}: {e}")
+                
+                # Log refund to bet logs channel
+                try:
+                    bet_logs_channel_id = self._get_channel_id(match.get('guild_id'), 'logs') if match.get('guild_id') else DEFAULT_BET_LOGS_CHANNEL_ID
+                    log_channel = self.bot.get_channel(bet_logs_channel_id)
+                    if log_channel:
+                        log_embed = discord.Embed(
+                            title="🔄 Match Refunded (Remake)",
+                            description=f"Game duration: {game_duration}s (< 3 min)",
+                            color=0x95A5A6,
+                            timestamp=discord.utils.utcnow()
+                        )
+                        log_embed.add_field(name="Match ID", value=str(match['id']), inline=True)
+                        log_embed.add_field(name="Game ID", value=str(match['game_id']), inline=True)
+                        
+                        total_refunded = sum(amount for _, amount in refunds)
+                        bettors_count = len(refunds)
+                        
+                        log_embed.add_field(name="Bettors", value=str(bettors_count), inline=True)
+                        log_embed.add_field(name="Total Refunded", value=str(total_refunded), inline=True)
+                        
+                        if bettors_count > 0:
+                            refund_list = [f"<@{uid}>: +{amount}" for uid, amount in refunds]
+                            log_embed.add_field(name="Refunds", value="\n".join(refund_list[:10]), inline=False)
+                        
+                        await log_channel.send(embed=log_embed)
+                except Exception as e:
+                    logger.warning(f"Failed to log refund: {e}")
+                
+                continue  # Skip to next match
+            
+            winner_team = next((t.get('teamId') for t in info.get('teams', []) if t.get('win')), None)
+            if winner_team not in (100, 200):
+                continue
+            
+            winner = 'blue' if winner_team == 100 else 'red'
+            timeline_summary = None
+            try:
+                timeline_data = await self.riot_api.get_match_timeline(match_ref, region)
+                timeline_summary = self._extract_timeline_analytics(info, timeline_data)
+            except Exception as tl_err:
+                logger.warning(f"⚠️ Failed to extract timeline analytics for {match_ref}: {tl_err}")
+
+            payouts = self.db.settle_match(match['id'], winner)
+            for user_id, amount, payout, won in payouts:
+                if payout:
+                    self.db.update_balance(user_id, payout)
+                self.db.record_result(user_id, amount, payout, won)
+                
+                # Check and award achievements
+                try:
+                    checker = AchievementChecker(self.db, self)
+                    newly_earned = await checker.check_achievements(user_id, trigger='bet_settled')
+                    if newly_earned:
+                        logger.info(f"🎖️ User {user_id} earned achievements: {', '.join(newly_earned)}")
+                except Exception as ach_err:
+                    logger.warning(f"⚠️ Failed to check achievements for user {user_id}: {ach_err}")
+            
+            await self._update_match_message(match, winner, payouts, timeline_summary=timeline_summary)
+            logger.info(f"✅ Settled match {match['game_id']} - Winner: {winner.upper()}")
+            
+            # Send webhook notification for bet result
+            try:
+                match_data = {
+                    'game_id': match['game_id'],
+                    'platform': match.get('platform'),
+                    'blue_team': match.get('blue_team', {}),
+                    'red_team': match.get('red_team', {}),
+                    'winner': winner,
+                    'payouts': [{'user_id': uid, 'bet': amt, 'payout': pay, 'won': w} for uid, amt, pay, w in payouts]
+                }
+                await self.webhook_manager.send_bet_result_notification(match['id'], winner, match_data)
+                logger.info(f"📡 Webhook notification sent for bet result {match['id']}")
+            except Exception as webhook_err:
+                logger.warning(f"⚠️ Failed to send webhook notification: {webhook_err}")
+            
+            # Log settlement to bet logs channel
+            try:
+                bet_logs_channel_id = self._get_channel_id(match.get('guild_id'), 'logs') if match.get('guild_id') else DEFAULT_BET_LOGS_CHANNEL_ID
+                log_channel = self.bot.get_channel(bet_logs_channel_id)
+                if log_channel:
+                    log_embed = discord.Embed(
+                        title="🏁 Match Settled",
+                        color=0x2ECC71 if winner == 'blue' else 0xE74C3C,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    log_embed.add_field(name="Match ID", value=str(match['id']), inline=True)
+                    log_embed.add_field(name="Game ID", value=str(match['game_id']), inline=True)
+                    log_embed.add_field(name="Winner", value=winner.upper(), inline=True)
+                    
+                    total_paid = sum(payout for _, _, payout, _ in payouts)
+                    winners_count = sum(1 for _, _, _, won in payouts if won)
+                    
+                    log_embed.add_field(name="Winners", value=str(winners_count), inline=True)
+                    log_embed.add_field(name="Total Payout", value=str(total_paid), inline=True)
+                    
+                    if winners_count > 0:
+                        winner_list = [f"<@{uid}>: +{payout}" for uid, _, payout, won in payouts if won]
+                        log_embed.add_field(name="Payouts", value="\n".join(winner_list[:10]), inline=False)
+
+                    if timeline_summary:
+                        log_embed.add_field(name="📉 Timeline Analytics", value=timeline_summary, inline=False)
+                    
+                    await log_channel.send(embed=log_embed)
+            except Exception as e:
+                logger.warning(f"Failed to log settlement: {e}")
+
+    async def _update_match_message(self, match: dict, winner: str, payouts: List[tuple], timeline_summary: Optional[str] = None):
+        """Update match message to show final result and send notifications"""
+        # Get all guild messages for this match
+        match_messages = self.db.get_match_messages(match['id'])
+        
+        if not match_messages:
+            logger.warning(f"No messages found for match {match['id']}")
+            return
+        
+        # Calculate bet statistics once
+        winners = [(uid, payout) for uid, _, payout, won in payouts if won]
+        losers = [(uid, amount) for uid, amount, _, won in payouts if not won]
+        total_wagered = sum(amount for _, amount, _, _ in payouts)
+        total_payout = sum(payout for _, _, payout, won in payouts if won)
+        
+        # Update and delete message in EACH guild
+        for guild_id, channel_id, message_id in match_messages:
+            try:
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    logger.warning(f"Channel {channel_id} not found for match {match['id']}")
+                    continue
+                
+                msg = await channel.fetch_message(message_id)
+                
+                # Get existing embed and add winner badge
+                if msg.embeds:
+                    embed = msg.embeds[0]
+                    winner_emoji = "<:BlueSide:1457209225976484014>" if winner == 'blue' else "<:RedSide:1457209221031395472>"
+                    embed.title = f"{winner_emoji} {embed.title} - {winner.upper()} WON!"
+                    embed.color = 0x2C2F33  # Dark gray/black color
+                    
+                    # Add results field to embed
+                    results_text = (
+                        f"**Total Bets:** {len(payouts)}\n"
+                        f"**Winners:** {len(winners)} | **Losers:** {len(losers)}\n"
+                        f"**Total Wagered:** {total_wagered}\n"
+                        f"**Total Payout:** {total_payout}"
+                    )
+                    embed.add_field(name="📊 Bet Results", value=results_text, inline=False)
+
+                    if timeline_summary:
+                        embed.add_field(name="📉 Timeline Analytics", value=timeline_summary, inline=False)
+                    
+                    # Remove betting view
+                    await msg.edit(embed=embed, view=None)
+                    logger.info(f"✅ Updated match message {message_id} in guild {guild_id} with winner: {winner.upper()}")
+                    
+            except discord.NotFound:
+                logger.info(f"Message {message_id} in guild {guild_id} already deleted")
+            except Exception as e:
+                logger.error(f"Failed to update message {message_id} in guild {guild_id}: {e}")
+        
+        # Wait 30 seconds then delete all embeds
+        await asyncio.sleep(30)
+        
+        for guild_id, channel_id, message_id in match_messages:
+            try:
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    continue
+                    
+                msg = await channel.fetch_message(message_id)
+                await msg.delete()
+                logger.info(f"🗑️ Auto-deleted winner embed {message_id} in guild {guild_id} after 30 seconds")
+            except discord.NotFound:
+                logger.info(f"Winner embed {message_id} in guild {guild_id} already deleted")
+            except Exception as e:
+                logger.warning(f"Failed to delete winner embed {message_id} in guild {guild_id}: {e}")
+        
+        # Send notifications to betting notifications channel (only once, not per guild)
+        notif_channel = self.bot.get_channel(1398985421014306856)
+        if notif_channel and payouts:
+            game_id = match.get('game_id', 'Unknown')
+            winner_emoji = "<:BlueSide:1457209225976484014>" if winner == 'blue' else "<:RedSide:1457209221031395472>"
+            
+            # Build notification embed
+            notif_embed = discord.Embed(
+                title=f"{winner_emoji} Match Settled - {winner.upper()} Won!",
+                description=f"Game ID: {game_id}",
+                color=0x2ECC71,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            if winners:
+                winner_lines = [f"<@{uid}>: **+{payout}** 🎉" for uid, payout in winners[:15]]
+                notif_embed.add_field(
+                    name=f"🏆 Winners ({len(winners)})",
+                    value="\n".join(winner_lines),
+                    inline=False
+                )
+            
+            if losers:
+                loser_lines = [f"<@{uid}>: -{amount}" for uid, amount in losers[:15]]
+                notif_embed.add_field(
+                    name=f"❌ Lost ({len(losers)})",
+                    value="\n".join(loser_lines),
+                    inline=False
+                )
+            
+            await notif_channel.send(embed=notif_embed, delete_after=180)  # Auto-delete after 3 minutes
+            logger.info(f"📬 Sent bet notifications for match {game_id} (auto-delete in 3min)")
+    
+    async def _refresh_match_embed(self, match_id: int):
+        """Refresh a match embed with current bet totals"""
+        try:
+            # Get match data
+            conn = self.db.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM hexbet_matches WHERE id = %s", (match_id,))
+                    row = cur.fetchone()
+                    if not row:
+                        return
+                    cols = [desc[0] for desc in cur.description]
+                    match = dict(zip(cols, row))
+            finally:
+                self.db.return_connection(conn)
+            
+            if match['status'] != 'open':
+                return
+            
+            channel = self.bot.get_channel(match.get('channel_id'))
+            message_id = match.get('message_id')
+            if not channel or not message_id:
+                return
+            
+            try:
+                msg = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                logger.info(f"Message {message_id} not found (already deleted)")
+                return
+            
+            old_embed = msg.embeds[0] if msg.embeds else None
+            if not old_embed:
+                return
+            
+            # Extract data from stored match
+            game_id = match['game_id']
+            platform = match['platform']
+            blue_team = match.get('blue_team', {})
+            red_team = match.get('red_team', {})
+            
+            if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                blue_players = blue_team.get('players', [])
+                red_players = red_team.get('players', [])
+                
+                # Re-assign roles to ensure proper role detection (Smite, support champs, etc.)
+                blue_players = self._assign_roles(blue_players)
+                red_players = self._assign_roles(red_players)
+                
+                odds_blue = blue_team.get('odds', 1.5)
+                odds_red = red_team.get('odds', 1.5)
+                
+                chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                chance_red = round(100 - chance_blue, 1)
+                
+                # Check if this is a special bet (use database flag)
+                is_special_bet = match.get('special_bet', False)
+                featured = "special" if is_special_bet else ""
+                
+                # PROTECTION: Verify special bet status and restore if removed
+                if is_special_bet and old_embed.title and '🎯 SOLO/DUO QUEUE' not in old_embed.title:
+                    logger.warning(f"⚠️ Special bet status was removed! Restoring for match {match_id}")
+                
+                game_start_at = match.get('game_start_at')
+                new_embed = self._build_embed(
+                    game_id, platform, blue_players, red_players,
+                    odds_blue, odds_red, chance_blue, chance_red,
+                    featured, match['id'], game_start_at
+                )
+                
+                await msg.edit(embed=new_embed)
+                
+                if is_special_bet:
+                    logger.info(f"✅ Special bet status verified and maintained for match {match_id}")
+                
+        except Exception as e:
+            logger.warning(f"Failed to refresh match embed: {e}")
+
+    async def _update_live_odds(self, match: dict):
+        """Update odds based on live game data every 5 minutes"""
+        try:
+            game_id = match.get('game_id')
+            platform = match.get('platform', 'euw1')
+            channel = self.bot.get_channel(match.get('channel_id'))
+            message_id = match.get('message_id')
+            
+            if not channel or not message_id:
+                return
+            
+            try:
+                msg = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                return
+            except Exception as e:
+                logger.warning(f"Failed to fetch match message: {e}")
+                return
+            
+            # Get live game data to see if still in progress
+            # Note: Live game API has limited info, we mainly use this to confirm game is still active
+            if not msg.embeds:
+                return
+            
+            embed = msg.embeds[0]
+            
+            # PROTECTION: Verify special bet status from database
+            is_special_bet = match.get('special_bet', False)
+            if is_special_bet and '🎯 SOLO/DUO QUEUE' not in embed.title:
+                logger.warning(f"⚠️ Special bet indicator missing in live update! Restoring for match {game_id}")
+                # Rebuild title with special bet indicator
+                if '⚔️ HEXBET Match #' in embed.title:
+                    base_title = embed.title.split('⏱️')[0].strip()
+                    if '🎯 SOLO/DUO QUEUE' not in base_title:
+                        base_title = base_title.replace('⚔️ HEXBET Match #', '⚔️ HEXBET Match #')
+                        if ' - 🎯 SOLO/DUO QUEUE' not in base_title:
+                            parts = base_title.split('#')
+                            if len(parts) >= 2:
+                                embed.title = f"⚔️ HEXBET Match #{parts[1].split()[0]} - 🎯 SOLO/DUO QUEUE"
+            
+            # Get game duration from start time
+            game_start_at = match.get('game_start_at')
+            if not game_start_at:
+                game_start_time_ms = match.get('start_time', 0)
+            else:
+                # Parse timestamp
+                try:
+                    from datetime import datetime
+                    start_dt = datetime.fromisoformat(game_start_at.replace('Z', '+00:00'))
+                    game_start_time_ms = int(start_dt.timestamp() * 1000)
+                except:
+                    game_start_time_ms = 0
+
+            game_duration_minutes = None
+            if game_start_time_ms > 0:
+                current_time_ms = time.time() * 1000
+                game_duration_minutes = (current_time_ms - game_start_time_ms) / 1000 / 60
+
+            blue_team = match.get('blue_team', {})
+            red_team = match.get('red_team', {})
+            if isinstance(blue_team, dict) and isinstance(red_team, dict) and game_duration_minutes is not None:
+                blue_players = blue_team.get('players', [])
+                red_players = red_team.get('players', [])
+                current_blue_odds = float(blue_team.get('odds', 1.5))
+                current_red_odds = float(red_team.get('odds', 1.5))
+
+                new_blue_odds, new_red_odds = self._apply_live_game_drift(
+                    blue_players,
+                    red_players,
+                    current_blue_odds,
+                    current_red_odds,
+                    game_duration_minutes,
+                )
+
+                # Avoid noisy DB writes if the move is negligible.
+                if abs(new_blue_odds - current_blue_odds) >= 0.02 or abs(new_red_odds - current_red_odds) >= 0.02:
+                    self.db.update_match_odds(match['id'], new_blue_odds, new_red_odds)
+                    logger.info(
+                        "📈 Live odds drift for match %s (%0.1fm): blue %sx -> %sx | red %sx -> %sx",
+                        game_id,
+                        game_duration_minutes,
+                        current_blue_odds,
+                        new_blue_odds,
+                        current_red_odds,
+                        new_red_odds,
+                    )
+
+                # Rebuild embed so timeline and marker sections update consistently.
+                await self._refresh_match_embed(match['id'])
+                logger.info(f"📊 Updated live embed for match {game_id}: game duration {game_duration_minutes:.1f}m")
+        
+        except Exception as e:
+            logger.warning(f"Error updating live odds: {e}")
+
+    async def refresh_leaderboard_embed(self, page: int = 1, sort_by: str = 'balance'):
+        try:
+            # Use first guild for default behavior
+            guild_id = self.bot.guilds[0].id if self.bot.guilds else None
+            leaderboard_channel_id = self._get_channel_id(guild_id, 'leaderboard') if guild_id else DEFAULT_LEADERBOARD_CHANNEL_ID
+            
+            channel = self.bot.get_channel(leaderboard_channel_id)
+            if not channel:
+                return
+            
+            # Get all players for pagination
+            all_players = self._compute_leaderboard(limit=None, sort_by=sort_by)  # Get all
+            total_players = len(all_players)
+            
+            # Pagination settings
+            per_page = 10
+            total_pages = max(1, (total_players + per_page - 1) // per_page)  # Ceiling division
+            page = max(1, min(page, total_pages))  # Clamp page number
+            
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_players = all_players[start_idx:end_idx]
+            
+            # Determine title based on sort
+            sort_title = "Balance 💰" if sort_by == 'balance' else "Wygrana 🏆"
+            embed = discord.Embed(
+                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {page}/{total_pages}",
+                color=0xF1C40F
+            )
+            
+            if not page_players:
+                embed.description = "No bets yet."
+            else:
+                lines = []
+                for i, row in enumerate(page_players, start=start_idx + 1):
+                    # Medal emojis for top 3
+                    medal = ""
+                    if i == 1:
+                        medal = "🥇 "
+                    elif i == 2:
+                        medal = "🥈 "
+                    elif i == 3:
+                        medal = "🥉 "
+                    
+                    lines.append(
+                        f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
+                    )
+                embed.description = "\n".join(lines)
+                
+                # Add stats footer
+                embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
+                
+                # Add useful commands at the bottom
+                embed.add_field(
+                    name="📋 Useful Commands",
+                    value=(
+                        "`/lbbalance` - Check your balance\n"
+                        "`/lbdaily` - Claim 100 daily tokens\n"
+                        "`/lbstats` - View your betting stats\n"
+                        "`/lbspecial` - Create special bet (1000 tokens)\n"
+                        "`/lbplayer` - Search for a player\n"
+                        "`/lbfind` - Find high-elo games"
+                    ),
+                    inline=False
+                )
+            
+            # Create view with pagination buttons
+            view = LeaderboardView(self, page=page, total_pages=total_pages, sort_by=sort_by)
+            
+            existing = await self._find_leaderboard_message(channel)
+            if existing:
+                await existing.edit(embed=embed, view=view)
+            else:
+                await channel.send(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error refreshing leaderboard: {e}", exc_info=True)
+
+    async def _find_leaderboard_message(self, channel: discord.TextChannel) -> Optional[discord.Message]:
+        """Find the permanent leaderboard embed in the channel"""
+        async for msg in channel.history(limit=50):  # Increased limit
+            if msg.author.id == self.bot.user.id and msg.embeds:
+                first = msg.embeds[0]
+                # Match leaderboard by title pattern
+                if first.title and "HEXBET Leaderboard" in first.title:
+                    return msg
+        return None
+
+    def _compute_leaderboard(self, limit: Optional[int] = 10, sort_by: str = 'balance'):
+        conn = self.db.get_connection()
+        try:
+            with conn.cursor() as cur:
+                # Base query
+                base_query = """
+                    SELECT discord_id, balance, total_won, bets_won, bets_placed,
+                           CASE WHEN bets_placed>0 THEN ROUND((bets_won::decimal/bets_placed)*100,2) ELSE 0 END as win_rate
+                    FROM user_balances
+                """
+                
+                # Choose sort order
+                if sort_by == 'total_won':
+                    # Sort by total won, then balance
+                    order_clause = "ORDER BY total_won DESC, balance DESC"
+                else:  # default: balance
+                    order_clause = "ORDER BY balance DESC"
+                
+                query = base_query + order_clause
+                
+                if limit:
+                    query += f" LIMIT {limit}"
+                
+                cur.execute(query)
+                rows = cur.fetchall()
+                res = []
+                for r in rows:
+                    res.append({
+                        'discord_id': r[0],
+                        'balance': r[1],
+                        'total_won': r[2],
+                        'bets_won': r[3],
+                        'bets_placed': r[4],
+                        'win_rate': float(r[5] or 0)
+                    })
+                return res
+        finally:
+            self.db.return_connection(conn)
+
+    def _assign_roles(self, players: List[dict]) -> List[dict]:
+        """
+        Assign roles based on champion ID patterns and Smite spell.
+        Each team is processed independently.
+        """
+        # Log which team we're processing
+        team_name = "Team" if players else "Empty"
+        if players:
+            first_champ = players[0].get('championId', 'unknown')
+            logger.debug(f"🎯 Processing role assignment for team (first champ: {first_champ})")
+        
+        # Champion role mappings (complete 172 champions from Data Dragon + manual overrides)
+        CHAMP_ROLES = {
+            # TOP (31 champions)
+            266: 'TOP',  # Aatrox
+            799: 'TOP',  # Ambessa
+            164: 'TOP',  # Camille
+            122: 'TOP',  # Darius
+            36: 'TOP',  # DrMundo
+            41: 'TOP',  # Gangplank
+            86: 'TOP',  # Garen
+            150: 'TOP',  # Gnar
+            887: 'TOP',  # Gwen
+            120: 'TOP',  # Hecarim
+            420: 'TOP',  # Illaoi
+            59: 'TOP',  # JarvanIV
+            897: 'TOP',  # KSante
+            240: 'TOP',  # Kled
+            62: 'TOP',  # Wukong
+            75: 'TOP',  # Nasus
+            2: 'TOP',  # Olaf
+            516: 'TOP',  # Ornn
+            78: 'TOP',  # Poppy
+            58: 'TOP',  # Renekton
+            113: 'TOP',  # Sejuani
+            875: 'TOP',  # Sett
+            98: 'TOP',  # Shen
+            14: 'TOP',  # Sion
+            72: 'TOP',  # Skarner
+            23: 'TOP',  # Tryndamere
+            6: 'TOP',  # Urgot
+            106: 'TOP',  # Volibear
+            19: 'TOP',  # Warwick
+            5: 'TOP',  # XinZhao
+            83: 'TOP',  # Yorick
+
+            # JUNGLE (28 champions)
+            200: 'JUNGLE',  # Belveth
+            233: 'JUNGLE',  # Briar
+            131: 'JUNGLE',  # Diana
+            245: 'JUNGLE',  # Ekko
+            60: 'JUNGLE',  # Elise
+            28: 'JUNGLE',  # Evelynn
+            9: 'JUNGLE',  # Fiddlesticks
+            104: 'JUNGLE',  # Graves
+            427: 'JUNGLE',  # Ivern
+            24: 'JUNGLE',  # Jax
+            30: 'JUNGLE',  # Karthus
+            121: 'JUNGLE',  # Khazix
+            203: 'JUNGLE',  # Kindred
+            64: 'JUNGLE',  # LeeSin
+            11: 'JUNGLE',  # MasterYi
+            76: 'JUNGLE',  # Nidalee
+            20: 'JUNGLE',  # Nunu
+            246: 'JUNGLE',  # Qiyana
+            33: 'JUNGLE',  # Rammus
+            421: 'JUNGLE',  # RekSai
+            102: 'JUNGLE',  # Shyvana
+            517: 'JUNGLE',  # Sylas
+            163: 'JUNGLE',  # Taliyah
+            91: 'JUNGLE',  # Talon
+            48: 'JUNGLE',  # Trundle
+            77: 'JUNGLE',  # Udyr
+            234: 'JUNGLE',  # Viego
+            154: 'JUNGLE',  # Zac
+
+            # MID (43 champions)
+            103: 'MID',  # Ahri
+            84: 'MID',  # Akali
+            34: 'MID',  # Anivia
+            1: 'MID',  # Annie
+            136: 'MID',  # AurelionSol
+            893: 'MID',  # Aurora
+            69: 'MID',  # Cassiopeia
+            31: 'MID',  # Chogath
+            114: 'MID',  # Fiora
+            105: 'MID',  # Fizz
+            3: 'MID',  # Galio
+            79: 'MID',  # Gragas
+            39: 'MID',  # Irelia
+            38: 'MID',  # Kassadin
+            55: 'MID',  # Katarina
+            141: 'MID',  # Kayn
+            85: 'MID',  # Kennen
+            7: 'MID',  # Leblanc
+            876: 'MID',  # Lillia
+            127: 'MID',  # Lissandra
+            54: 'MID',  # Malphite
+            90: 'MID',  # Malzahar
+            82: 'MID',  # Mordekaiser
+            950: 'MID',  # Naafiri
+            895: 'MID',  # Nilah
+            56: 'MID',  # Nocturne
+            107: 'MID',  # Rengar
+            92: 'MID',  # Riven
+            68: 'MID',  # Rumble
+            13: 'MID',  # Ryze
+            27: 'MID',  # Singed
+            134: 'MID',  # Syndra
+            45: 'MID',  # Veigar
+            711: 'MID',  # Vex
+            254: 'MID',  # Vi
+            112: 'MID',  # Viktor
+            8: 'MID',  # Vladimir
+            157: 'MID',  # Yasuo
+            777: 'MID',  # Yone
+            904: 'MID',  # Zaahen
+            238: 'MID',  # Zed
+            115: 'MID',  # Ziggs
+            142: 'MID',  # Zoe
+
+            # ADC (31 champions)
+            166: 'ADC',  # Akshan
+            523: 'ADC',  # Aphelios
+            22: 'ADC',  # Ashe
+            268: 'ADC',  # Azir
+            51: 'ADC',  # Caitlyn
+            42: 'ADC',  # Corki
+            119: 'ADC',  # Draven
+            81: 'ADC',  # Ezreal
+            126: 'ADC',  # Jayce
+            202: 'ADC',  # Jhin
+            222: 'ADC',  # Jinx
+            145: 'ADC',  # Kaisa
+            429: 'ADC',  # Kalista
+            10: 'ADC',  # Kayle
+            96: 'ADC',  # KogMaw
+            236: 'ADC',  # Lucian
+            21: 'ADC',  # MissFortune
+            133: 'ADC',  # Quinn
+            360: 'ADC',  # Samira
+            235: 'ADC',  # Senna
+            15: 'ADC',  # Sivir
+            901: 'ADC',  # Smolder
+            17: 'ADC',  # Teemo
+            18: 'ADC',  # Tristana
+            4: 'ADC',  # TwistedFate
+            29: 'ADC',  # Twitch
+            110: 'ADC',  # Varus
+            67: 'ADC',  # Vayne
+            498: 'ADC',  # Xayah
+            804: 'ADC',  # Yunara
+            221: 'ADC',  # Zeri
+
+            # SUPPORT (39 champions)
+            12: 'SUPPORT',  # Alistar
+            32: 'SUPPORT',  # Amumu
+            432: 'SUPPORT',  # Bard
+            53: 'SUPPORT',  # Blitzcrank
+            63: 'SUPPORT',  # Brand
+            201: 'SUPPORT',  # Braum
+            74: 'SUPPORT',  # Heimerdinger
+            910: 'SUPPORT',  # Hwei
+            40: 'SUPPORT',  # Janna
+            43: 'SUPPORT',  # Karma
+            89: 'SUPPORT',  # Leona
+            117: 'SUPPORT',  # Lulu
+            99: 'SUPPORT',  # Lux
+            57: 'SUPPORT',  # Maokai
+            800: 'SUPPORT',  # Mel
+            902: 'SUPPORT',  # Milio
+            25: 'SUPPORT',  # Morgana
+            267: 'SUPPORT',  # Nami
+            111: 'SUPPORT',  # Nautilus
+            518: 'SUPPORT',  # Neeko
+            61: 'SUPPORT',  # Orianna
+            80: 'SUPPORT',  # Pantheon
+            555: 'SUPPORT',  # Pyke
+            497: 'SUPPORT',  # Rakan
+            526: 'SUPPORT',  # Rell
+            888: 'SUPPORT',  # Renata
+            147: 'SUPPORT',  # Seraphine
+            35: 'SUPPORT',  # Shaco
+            37: 'SUPPORT',  # Sona
+            16: 'SUPPORT',  # Soraka
+            50: 'SUPPORT',  # Swain
+            223: 'SUPPORT',  # TahmKench
+            44: 'SUPPORT',  # Taric
+            412: 'SUPPORT',  # Thresh
+            161: 'SUPPORT',  # Velkoz
+            101: 'SUPPORT',  # Xerath
+            350: 'SUPPORT',  # Yuumi
+            26: 'SUPPORT',  # Zilean
+            143: 'SUPPORT',  # Zyra
+
+        }
+        
+        # Champions that can play multiple roles (secondary roles)
+        CHAMP_CAN_FILL = {
+            143: ['SUPPORT', 'JUNGLE'],  # Zyra
+            518: ['SUPPORT', 'MID'],  # Neeko
+            10: ['TOP', 'MID'],  # Kayle
+            19: ['TOP', 'JUNGLE'],  # Warwick
+            50: ['SUPPORT', 'MID', 'ADC'],  # Swain
+            67: ['ADC', 'TOP'],  # Vayne
+            157: ['MID', 'ADC', 'TOP'],  # Yasuo
+            85: ['MID', 'TOP'],  # Kennen
+            54: ['MID', 'TOP', 'SUPPORT'],  # Malphite
+            133: ['TOP', 'MID'],  # Quinn
+            91: ['JUNGLE', 'MID'],  # Talon
+            131: ['JUNGLE', 'MID'],  # Diana
+            245: ['JUNGLE', 'MID'],  # Ekko
+            266: ['TOP', 'JUNGLE'],  # Aatrox
+            799: ['TOP', 'JUNGLE'],  # Ambessa
+        }
+        
+        ROLE_ORDER = ['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT']
+        ROLE_NAMES = {'TOP': 'Top', 'JUNGLE': 'Jungle', 'MID': 'Mid', 'ADC': 'ADC', 'SUPPORT': 'Support'}
+        ROLE_EMOJIS = {
+            'TOP': CFG_ROLE_EMOJIS.get('TOP', '🗻'),
+            'JUNGLE': CFG_ROLE_EMOJIS.get('JUNGLE', '🌿'),
+            'MID': CFG_ROLE_EMOJIS.get('MIDDLE', '🌀'),
+            'ADC': CFG_ROLE_EMOJIS.get('BOTTOM', '🎯'),
+            'SUPPORT': CFG_ROLE_EMOJIS.get('UTILITY', '🛡️'),
+        }
+
+        def _build_role_scores(player: dict) -> dict:
+            champ_id = player.get('championId', 0)
+            spell1 = player.get('spell1Id', 0)
+            spell2 = player.get('spell2Id', 0)
+            spells = {spell1, spell2}
+            scores = {role: 0 for role in ROLE_ORDER}
+
+            primary_role = CHAMP_ROLES.get(champ_id)
+            if primary_role:
+                scores[primary_role] += 8
+
+            for idx, alt_role in enumerate(CHAMP_CAN_FILL.get(champ_id, [])):
+                scores[alt_role] += max(5 - idx, 2)
+
+            # Strong signal: Smite means jungle in standard SR games.
+            if 11 in spells:
+                scores['JUNGLE'] += 100
+                for role in ROLE_ORDER:
+                    if role != 'JUNGLE':
+                        scores[role] -= 4
+            else:
+                scores['JUNGLE'] -= 2
+
+            # Weaker spell-based hints.
+            if 12 in spells:  # Teleport
+                scores['TOP'] += 3
+                scores['MID'] += 1
+            if 14 in spells:  # Ignite
+                scores['MID'] += 2
+                scores['SUPPORT'] += 2
+                scores['TOP'] += 1
+            if 3 in spells:  # Exhaust
+                scores['SUPPORT'] += 4
+                scores['ADC'] += 1
+            if 7 in spells or 21 in spells or 1 in spells:  # Heal / Barrier / Cleanse
+                scores['ADC'] += 3
+                scores['SUPPORT'] += 1
+            if 6 in spells:  # Ghost
+                scores['TOP'] += 1
+                scores['ADC'] += 1
+
+            if primary_role == 'SUPPORT' and (3 in spells or 14 in spells):
+                scores['SUPPORT'] += 2
+            if primary_role == 'ADC' and (7 in spells or 21 in spells or 1 in spells):
+                scores['ADC'] += 2
+            if primary_role == 'TOP' and 12 in spells:
+                scores['TOP'] += 2
+            if primary_role == 'MID' and 14 in spells:
+                scores['MID'] += 1
+
+            return scores
+
+        if not players:
+            return []
+
+        score_matrix = [_build_role_scores(player) for player in players]
+        role_count = min(len(players), len(ROLE_ORDER))
+        roles_to_fill = ROLE_ORDER[:role_count]
+
+        best_perm = None
+        best_score = float('-inf')
+
+        for perm in itertools.permutations(range(len(players)), role_count):
+            total_score = sum(score_matrix[player_idx][role] for role, player_idx in zip(roles_to_fill, perm))
+            if total_score > best_score:
+                best_score = total_score
+                best_perm = perm
+
+        if best_perm is None:
+            best_perm = tuple(range(role_count))
+
+        used_players = set(best_perm)
+        ordered_assignments = [(player_idx, players[player_idx], role) for role, player_idx in zip(roles_to_fill, best_perm)]
+
+        for idx, player in enumerate(players):
+            if idx not in used_players:
+                best_role = max(ROLE_ORDER, key=lambda role: score_matrix[idx][role])
+                ordered_assignments.append((idx, player, best_role))
+
+        final_ordered = []
+        for player_idx, player, role in ordered_assignments:
+            p_copy = dict(player)
+            p_copy['role_name'] = ROLE_NAMES[role]
+            p_copy['role_emoji'] = ROLE_EMOJIS[role]
+            p_copy['role_confidence'] = score_matrix[player_idx][role]
+            final_ordered.append(p_copy)
+
+        if players:
+            summary = [f"{p.get('championId', '?')}->{p.get('role_name', '?')}" for p in final_ordered]
+            logger.debug(f"🎯 Optimized role assignment: {', '.join(summary)} | score={best_score}")
+
+        return final_ordered
+
+    async def _enrich_players(self, players: List[dict], region: str):
+        tasks_rank = []
+        for p in players:
+            puuid = p.get('puuid')
+            if not puuid:
+                logger.warning(f"⚠️ Player {p.get('riotIdGameName', 'unknown')} missing PUUID - keys: {list(p.keys())}")
+            if puuid:
+                tasks_rank.append(self.riot_api.get_ranked_stats_by_puuid(puuid, region))
+            else:
+                tasks_rank.append(asyncio.sleep(0))  # Dummy task if no PUUID
+        ranks = await asyncio.gather(*tasks_rank, return_exceptions=True)
+        
+        # First pass: get basic stats and mark streamer mode
+        for p, r in zip(players, ranks):
+            stats = r if isinstance(r, list) else []
+            if not stats:
+                logger.warning(f"⚠️ No ranked stats for {p.get('riotIdGameName', 'unknown')} - response: {r}")
+            tier, division, wr = pick_rank_entry(stats)
+            p['tier'] = tier
+            p['division'] = division
+            p['wr'] = wr
+            
+            # Streamer mode = player hides their summoner name (no riotIdGameName/riotIdTagline)
+            riot_id_name = p.get('riotIdGameName', '').strip()
+            riot_id_tag = p.get('riotIdTagline', '').strip()
+            riot_id_combined = p.get('riotId', '').strip()
+            
+            # Check if player has visible riot ID (either split or combined format)
+            has_riot_id = bool(riot_id_name and riot_id_tag) or bool(riot_id_combined and '#' in riot_id_combined)
+            p['streamer_mode'] = not has_riot_id
+            
+            logger.debug(f"Player {p.get('summonerName', 'unknown')}: riotIdGameName='{riot_id_name}', riotIdTagline='{riot_id_tag}', riotId='{riot_id_combined}', streamer_mode={not has_riot_id}")
+            
+            lp = 0
+            wins = 0
+            losses = 0
+            if stats:
+                # Pick the correct ranked entry (SOLOQ preferred)
+                solo = [s for s in stats if s.get('queueType') == 'RANKED_SOLO_5x5']
+                entry = solo[0] if solo else stats[0]
+                lp = entry.get('leaguePoints', 0)
+                wins = entry.get('wins', 0)
+                losses = entry.get('losses', 0)
+            p['lp'] = lp
+            p['wins'] = wins
+            p['losses'] = losses
+            p['has_api_rank_data'] = bool(stats)
+            games = wins + losses
+
+            # Anti-smurf heuristic marker used in embed transparency.
+            smurf_risk_score = 0
+            if games >= 15 and wr >= 68:
+                smurf_risk_score += 1
+            if games >= 20 and wr >= 62 and tier in {'SILVER', 'GOLD', 'PLATINUM', 'EMERALD'} and lp <= 120:
+                smurf_risk_score += 1
+            p['smurf_risk'] = smurf_risk_score >= 1
+            p['smurf_risk_score'] = smurf_risk_score
+
+            champ_id = p.get('championId')
+            champ_name = CHAMPION_ID_TO_NAME.get(champ_id, f'Champion#{champ_id}')
+            # Log new champions for monitoring (including correct DDragon IDs)
+            if champ_id in [799, 804, 888, 893, 895, 901, 902, 904, 910, 950]:
+                logger.info(f"✅ Champion in embed - {champ_name} (ID: {champ_id}) by {p.get('riotIdGameName', 'N/A')}")
+            p['champ_name'] = champ_name
+            # Use emoji if available, fallback to bold champion name
+            p['champ_emoji'] = CFG_CHAMPION_EMOJIS.get(champ_id) or f'**{champ_name}**'
+            # Check if player is a pro or streamer (database + lolpros.gg)
+            riot_id = p.get('riotId', '')
+            
+            # First check static database (instant)
+            badge = get_player_badge_emoji(riot_id)
+            
+            # If not in static database, check lolpros.gg and database (async)
+            if not badge and riot_id:
+                badge = await check_and_verify_player(riot_id, self.db)
+            
+            p['is_pro'] = badge == get_pro_emoji() if badge else is_pro_player(riot_id)
+            p['is_streamer'] = badge == get_streamer_emoji() if badge else is_streamer_player(riot_id)
+            p['badge_emoji'] = badge
+            
+            # Load ProName and badge from database if player is verified pro/streamer
+            if riot_id:
+                try:
+                    conn = self.db.get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT player_name, player_type FROM hexbet_verified_players WHERE riot_id = %s",
+                        (riot_id,)
+                    )
+                    result = cursor.fetchone()
+                    cursor.close()
+                    self.db.return_connection(conn)
+                    if result:
+                        p['pro_name'] = result[0]
+                        player_type = result[1]
+                        # Always set badge for verified players (override any previous value)
+                        if player_type == 'pro':
+                            p['badge_emoji'] = get_pro_emoji()
+                            logger.info(f"🎖️ Set PRO badge for {p['pro_name']} ({riot_id})")
+                        elif player_type == 'streamer':
+                            p['badge_emoji'] = get_streamer_emoji()
+                            logger.info(f"📺 Set STREAMER badge for {p['pro_name']} ({riot_id})")
+                except Exception as e:
+                    logger.warning(f"Failed to load ProName for {riot_id}: {e}")
+
+    
+    async def _should_skip_game(self, blue_team: List[dict], red_team: List[dict]) -> bool:
+        """Check if game should be skipped (both teams in streamer mode, all banned champs, etc.)"""
+        # Skip if entire team is in streamer mode (both blue AND red full streamer)
+        blue_all_streamer = all(p.get('streamer_mode', False) for p in blue_team)
+        red_all_streamer = all(p.get('streamer_mode', False) for p in red_team)
+        
+        if blue_all_streamer or red_all_streamer:
+            team_name = 'BLUE' if blue_all_streamer else 'RED'
+            logger.warning(f"⏭️ Skipping game - {team_name} team all in streamer mode")
+            return True
+        
+        return False
+    
+    def _apply_lobby_average(self, all_players: List[dict]):
+        """Apply lobby-wide average to streamer mode players (balanced distribution)"""
+        # Calculate average from ALL ranked players in lobby
+        ranked_players = [p for p in all_players if not p.get('streamer_mode', False)]
+        if not ranked_players:
+            return
+        
+        avg_tier_score = sum(TIER_SCORE.get(p['tier'], 1) + DIVISION_SCORE.get(p['division'], 0) for p in ranked_players) / len(ranked_players)
+        avg_wr = sum(p['wr'] for p in ranked_players) / len(ranked_players)
+        avg_lp = sum(p['lp'] for p in ranked_players) / len(ranked_players)
+        
+        # Convert tier score back to tier and division for streamers
+        # Round down to get tier, fractional part determines division
+        tier_base = int(avg_tier_score)
+        division_decimal = avg_tier_score - tier_base
+        
+        # Map tier score back to tier name
+        tier_map_reverse = {v: k for k, v in TIER_SCORE.items()}
+        avg_tier = tier_map_reverse.get(tier_base, 'DIAMOND')
+        
+        # Map division decimal to division (0.0-0.25=IV, 0.25-0.5=III, 0.5-0.75=II, 0.75-1.0=I)
+        if division_decimal < 0.15:
+            avg_division = 'IV'
+        elif division_decimal < 0.35:
+            avg_division = 'III'
+        elif division_decimal < 0.55:
+            avg_division = 'II'
+        else:
+            avg_division = 'I'
+        
+        # Apply only to streamer-mode players without usable API rank data.
+        # If API returned rank stats for hidden-name players, keep those real values.
+        for p in all_players:
+            if p.get('streamer_mode', False) and not p.get('has_api_rank_data', False):
+                p['wr'] = avg_wr
+                p['lp'] = int(avg_lp)
+                p['tier'] = avg_tier
+                p['division'] = avg_division if avg_tier not in ['MASTER', 'GRANDMASTER', 'CHALLENGER'] else ''
+
+    def _team_score(self, players: List[dict]) -> float:
+        if not players:
+            return 1.0
+        
+        # Base rank score (tier + division) - VERY STRONG exponential scaling for massive differences
+        rank_scores = [TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in players]
+        rank_score = sum(rank_scores) / len(players)
+        # MASSIVE exponential: 1.7^rank creates HUGE gaps between tiers
+        # Diamond (7.2): 1.7^7.2 = 55.2
+        # Master (8.2): 1.7^8.2 = 93.8
+        # Difference: 38.6 point difference (vs previous 8.5)
+        rank_contribution = (1.7 ** rank_score) * 2.0
+        
+        # LP contribution (increased weight)
+        avg_lp = sum(p.get('lp', 0) for p in players) / len(players)
+        lp_contribution = (avg_lp / 500) * 1.5  # Increased from 1.0 to 1.5
+        
+        # Winrate score (very predictive of actual performance)
+        avg_wr = sum(p.get('wr', 50) for p in players) / len(players)
+        wr_contribution = ((avg_wr - 50) / 4) * 1.5  # Increased impact: ±4% WR = ±1.5 points
+        
+        # Champion diversity score (minor)
+        comp_score = len({p.get('champ_name') for p in players}) / 20
+        
+        # Total: exponential rank dominates heavily, then WR and LP
+        return rank_contribution + lp_contribution + wr_contribution + comp_score
+
+    def _odds_confidence(self, blue: List[dict], red: List[dict]) -> float:
+        all_players = blue + red
+        if not all_players:
+            return 0.6
+
+        visible_ids = sum(1 for p in all_players if not p.get('streamer_mode', False))
+        ranked_players = sum(1 for p in all_players if p.get('tier', 'UNRANKED') != 'UNRANKED')
+        sample_quality = (visible_ids / 10.0) * 0.6 + (ranked_players / 10.0) * 0.4
+        return min(max(sample_quality, 0.45), 1.0)
+
+    def _build_live_timeline(self, game_duration_min: int) -> str:
+        milestones = ["0", "10", "20", "30", "40+"]
+        if game_duration_min < 10:
+            idx = 0
+        elif game_duration_min < 20:
+            idx = 1
+        elif game_duration_min < 30:
+            idx = 2
+        elif game_duration_min < 40:
+            idx = 3
+        else:
+            idx = 4
+
+        cells = []
+        for i, label in enumerate(milestones):
+            if i == idx:
+                cells.append(f"📍{label}")
+            else:
+                cells.append(label)
+        return "Timeline: " + " - ".join(cells)
+
+    def _build_live_timeline_analytics(self, game_duration_min: int, chance_blue: float, chance_red: float,
+                                       blue: List[dict], red: List[dict], include_suspicious: bool = True) -> str:
+        """Build compact live-phase analytics based on current game minute and team edge."""
+        if game_duration_min < 14:
+            phase = "Early game"
+        elif game_duration_min < 28:
+            phase = "Mid game"
+        else:
+            phase = "Late game"
+
+        edge = abs(chance_blue - chance_red)
+        if edge < 6:
+            volatility = "High"
+        elif edge < 12:
+            volatility = "Medium"
+        else:
+            volatility = "Low"
+
+        if chance_blue > chance_red:
+            favored = "Blue"
+        elif chance_red > chance_blue:
+            favored = "Red"
+        else:
+            favored = "Even"
+
+        smurf_blue = self._smurf_summary(blue)
+        smurf_red = self._smurf_summary(red)
+
+        # Calculate average LP (rank gap indicator)
+        avg_lp_blue = sum(p.get('lp', 0) for p in blue) / len(blue) if blue else 0
+        avg_lp_red = sum(p.get('lp', 0) for p in red) / len(red) if red else 0
+        lp_diff = avg_lp_blue - avg_lp_red
+
+        _BLUE = "<:BlueSide:1457209225976484014>"
+        _RED = "<:RedSide:1457209221031395472>"
+
+        if abs(lp_diff) < 50:
+            rank_gap_str = "Even"
+        elif lp_diff > 0:
+            rank_gap_str = f"{_BLUE} +{int(abs(lp_diff))} LP"
+        else:
+            rank_gap_str = f"{_RED} +{int(abs(lp_diff))} LP"
+
+        # Swing potential (how likely result can flip)
+        if edge < 6:
+            swing_str = "High — anything can happen"
+        elif edge < 12:
+            swing_str = "Medium — one big fight decides"
+        else:
+            swing_str = "Low — heavy favorite"
+
+        # Suspicious players label
+        if smurf_blue == 0 and smurf_red == 0:
+            smurf_str = "None flagged"
+        else:
+            parts = []
+            if smurf_blue:
+                parts.append(f"{_BLUE} {smurf_blue}")
+            if smurf_red:
+                parts.append(f"{_RED} {smurf_red}")
+            smurf_str = " | ".join(parts)
+
+        # Objectives projected — first 2 drakes differ, the rest match rift type, 4 drakes => soul
+        _DRAKES = {
+            'infernal': "<:infernaldrake:1488169753007624283>",
+            'ocean': "<:oceandrake:1488169757063778455>",
+            'mountain': "<:mountaindrake:1488169755780055110>",
+            'cloud': "<:clouddrake:1488169743750922441>",
+            'hextech': "<:hextechdrake:1488169749845119086>",
+            'chemtech': "<:chemtechdrake:1488169741226082445>",
+        }
+        _SOULS = {
+            'infernal': "<:Infernal_Dragon_soul:1488169751036428298>",
+            'mountain': "<:Mountain_Dragon_soul:1488169754320568484>",
+            'cloud': "<:Cloud_Dragon_soul:1488169742547030116>",
+            'hextech': "<:Hextech_Dragon_soul:1488169748226375844>",
+            'chemtech': "<:Chemtech_Dragon_soul:1488169739699355871>",
+            # Fallback until a dedicated ocean soul emoji is configured.
+            'ocean': "<:Infernal_Dragon_soul:1488169751036428298>",
+        }
+        _DRAKE_ORDER = ['infernal', 'ocean', 'mountain', 'cloud', 'hextech', 'chemtech']
+        _HERALD = "<:riftherald:1488169758292443206>"
+        _BARON = "<:baronnashor:1488169738675687576>"
+        _GRUB = "<:grub:1488169746443665509>"
+        _ELDER = "<:elderdrake:1488169745365729411>"
+
+        # Derive one global drake sequence for this match preview.
+        seed = (game_duration_min // 3 + int(abs(chance_blue - chance_red))) % len(_DRAKE_ORDER)
+        first_type = _DRAKE_ORDER[seed]
+        second_type = _DRAKE_ORDER[(seed + 1) % len(_DRAKE_ORDER)]
+        rift_type = _DRAKE_ORDER[(seed + 2) % len(_DRAKE_ORDER)]
+
+        def _spawned_regular_drakes() -> List[str]:
+            if game_duration_min < 5:
+                count = 0
+            elif game_duration_min < 10:
+                count = 1
+            elif game_duration_min < 15:
+                count = 2
+            elif game_duration_min < 20:
+                count = 3
+            elif game_duration_min < 25:
+                count = 4
+            elif game_duration_min < 30:
+                count = 5
+            elif game_duration_min < 35:
+                count = 6
+            else:
+                count = 7
+
+            drakes = []
+            if count >= 1:
+                drakes.append(first_type)
+            if count >= 2:
+                drakes.append(second_type)
+            if count >= 3:
+                drakes.extend([rift_type] * (count - 2))
+            return drakes
+
+        def _drake_strip(drake_types: List[str], elder_count: int = 0) -> str:
+            if not drake_types and elder_count <= 0:
+                return ""
+            parts = [_DRAKES[drake_type] for drake_type in drake_types]
+            if len(drake_types) >= 4:
+                parts.append(_SOULS[rift_type])
+            if elder_count > 0:
+                parts.extend([_ELDER] * elder_count)
+            return "".join(parts)
+
+        all_spawned_drakes = _spawned_regular_drakes()
+
+        diff = chance_blue - chance_red  # positive = blue favored
+        total_regular_drakes = len(all_spawned_drakes)
+        if abs(diff) < 6:
+            blue_drakes = (total_regular_drakes + 1) // 2
+        elif diff > 0:
+            if edge >= 20:
+                blue_drakes = max(1, round(total_regular_drakes * 0.75))
+            elif edge >= 12:
+                blue_drakes = max(1, round(total_regular_drakes * 0.65))
+            else:
+                blue_drakes = max(1, round(total_regular_drakes * 0.60))
+        else:
+            if edge >= 20:
+                blue_drakes = min(total_regular_drakes - 1, round(total_regular_drakes * 0.25)) if total_regular_drakes else 0
+            elif edge >= 12:
+                blue_drakes = min(total_regular_drakes - 1, round(total_regular_drakes * 0.35)) if total_regular_drakes else 0
+            else:
+                blue_drakes = min(total_regular_drakes - 1, round(total_regular_drakes * 0.40)) if total_regular_drakes else 0
+        blue_drakes = max(0, min(total_regular_drakes, blue_drakes))
+        red_drakes = total_regular_drakes - blue_drakes
+
+        blue_drake_types = all_spawned_drakes[:blue_drakes]
+        red_drake_types = all_spawned_drakes[blue_drakes:]
+
+        blue_prefix, red_prefix = "", ""
+        blue_suffix, red_suffix = "", ""
+
+        if 6 <= game_duration_min < 20:
+            if diff >= 12:
+                blue_prefix += _GRUB
+            elif diff <= -12:
+                red_prefix += _GRUB
+
+        if 14 <= game_duration_min < 20:
+            if diff > 0:
+                blue_prefix += _HERALD
+            elif diff < 0:
+                red_prefix += _HERALD
+
+        if game_duration_min >= 20:
+            if diff >= 20 and game_duration_min >= 22:
+                blue_suffix += _BARON
+            elif diff <= -20 and game_duration_min >= 22:
+                red_suffix += _BARON
+
+        blue_elder = 1 if len(blue_drake_types) >= 4 and game_duration_min >= 35 and diff >= 20 else 0
+        red_elder = 1 if len(red_drake_types) >= 4 and game_duration_min >= 35 and diff <= -20 else 0
+        blue_objs = f"{blue_prefix}{_drake_strip(blue_drake_types, blue_elder)}{blue_suffix}" or '—'
+        red_objs = f"{red_prefix}{_drake_strip(red_drake_types, red_elder)}{red_suffix}" or '—'
+
+        objectives_str = f"{blue_objs} {_BLUE} | {_RED} {red_objs}"
+
+        lines = [
+            f"**Rank Gap:** {rank_gap_str}",
+            f"**Objectives:** {objectives_str}",
+        ]
+        if include_suspicious:
+            lines.append(f"**Suspicious:** {smurf_str}")
+        return "\n".join(lines)
+
+    def _extract_timeline_analytics(self, match_info: dict, timeline_data: Optional[dict]) -> Optional[str]:
+        """Extract concise post-game analytics from Match-V5 timeline payload."""
+        if not timeline_data or not isinstance(timeline_data, dict):
+            return None
+
+        info = timeline_data.get('info', {})
+        frames = info.get('frames', [])
+        if not frames:
+            return None
+
+        participant_team = {}
+        for p in match_info.get('participants', []):
+            pid = p.get('participantId')
+            tid = p.get('teamId')
+            if isinstance(pid, int) and tid in (100, 200):
+                participant_team[pid] = tid
+
+        kills = {100: 0, 200: 0}
+        dragon_types = {100: [], 200: []}
+        global_dragon_types = []
+        grubs = {100: 0, 200: 0}
+        heralds = {100: 0, 200: 0}
+        barons = {100: 0, 200: 0}
+        elders = {100: 0, 200: 0}
+        first_blood_ms = None
+        first_blood_team = None
+
+        for frame in frames:
+            for event in frame.get('events', []):
+                event_type = event.get('type')
+
+                if event_type == 'CHAMPION_KILL':
+                    killer_id = event.get('killerId')
+                    killer_team = event.get('killerTeamId')
+                    if killer_team not in (100, 200) and isinstance(killer_id, int):
+                        killer_team = participant_team.get(killer_id)
+                    if killer_team in (100, 200):
+                        kills[killer_team] += 1
+                        if first_blood_ms is None:
+                            first_blood_ms = event.get('timestamp')
+                            first_blood_team = killer_team
+
+                elif event_type == 'ELITE_MONSTER_KILL':
+                    monster_type = event.get('monsterType')
+                    killer_team = event.get('killerTeamId')
+                    killer_id = event.get('killerId')
+                    if killer_team not in (100, 200) and isinstance(killer_id, int):
+                        killer_team = participant_team.get(killer_id)
+                    if killer_team not in (100, 200):
+                        continue
+
+                    if monster_type == 'DRAGON':
+                        dragon_subtype = (event.get('monsterSubType') or '').upper()
+                        dragon_map = {
+                            'FIRE_DRAGON': 'infernal',
+                            'WATER_DRAGON': 'ocean',
+                            'EARTH_DRAGON': 'mountain',
+                            'AIR_DRAGON': 'cloud',
+                            'HEXTECH_DRAGON': 'hextech',
+                            'CHEMTECH_DRAGON': 'chemtech',
+                        }
+                        if dragon_subtype == 'ELDER_DRAGON':
+                            elders[killer_team] += 1
+                        else:
+                            dragon_type = dragon_map.get(dragon_subtype, 'infernal')
+                            dragon_types[killer_team].append(dragon_type)
+                            global_dragon_types.append(dragon_type)
+                    elif monster_type in ('HORDE', 'VOIDGRUB'):
+                        grubs[killer_team] += 1
+                    elif monster_type == 'RIFTHERALD':
+                        heralds[killer_team] += 1
+                    elif monster_type == 'BARON_NASHOR':
+                        barons[killer_team] += 1
+
+        frame_15 = None
+        for frame in frames:
+            if frame.get('timestamp', 0) <= 900000:
+                frame_15 = frame
+            else:
+                break
+
+        gold_15_blue = 0
+        gold_15_red = 0
+        if frame_15:
+            participant_frames = frame_15.get('participantFrames', {})
+            for pid_raw, pf in participant_frames.items():
+                try:
+                    pid = int(pid_raw)
+                except (TypeError, ValueError):
+                    continue
+                team_id = participant_team.get(pid)
+                total_gold = int(pf.get('totalGold', 0) or 0)
+                if team_id == 100:
+                    gold_15_blue += total_gold
+                elif team_id == 200:
+                    gold_15_red += total_gold
+
+        gold_diff = gold_15_blue - gold_15_red
+        if gold_diff > 0:
+            gold_line = f"Gold@15: Blue +{gold_diff:,}"
+        elif gold_diff < 0:
+            gold_line = f"Gold@15: Red +{abs(gold_diff):,}"
+        else:
+            gold_line = "Gold@15: Even"
+
+        game_duration_min = max(1, int((match_info.get('gameDuration', 0) or 0) / 60))
+        total_kills = kills[100] + kills[200]
+        kill_pace = total_kills / game_duration_min
+
+        if first_blood_ms is not None and first_blood_team in (100, 200):
+            fb_min = int(first_blood_ms // 60000)
+            fb_sec = int((first_blood_ms % 60000) // 1000)
+            fb_side = 'Blue' if first_blood_team == 100 else 'Red'
+            fb_line = f"First blood: {fb_side} {fb_min}:{fb_sec:02d}"
+        else:
+            fb_line = "First blood: N/A"
+
+        # Build objective emoji strips (left = blue, right = red)
+        _DRAGON_EMOJIS = {
+            'infernal': '<:infernaldrake:1488169753007624283>',
+            'ocean': '<:oceandrake:1488169757063778455>',
+            'mountain': '<:mountaindrake:1488169755780055110>',
+            'cloud': '<:clouddrake:1488169743750922441>',
+            'hextech': '<:hextechdrake:1488169749845119086>',
+            'chemtech': '<:chemtechdrake:1488169741226082445>',
+        }
+        _SOUL_EMOJIS = {
+            'infernal': '<:Infernal_Dragon_soul:1488169751036428298>',
+            'mountain': '<:Mountain_Dragon_soul:1488169754320568484>',
+            'cloud': '<:Cloud_Dragon_soul:1488169742547030116>',
+            'hextech': '<:Hextech_Dragon_soul:1488169748226375844>',
+            'chemtech': '<:Chemtech_Dragon_soul:1488169739699355871>',
+            'ocean': '<:Infernal_Dragon_soul:1488169751036428298>',
+        }
+        _HERALD = '<:riftherald:1488169758292443206>'
+        _GRUB = '<:grub:1488169746443665509>'
+        _BARON = '<:baronnashor:1488169738675687576>'
+        _ELDER = '<:elderdrake:1488169745365729411>'
+
+        rift_type = global_dragon_types[2] if len(global_dragon_types) >= 3 else None
+
+        def _team_objective_strip(team_id: int) -> str:
+            parts = []
+            if grubs[team_id] > 0:
+                parts.append(_GRUB)
+            parts.extend([_HERALD] * heralds[team_id])
+            parts.extend(_DRAGON_EMOJIS[dragon_type] for dragon_type in dragon_types[team_id])
+            if len(dragon_types[team_id]) >= 4 and rift_type:
+                parts.append(_SOUL_EMOJIS[rift_type])
+            parts.extend([_ELDER] * elders[team_id])
+            parts.extend([_BARON] * barons[team_id])
+            return ''.join(parts) or '—'
+
+        blue_obj_strip = _team_objective_strip(100)
+        red_obj_strip = _team_objective_strip(200)
+
+        return (
+            f"{fb_line}\n"
+            f"<:BlueSide:1457209225976484014> {blue_obj_strip} | {red_obj_strip} <:RedSide:1457209221031395472>\n"
+            f"{gold_line}\n"
+            f"Kill pace: {kill_pace:.2f}/min ({kills[100]}-{kills[200]})"
+        )
+
+    def _smurf_summary(self, team: List[dict]) -> int:
+        return sum(1 for p in team if p.get('smurf_risk'))
+
+    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None, game_start_at: Optional[str] = None) -> discord.Embed:
+        # Calculate team statistics (only from ranked players, not streamer mode)
+        blue_ranked = [p for p in blue if not p.get('streamer_mode', False)]
+        red_ranked = [p for p in red if not p.get('streamer_mode', False)]
+        
+        blue_avg_tier = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in blue_ranked) / len(blue_ranked) if blue_ranked else 0
+        red_avg_tier = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) + DIVISION_SCORE.get(p.get('division', ''), 0) for p in red_ranked) / len(red_ranked) if red_ranked else 0
+        blue_avg_wr = sum(p.get('wr', 50) for p in blue_ranked) / len(blue_ranked) if blue_ranked else 50
+        red_avg_wr = sum(p.get('wr', 50) for p in red_ranked) / len(red_ranked) if red_ranked else 50
+        blue_avg_lp = sum(p.get('lp', 0) for p in blue_ranked) / len(blue_ranked) if blue_ranked else 0
+        red_avg_lp = sum(p.get('lp', 0) for p in red_ranked) / len(red_ranked) if red_ranked else 0
+        
+        # Get tier name from score
+        def tier_from_score(score):
+            if score >= 10: return "CHALLENGER"
+            elif score >= 9: return "GRANDMASTER"
+            elif score >= 8: return "MASTER"
+            elif score >= 7: return "DIAMOND"
+            elif score >= 6: return "EMERALD"
+            elif score >= 5: return "PLATINUM"
+            elif score >= 4: return "GOLD"
+            elif score >= 3: return "SILVER"
+            elif score >= 2: return "BRONZE"
+            else: return "IRON"
+        
+        blue_tier_name = tier_from_score(blue_avg_tier)
+        red_tier_name = tier_from_score(red_avg_tier)
+        
+        # Map platform codes to readable region names
+        region_names = {
+            'euw1': 'EUW', 'eun1': 'EUNE', 'na1': 'NA',
+            'kr': 'KR', 'br1': 'BR', 'jp1': 'JP',
+            'la1': 'LAN', 'la2': 'LAS', 'oc1': 'OCE',
+            'tr1': 'TR', 'ru': 'RU', 'ph2': 'PH',
+            'sg2': 'SG', 'th2': 'TH', 'tw2': 'TW',
+            'vn2': 'VN'
+        }
+        region_display = region_names.get(platform.lower(), platform.upper())
+        
+        # Build description
+        desc = f"**Region:** {region_display}"
+        if featured_player:
+            # Priority game - SOLO/DUO QUEUE special bet
+            desc += f"\n━━━━━━━━━━━━━━━━━━━━━\n🎯 **SOLO/DUO QUEUE**\n⭐ **SPECIAL BET** - 1.5x bonus on winnings!\n━━━━━━━━━━━━━━━━━━━━━"
+        
+        # Show betting timer if match exists
+        if match_id:
+            try:
+                conn = self.db.get_connection()
+                with conn.cursor() as cur:
+                    cur.execute("SELECT betting_closes_at FROM hexbet_matches WHERE id = %s", (match_id,))
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        from datetime import datetime, timezone
+                        betting_closes_at = row[0]
+                        now_dt = datetime.utcnow()
+                        
+                        # Handle both timezone-aware and naive datetimes
+                        if betting_closes_at.tzinfo is not None:
+                            betting_closes_at = betting_closes_at.replace(tzinfo=None)
+                        
+                        time_left = (betting_closes_at - now_dt).total_seconds()
+                        if time_left > 0:
+                            # Convert to Unix timestamp for Discord relative time format
+                            close_timestamp = int(betting_closes_at.timestamp())
+                            desc += f"\n\n⏰ **Betting closes:** <t:{close_timestamp}:R>"
+                        else:
+                            desc += f"\n\n🔒 **Betting Closed**"
+                self.db.return_connection(conn)
+            except Exception as e:
+                logger.warning(f"Failed to get betting timer: {e}")
+        
+        game_duration_min = None
+
+        # Calculate actual game duration from PostgreSQL timestamp
+        if game_start_at:
+            try:
+                # Parse ISO format timestamp from database (format: "2026-01-04 05:22:00" or "2026-01-04T05:22:00")
+                from datetime import datetime, timezone
+                
+                timestamp_str = str(game_start_at)
+                
+                # Handle millisecond timestamps (e.g., "1767603169891")
+                if timestamp_str.isdigit():
+                    # Unix timestamp in milliseconds
+                    start_dt = datetime.utcfromtimestamp(int(timestamp_str) / 1000)
+                else:
+                    # Handle both formats: with/without 'T', with/without 'Z'
+                    timestamp_str = timestamp_str.replace('Z', '').replace(' ', 'T')
+                    
+                    # Try parsing with timezone info
+                    try:
+                        start_dt = datetime.fromisoformat(timestamp_str)
+                    except ValueError:
+                        # Fallback to simple parsing without timezone
+                        parts = timestamp_str.split('T')
+                        if len(parts) >= 2:
+                            date_part = parts[0]
+                            time_part = parts[1].split('+')[0].split('.')[0]
+                            timestamp_str = f"{date_part}T{time_part}"
+                        else:
+                            # If no 'T', just use as-is
+                            timestamp_str = timestamp_str.split('+')[0].split('.')[0]
+                        start_dt = datetime.fromisoformat(timestamp_str)
+                
+                # Make both timezone-naive for comparison (assume UTC)
+                if start_dt.tzinfo is not None:
+                    start_dt = start_dt.replace(tzinfo=None)
+                now_dt = datetime.utcnow()
+                
+                game_duration_min = int((now_dt - start_dt).total_seconds() / 60)
+                game_duration_min = max(0, game_duration_min)
+                desc += f"\n\n⏱️ **Game Duration:** {game_duration_min} min"
+                desc += f"\n{self._build_live_timeline(game_duration_min)}"
+            except Exception as e:
+                logger.warning(f"Failed to parse timestamp '{game_start_at}': {e}")
+                desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
+        else:
+            desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
+        
+        # Use distinct colors for special vs normal bets
+        embed_color = 0xE74C3C if featured_player else 0x3498DB  # Red for special, blue for normal
+        embed_title = f"⚔️ HEXBET Match #{game_id}"
+        if featured_player:
+            embed_title += " - 🎯 SOLO/DUO QUEUE"
+        
+        embed = discord.Embed(
+            title=embed_title,
+            description=desc,
+            color=embed_color
+        )
+        
+        # Team composition fields
+        embed.add_field(
+            name=f"<:BlueSide:1457209225976484014> BLUE TEAM • {chance_blue:.1f}% Win Chance",
+            value=self._team_block(blue),
+            inline=True
+        )
+        embed.add_field(
+            name=f"<:RedSide:1457209221031395472> RED TEAM • {chance_red:.1f}% Win Chance",
+            value=self._team_block(red),
+            inline=True
+        )
+        
+        # Team statistics comparison
+        blue_rank_emoji = rank_emoji(blue_tier_name)
+        red_rank_emoji = rank_emoji(red_tier_name)
+        stats_comparison = (
+            f"<:BlueSide:1457209225976484014> {blue_rank_emoji} **{blue_tier_name}** • {blue_avg_lp:.0f} LP avg • {blue_avg_wr:.1f}% WR\n"
+            f"<:RedSide:1457209221031395472> {red_rank_emoji} **{red_tier_name}** • {red_avg_lp:.0f} LP avg • {red_avg_wr:.1f}% WR"
+        )
+        embed.add_field(name="📊 Team Stats", value=stats_comparison, inline=False)
+
+        smurf_blue = self._smurf_summary(blue)
+        smurf_red = self._smurf_summary(red)
+        if smurf_blue or smurf_red:
+            embed.add_field(
+                name="🕵️ Anti-Smurf Marker",
+                value=f"Blue flagged: **{smurf_blue}** | Red flagged: **{smurf_red}**",
+                inline=False,
+            )
+
+        if game_duration_min is not None:
+            timeline_analytics = self._build_live_timeline_analytics(
+                game_duration_min,
+                chance_blue,
+                chance_red,
+                blue,
+                red,
+                include_suspicious=not (smurf_blue or smurf_red),
+            )
+            embed.add_field(name="📉 Match Timeline Analytics", value=timeline_analytics, inline=False)
+        
+        # Get current bets if match exists
+        bet_info = ""
+        if match_id:
+            try:
+                bets = self.db.get_bets_for_match(match_id)
+                logger.info(f"🔍 Got {len(bets)} bets for match {match_id}")
+                blue_bets = sum(b['amount'] for b in bets if b['side'] == 'blue')
+                red_bets = sum(b['amount'] for b in bets if b['side'] == 'red')
+                blue_max_win = sum(b['potential_win'] for b in bets if b['side'] == 'blue')
+                red_max_win = sum(b['potential_win'] for b in bets if b['side'] == 'red')
+                
+                # Build list of bettors
+                blue_bettors = [f"<@{b['user_id']}> ({b['amount']})" for b in bets if b['side'] == 'blue']
+                red_bettors = [f"<@{b['user_id']}> ({b['amount']})" for b in bets if b['side'] == 'red']
+                logger.info(f"👥 Blue bettors: {len(blue_bettors)}, Red bettors: {len(red_bettors)}")
+                
+                bet_info = f"\n\n💰 **Blue Bets:** {blue_bets} (Max Win: {blue_max_win})"
+                if blue_bettors:
+                    bet_info += f"\n└ {', '.join(blue_bettors)}"
+                
+                bet_info += f"\n💰 **Red Bets:** {red_bets} (Max Win: {red_max_win})"
+                if red_bettors:
+                    bet_info += f"\n└ {', '.join(red_bettors)}"
+                logger.info(f"📊 Bet info length: {len(bet_info)} chars")
+            except Exception as e:
+                logger.warning(f"Failed to fetch bet info: {e}")
+        
+        embed.add_field(name="📈 Odds", value=f"Blue: **{odds_blue}x**\nRed: **{odds_red}x**{bet_info}", inline=False)
+        embed.set_footer(text="Use /bet side:<blue/red> amount:<value> or buttons below.")
+        return embed
+
+    def _team_block(self, team: List[dict]) -> str:
+        lines = []
+        for p in team:
+            role = p.get('role_emoji', '🎮')
+            tier = p.get('tier', 'UNRANKED')
+            division = p.get('division', '')
+            streamer_mode = p.get('streamer_mode', False)
+            tier_emoji = rank_emoji(tier) or tier
+            # Ensure champion is never empty or Unknown
+            champ_emoji = p.get('champ_emoji')
+            champ_name = p.get('champ_name', 'Player')
+            champ = champ_emoji or f'**{champ_name}**'
+            
+            # Use pro_name (display_name from DB) only if present and not empty
+            # Otherwise use riotId, fallback to summonerName
+            pro_name = p.get('pro_name', '').strip() or None
+            riot_id = p.get('riotId', '').strip() or None
+            summoner_name = p.get('summonerName', 'Player').strip() or 'Player'
+            
+            # Priority: pro_name > riot_id > summoner_name
+            if pro_name:
+                name = pro_name
+            elif riot_id:
+                name = riot_id
+            else:
+                name = summoner_name
+            
+            logger.debug(f"Player name selection: pro_name={pro_name}, riot_id={riot_id}, summoner={summoner_name} -> using: {name}")
+            
+            # Add badge emoji before name if player is pro or streamer (only if badge exists and is not 'none')
+            badge = p.get('badge_emoji', '') or ''
+            # Filter out None, empty string, and string 'none'
+            if badge and str(badge).strip().lower() not in ['none', 'null', '']:
+                badge = str(badge).strip() + ' '  # Add space after badge for proper formatting
+            else:
+                badge = ''  # No badge - clean separation
+            
+            wr = p.get('wr', 50)
+            lp = p.get('lp', 0)
+            
+            if streamer_mode:
+                rank_str = "🤖STREAMER MODE"
+                lines.append(f"{role} {champ} {badge}**{name}**")
+                lines.append(f"   └ {rank_str} • {wr:.1f}% WR")
+            else:
+                rank_str = f"{tier}{' ' + division if division else ''}"
+                smurf_marker = " ⚠️" if p.get('smurf_risk') else ""
+                lines.append(f"{role} {champ} {badge}**{name}**")
+                lines.append(f"   └ {tier_emoji} {rank_str} {lp} LP • {wr:.1f}% WR{smurf_marker}")
+        return "\n".join(lines)
+
+    async def _find_player_in_db(self, identifier: str):
+        """Helper to find player by display_name or riot_id"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        # Try display_name first
+        cursor.execute("""
+            SELECT id, player_name, riot_id, player_type 
+            FROM hexbet_verified_players 
+            WHERE LOWER(player_name) = LOWER(%s)
+        """, (identifier,))
+        
+        result = cursor.fetchone()
+        
+        # If not found, try riot_id
+        if not result:
+            cursor.execute("""
+                SELECT id, player_name, riot_id, player_type 
+                FROM hexbet_verified_players 
+                WHERE riot_id = %s
+            """, (identifier,))
+            result = cursor.fetchone()
+        
+        cursor.close()
+        self.db.return_connection(conn)
+        return result
+
+    @app_commands.command(name="lbpro", description="Add a pro player or streamer to LoLBets")
+    @app_commands.describe(
+        name="Pro/Streamer name (will search DPM.LOL)",
+        player_type="Type of player"
+    )
+    @app_commands.choices(player_type=[
+        app_commands.Choice(name="Pro Player", value="pro"),
+        app_commands.Choice(name="Streamer", value="streamer")
+    ])
+    async def hxpro(self, interaction: discord.Interaction, name: str, player_type: str = "pro"):
+        """Add a pro player or streamer to HEXBET database"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Scrape DPM.LOL for accounts first
+            scraped_accounts = await scrape_dpm_pro_accounts(name)
+            
+            logger.info(f"🔍 DPM.LOL returned {len(scraped_accounts)} riot_ids for {name}")
+            
+            if not scraped_accounts:
+                await interaction.followup.send(f"❌ No accounts found on DPM.LOL for `{name}`", ephemeral=True)
+                return
+            
+            # Use first account as primary riot_id
+            primary_riot_id = scraped_accounts[0]['riot_id']
+            
+            # Check if already exists
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM hexbet_verified_players WHERE LOWER(player_name) = LOWER(%s)",
+                (name,)
+            )
+            existing = cursor.fetchone()
+            if existing:
+                await interaction.followup.send(f"⚠️ Player `{name}` already in database", ephemeral=True)
+                cursor.close()
+                self.db.return_connection(conn)
+                return
+            
+            # Add to database with primary riot_id
+            cursor.execute(
+                """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
+                   VALUES (%s, %s, %s)
+                   RETURNING id""",
+                (primary_riot_id, name, player_type)
+            )
+            player_id = cursor.fetchone()[0]
+            conn.commit()
+            cursor.close()
+            self.db.return_connection(conn)
+            
+            # Fetch rank/LP/WR from Riot API for each account
+            accounts = []
+            import asyncio
+            for idx, scraped in enumerate(scraped_accounts):
+                try:
+                    # Rate limiting: add 1.5s delay between API calls to avoid 429 errors
+                    if idx > 0:
+                        await asyncio.sleep(1.5)
+                    
+                    riot_id = scraped['riot_id']
+                    game_name, tag_line = riot_id.split('#', 1)
+                    
+                    # Get PUUID from Riot API (all regional routings)
+                    puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line)
+                    if not puuid:
+                        logger.warning(f"Failed to fetch PUUID for {riot_id}")
+                        continue
+                    
+                    # Get ranked stats - try multiple regions
+                    stats = None
+                    for region in ['euw', 'kr', 'na', 'eune', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp', 'ph', 'sg', 'th', 'tw', 'vn']:
+                        try:
+                            stats = await self.riot_api.get_ranked_stats_by_puuid(puuid, region)
+                            if stats:
+                                logger.debug(f"✅ Found stats for {riot_id} on {region}")
+                                break
+                        except:
+                            continue
+                    
+                    if not stats:
+                        logger.warning(f"No ranked stats for {riot_id}")
+                        continue
+                    
+                    # Pick SOLOQ entry using local function
+                    tier, division, wr = pick_rank_entry(stats)
+                    
+                    # Find SOLOQ entry for LP/wins/losses
+                    soloq_entry = next((s for s in stats if s.get('queueType') == 'RANKED_SOLO_5x5'), stats[0] if stats else {})
+                    lp = soloq_entry.get('leaguePoints', 0)
+                    wins = soloq_entry.get('wins', 0)
+                    losses = soloq_entry.get('losses', 0)
+                    
+                    accounts.append({
+                        'riot_id': riot_id,
+                        'rank': tier,
+                        'lp': lp,
+                        'wins': wins,
+                        'losses': losses,
+                        'wr': wr
+                    })
+                    logger.info(f"✅ Fetched stats for {riot_id}: {tier} {lp} LP")
+                except Exception as e:
+                    logger.warning(f"❌ Failed to fetch data for {scraped.get('riot_id')}: {e}")
+                    continue
+            
+            logger.info(f"📊 Successfully fetched {len(accounts)}/{len(scraped_accounts)} accounts from Riot API")
+            
+            account_text = ""
+            highest_rank_account = None
+            if accounts:
+                # Add accounts to database
+                count = self.db.add_pro_accounts(player_id, accounts)
+                logger.info(f"✅ Added {count} accounts for {name}")
+                
+                # Find highest rank account for display
+                rank_order = {'IRON': 1, 'BRONZE': 2, 'SILVER': 3, 'GOLD': 4, 'PLATINUM': 5, 'DIAMOND': 6, 'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9}
+                highest_rank_account = max(accounts, key=lambda x: (rank_order.get(x['rank'], 0), x['lp']))
+                
+                # Format display: show highest rank account
+                account_text = f"`{highest_rank_account['riot_id']}` - **{highest_rank_account['rank']}** {highest_rank_account['lp']} LP ({highest_rank_account['wr']:.1f}% WR)"
+                
+                if len(accounts) > 1:
+                    account_text += f"\n({len(accounts)} total accounts)"
+            else:
+                account_text = "❌ No accounts found (try adding manually later)"
+            
+            pro_emoji = get_pro_emoji()
+            streamer_emoji = get_streamer_emoji()
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
+            embed = discord.Embed(
+                title=f"✅ {player_type_label} Added",
+                description=f"**{name}** added to HEXBET database",
+                color=0x2ECC71
+            )
+            embed.add_field(name="Primary RiotID", value=primary_riot_id, inline=False)
+            embed.add_field(name="Display Name", value=name, inline=False)
+            embed.add_field(name="Type", value=player_type_label, inline=False)
+            embed.add_field(name=f"🏆 Highest Rank", value=account_text or "None", inline=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Added pro player: {primary_riot_id} ({name}) with {len(accounts)} accounts")
+        
+        except Exception as e:
+            logger.error(f"Error in hxpro add command: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbproremove", description="Remove a pro player or streamer from LoLBets")
+    @app_commands.describe(name="Player name (display name or gameName#tagLine)")
+    async def hxproremove(self, interaction: discord.Interaction, name: str):
+        """Remove a verified pro/streamer from database."""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            result = await self._find_player_in_db(name)
+            
+            if not result:
+                await interaction.followup.send(f"❌ Player `{name}` not found in database", ephemeral=True)
+                return
+            
+            player_id, player_name, riot_id, player_type = result
+            
+            # Delete player (CASCADE will remove linked accounts)
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM hexbet_verified_players WHERE id = %s", (player_id,))
+            conn.commit()
+            cursor.close()
+            self.db.return_connection(conn)
+            
+            pro_emoji = get_pro_emoji()
+            streamer_emoji = get_streamer_emoji()
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
+            
+            embed = discord.Embed(
+                title="✅ Player Removed",
+                description=f"**{player_name}** removed from HEXBET database",
+                color=0xE74C3C
+            )
+            embed.add_field(name="RiotID", value=riot_id, inline=False)
+            embed.add_field(name="Type", value=player_type_label, inline=False)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Removed player: {player_name} ({riot_id})")
+        
+        except Exception as e:
+            logger.error(f"Error in hxproremove: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbadd", description="Manually add a player to the verified pool and database")
+    @app_commands.describe(
+        display_name="Player display name (how they appear in embeds)",
+        riot_id="RiotID (gameName#tagLine)",
+        region="Platform region (euw1, kr, na1, etc.)",
+        player_type="Type of player"
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.choices(
+        player_type=[
+            app_commands.Choice(name="Pro Player", value="pro"),
+            app_commands.Choice(name="Streamer", value="streamer")
+        ],
+        region=[
+            app_commands.Choice(name="EUW", value="euw1"),
+            app_commands.Choice(name="EUNE", value="eun1"),
+            app_commands.Choice(name="Korea", value="kr"),
+            app_commands.Choice(name="NA", value="na1"),
+            app_commands.Choice(name="Brazil", value="br1"),
+            app_commands.Choice(name="LAN", value="la1"),
+            app_commands.Choice(name="LAS", value="la2"),
+            app_commands.Choice(name="OCE", value="oc1"),
+            app_commands.Choice(name="Turkey", value="tr1"),
+            app_commands.Choice(name="Russia", value="ru"),
+            app_commands.Choice(name="Japan", value="jp1")
+        ]
+    )
+    async def hxadd(self, interaction: discord.Interaction, display_name: str, riot_id: str, region: str, player_type: str = "pro"):
+        """Manually add a player to verified database"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            logger.info(f"🔄 hxadd started: {display_name} ({riot_id}) on {region} as {player_type}")
+            
+            # Validate riot_id format
+            if '#' not in riot_id:
+                await interaction.followup.send("❌ RiotID must be in format: `gameName#tagLine`", ephemeral=True)
+                return
+            
+            game_name, tag_line = riot_id.split('#', 1)
+            
+            # URL encode the tagline (for special characters like Chinese)
+            import urllib.parse
+            encoded_tag = urllib.parse.quote(tag_line)
+            encoded_name = urllib.parse.quote(game_name)
+            
+            logger.info(f"🔍 Searching for: {game_name}#{tag_line}")
+            logger.info(f"🔗 Encoded as: {encoded_name}#{encoded_tag}")
+            
+            # Map platform region to routing region
+            region_map = {
+                'euw1': 'europe', 'eun1': 'europe', 'ru': 'europe', 'tr1': 'europe',
+                'na1': 'americas', 'br1': 'americas', 'la1': 'americas', 'la2': 'americas',
+                'kr': 'asia', 'jp1': 'asia',
+                'oc1': 'sea'
+            }
+            
+            routing_region = region_map.get(region, 'americas')
+            
+            # Get PUUID from specified routing region with retry on rate limit
+            puuid = None
+            headers = {'X-Riot-Token': self.riot_api.api_key}
+            
+            account_url = f"https://{routing_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
+            logger.info(f"📡 Account URL: {account_url}")
+            
+            # Retry up to 3 times on rate limit
+            for attempt in range(3):
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(account_url, headers=headers) as resp:
+                        logger.info(f"📊 Response status: {resp.status} (attempt {attempt + 1}/3)")
+                        
+                        if resp.status == 200:
+                            account_data = await resp.json()
+                            puuid = account_data.get('puuid')
+                            logger.info(f"✅ Found PUUID on {routing_region}: {puuid}")
+                            break
+                        elif resp.status == 429:
+                            # Rate limit - wait and retry
+                            retry_after = resp.headers.get('Retry-After', '2')
+                            wait_time = int(retry_after) if retry_after.isdigit() else 2
+                            logger.warning(f"⏳ Rate limited, waiting {wait_time}s before retry...")
+                            if attempt < 2:  # Don't wait on last attempt
+                                await asyncio.sleep(wait_time)
+                        else:
+                            error_text = await resp.text()
+                            logger.error(f"❌ API Error {resp.status}: {error_text[:200]}")
+                            break
+            
+            if not puuid:
+                logger.error(f"❌ Failed to get PUUID for {riot_id} on {routing_region}")
+                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` on {region} ({routing_region})\nThis may be due to API rate limits. Try again in a moment.", ephemeral=True)
+                return
+            
+            # Get summoner data from specified platform region
+            summoner_data = None
+            summoner_id = None
+            
+            summoner_url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(summoner_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        summoner_data = await resp.json()
+                        summoner_id = summoner_data.get('id')
+                        logger.info(f"✅ Found summoner on {region}")
+            
+            if not summoner_id:
+                await interaction.followup.send(f"❌ Failed to get summoner data from {region}", ephemeral=True)
+                return
+            
+            # Get ranked stats from the specified region
+            ranked_url = f"https://{region}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+            stats = None
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(ranked_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        stats_data = await resp.json()
+                        if stats_data:
+                            ranked = [s for s in stats_data if s.get('queueType') == 'RANKED_SOLO_5x5']
+                            stats = ranked[0] if ranked else stats_data[0]
+            
+            tier = stats.get('tier', 'DIAMOND') if stats else 'DIAMOND'
+            lp = stats.get('leaguePoints', 0) if stats else 0
+            wins = stats.get('wins', 0) if stats else 0
+            losses = stats.get('losses', 0) if stats else 0
+            wr = round((wins / (wins + losses) * 100), 1) if (wins + losses) > 0 else 50.0
+            
+            logger.info(f"📊 Player stats: {tier} {lp}LP, {wins}W {losses}L ({wr}% WR)")
+            
+            # Add to verified_players
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            
+            # Check if already exists
+            cur.execute(
+                "SELECT id FROM hexbet_verified_players WHERE LOWER(player_name) = LOWER(%s) OR riot_id = %s",
+                (display_name, riot_id)
+            )
+            
+            existing = cur.fetchone()
+            if existing:
+                cur.close()
+                self.db.return_connection(conn)
+                logger.warning(f"⚠️ Player {display_name} already exists (id: {existing[0]})")
+                await interaction.followup.send(f"⚠️ Player **{display_name}** already exists in database", ephemeral=True)
+                return
+            
+            # Insert player
+            cur.execute(
+                """INSERT INTO hexbet_verified_players (riot_id, player_name, player_type)
+                   VALUES (%s, %s, %s)
+                   RETURNING id""",
+                (riot_id, display_name, player_type)
+            )
+            player_id = cur.fetchone()[0]
+            conn.commit()
+            logger.info(f"📝 Inserted player with ID {player_id}")
+            
+            # Add stats to pro_accounts
+            cur.execute(
+                """INSERT INTO hexbet_pro_accounts (pro_player_id, riot_id, rank, lp, wins, losses, wr)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (pro_player_id, riot_id) DO UPDATE SET
+                       rank = EXCLUDED.rank,
+                       lp = EXCLUDED.lp,
+                       wins = EXCLUDED.wins,
+                       losses = EXCLUDED.losses,
+                       wr = EXCLUDED.wr,
+                       updated_at = NOW()
+                """,
+                (player_id, riot_id, tier, lp, wins, losses, wr)
+            )
+            conn.commit()
+            logger.info(f"📝 Added stats to pro_accounts")
+            cur.close()
+            self.db.return_connection(conn)
+            
+            # Build embed
+            pro_emoji = get_pro_emoji()
+            streamer_emoji = get_streamer_emoji()
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
+            
+            embed = discord.Embed(
+                title="✅ Player Added",
+                description=f"**{display_name}** added to HEXBET database",
+                color=0x2ECC71
+            )
+            embed.add_field(name="Display Name", value=display_name, inline=False)
+            embed.add_field(name="RiotID", value=riot_id, inline=False)
+            embed.add_field(name="Type", value=player_type_label, inline=False)
+            embed.add_field(name="Rank", value=f"{tier} {lp}LP", inline=True)
+            embed.add_field(name="W/L", value=f"{wins}W {losses}L ({wr}% WR)", inline=True)
+            embed.add_field(name="Status", value="✅ Will be added to pool on next hourly update", inline=False)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Added player: {display_name} ({riot_id}) - {tier} {lp}LP")
+            
+        except Exception as e:
+            logger.error(f"Error in hxadd: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbproedit", description="Edit pro player or streamer information")
+    @app_commands.describe(
+        name="Player name (display name or gameName#tagLine)",
+        new_riot_id="New RiotID (optional)",
+        new_display_name="New display name (optional)",
+        region="Region to validate new RiotID (optional)"
+    )
+    @app_commands.choices(region=[
+        app_commands.Choice(name="EUW (Europe West)", value="euw1"),
+        app_commands.Choice(name="EUNE (Europe Nordic & East)", value="eun1"),
+        app_commands.Choice(name="NA (North America)", value="na1"),
+        app_commands.Choice(name="KR (Korea)", value="kr"),
+        app_commands.Choice(name="BR (Brazil)", value="br1"),
+        app_commands.Choice(name="LAN (Latin America North)", value="la1"),
+        app_commands.Choice(name="LAS (Latin America South)", value="la2"),
+        app_commands.Choice(name="OCE (Oceania)", value="oc1"),
+        app_commands.Choice(name="TR (Turkey)", value="tr1"),
+        app_commands.Choice(name="RU (Russia)", value="ru"),
+        app_commands.Choice(name="JP (Japan)", value="jp1")
+    ])
+    async def hxproedit(self, interaction: discord.Interaction, name: str, new_riot_id: str = None, new_display_name: str = None, region: str = "euw1"):
+        """Edit player information."""
+        await interaction.response.defer(ephemeral=True)
+        
+        if not new_riot_id and not new_display_name:
+            await interaction.followup.send("❌ Provide at least one field to update: `new_riot_id` or `new_display_name`", ephemeral=True)
+            return
+        
+        try:
+            result = await self._find_player_in_db(name)
+            
+            if not result:
+                await interaction.followup.send(f"❌ Player `{name}` not found in database", ephemeral=True)
+                return
+            
+            player_id, old_player_name, old_riot_id, player_type = result
+            
+            # Validate new_riot_id if provided
+            if new_riot_id:
+                if '#' not in new_riot_id:
+                    await interaction.followup.send("❌ RiotID must be in format: `gameName#tagLine`", ephemeral=True)
+                    return
+                
+                game_name, tag_line = new_riot_id.split('#', 1)
+                
+                # Validate with Riot API
+                puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line, region)
+                if not puuid:
+                    await interaction.followup.send(f"❌ RiotID `{new_riot_id}` not found on {region.upper()}", ephemeral=True)
+                    return
+                
+                logger.info(f"✅ Validated RiotID {new_riot_id} on {region} (PUUID: {puuid[:8]}...)")
+            
+            # Build update query
+            updates = []
+            params = []
+            
+            if new_riot_id:
+                updates.append("riot_id = %s")
+                params.append(new_riot_id)
+            
+            if new_display_name:
+                updates.append("player_name = %s")
+                params.append(new_display_name)
+            
+            params.append(player_id)
+            
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            query = f"UPDATE hexbet_verified_players SET {', '.join(updates)} WHERE id = %s"
+            cursor.execute(query, params)
+            conn.commit()
+            cursor.close()
+            self.db.return_connection(conn)
+            
+            pro_emoji = get_pro_emoji()
+            streamer_emoji = get_streamer_emoji()
+            player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
+            
+            embed = discord.Embed(
+                title="✅ Player Updated",
+                description=f"**{old_player_name}** information updated",
+                color=0x3498DB
+            )
+            
+            if new_riot_id:
+                embed.add_field(name="RiotID", value=f"{old_riot_id} → {new_riot_id}", inline=False)
+            if new_display_name:
+                embed.add_field(name="Display Name", value=f"{old_player_name} → {new_display_name}", inline=False)
+            
+            embed.add_field(name="Type", value=player_type_label, inline=False)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Updated player: {old_player_name} → RiotID={new_riot_id or 'unchanged'}, Name={new_display_name or 'unchanged'}")
+        
+        except Exception as e:
+            logger.error(f"Error in hxproedit: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbprotype", description="Change player type between Pro and Streamer")
+    @app_commands.describe(
+        name="Player name (display name or gameName#tagLine)",
+        player_type="New player type"
+    )
+    @app_commands.choices(player_type=[
+        app_commands.Choice(name="Pro Player", value="pro"),
+        app_commands.Choice(name="Streamer", value="streamer")
+    ])
+    async def hxprotype(self, interaction: discord.Interaction, name: str, player_type: str):
+        """Change the type of an existing player."""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            result = await self._find_player_in_db(name)
+            
+            if not result:
+                await interaction.followup.send(f"❌ Player `{name}` not found in database", ephemeral=True)
+                return
+            
+            player_id, player_name, riot_id, old_type = result
+            
+            if old_type == player_type:
+                type_label = "Pro Player" if player_type == "pro" else "Streamer"
+                await interaction.followup.send(f"ℹ️ **{player_name}** is already set as **{type_label}**", ephemeral=True)
+                return
+            
+            # Update player type
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE hexbet_verified_players 
+                SET player_type = %s 
+                WHERE id = %s
+            """, (player_type, player_id))
+            
+            conn.commit()
+            cursor.close()
+            self.db.return_connection(conn)
+            
+            old_label = "Pro Player" if old_type == "pro" else "Streamer"
+            new_label = "Pro Player" if player_type == "pro" else "Streamer"
+            
+            embed = discord.Embed(
+                title="✅ Player Type Updated",
+                description=f"**{player_name}** type changed",
+                color=0x3498DB
+            )
+            embed.add_field(name="RiotID", value=riot_id, inline=False)
+            embed.add_field(name="Old Type", value=old_label, inline=True)
+            embed.add_field(name="New Type", value=new_label, inline=True)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ Changed {player_name} ({riot_id}) type: {old_type} → {player_type}")
+        
+        except Exception as e:
+            logger.error(f"Error in hxprotype command: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbaccounts", description="(Admin) View accounts for a verified player")
+    @app_commands.describe(player="Player name (display name or gameName#tagLine)")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxaccounts(self, interaction: discord.Interaction, player: str):
+        """Manage accounts for a verified player"""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            result = await self._find_player_in_db(player)
+
+            if not result:
+                await interaction.followup.send(f"❌ Player `{player}` not found in database", ephemeral=True)
+                return
+
+            player_id, player_name, primary_riot_id, player_type = result
+
+            # Get all accounts for this player
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, riot_id, rank, lp, wins, losses, wr
+                FROM hexbet_pro_accounts
+                WHERE pro_player_id = %s
+                ORDER BY lp DESC
+            """, (player_id,))
+            accounts = cursor.fetchall()
+            cursor.close()
+            self.db.return_connection(conn)
+
+            # Build embed
+            player_type_label = "🎖️ Pro" if player_type == "pro" else "📺 Streamer"
+
+            embed = discord.Embed(
+                title=f"{player_type_label} {player_name}",
+                description=f"**Primary RiotID:** {primary_riot_id}\n**Total Accounts:** {len(accounts)}",
+                color=0x3498DB
+            )
+
+            if accounts:
+                account_list = []
+                for acc_id, riot_id, rank, lp, wins, losses, wr in accounts:
+                    rank_text = f"{rank or 'UNRANKED'}"
+                    lp_text = f"{lp or 0} LP" if rank and rank != 'UNRANKED' else ""
+                    wr_text = f"({wr:.1f}% WR)" if wr else ""
+                    account_list.append(f"• `{riot_id}` - **{rank_text}** {lp_text} {wr_text}")
+
+                # Show first 25 accounts (Discord embed field limit)
+                embed.add_field(name="📋 Accounts", value="\n".join(account_list[:25]), inline=False)
+                if len(accounts) > 25:
+                    embed.add_field(name="", value=f"... and {len(accounts) - 25} more", inline=False)
+            else:
+                embed.add_field(name="📋 Accounts", value="No additional accounts found", inline=False)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"✅ {interaction.user} viewed accounts for {player_name}")
+
+        except Exception as e:
+            logger.error(f"Error in hxaccounts command: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbhelp", description="Show all LoLBets commands")
+    async def hxhelp(self, interaction: discord.Interaction):
+        """Display help for all LoLBets commands."""
+        embed = discord.Embed(
+            title="🎮 LoLBets Commands",
+            description="High-elo League of Legends betting system",
+            color=0x3498DB,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # User Commands
+        user_cmds = (
+            "**👤 User Commands**\n"
+            "`/lbhelp` - Show this help menu\n"
+            "`/lbdaily` - Claim daily reward (100 tokens every 24h)\n"
+            "`/lbstats [@user]` - View betting statistics\n"
+            "`/lbplayer <name> [region]` - Check player profile and pro status\n"
+        )
+        embed.add_field(name="", value=user_cmds, inline=False)
+        
+        # Game Commands
+        game_cmds = (
+            "**🎯 Game Commands**\n"
+            "`/lbfind [platform] [nickname]` - Find and post high-elo game\n"
+            "  • Platform: euw1, na1, kr, eun1\n"
+            "  • Nickname: Priority search for specific player\n"
+        )
+        embed.add_field(name="", value=game_cmds, inline=False)
+        
+        # Staff/Admin Commands
+        admin_cmds = (
+            "**🛠️ Staff/Admin Commands**\n"
+            "`/lbbalance <action> <user> [amount]` - Manage user balances\n"
+            "`/lbpost [platform]` - Force post a bet\n"
+            "`/lbrefresh` - Refresh all open bet embeds\n"
+            "`/lbsettle [match_id] [winner] [cancel]` - Settle or cancel match\n"
+            "`/lbpool` - Populate high-elo player pool\n"
+            "`/lbdebug` - Debug high-elo pool and active games\n"
+            "`/lbstatus` - Check database status\n"
+            "`/lbforce` - Force close all open matches\n"
+        )
+        embed.add_field(name="", value=admin_cmds, inline=False)
+        
+        # How to Bet
+        how_to = (
+            "**💰 How to Bet**\n"
+            "1. Click 🔵 **Bet Blue** or 🔴 **Bet Red** button\n"
+            "2. Enter your bet amount\n"
+            "3. Win = bet × odds | Lose = -bet\n"
+            "4. Remake (<3 min) = automatic refund\n"
+        )
+        embed.add_field(name="", value=how_to, inline=False)
+        
+        # Features
+        features = (
+            "**✨ Features**\n"
+            "• Daily rewards (100 tokens)\n"
+            "• Live leaderboard with auto-refresh\n"
+            "• SPECIAL BET for high LP lobbies (>1000 avg)\n"
+            "• Remake protection (<180 seconds)\n"
+            "• Notifications after settlement\n"
+            "• Betting statistics tracking\n"
+        )
+        embed.add_field(name="", value=features, inline=False)
+        
+        embed.set_footer(text="💎 HEXBET • Betting at HEXRTBRXENCHROMAS")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="lbdebug", description="(Admin) Debug high-elo pool and active games")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxdebug(self, interaction: discord.Interaction):
+        """Check high-elo pool and scan for active games"""
+        await interaction.response.defer()
+        
+        region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
+        results = []
+        
+        for platform, region in region_map.items():
+            try:
+                puuids = self.db.get_random_high_elo_puuids(region, limit=10)
+                
+                if not puuids:
+                    results.append(f"❌ {platform.upper()}: **No players in pool**")
+                    continue
+                
+                # Check first 10 for active games
+                active_count = 0
+                for puuid, tier, lp in puuids:
+                    game_data = await self.riot_api.get_active_game(puuid, region)
+                    if game_data:
+                        queue_id = game_data.get('gameQueueConfigId')
+                        if queue_id == 420:  # Ranked Solo/Duo only
+                            active_count += 1
+                    await asyncio.sleep(0.1)
+                
+                results.append(f"✅ {platform.upper()}: **{len(puuids)} in pool, {active_count}/10 in ranked games**")
+                
+            except Exception as e:
+                results.append(f"❌ {platform.upper()}: **{str(e)[:50]}**")
+        
+        summary = "**HEXBET Debug - High-Elo Pool**\n\n" + "\n".join(results)
+        await interaction.followup.send(summary, ephemeral=False)
+
+    @app_commands.command(name="lbfind", description="Find and post a high-elo game")
+    @app_commands.describe(
+        platform="Platform: euw1, na1, kr, eun1 (or 'custom' for manual entry)",
+        nickname="(Optional) Specific player nickname - their game will be prioritized"
+    )
+    async def hxfind(self, interaction: discord.Interaction, platform: Optional[str] = None, nickname: Optional[str] = None):
+        """Find and post active high-elo game for betting"""
+        # Check if user has required permissions/roles
+        if not self._has_staff_access(interaction):
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
+        # Check if already have 3 open matches
+        open_count = self.db.count_open_matches()
+        if open_count >= 3:
+            await interaction.response.send_message(f"⏳ Already have {open_count}/3 active matches. Max limit reached.", ephemeral=True)
+            return
+        
+        try:
+            # If platform is 'custom', show manual entry modal
+            if platform and platform.lower() == 'custom':
+                modal = ManualGameModal(self)
+                await interaction.response.send_modal(modal)
+                return
+
+            await interaction.response.defer()
+            
+            # If nickname provided, handle priority game
+            if nickname:
+                await interaction.followup.send(f"🔍 Searching for game with **{nickname}**...")
+                
+                # Try to find the player
+                platform = platform or 'euw1'
+                region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
+                region = region_map.get(platform, 'euw')
+                
+                # First check if nickname is a display_name in database
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT riot_id, player_name FROM hexbet_verified_players 
+                    WHERE LOWER(player_name) = LOWER(%s)
+                    LIMIT 1
+                """, (nickname,))
+                db_result = cur.fetchone()
+                cur.close()
+                self.db.return_connection(conn)
+                
+                # If found in DB, use the riot_id from database
+                if db_result:
+                    riot_id_from_db, display_name = db_result
+                    logger.info(f"✅ Found {nickname} in DB as {display_name} with riot_id: {riot_id_from_db}")
+                    nickname = riot_id_from_db  # Override with correct riot_id
+                
+                # Parse Riot ID (gameName#tagLine)
+                if '#' in nickname:
+                    game_name, tag_line = nickname.split('#', 1)
+                    # Get account by Riot ID
+                    account = await self.riot_api.get_account_by_riot_id(game_name, tag_line, region)
+                    if not account:
+                        await interaction.followup.send(f"❌ Player **{nickname}** not found on {platform.upper()}", ephemeral=True)
+                        return
+                    puuid = account.get('puuid')
+                else:
+                    # Fallback to old method (no tagline)
+                    summoner = await self.riot_api.get_summoner_by_name(nickname, region)
+                    if not summoner:
+                        await interaction.followup.send(f"❌ Player **{nickname}** not found. Try format: Name#TAG", ephemeral=True)
+                        return
+                    puuid = summoner.get('puuid')
+                
+                if not puuid:
+                    await interaction.followup.send(f"❌ Could not get PUUID for **{nickname}**", ephemeral=True)
+                    return
+                
+                # Check if player is in game
+                game_data = await self.riot_api.get_active_game(puuid, region)
+                if not game_data:
+                    await interaction.followup.send(f"❌ **{nickname}** is not currently in a game", ephemeral=True)
+                    return
+                
+                queue_id = game_data.get('gameQueueConfigId')
+                if queue_id != 420:
+                    await interaction.followup.send(f"❌ **{nickname}** is not in a Ranked Solo/Duo game (queue: {queue_id})", ephemeral=True)
+                    return
+                
+                # Cancel existing match from same region
+                open_matches = self.db.get_open_matches()
+                for match in open_matches:
+                    match_platform = match.get('platform', '')
+                    if match_platform == platform:
+                        logger.info(f"🔄 Canceling existing match {match['id']} from {platform} to prioritize {nickname}")
+                        
+                        # Refund bets
+                        bets = self.db.get_bets_for_match(match['id'])
+                        for bet in bets:
+                            self.db.update_balance(bet['user_id'], bet['amount'])
+                        
+                        # Cancel match
+                        self.db.settle_match(match['id'], winner='cancel')
+                        
+                        # Delete message
+                        channel_id = match.get('channel_id')
+                        message_id = match.get('message_id')
+                        if channel_id and message_id:
+                            try:
+                                channel = self.bot.get_channel(channel_id)
+                                if channel:
+                                    message = await channel.fetch_message(message_id)
+                                    await message.delete()
+                            except:
+                                pass
+                        
+                        await interaction.followup.send(f"🔄 Canceled existing {platform.upper()} match to prioritize **{nickname}**")
+                        break
+                
+                # Post the priority game directly with the found player's game data
+                await interaction.followup.send(f"✅ Found **{nickname}**'s game! Creating bet...")
+                
+                # Check if player is Pro or Streamer
+                pro_status = ""
+                if '#' in nickname:
+                    game_name, tag_line = nickname.split('#', 1)
+                    check_riot_id = f"{game_name}#{tag_line}"
+                else:
+                    check_riot_id = nickname
+                
+                # Check database first
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT player_type FROM hexbet_verified_players 
+                    WHERE riot_id = %s OR LOWER(player_name) = LOWER(%s)
+                    LIMIT 1
+                """, (check_riot_id, nickname))
+                result = cur.fetchone()
+                cur.close()
+                self.db.return_connection(conn)
+                
+                if result:
+                    player_type = result[0]
+                    if player_type == 'pro':
+                        pro_status = f" {get_pro_emoji()}"
+                    elif player_type == 'streamer':
+                        pro_status = f" {get_streamer_emoji()}"
+                
+                bet_channel_id = self._get_channel_id(interaction.guild_id, 'bet')
+                channel = self.bot.get_channel(bet_channel_id)
+                if not channel:
+                    await interaction.followup.send(f"❌ Bet channel {bet_channel_id} not found!", ephemeral=True)
+                    return
+                
+                # Build match from the player's game directly
+                try:
+                    blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+                    red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+                    
+                    logger.info(f"👥 Teams: {len(blue_team)} vs {len(red_team)} players")
+                    
+                    blue_ordered = self._assign_roles(blue_team)
+                    red_ordered = self._assign_roles(red_team)
+                    
+                    # Enrich player data
+                    logger.info("🔍 Enriching player data...")
+                    await self._enrich_players(blue_ordered, region)
+                    await self._enrich_players(red_ordered, region)
+                    self._apply_lobby_average(blue_ordered + red_ordered)
+                    
+                    score_blue = self._team_score(blue_ordered)
+                    score_red = self._team_score(red_ordered)
+                    logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
+                    
+                    # Check if special bet already exists
+                    open_matches = self.db.get_open_matches()
+                    special_exists = any(m.get('special_bet', False) and m.get('channel_id') == bet_channel_id for m in open_matches)
+                    if special_exists:
+                        await interaction.followup.send("⚠️ A special bet is already active. Wait for it to finish first.", ephemeral=True)
+                        return
+                    
+                    odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
+                    chance_blue = score_blue / (score_blue + score_red) * 100
+                    chance_red = 100 - chance_blue
+                    
+                    game_id = game_data.get('gameId')
+                    logger.info(f"🎯 Creating SPECIAL BET for game {game_id} on channel {bet_channel_id}")
+                    match_id = self.db.create_hexbet_match(
+                        game_id,
+                        platform,
+                        bet_channel_id,
+                        {'players': blue_ordered, 'odds': odds_blue},
+                        {'players': red_ordered, 'odds': odds_red},
+                        game_data.get('gameStartTime', 0),
+                        special_bet=True,
+                        guild_id=interaction.guild_id
+                    )
+                    
+                    if not match_id:
+                        logger.error(f"❌ Failed to create match for game {game_id}")
+                        await interaction.followup.send("❌ Failed to create match", ephemeral=True)
+                        return
+                    
+                    logger.info(f"✅ SPECIAL BET created with match_id={match_id}, special_bet=True, channel_id={bet_channel_id}")
+                    
+                    embed = self._build_embed(game_id, platform, blue_ordered, red_ordered, odds_blue, odds_red, chance_blue, chance_red, featured_player="special", match_id=match_id, game_start_at=game_data.get('gameStartTime'))
+                    
+                    # Send embed without content message
+                    msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
+                    self.db.set_match_message(match_id, msg.id)
+                    
+                    logger.info(f"✅ Posted priority match {match_id} with {nickname}")
+                    await interaction.followup.send(f"🎯 Priority game posted with **{nickname}**!")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error creating priority match: {e}", exc_info=True)
+                    await interaction.followup.send(f"❌ Error creating match: {e}", ephemeral=True)
+                return
+            
+            # Regular hxfind logic (no nickname)
+            # Check if already have open match
+            existing = self.db.get_open_match()
+            if existing:
+                await interaction.followup.send("⏳ Already have an active match. Wait for settlement.", ephemeral=True)
+                return
+            
+            # Pick platform
+            platform = platform or random.choice(['euw1', 'na1', 'kr', 'eun1'])
+            region_map = {'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr'}
+            region = region_map.get(platform, 'euw')
+            
+            await interaction.followup.send(f"🔍 Scanning high-elo players on {platform.upper()}...")
+            
+            # Use the same logic as auto-post
+            await self.post_random_featured_game(force=True, platform_choice=platform)
+            
+            # Check if match was created
+            new_match = self.db.get_open_match()
+            if new_match:
+                await interaction.channel.send(f"✅ Found and posted game from {platform.upper()}!")
+            else:
+                await interaction.followup.send(f"❌ No active ranked games found on {platform.upper()}", ephemeral=True)
+                
+        except Exception as e:
+            logger.error(f"Error in find_game: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:100]}", ephemeral=True)
+
+    @app_commands.command(name="lbspecial", description="Create a special bet for 1000 tokens by choosing a player")
+    async def hxspecial(self, interaction: discord.Interaction):
+        """Allow regular members to create a special bet for 1000 tokens"""
+        balance = self.db.get_balance(interaction.user.id)
+        if balance < 1000:
+            await interaction.response.send_message(
+                f"❌ You need 1000 tokens to create a special bet. Your balance: {balance}",
+                ephemeral=True
+            )
+            return
+        
+        # Show modal to enter player name and platform
+        modal = SpecialBetModal(self)
+        await interaction.response.send_modal(modal)
+
+    @app_commands.command(name="lbpost", description="(Admin) Force post a bet")
+    @app_commands.describe(platform="Platform: euw1, na1, kr, eun1")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxpost(self, interaction: discord.Interaction, platform: Optional[str] = None):
+        await interaction.response.defer(ephemeral=True)
+        await self.post_random_featured_game(force=True, platform_choice=platform)
+        await interaction.followup.send("✅ Triggered high-elo game scan", ephemeral=True)
+    
+    @app_commands.command(name="lbrefresh", description="(Admin) Refresh all open bet embeds and optionally recalculate odds")
+    @app_commands.describe(recalc_odds="Recalculate odds based on new scoring formula")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxrefresh(self, interaction: discord.Interaction, recalc_odds: bool = False):
+        """Refresh all open match embeds with updated bet totals and optionally recalculate odds"""
+        await interaction.response.defer(ephemeral=True)
+        
+        matches = self.db.get_open_matches(limit=10)
+        if not matches:
+            await interaction.followup.send("❌ No active matches to refresh", ephemeral=True)
+            return
+        
+        refreshed = 0
+        failed = 0
+        
+        for match in matches:
+            try:
+                channel = self.bot.get_channel(match.get('channel_id'))
+                message_id = match.get('message_id')
+                if not channel or not message_id:
+                    failed += 1
+                    continue
+                
+                try:
+                    msg = await channel.fetch_message(message_id)
+                except discord.NotFound:
+                    logger.info(f"Match {match['id']} message not found (deleted)")
+                    failed += 1
+                    continue
+                
+                old_embed = msg.embeds[0] if msg.embeds else None
+                if not old_embed:
+                    failed += 1
+                    continue
+                
+                # Extract data from stored match
+                game_id = match['game_id']
+                platform = match['platform']
+                blue_team = match.get('blue_team', {})
+                red_team = match.get('red_team', {})
+                
+                if isinstance(blue_team, dict) and isinstance(red_team, dict):
+                    blue_players = blue_team.get('players', [])
+                    red_players = red_team.get('players', [])
+                    
+                    # Check if this is a full streamer mode game - if so, skip refresh
+                    blue_all_streamer = all(p.get('streamer_mode', False) for p in blue_players)
+                    red_all_streamer = all(p.get('streamer_mode', False) for p in red_players)
+                    if blue_all_streamer or red_all_streamer:
+                        logger.debug(f"Skipping embed rebuild for match {match['id']} - streamer mode game")
+                        failed += 1
+                        continue
+                    
+                    # DO NOT re-assign roles - they are already correctly assigned and stored in DB
+                    # DO NOT re-detect streamer mode - preserve existing status to avoid changing working lobbies
+                    # Just add missing badges if needed
+                    all_players = blue_players + red_players
+                    
+                    # Add pro/streamer badges if missing
+                    conn = self.db.get_connection()
+                    cur = conn.cursor()
+                    for p in all_players:
+                        riot_id = p.get('riotId', '')
+                        if riot_id and not p.get('badge_emoji'):
+                            cur.execute("SELECT player_type FROM hexbet_verified_players WHERE riot_id = %s", (riot_id,))
+                            result = cur.fetchone()
+                            if result:
+                                player_type = result[0]
+                                if player_type == 'pro':
+                                    p['badge_emoji'] = get_pro_emoji()
+                                elif player_type == 'streamer':
+                                    p['badge_emoji'] = get_streamer_emoji()
+                    cur.close()
+                    self.db.return_connection(conn)
+                    
+                    # Recalculate odds if requested
+                    if recalc_odds:
+                        bets = self.db.get_bets_for_match(match['id'])
+                        odds_blue, odds_red = self._balanced_odds(blue_players, red_players, bets=bets)
+                        
+                        # Update in database
+                        self.db.update_match_odds(match['id'], odds_blue, odds_red)
+                        
+                        logger.info(f"🔄 Recalculated odds for match {match['id']}: Blue {odds_blue:.2f}x, Red {odds_red:.2f}x")
+                    else:
+                        odds_blue = blue_team.get('odds', 1.5)
+                        odds_red = red_team.get('odds', 1.5)
+                    
+                    chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+                    chance_red = round(100 - chance_blue, 1)
+                    
+                    # Check if this is a special bet (use database flag)
+                    is_special_bet = match.get('special_bet', False)
+                    featured = "special" if is_special_bet else ""
+                    
+                    game_start_at = match.get('game_start_at')
+                    new_embed = self._build_embed(
+                        game_id, platform, blue_players, red_players,
+                        odds_blue, odds_red, chance_blue, chance_red,
+                        featured, match['id'], game_start_at
+                    )
+                    
+                    # Actually update the message!
+                    await msg.edit(embed=new_embed)
+                    logger.info(f"✅ Refreshed match {match['id']}" + (f" (SPECIAL BET)" if is_special_bet else ""))
+                    
+                    refreshed += 1
+                else:
+                    logger.warning(f"⚠️ Match {match['id']} has invalid team data structure")
+                    failed += 1
+            except Exception as e:
+                logger.error(f"Failed to refresh match {match['id']}: {e}", exc_info=True)
+                failed += 1
+        
+        if refreshed > 0:
+            await interaction.followup.send(f"✅ Refreshed {refreshed} embed(s)" + (f" ({failed} failed)" if failed > 0 else ""), ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ Failed to refresh embeds. Check logs for details.", ephemeral=True)
+    
+    @app_commands.command(name="lbsettle", description="(Admin) Settle or cancel match")
+    @app_commands.describe(
+        match_id="Match ID (game ID from embed title), leave empty for first active match",
+        winner="Winner: blue or red",
+        cancel="Cancel and refund all bets"
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxsettle(self, interaction: discord.Interaction, match_id: Optional[int] = None, winner: Optional[str] = None, cancel: bool = False):
+        """Force settle a specific match or cancel it"""
+        await interaction.response.defer(ephemeral=True)
+        
+        # Get match - either by ID or first open
+        if match_id:
+            # Find match by game_id
+            conn = self.db.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM hexbet_matches WHERE game_id = %s AND status = 'open'", (match_id,))
+                    row = cur.fetchone()
+                    if not row:
+                        await interaction.followup.send(f"❌ No active match found with Game ID {match_id}", ephemeral=True)
+                        return
+                    cols = [desc[0] for desc in cur.description]
+                    match = dict(zip(cols, row))
+            finally:
+                self.db.return_connection(conn)
+        else:
+            match = self.db.get_open_match()
+            if not match:
+                await interaction.followup.send("❌ No active match to settle", ephemeral=True)
+                return
+        
+        try:
+            if cancel:
+                # Refund all bets
+                bets = self.db.get_bets_for_match(match['id'])
+                for bet in bets:
+                    self.db.update_balance(bet['user_id'], bet['amount'])
+                    logger.info(f"Refunded {bet['amount']} to user {bet['user_id']}")
+                
+                self.db.settle_match(match['id'], winner='cancel')
+                
+                # Delete message
+                channel = self.bot.get_channel(match.get('channel_id'))
+                message_id = match.get('message_id')
+                if channel and message_id:
+                    try:
+                        msg = await channel.fetch_message(message_id)
+                        await msg.delete()
+                        logger.info(f"🗑️ Deleted cancelled match message {message_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to delete message: {e}")
+                
+                await interaction.followup.send(f"✅ Match cancelled. {len(bets)} bets refunded.", ephemeral=True)
+                
+                # Log cancellation to bet logs channel
+                try:
+                    bet_logs_channel_id = self._get_channel_id(interaction.guild_id, 'logs')
+                    log_channel = self.bot.get_channel(bet_logs_channel_id)
+                    if log_channel:
+                        log_embed = discord.Embed(
+                            title="❌ Match Cancelled",
+                            color=0x95A5A6,
+                            timestamp=discord.utils.utcnow()
+                        )
+                        log_embed.add_field(name="Match ID", value=str(match['id']), inline=True)
+                        log_embed.add_field(name="Game ID", value=str(match['game_id']), inline=True)
+                        log_embed.add_field(name="Bets Refunded", value=str(len(bets)), inline=True)
+                        
+                        total_refunded = sum(bet['amount'] for bet in bets)
+                        log_embed.add_field(name="Total Refunded", value=str(total_refunded), inline=True)
+                        log_embed.add_field(name="Cancelled By", value=interaction.user.mention, inline=True)
+                        
+                        await log_channel.send(embed=log_embed)
+                except Exception as e:
+                    logger.warning(f"Failed to log cancellation: {e}")
+                
+                # Auto-post new match after cancellation
+                try:
+                    await self.post_random_featured_game(force=True)
+                    logger.info("✅ Auto-posted new match after cancellation")
+                except Exception as e:
+                    logger.error(f"Failed to auto-post after cancellation: {e}")
+                
+                return
+            
+            if not winner or winner.lower() not in ['blue', 'red']:
+                await interaction.followup.send("❌ Please specify winner: 'blue' or 'red'", ephemeral=True)
+                return
+            
+            winner = winner.lower()
+            payouts = self.db.settle_match(match['id'], winner)
+            
+            for user_id, amount, payout, won in payouts:
+                streak_bonus = 0
+                new_streak = 0
+                if won and payout:
+                    # Get current streak BEFORE incrementing (so +1 is new streak)
+                    new_streak = self.db.increment_streak(user_id)
+                    # Streak bonus: from 2 wins with +10% per win
+                    if new_streak >= 2:
+                        streak_bonus = int(payout * (new_streak - 1) * 0.10)  # 1 win = +0%, 2 wins = +10%, 3 wins = +20%, etc
+                        payout += streak_bonus
+                else:
+                    # Loss resets streak
+                    if not won:
+                        self.db.reset_streak(user_id)
+                
+                if payout:
+                    self.db.update_balance(user_id, payout)
+                self.db.record_result(user_id, amount, payout, won)
+                
+                if streak_bonus > 0:
+                    logger.info(f"🔥 Streak bonus +{streak_bonus} tokens for user {user_id} (streak: {new_streak})")
+            
+            await self._update_match_message(match, winner, payouts)
+            
+            winners_count = sum(1 for _, _, _, won in payouts if won)
+            losers_count = len(payouts) - winners_count
+            
+            await interaction.followup.send(
+                f"✅ Match settled! Winner: **{winner.upper()}**\n"
+                f"Winners: {winners_count} | Losers: {losers_count}",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in force settle: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+    
+    async def _fetch_and_update_pool(self, sample_size: int = 50) -> Tuple[int, str, dict]:
+        """
+        Fetch random high-elo players and update database
+        Returns: (total_players_fetched, summary_string, diagnostics)
+        """
+        if not self.riot_api.api_key:
+            logger.error("❌ No Riot API key configured!")
+            return (0, "❌ Error: No Riot API key configured", {'error': 'missing_api_key'})
+        
+        regions = ['euw', 'eune', 'na', 'kr']
+        all_players = []
+        total_fetched = 0
+        summary_lines = []
+        diagnostics = {
+            'regions_processed': 0,
+            'league_endpoints_ok': 0,
+            'league_endpoints_empty': 0,
+            'league_entries_sampled': 0,
+            'summoner_lookup_attempts': 0,
+            'summoner_lookup_successes': 0,
+        }
+        
+        logger.info(f"🔄 Starting pool fetch: {len(regions)} regions, sample_size={sample_size}")
+        logger.info(f"📝 Regions will be processed sequentially to avoid rate limits")
+        
+        for idx, region in enumerate(regions, 1):
+            region_count = 0
+            diagnostics['regions_processed'] += 1
+            logger.info(f"🌍 Processing region {idx}/{len(regions)}: {region.upper()}")
+            
+            # Challenger
+            logger.info(f"🔍 Fetching Challenger from {region}")
+            chall_data = await self.riot_api.get_challenger_league(region)
+            if chall_data and chall_data.get('entries'):
+                entries = chall_data['entries']
+                sampled = random.sample(entries, min(sample_size, len(entries)))
+                diagnostics['league_endpoints_ok'] += 1
+                diagnostics['league_entries_sampled'] += len(sampled)
+                logger.info(f"📊 {region} Challenger: got {len(entries)} entries, sampling {len(sampled)}")
+                
+                for idx, entry in enumerate(sampled):
+                    puuid = entry.get('puuid')
+                    if puuid:
+                        all_players.append((puuid, region, 'challenger', entry.get('leaguePoints', 0)))
+                        total_fetched += 1
+                        region_count += 1
+                        continue
+
+                    summoner_id = entry.get('summonerId')
+                    if summoner_id:
+                        diagnostics['summoner_lookup_attempts'] += 1
+                        summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                        if summoner and summoner.get('puuid'):
+                            all_players.append((summoner['puuid'], region, 'challenger', entry.get('leaguePoints', 0)))
+                            total_fetched += 1
+                            region_count += 1
+                            diagnostics['summoner_lookup_successes'] += 1
+                    
+                    # Rate limit between individual summoner fetches
+                    if idx % 10 == 0 and idx > 0:
+                        await asyncio.sleep(0.5)
+                
+                logger.info(f"✅ {region} Challenger: fetched {region_count}/{len(sampled)} players")
+            else:
+                diagnostics['league_endpoints_empty'] += 1
+                logger.warning(f"⚠️ {region} Challenger: No data returned")
+            await asyncio.sleep(1.2)  # Rate limit
+            
+            # Grandmaster
+            logger.info(f"🔍 Fetching Grandmaster from {region}")
+            gm_data = await self.riot_api.get_grandmaster_league(region)
+            if gm_data and gm_data.get('entries'):
+                entries = gm_data['entries']
+                sampled = random.sample(entries, min(sample_size, len(entries)))
+                diagnostics['league_endpoints_ok'] += 1
+                diagnostics['league_entries_sampled'] += len(sampled)
+                logger.info(f"📊 {region} Grandmaster: got {len(entries)} entries, sampling {len(sampled)}")
+                
+                gm_start = region_count
+                for idx, entry in enumerate(sampled):
+                    puuid = entry.get('puuid')
+                    if puuid:
+                        all_players.append((puuid, region, 'grandmaster', entry.get('leaguePoints', 0)))
+                        total_fetched += 1
+                        region_count += 1
+                        continue
+
+                    summoner_id = entry.get('summonerId')
+                    if summoner_id:
+                        diagnostics['summoner_lookup_attempts'] += 1
+                        summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                        if summoner and summoner.get('puuid'):
+                            all_players.append((summoner['puuid'], region, 'grandmaster', entry.get('leaguePoints', 0)))
+                            total_fetched += 1
+                            region_count += 1
+                            diagnostics['summoner_lookup_successes'] += 1
+                        
+                        if idx % 10 == 0 and idx > 0:
+                            await asyncio.sleep(0.5)
+                
+                logger.info(f"✅ {region} Grandmaster: fetched {region_count - gm_start}/{len(sampled)} players")
+            else:
+                diagnostics['league_endpoints_empty'] += 1
+                logger.warning(f"⚠️ {region} Grandmaster: No data returned")
+            await asyncio.sleep(1.2)
+            
+            # Master
+            logger.info(f"🔍 Fetching Master from {region}")
+            master_data = await self.riot_api.get_master_league(region)
+            if master_data and master_data.get('entries'):
+                entries = master_data['entries']
+                sampled = random.sample(entries, min(sample_size, len(entries)))
+                diagnostics['league_endpoints_ok'] += 1
+                diagnostics['league_entries_sampled'] += len(sampled)
+                logger.info(f"📊 {region} Master: got {len(entries)} entries, sampling {len(sampled)}")
+                
+                master_start = region_count
+                for idx, entry in enumerate(sampled):
+                    puuid = entry.get('puuid')
+                    if puuid:
+                        all_players.append((puuid, region, 'master', entry.get('leaguePoints', 0)))
+                        total_fetched += 1
+                        region_count += 1
+                        continue
+
+                    summoner_id = entry.get('summonerId')
+                    if summoner_id:
+                        diagnostics['summoner_lookup_attempts'] += 1
+                        summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                        if summoner and summoner.get('puuid'):
+                            all_players.append((summoner['puuid'], region, 'master', entry.get('leaguePoints', 0)))
+                            total_fetched += 1
+                            region_count += 1
+                            diagnostics['summoner_lookup_successes'] += 1
+                        
+                        if idx % 10 == 0 and idx > 0:
+                            await asyncio.sleep(0.5)
+                
+                logger.info(f"✅ {region} Master: fetched {region_count - master_start}/{len(sampled)} players")
+            else:
+                diagnostics['league_endpoints_empty'] += 1
+                logger.warning(f"⚠️ {region} Master: No data returned")
+            await asyncio.sleep(1.2)
+            
+            # Diamond I (page 1 only, ~200 players)
+            logger.info(f"🔍 Fetching Diamond I from {region}")
+            dia_data = await self.riot_api.get_diamond_players(region, division='I', page=1)
+            if dia_data and isinstance(dia_data, list):
+                sampled = random.sample(dia_data, min(sample_size, len(dia_data)))
+                diagnostics['league_endpoints_ok'] += 1
+                diagnostics['league_entries_sampled'] += len(sampled)
+                logger.info(f"📊 {region} Diamond I: got {len(dia_data)} entries, sampling {len(sampled)}")
+                
+                dia_start = region_count
+                for idx, entry in enumerate(sampled):
+                    puuid = entry.get('puuid')
+                    if puuid:
+                        all_players.append((puuid, region, 'diamond', entry.get('leaguePoints', 0)))
+                        total_fetched += 1
+                        region_count += 1
+                        continue
+
+                    summoner_id = entry.get('summonerId')
+                    if summoner_id:
+                        diagnostics['summoner_lookup_attempts'] += 1
+                        summoner = await self.riot_api.get_summoner_by_id(summoner_id, region)
+                        if summoner and summoner.get('puuid'):
+                            all_players.append((summoner['puuid'], region, 'diamond', entry.get('leaguePoints', 0)))
+                            total_fetched += 1
+                            region_count += 1
+                            diagnostics['summoner_lookup_successes'] += 1
+                        
+                        if idx % 10 == 0 and idx > 0:
+                            await asyncio.sleep(0.5)
+                
+                logger.info(f"✅ {region} Diamond I: fetched {region_count - dia_start}/{len(sampled)} players")
+            else:
+                diagnostics['league_endpoints_empty'] += 1
+                logger.warning(f"⚠️ {region} Diamond I: No data returned")
+            await asyncio.sleep(1.2)
+            
+            if region_count > 0:
+                summary_lines.append(f"• {region.upper()}: {region_count} players")
+                logger.info(f"✅ {region.upper()} total: {region_count} players fetched")
+            else:
+                logger.warning(f"⚠️ {region.upper()}: No players fetched")
+            
+            # Wait 3 seconds between regions to avoid rate limiting
+            logger.info(f"⏸️ Waiting 3s before next region...")
+            await asyncio.sleep(3)
+        
+        logger.info(f"📊 Fetch completed: {total_fetched} total players from {len(regions)} regions")
+        
+        # Save to database
+        if all_players:
+            conn = self.db.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    from psycopg2.extras import execute_batch
+                    execute_batch(cur, """
+                        INSERT INTO hexbet_high_elo_pool (puuid, region, tier, lp)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (puuid) DO UPDATE SET
+                            region = EXCLUDED.region,
+                            tier = EXCLUDED.tier,
+                            lp = EXCLUDED.lp
+                    """, all_players)
+                    conn.commit()
+                    
+                    # Get stats
+                    cur.execute("""
+                        SELECT region, tier, COUNT(*) 
+                        FROM hexbet_high_elo_pool 
+                        GROUP BY region, tier 
+                        ORDER BY region, tier
+                    """)
+                    stats = cur.fetchall()
+                    
+                    summary = f"✅ Saved {len(all_players)} players to pool\n\n**This batch:**\n"
+                    summary += "\n".join(summary_lines)
+                    summary += f"\n\n**Total pool size:**\n"
+                    for region, tier, count in stats:
+                        summary += f"• {region.upper()} {tier}: {count}\n"
+                    
+                    return (len(all_players), summary, diagnostics)
+            finally:
+                self.db.return_connection(conn)
+        
+        if diagnostics['league_entries_sampled'] == 0:
+            zero_reason = "Riot league endpoints returned no entries. Most likely: API key issue, rate limiting, or Riot API outage."
+        elif diagnostics['summoner_lookup_attempts'] > 0 and diagnostics['summoner_lookup_successes'] == 0:
+            zero_reason = "League endpoints returned entries, but every summoner lookup failed. Most likely: summoner endpoint rate limiting or platform API issue."
+        else:
+            zero_reason = "No players were persisted from the sampled league entries."
+
+        diagnostic_summary = (
+            "⚠️ No players fetched\n"
+            f"League endpoints with data: {diagnostics['league_endpoints_ok']} | empty: {diagnostics['league_endpoints_empty']}\n"
+            f"Sampled entries: {diagnostics['league_entries_sampled']}\n"
+            f"Summoner lookups: {diagnostics['summoner_lookup_successes']}/{diagnostics['summoner_lookup_attempts']}\n"
+            f"Reason: {zero_reason}"
+        )
+        return (0, diagnostic_summary, diagnostics)
+
+    @tasks.loop(hours=1)
+    async def pool_update_task(self):
+        """Auto-update player pool every hour"""
+        try:
+            logger.info("🔄 Hourly player pool update started...")
+            fetched, summary, diagnostics = await self._fetch_and_update_pool(sample_size=50)
+            if fetched > 0:
+                logger.info(f"✅ Pool update completed: {fetched} players added")
+            else:
+                logger.warning(f"⚠️ Pool update completed but no new players: {summary}")
+        except Exception as e:
+            logger.error(f"❌ Error in pool_update_task: {e}", exc_info=True)
+        
+        # Also update verified players
+        try:
+            logger.info("🔄 Updating verified players in pool...")
+            await self._add_verified_to_pool_auto()
+        except Exception as e:
+            logger.error(f"❌ Error updating verified players: {e}", exc_info=True)
+
+        # Also refresh rank/LP/WR for hxpro accounts
+        try:
+            logger.info("🔄 Refreshing HEXPRO account stats...")
+            updated_players, updated_accounts = await self._refresh_verified_pro_accounts_auto()
+            logger.info(f"✅ HEXPRO refresh completed: {updated_players} players, {updated_accounts} accounts updated")
+        except Exception as e:
+            logger.error(f"❌ Error refreshing HEXPRO accounts: {e}", exc_info=True)
+
+    async def _refresh_verified_pro_accounts_auto(self) -> Tuple[int, int]:
+        """Refresh rank/LP/W/L/WR for accounts linked to verified players."""
+        conn = self.db.get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT vp.id, vp.riot_id, vp.player_name,
+                       COALESCE(array_agg(DISTINCT pa.riot_id) FILTER (WHERE pa.riot_id IS NOT NULL), '{}')
+                FROM hexbet_verified_players vp
+                LEFT JOIN hexbet_pro_accounts pa ON pa.pro_player_id = vp.id
+                GROUP BY vp.id, vp.riot_id, vp.player_name
+                ORDER BY vp.id
+                """
+            )
+            players = cur.fetchall()
+        finally:
+            cur.close()
+            self.db.return_connection(conn)
+
+        if not players:
+            return 0, 0
+
+        updated_players = 0
+        updated_accounts = 0
+
+        for idx, (player_id, primary_riot_id, player_name, linked_riot_ids) in enumerate(players):
+            if idx > 0 and idx % 10 == 0:
+                await asyncio.sleep(0.8)
+
+            riot_ids = [r for r in (linked_riot_ids or []) if r]
+            if primary_riot_id and primary_riot_id not in riot_ids:
+                riot_ids.append(primary_riot_id)
+
+            account_updates = []
+            for riot_id in riot_ids:
+                if '#' not in riot_id:
+                    continue
+
+                game_name, tag_line = riot_id.split('#', 1)
+
+                try:
+                    puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line)
+                    if not puuid:
+                        continue
+
+                    stats = None
+                    for region in ['euw', 'eune', 'kr', 'na', 'br', 'lan', 'las', 'oce', 'tr', 'ru', 'jp', 'ph', 'sg', 'th', 'tw', 'vn']:
+                        stats = await self.riot_api.get_ranked_stats_by_puuid(puuid, region)
+                        if stats:
+                            break
+
+                    if not stats:
+                        continue
+
+                    tier, _division, wr = pick_rank_entry(stats)
+                    soloq_entry = next((s for s in stats if s.get('queueType') == 'RANKED_SOLO_5x5'), stats[0])
+
+                    account_updates.append(
+                        {
+                            'riot_id': riot_id,
+                            'rank': tier,
+                            'lp': soloq_entry.get('leaguePoints', 0),
+                            'wins': soloq_entry.get('wins', 0),
+                            'losses': soloq_entry.get('losses', 0),
+                            'wr': wr,
+                        }
+                    )
+                except Exception as exc:
+                    logger.debug(f"⚠️ HEXPRO refresh failed for {riot_id}: {exc}")
+                    continue
+
+            if not account_updates:
+                continue
+
+            upserted = self.db.add_pro_accounts(player_id, account_updates)
+            if upserted > 0:
+                updated_players += 1
+                updated_accounts += upserted
+
+        return updated_players, updated_accounts
+    
+    async def _add_verified_to_pool_auto(self):
+        """Auto-add verified players to pool (called from pool_update_task)"""
+        try:
+            # Get all verified players
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            
+            cur.execute("""
+                SELECT id, riot_id, player_name, player_type 
+                FROM hexbet_verified_players 
+                ORDER BY player_type DESC, player_name
+            """)
+            
+            verified_players = cur.fetchall()
+            cur.close()
+            self.db.return_connection(conn)
+            
+            logger.info(f"🔄 Updating {len(verified_players)} verified players in pool")
+            
+            added = 0
+            updated = 0
+            
+            for idx, (player_id, riot_id, player_name, player_type) in enumerate(verified_players):
+                if idx % 20 == 0:
+                    await asyncio.sleep(0.5)  # Rate limit
+                
+                try:
+                    # Get PUUID from stats
+                    conn = self.db.get_connection()
+                    cur = conn.cursor()
+                    
+                    cur.execute("""
+                        SELECT DISTINCT riot_id FROM hexbet_pro_accounts 
+                        WHERE pro_player_id = %s 
+                        LIMIT 1
+                    """, (player_id,))
+                    
+                    result = cur.fetchone()
+                    cur.close()
+                    self.db.return_connection(conn)
+                    
+                    if not result:
+                        logger.debug(f"⚠️ {player_name}: No stats found")
+                        continue
+                    
+                    account_riot_id = result[0]
+                    game_name, tag_line = account_riot_id.split('#', 1)
+                    
+                    # Get PUUID
+                    account_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+                    headers = {'X-Riot-Token': self.riot_api.api_key}
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(account_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                            if resp.status != 200:
+                                logger.debug(f"⚠️ {player_name}: Failed to get PUUID ({resp.status})")
+                                continue
+                            
+                            account_data = await resp.json()
+                            puuid = account_data.get('puuid')
+                    
+                    if not puuid:
+                        logger.debug(f"⚠️ {player_name}: No PUUID returned")
+                        continue
+                    
+                    # Get summoner data
+                    summoner_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(summoner_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                            if resp.status != 200:
+                                logger.debug(f"⚠️ {player_name}: Failed to get summoner")
+                                continue
+                            
+                            summoner_data = await resp.json()
+                    
+                    summoner_id = summoner_data.get('id')
+                    
+                    # Get ranked stats
+                    ranked_url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+                    stats = None
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(ranked_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                            if resp.status == 200:
+                                stats_data = await resp.json()
+                                if stats_data:
+                                    ranked = [s for s in stats_data if s.get('queueType') == 'RANKED_SOLO_5x5']
+                                    stats = ranked[0] if ranked else stats_data[0]
+                    
+                    tier = stats.get('tier', 'DIAMOND') if stats else 'DIAMOND'
+                    lp = stats.get('leaguePoints', 0) if stats else 0
+                    
+                    # Equal boost for PRO and STREAMER
+                    priority_boost = 1.10
+                    
+                    # Insert or update in pool
+                    conn = self.db.get_connection()
+                    cur = conn.cursor()
+                    
+                    # Check if already exists
+                    cur.execute("SELECT puuid FROM hexbet_high_elo_pool WHERE puuid = %s", (puuid,))
+                    exists = cur.fetchone()
+                    
+                    if exists:
+                        cur.execute("""
+                            UPDATE hexbet_high_elo_pool SET
+                                tier = %s,
+                                lp = %s,
+                                priority_boost = %s,
+                                last_checked = CURRENT_TIMESTAMP
+                            WHERE puuid = %s
+                        """, (tier, lp, priority_boost, puuid))
+                        updated += 1
+                    else:
+                        cur.execute("""
+                            INSERT INTO hexbet_high_elo_pool (puuid, region, tier, lp, priority_boost)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (puuid, 'euw', tier, lp, priority_boost))
+                        added += 1
+                    
+                    conn.commit()
+                    cur.close()
+                    self.db.return_connection(conn)
+                    
+                except Exception as e:
+                    logger.debug(f"⚠️ {player_name}: {e}")
+                    continue
+            
+            logger.info(f"✅ Verified players updated: {added} added, {updated} updated")
+            
+        except Exception as e:
+            logger.error(f"❌ Error in _add_verified_to_pool_auto: {e}", exc_info=True)
+    
+    @app_commands.command(name="lbpool", description="(Admin) Populate high-elo player pool")
+    @app_commands.describe(
+        sample_size="Number of random players per tier/region (5-30, default: 20)"
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxpool(self, interaction: discord.Interaction, sample_size: int = 20):
+        """Fetch random high-elo players (Challenger/GM/Master/Diamond) and add to pool"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            requested_sample_size = sample_size
+            sample_size = max(5, min(sample_size, 30))
+
+            if sample_size != requested_sample_size:
+                await interaction.followup.send(
+                    f"ℹ️ sample_size adjusted from {requested_sample_size} to {sample_size} (allowed range: 5-30).",
+                    ephemeral=True
+                )
+
+            logger.info(f"🔄 hxpool command started by {interaction.user} with sample_size={sample_size}")
+            await interaction.followup.send(
+                "🔄 Fetching high-elo players from Riot API (Challenger/GM/Master/Diamond)...",
+                ephemeral=True
+            )
+
+            fetched, summary, diagnostics = await self._fetch_and_update_pool(sample_size=sample_size)
+            logger.info(f"✅ hxpool completed: {fetched} players fetched")
+
+            if fetched == 0:
+                logger.warning("⚠️ /lbpool fetched 0 players from Riot API, running verified fallback")
+                await self._add_verified_to_pool_auto()
+
+                conn = self.db.get_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT COUNT(*) FROM hexbet_high_elo_pool")
+                        pool_count = cur.fetchone()[0]
+                finally:
+                    self.db.return_connection(conn)
+
+                fallback_msg = (
+                    "⚠️ Riot API fetch returned 0 players.\n"
+                    "✅ Ran fallback: added/updated verified players in pool.\n"
+                    f"📦 Current pool size: **{pool_count}**\n\n"
+                    f"{summary}"
+                )
+                await interaction.followup.send(fallback_msg, ephemeral=False)
+            else:
+                await interaction.followup.send(summary, ephemeral=False)
+        except Exception as e:
+            logger.error(f"❌ Error populating pool: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbproupdate", description="(Admin) Refresh LoLBets player account stats")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxproupdate(self, interaction: discord.Interaction):
+        """Manually refresh rank/LP/W/L/WR for verified hxpro players."""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            updated_players, updated_accounts = await self._refresh_verified_pro_accounts_auto()
+            await interaction.followup.send(
+                f"✅ HEXPRO stats refresh done: **{updated_players}** players, **{updated_accounts}** accounts updated.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error(f"❌ Error in hxproupdate command: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbpool_add_verified", description="(Admin) Add verified pro and streamer players to the pool")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def hxpool_add_verified(self, interaction: discord.Interaction):
+        """Add all verified pro/streamer players to pool with priority boost"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # First, add priority_boost column if it doesn't exist
+            try:
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                
+                # Check if column exists
+                cur.execute("""
+                    SELECT column_name FROM information_schema.columns 
+                    WHERE table_name='hexbet_high_elo_pool' AND column_name='priority_boost'
+                """)
+                
+                if not cur.fetchone():
+                    logger.info("🔧 Adding priority_boost column...")
+                    cur.execute("""
+                        ALTER TABLE hexbet_high_elo_pool 
+                        ADD COLUMN priority_boost FLOAT DEFAULT 1.0
+                    """)
+                    conn.commit()
+                    logger.info("✅ Column added")
+                
+                cur.close()
+                self.db.return_connection(conn)
+            except Exception as e:
+                logger.warning(f"⚠️ Could not add column: {e}")
+            
+            # Get all verified players
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            
+            cur.execute("""
+                SELECT id, riot_id, player_name, player_type 
+                FROM hexbet_verified_players 
+                ORDER BY player_type DESC, player_name
+            """)
+            
+            verified_players = cur.fetchall()
+            cur.close()
+            self.db.return_connection(conn)
+            
+            logger.info(f"📊 Found {len(verified_players)} verified players")
+            
+            added = 0
+            failed = 0
+            
+            status_msg = await interaction.followup.send(f"⏳ Processing {len(verified_players)} verified players...", ephemeral=True)
+            
+            for idx, (player_id, riot_id, player_name, player_type) in enumerate(verified_players, 1):
+                if idx % 10 == 0:
+                    await asyncio.sleep(0.5)  # Rate limit
+                    await status_msg.edit(content=f"⏳ Processing {idx}/{len(verified_players)} players...")
+                
+                try:
+                    # Get PUUID from stats - use pro_player_id from hexbet_pro_accounts
+                    conn = self.db.get_connection()
+                    cur = conn.cursor()
+                    
+                    cur.execute("""
+                        SELECT DISTINCT riot_id FROM hexbet_pro_accounts 
+                        WHERE pro_player_id = %s 
+                        LIMIT 1
+                    """, (player_id,))
+                    
+                    result = cur.fetchone()
+                    cur.close()
+                    self.db.return_connection(conn)
+                    
+                    if not result:
+                        logger.warning(f"⚠️ {player_name} ({riot_id}): No stats found")
+                        failed += 1
+                        continue
+                    
+                    account_riot_id = result[0]
+                    game_name, tag_line = account_riot_id.split('#', 1)
+                    
+                    # Get PUUID
+                    account_url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+                    headers = {'X-Riot-Token': self.riot_api.api_key}
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(account_url, headers=headers) as resp:
+                            if resp.status != 200:
+                                logger.warning(f"⚠️ {player_name}: Failed to get PUUID ({resp.status})")
+                                failed += 1
+                                continue
+                            
+                            account_data = await resp.json()
+                            puuid = account_data.get('puuid')
+                    
+                    if not puuid:
+                        logger.warning(f"⚠️ {player_name}: No PUUID returned")
+                        failed += 1
+                        continue
+                    
+                    # Get summoner data
+                    region = 'euw'
+                    summoner_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(summoner_url, headers=headers) as resp:
+                            if resp.status != 200:
+                                logger.warning(f"⚠️ {player_name}: Failed to get summoner")
+                                failed += 1
+                                continue
+                            
+                            summoner_data = await resp.json()
+                    
+                    summoner_id = summoner_data.get('id')
+                    
+                    # Get ranked stats
+                    ranked_url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+                    stats = None
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(ranked_url, headers=headers) as resp:
+                            if resp.status == 200:
+                                stats_data = await resp.json()
+                                if stats_data:
+                                    ranked = [s for s in stats_data if s.get('queueType') == 'RANKED_SOLO_5x5']
+                                    stats = ranked[0] if ranked else stats_data[0]
+                    
+                    tier = stats.get('tier', 'DIAMOND') if stats else 'DIAMOND'
+                    lp = stats.get('leaguePoints', 0) if stats else 0
+                    
+                    # Calculate priority boost - equal boost for PRO and STREAMER
+                    # Both get +10% boost
+                    priority_boost = 1.10
+                    
+                    # Insert or update in pool
+                    conn = self.db.get_connection()
+                    cur = conn.cursor()
+                    
+                    cur.execute("""
+                        INSERT INTO hexbet_high_elo_pool (puuid, region, tier, lp, priority_boost)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (puuid) DO UPDATE SET
+                            tier = EXCLUDED.tier,
+                            lp = EXCLUDED.lp,
+                            priority_boost = EXCLUDED.priority_boost
+                    """, (puuid, region, tier, lp, priority_boost))
+                    conn.commit()
+                    cur.close()
+                    self.db.return_connection(conn)
+                    
+                    badge = "🎖️" if player_type == 'pro' else "📺"
+                    logger.info(f"✅ {idx}/{len(verified_players)} {badge} {player_name} ({tier} {lp}LP) - boost x{priority_boost}")
+                    added += 1
+                    
+                except Exception as e:
+                    logger.error(f"❌ {player_name}: {e}")
+                    failed += 1
+                    continue
+                
+                if idx % 30 == 0:
+                    await asyncio.sleep(1)  # Extra delay every 30 players to avoid rate limit
+            
+            summary = f"""✅ POOL UPDATE COMPLETE
+
+🎖️ PRO + 📺 STREAMER PLAYERS ADDED
+Added: {added}/{len(verified_players)}
+Failed: {failed}
+
+Priority Boost Applied:
+• 🎖️ PRO players: +1% boost
+• 📺 STREAMER players: +0.5% boost
+
+These players will now appear more frequently in betting matches!"""
+            
+            await status_msg.edit(content=summary)
+            logger.info(summary)
+            
+        except Exception as e:
+            logger.error(f"Error adding verified players: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbbalance", description="(Staff) Manage user balances")
+    @app_commands.describe(
+        action="Action: add, remove, set, check",
+        user="User to manage",
+        amount="Amount (not needed for check)"
+    )
+    async def hxbalance(self, interaction: discord.Interaction, action: str, user: discord.Member, amount: Optional[int] = None):
+        """Manage user balances - Staff only"""
+        # Check if user has required roles
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        action = action.lower()
+        if action not in ['add', 'remove', 'set', 'check']:
+            await interaction.followup.send("❌ Action must be: add, remove, set, or check", ephemeral=True)
+            return
+        
+        current_balance = self.db.get_balance(user.id)
+        
+        if action == 'check':
+            await interaction.followup.send(f"💰 {user.mention} balance: **{current_balance}**", ephemeral=True)
+            return
+        
+        if amount is None:
+            await interaction.followup.send("❌ Amount is required for add/remove/set actions", ephemeral=True)
+            return
+        
+        try:
+            if action == 'add':
+                new_balance = self.db.update_balance(user.id, amount)
+                await interaction.followup.send(
+                    f"✅ Added **{amount}** to {user.mention}\n"
+                    f"Old: {current_balance} → New: {new_balance}",
+                    ephemeral=True
+                )
+            elif action == 'remove':
+                new_balance = self.db.update_balance(user.id, -amount)
+                await interaction.followup.send(
+                    f"✅ Removed **{amount}** from {user.mention}\n"
+                    f"Old: {current_balance} → New: {new_balance}",
+                    ephemeral=True
+                )
+            elif action == 'set':
+                # Set balance by calculating difference
+                diff = amount - current_balance
+                new_balance = self.db.update_balance(user.id, diff)
+                await interaction.followup.send(
+                    f"✅ Set {user.mention} balance to **{amount}**\n"
+                    f"Old: {current_balance} → New: {new_balance}",
+                    ephemeral=True
+                )
+        except Exception as e:
+            logger.error(f"Error managing balance: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbplayer", description="Check player profile and pro status")
+    @app_commands.describe(name="Player name (display name or gameName#tagLine)", region="Region (euw, na, kr, etc.)")
+    async def hxplayer(self, interaction: discord.Interaction, name: str, region: str = "euw"):
+        """Check if a player is a pro/streamer and show their profile"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # First check if name matches a player_name in database
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT riot_id, player_name, player_type 
+                FROM hexbet_verified_players 
+                WHERE LOWER(player_name) = LOWER(%s)
+            """, (name,))
+            
+            db_result = cursor.fetchone()
+            cursor.close()
+            self.db.return_connection(conn)
+            
+            if db_result:
+                # Found in database - use their riot_id
+                riot_id_to_search, display_name, player_type = db_result
+                name = riot_id_to_search  # Override name with riot_id from DB
+                pro_emoji = get_pro_emoji()
+                streamer_emoji = get_streamer_emoji()
+                player_type_label = f"{pro_emoji} Pro" if player_type == "pro" else f"{streamer_emoji} Streamer"
+            else:
+                # Not in database - treat as regular riot_id lookup
+                display_name = None
+                player_type = None
+                player_type_label = None
+            
+            region = region.lower()
+            platform_map = {
+                'euw': 'euw1', 'eune': 'eun1', 'na': 'na1', 'kr': 'kr',
+                'br': 'br1', 'jp': 'jp1', 'lan': 'la1', 'las': 'la2',
+                'oce': 'oc1', 'tr': 'tr1', 'ru': 'ru'
+            }
+            platform = platform_map.get(region, 'euw1')
+            
+            # Get account info
+            if '#' in name:
+                game_name, tag_line = name.split('#', 1)
+            else:
+                game_name = name
+                tag_line = region.upper()
+            
+            # Get PUUID from Riot ID
+            riot_region_map = {
+                'br': 'americas', 'eune': 'europe', 'euw': 'europe',
+                'jp': 'asia', 'kr': 'asia', 'lan': 'americas', 'las': 'americas',
+                'na': 'americas', 'oce': 'sea', 'tr': 'europe', 'ru': 'europe'
+            }
+            riot_region = riot_region_map.get(region, 'europe')
+            
+            account_url = f"https://{riot_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+            headers = {'X-Riot-Token': self.riot_api.api_key}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(account_url, headers=headers) as response:
+                    if response.status != 200:
+                        await interaction.followup.send(f"❌ Player not found: {name}", ephemeral=True)
+                        return
+                    
+                    account_data = await response.json()
+                    puuid = account_data.get('puuid')
+                    riot_id = f"{account_data.get('gameName')}#{account_data.get('tagLine')}"
+                
+                # Get ranked stats
+                stats = await self.riot_api.get_ranked_stats_by_puuid(puuid, region)
+                
+                if not stats:
+                    await interaction.followup.send(f"❌ No ranked data found for {riot_id}", ephemeral=True)
+                    return
+                
+                # Pick best rank
+                tier, division, wr = pick_rank_entry(stats)
+                
+                entry = stats[0] if stats else {}
+                lp = entry.get('leaguePoints', 0)
+                wins = entry.get('wins', 0)
+                losses = entry.get('losses', 0)
+                
+                # Check if pro
+                is_pro = is_pro_player(riot_id)
+                
+                # Check if player is in an active game
+                riot_region_for_game = region_to_riot_region(region)
+                in_game = False
+                queue_type = "None"
+                try:
+                    game_data = await self.riot_api.get_active_game(puuid, riot_region_for_game)
+                    if game_data:
+                        in_game = True
+                        queue_id = game_data.get('gameQueueConfigId')
+                        queue_type = "Ranked Solo/Duo" if queue_id == 420 else f"Queue {queue_id}"
+                except:
+                    pass
+                
+                # Build embed
+                title_name = display_name if display_name else riot_id
+                embed_color = 0x00ff00 if (is_pro or player_type) else 0x3498DB
+                
+                embed = discord.Embed(
+                    title=f"{get_pro_emoji() + ' ' if (is_pro or player_type == 'pro') else ''}{title_name}",
+                    description=f"RiotID: `{riot_id}`" if display_name else None,
+                    color=embed_color
+                )
+                
+                tier_emoji = rank_emoji(tier) if tier != 'UNRANKED' else ''
+                rank_str = f"{tier_emoji} {tier}{' ' + division if division else ''} {lp} LP" if tier != 'UNRANKED' else "UNRANKED"
+                
+                embed.add_field(name="Rank", value=rank_str, inline=True)
+                embed.add_field(name="Region", value=region.upper(), inline=True)
+                embed.add_field(name="Win Rate", value=f"{wr:.1f}%", inline=True)
+                embed.add_field(name="W/L", value=f"{wins}W / {losses}L", inline=True)
+                
+                # Player Type field
+                if player_type_label:
+                    embed.add_field(name="Player Type", value=player_type_label, inline=True)
+                else:
+                    embed.add_field(name="Pro Player", value="✅ Yes" if is_pro else "❌ No", inline=True)
+                
+                # InGame Status
+                in_game_str = f"🎮 {queue_type}" if in_game else "⏹️ Not in game"
+                embed.add_field(name="InGame Status", value=in_game_str, inline=True)
+                
+                # OP.GG link (new format)
+                opgg_url = build_opgg_summoner_url(region, riot_id)
+                embed.add_field(name="OP.GG", value=f"[View Profile]({opgg_url})", inline=False)
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        except Exception as e:
+            logger.error(f"Error in hxplayer: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    def _is_staff_or_admin(self, interaction: discord.Interaction) -> bool:
+        return self._has_staff_access(interaction)
+
+    @app_commands.command(name="lbspectate", description="Start monitoring a player and prioritize posting their live game")
+    @app_commands.describe(
+        name="Player display name or RiotID (gameName#tagLine)",
+        platform="Platform shard (euw1, eun1, na1, kr...)"
+    )
+    @app_commands.choices(
+        platform=[
+            app_commands.Choice(name="EUW", value="euw1"),
+            app_commands.Choice(name="EUNE", value="eun1"),
+            app_commands.Choice(name="NA", value="na1"),
+            app_commands.Choice(name="KR", value="kr"),
+            app_commands.Choice(name="BR", value="br1"),
+            app_commands.Choice(name="LAN", value="la1"),
+            app_commands.Choice(name="LAS", value="la2"),
+            app_commands.Choice(name="OCE", value="oc1"),
+            app_commands.Choice(name="TR", value="tr1"),
+            app_commands.Choice(name="RU", value="ru"),
+            app_commands.Choice(name="JP", value="jp1"),
+        ],
+    )
+    async def hxspectate(self, interaction: discord.Interaction, name: str, platform: str = "euw1"):
+        if not self._is_staff_or_admin(interaction):
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild_id
+        if not guild_id:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        key = (guild_id, name.lower().strip(), platform.lower().strip())
+        self.spectate_targets[key] = {
+            'guild_id': guild_id,
+            'name': name.strip(),
+            'platform': platform.lower().strip(),
+            # If special requirements (GM cutoff average) are not met, the posted match is regular.
+            'force_non_special': False,
+            'requested_by': interaction.user.id,
+        }
+        await interaction.followup.send(
+            f"✅ Monitoring **{name}** on `{platform}`. If they are in game, HEXBET will prioritize posting that match.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="lbspectatestop", description="Stop monitoring a player")
+    @app_commands.describe(
+        name="Player display name or RiotID (gameName#tagLine)",
+        platform="Optional: stop only this platform (default: stop all platforms for that name)"
+    )
+    @app_commands.choices(
+        platform=[
+            app_commands.Choice(name="EUW", value="euw1"),
+            app_commands.Choice(name="EUNE", value="eun1"),
+            app_commands.Choice(name="NA", value="na1"),
+            app_commands.Choice(name="KR", value="kr"),
+            app_commands.Choice(name="BR", value="br1"),
+            app_commands.Choice(name="LAN", value="la1"),
+            app_commands.Choice(name="LAS", value="la2"),
+            app_commands.Choice(name="OCE", value="oc1"),
+            app_commands.Choice(name="TR", value="tr1"),
+            app_commands.Choice(name="RU", value="ru"),
+            app_commands.Choice(name="JP", value="jp1"),
+        ],
+    )
+    async def hxspectatestop(self, interaction: discord.Interaction, name: str, platform: Optional[str] = None):
+        if not self._is_staff_or_admin(interaction):
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild_id
+        if not guild_id:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        removed = 0
+        if platform:
+            key = (guild_id, name.lower().strip(), platform.lower().strip())
+            if self.spectate_targets.pop(key, None):
+                removed = 1
+        else:
+            keys_to_remove = [
+                key for key, target in self.spectate_targets.items()
+                if target.get('guild_id') == guild_id and target.get('name', '').lower().strip() == name.lower().strip()
+            ]
+            for key in keys_to_remove:
+                self.spectate_targets.pop(key, None)
+            removed = len(keys_to_remove)
+
+        if removed:
+            scope = f" on `{platform}`" if platform else " on all platforms"
+            await interaction.followup.send(f"🛑 Stopped monitoring **{name}**{scope}.", ephemeral=True)
+        else:
+            await interaction.followup.send(f"ℹ️ Monitor not found for **{name}**.", ephemeral=True)
+
+    @app_commands.command(name="lbspectatelist", description="List active spectate monitors")
+    async def hxspectatelist(self, interaction: discord.Interaction):
+        if not self._is_staff_or_admin(interaction):
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild_id
+        if not guild_id:
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        targets = [t for t in self.spectate_targets.values() if t.get('guild_id') == guild_id]
+        if not targets:
+            await interaction.followup.send("ℹ️ No active spectate monitors in this server.", ephemeral=True)
+            return
+
+        lines = [f"• **{t['name']}** on `{t['platform']}`" for t in targets]
+        await interaction.followup.send("📡 Active hxspectate monitors:\n" + "\n".join(lines), ephemeral=True)
+
+    @hxpost.error
+    async def hxpost_error(self, interaction: discord.Interaction, error):
+        if isinstance(error, app_commands.errors.MissingPermissions):
+            await interaction.response.send_message("❌ You need Manage Server to use this.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Error: {error}", ephemeral=True)
+
+    @app_commands.command(name="lbsync", description="(Admin) Force sync slash commands")
+    async def force_sync(self, interaction: discord.Interaction):
+        """Force synchronize slash commands with Discord"""
+        # Check if user has required roles
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # List current commands before sync
+            current_cmds = [cmd.name for cmd in self.bot.tree.get_commands()]
+            
+            # Force sync to guild
+            guild = interaction.guild
+            if guild:
+                synced = await self.bot.tree.sync(guild=guild)
+                synced_names = [cmd.name for cmd in synced]
+                
+                await interaction.followup.send(
+                    f"✅ **Force synced {len(synced)} commands to {guild.name}**\n\n"
+                    f"**Before sync:** {len(current_cmds)} commands\n"
+                    f"**After sync:** {len(synced)} commands\n\n"
+                    f"**Synced commands:**\n{', '.join(synced_names)}",
+                    ephemeral=True
+                )
+                logger.info(f"🔄 Force synced {len(synced)} commands: {synced_names}")
+            else:
+                await interaction.followup.send("❌ Could not determine guild", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error force syncing commands: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbmode", description="(Admin) Switch game mode: soloq, flexq, drafts, custom")
+    @app_commands.describe(mode="Game mode: soloq, flexq, drafts, or custom")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def switch_game_mode(self, interaction: discord.Interaction, mode: str):
+        """Switch HEXBET game mode between SoloQ, FlexQ, Normal Games, and Custom"""
+        from LoLBets.core.engine.config import GAME_MODE_DISPLAY
+        
+        mode = mode.lower().strip()
+        valid_modes = ['soloq', 'flexq', 'drafts', 'custom']
+        
+        if mode not in valid_modes:
+            await interaction.response.send_message(f"❌ Invalid mode! Use: {', '.join(valid_modes)}", ephemeral=True)
+            return
+        
+        # Update global config (runtime)
+        from LoLBets.core.engine import config
+        config.GAME_MODE = mode
+        
+        display_name = GAME_MODE_DISPLAY.get(mode, mode.upper())
+        await interaction.response.send_message(
+            f"✅ Game mode switched to **{display_name}**\n\n"
+            f"📊 New settings:\n"
+            f"• Mode: {display_name}\n"
+            f"• Min Tier: {config.MIN_TIER_PER_MODE.get(mode)}\n"
+            f"• Queue Type: {config.GAME_MODE_QUEUE_MAP.get(mode) or 'Manual Entry'}\n\n"
+            f"This affects all new matches posted going forward.",
+            ephemeral=True
+        )
+        logger.info(f"🎮 Game mode switched to {mode.upper()} by {interaction.user}")
+    
+    @app_commands.command(name="lbmodeinfo", description="Show current game mode")
+    async def show_game_mode(self, interaction: discord.Interaction):
+        """Show current HEXBET game mode"""
+        from LoLBets.core.engine import config
+        from LoLBets.core.engine.config import GAME_MODE_DISPLAY, MIN_TIER_PER_MODE, GAME_MODE_QUEUE_MAP
+        
+        current_mode = config.GAME_MODE.lower()
+        display_name = GAME_MODE_DISPLAY.get(current_mode, current_mode.upper())
+        min_tier = MIN_TIER_PER_MODE.get(current_mode)
+        queue_type = GAME_MODE_QUEUE_MAP.get(current_mode) or 'Manual Entry'
+        
+        embed = discord.Embed(
+            title="🎮 LoLBets Game Mode",
+            description=f"Currently: {display_name}",
+            color=0x3498DB
+        )
+        embed.add_field(name="Mode", value=display_name, inline=True)
+        embed.add_field(name="Min Tier", value=min_tier or 'N/A', inline=True)
+        embed.add_field(name="Queue", value=queue_type, inline=False)
+        
+        # Show all available modes
+        modes_text = "\n".join([f"• {GAME_MODE_DISPLAY.get(m, m.upper())}" for m in ['soloq', 'flexq', 'drafts', 'custom']])
+        embed.add_field(name="Available Modes", value=modes_text, inline=False)
+        
+        embed.set_footer(text="Use /lbmode <soloq|flexq|drafts> to switch")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    
+        """Test featured game posting manually"""
+        # Check if user has required roles
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
+        logger.info("🧪 MANUAL TEST: Featured game posting")
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            await self.post_random_featured_game(force=False)
+            await interaction.followup.send("✅ Featured game post attempted", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error in test: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbstatus", description="Check LoLBets database status (ADMIN)")
+    async def check_status(self, interaction: discord.Interaction):
+        """Check current status of bets and matches"""
+        # Check if user has required roles
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Count matches
+            open_count = self.db.count_open_matches()
+            
+            # Get high-elo pool size
+            conn = self.db.get_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM hexbet_high_elo_pool;")
+                pool_size = cur.fetchone()[0]
+                
+                # Count bets for open matches (JOIN with hexbet_matches)
+                cur.execute("""
+                    SELECT COUNT(*) 
+                    FROM hexbet_bets b 
+                    INNER JOIN hexbet_matches m ON b.match_id = m.id 
+                    WHERE m.status = 'open';
+                """)
+                open_bets = cur.fetchone()[0]
+                
+                cur.execute("SELECT COUNT(*) FROM hexbet_matches;")
+                total_matches = cur.fetchone()[0]
+                
+                # Get open match details
+                cur.execute("""
+                    SELECT id, game_id, platform, created_at, updated_at 
+                    FROM hexbet_matches 
+                    WHERE status = 'open' 
+                    ORDER BY created_at DESC 
+                    LIMIT 3;
+                """)
+                open_matches = cur.fetchall()
+            
+            self.db.return_connection(conn)
+            
+            status_text = f"""
+🎯 **HEXBET Status**
+━━━━━━━━━━━━━━━━━
+📊 **Matches:**
+  • Open: {open_count}/3
+  • Total: {total_matches}
+
+💰 **Bets:**
+  • Open: {open_bets}
+
+🎮 **High-Elo Pool:**
+  • Players: {pool_size}
+
+{"🔴 **Open Matches:**" + "".join([f"\n  • Match {m[0]}: Game {m[1]} ({m[2]}) - {m[3]}" for m in open_matches]) if open_matches else ""}
+
+✅ Database connected
+"""
+            
+            await interaction.followup.send(status_text, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error checking status: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbdebug_settle", description="Debug settlement and cleanup (ADMIN)")
+    async def debug_settle(self, interaction: discord.Interaction):
+        """Debug settlement status and cleanup"""
+        # Check if user has required roles
+        staff_role_id = 1153030265782927501
+        admin_role_id = 1274834684429209695
+        
+        user_role_ids = [role.id for role in interaction.user.roles]
+        if staff_role_id not in user_role_ids and admin_role_id not in user_role_ids:
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            conn = self.db.get_connection()
+            with conn.cursor() as cur:
+                # Check open matches
+                cur.execute("SELECT COUNT(*) FROM hexbet_matches WHERE status = 'open'")
+                open_matches = cur.fetchone()[0]
+                
+                # Check settled matches
+                cur.execute("SELECT COUNT(*) FROM hexbet_matches WHERE status = 'settled'")
+                settled_matches = cur.fetchone()[0]
+                
+                # Check open bets
+                cur.execute("SELECT COUNT(*) FROM hexbet_bets WHERE settled = FALSE")
+                open_bets = cur.fetchone()[0]
+                
+                # Check settled bets
+                cur.execute("SELECT COUNT(*) FROM hexbet_bets WHERE settled = TRUE")
+                settled_bets = cur.fetchone()[0]
+                
+                # Check bets older than 1 minute
+                cur.execute("""
+                    SELECT COUNT(*) FROM hexbet_bets
+                    WHERE settled = TRUE
+                    AND updated_at < NOW() - interval '1 minute'
+                """)
+                old_settled_bets = cur.fetchone()[0]
+                
+                # Check matches with settlement data
+                cur.execute("""
+                    SELECT id, game_id, status, winner, updated_at
+                    FROM hexbet_matches
+                    ORDER BY updated_at DESC
+                    LIMIT 5
+                """)
+                recent_matches = cur.fetchall()
+                
+                # Check bets in settled matches
+                cur.execute("""
+                    SELECT hb.id, hb.match_id, hb.settled, hb.won, hb.updated_at
+                    FROM hexbet_bets hb
+                    JOIN hexbet_matches hm ON hb.match_id = hm.id
+                    WHERE hm.status = 'settled'
+                    ORDER BY hb.updated_at DESC
+                    LIMIT 5
+                """)
+                settled_match_bets = cur.fetchall()
+            
+            self.db.return_connection(conn)
+            
+            debug_text = f"""
+🔍 **Settlement & Cleanup Debug**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 **Matches:**
+  • Open: {open_matches}
+  • Settled: {settled_matches}
+
+💰 **Bets:**
+  • Open (settled=FALSE): {open_bets}
+  • Settled (settled=TRUE): {settled_bets}
+  • **To delete (>1min):** {old_settled_bets}
+
+📈 **Recent Matches:**
+{chr(10).join([f"  • M{m[0]}: Game {m[1]} - {m[2]} - Winner: {m[3]} - Updated: {m[4]}" for m in recent_matches]) if recent_matches else "  None"}
+
+🎯 **Bets in Settled Matches:**
+{chr(10).join([f"  • Bet {b[0]}: Match {b[1]} - settled={b[2]} won={b[3]} - {b[4]}" for b in settled_match_bets]) if settled_match_bets else "  None"}
+"""
+            
+            await interaction.followup.send(debug_text, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error in debug_settle: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbdaily", description="Claim daily free bet tokens")
+    async def hxdaily(self, interaction: discord.Interaction):
+        """Claim 100 tokens daily free bet (resets every 24 hours)"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            success, message = self.db.claim_daily_free_bet(interaction.user.id, amount=100)
+            
+            embed = discord.Embed(
+                title="📅 Daily Free Bet",
+                description=message,
+                color=0x2ECC71 if success else 0xE74C3C,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            if success:
+                balance = self.db.get_balance(interaction.user.id)
+                embed.add_field(name="New Balance", value=f"💰 {balance} tokens", inline=True)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error claiming daily free bet: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:100]}", ephemeral=True)
+
+    @app_commands.command(name="lbstats", description="View your betting statistics")
+    async def betting_stats(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
+        """View betting statistics for you or another user"""
+        target_user = user or interaction.user
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            stats = self.db.get_user_betting_stats(target_user.id)
+            
+            if not stats or stats['total_bets'] == 0:
+                embed = discord.Embed(
+                    title=f"📊 {target_user.name}'s Betting Stats",
+                    description="No betting history yet",
+                    color=0x95A5A6
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            # Determine best side
+            best_side = "🔵 BLUE" if stats['blue_wr'] >= stats['red_wr'] else "🔴 RED"
+            
+            # Streak emoji
+            streak_emoji = "🔥" if stats['streak_type'] == "W" else "❄️" if stats['streak_type'] == "L" else "⏸️"
+            streak_text = f"{streak_emoji} {stats['streak_type']}{stats['streak']}" if stats['streak'] > 0 else f"{streak_emoji} No streak"
+            
+            # Color based on ROI
+            if stats['roi'] > 0:
+                color = 0x2ECC71  # Green
+                roi_emoji = "📈"
+            elif stats['roi'] < 0:
+                color = 0xE74C3C  # Red
+                roi_emoji = "📉"
+            else:
+                color = 0x95A5A6  # Gray
+                roi_emoji = "➡️"
+            
+            embed = discord.Embed(
+                title=f"📊 {target_user.name}'s Betting Stats",
+                color=color,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Overall stats
+            embed.add_field(
+                name="📈 Overall",
+                value=(
+                    f"**Total Bets:** {stats['total_bets']}\n"
+                    f"**Record:** {stats['wins']}W - {stats['losses']}L\n"
+                    f"**Win Rate:** {stats['win_rate']:.1f}%"
+                ),
+                inline=True
+            )
+            
+            # Financial stats
+            embed.add_field(
+                name="💰 Financial",
+                value=(
+                    f"**Wagered:** {stats['total_wagered']}\n"
+                    f"**Won:** {stats['total_payout']}\n"
+                    f"{roi_emoji} **ROI:** {stats['roi']:+.1f}%"
+                ),
+                inline=True
+            )
+            
+            # Side statistics
+            embed.add_field(
+                name="🎯 By Side",
+                value=(
+                    f"🔵 **BLUE:** {stats['blue_wins']}/{stats['blue_total']} ({stats['blue_wr']:.1f}%)\n"
+                    f"🔴 **RED:** {stats['red_wins']}/{stats['red_total']} ({stats['red_wr']:.1f}%)\n"
+                    f"**Best:** {best_side}"
+                ),
+                inline=False
+            )
+            
+            # Streak
+            embed.add_field(
+                name="🔥 Current Streak",
+                value=streak_text,
+                inline=False
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error getting betting stats: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbforce", description="Force close all open matches (ADMIN)")
+    async def force_close_matches(self, interaction: discord.Interaction):
+        """Force close all open matches and settled bets"""
+        # Check if user has required permissions/roles
+        if not self._has_staff_access(interaction):
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            conn = self.db.get_connection()
+            with conn.cursor() as cur:
+                # Get all open matches with their message IDs and channel IDs
+                cur.execute("SELECT id, message_id, channel_id FROM hexbet_matches WHERE status = 'open';")
+                matches = cur.fetchall()
+                
+                if matches:
+                    deleted_embeds = 0
+                    for match_id, message_id, channel_id in matches:
+                        # Close match
+                        cur.execute(
+                            "UPDATE hexbet_matches SET status = 'settled', winner = 'draw', updated_at = NOW() WHERE id = %s;",
+                            (match_id,)
+                        )
+                        # Refund all bets (set settled=TRUE, won=NULL for refund status)
+                        cur.execute(
+                            "UPDATE hexbet_bets SET settled = TRUE, won = NULL, updated_at = NOW() WHERE match_id = %s AND settled = FALSE;",
+                            (match_id,)
+                        )
+                        # Return balance to users
+                        cur.execute("""
+                            UPDATE user_balances 
+                            SET balance = balance + (SELECT COALESCE(SUM(amount), 0) FROM hexbet_bets WHERE match_id = %s AND settled = TRUE AND won IS NULL)
+                            WHERE discord_id IN (SELECT user_id FROM hexbet_bets WHERE match_id = %s);
+                        """, (match_id, match_id))
+                        
+                        # Delete the bet embed from Discord
+                        if message_id and channel_id:
+                            try:
+                                channel = self.bot.get_channel(channel_id)
+                                if channel:
+                                    message = await channel.fetch_message(message_id)
+                                    await message.delete()
+                                    deleted_embeds += 1
+                                    logger.info(f"🗑️ Deleted bet embed for match {match_id}")
+                            except discord.NotFound:
+                                logger.warning(f"⚠️ Bet embed for match {match_id} not found (already deleted?)")
+                            except Exception as e:
+                                logger.warning(f"⚠️ Failed to delete bet embed for match {match_id}: {e}")
+                    
+                    conn.commit()
+                    await interaction.followup.send(f"✅ Closed {len(matches)} open matches and deleted {deleted_embeds} bet embeds", ephemeral=True)
+                else:
+                    await interaction.followup.send("ℹ️ No open matches to close", ephemeral=True)
+            
+            self.db.return_connection(conn)
+        except Exception as e:
+            logger.error(f"Error force closing matches: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbinvite", description="Get bot invite link for other servers")
+    async def invite_link(self, interaction: discord.Interaction):
+        """Generate OAuth2 invite link for HEXBET bot"""
+        try:
+            # Required permissions for HEXBET:
+            # - Send Messages (2048)
+            # - Embed Links (16384)
+            # - Add Reactions (64)
+            # - Use Slash Commands (applications.commands scope)
+            # - Read Message History (65536)
+            # - View Channels (1024)
+            
+            permissions = discord.Permissions(
+                send_messages=True,
+                embed_links=True,
+                add_reactions=True,
+                read_message_history=True,
+                view_channel=True,
+                use_application_commands=True
+            )
+            
+            # Generate invite URL
+            invite_url = discord.utils.oauth_url(
+                self.bot.user.id,
+                permissions=permissions,
+                scopes=["bot", "applications.commands"]
+            )
+            
+            embed = discord.Embed(
+                title="🎮 Invite HEXBET Bot",
+                description=f"Click the link below to add this bot to your server!",
+                color=0xF1C40F
+            )
+            embed.add_field(
+                name="📋 Required Permissions",
+                value="• Send Messages\n• Embed Links\n• Add Reactions\n• Read Message History\n• View Channels\n• Use Slash Commands",
+                inline=False
+            )
+            embed.add_field(
+                name="🔗 Invite Link",
+                value=f"[Click here to invite]({invite_url})",
+                inline=False
+            )
+            embed.add_field(
+                name="⚙️ Setup After Invite",
+                value="Use `/lbconfig setup` to configure channels on your server",
+                inline=False
+            )
+            embed.set_footer(text=f"Bot ID: {self.bot.user.id}")
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error generating invite link: {e}", exc_info=True)
+            await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+    
+    @app_commands.command(name="invite", description="Get bot invite link")
+    async def invite_alias(self, interaction: discord.Interaction):
+        """Alias for hxinvite - Generate OAuth2 invite link"""
+        await self.invite_link(interaction)
+
+    # ============ NEW HUB & FEATURES ============
+
+    @app_commands.command(name="lolbets", description="🎮 LoLBets Central Hub - All features in one place")
+    async def hexbet_hub(self, interaction: discord.Interaction):
+        """Central hub for all LoLBets features."""
+        embed = discord.Embed(
+            title="🎮 LoLBets - Central Hub",
+            description="Select a category for what you want to do:",
+            color=0x3498DB,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        embed.add_field(
+            name="📋 Categories",
+            value=(
+                "🎯 **Play & Bet** - Find games, manage bets, view history\n"
+                "📊 **Players & Stats** - Search, head-to-head analysis\n"
+                "👤 **My Account** - Balance, daily claim, achievements\n"
+                "ℹ️ **Server Info** - Help, status, invite\n"
+                "🛠️ **Admin** - Manage players, settle matches (staff only)"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Click dropdown below to navigate")
+        
+        view = HexbetMainMenuView(self)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+        logger.info(f"User {interaction.user.id} opened LoLBets hub")
+
+    @app_commands.command(name="lbhistory", description="📜 View and filter your betting history")
+    async def betting_history(self, interaction: discord.Interaction):
+        """Advanced bet history with filters and analytics"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            user_id = interaction.user.id
+            view = BetHistoryView(self, user_id)
+            
+            embed = discord.Embed(
+                title="📜 Your Betting History",
+                description="Click buttons below to filter by time period, side, or result",
+                color=0x3498DB,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Get quick stats
+            stats = self.db.get_user_betting_stats(user_id)
+            if stats:
+                embed.add_field(
+                    name="📊 Quick Stats",
+                    value=(
+                        f"Total Bets: **{stats['total_bets']}**\n"
+                        f"Win Rate: **{stats['win_rate']:.1f}%**\n"
+                        f"ROI: **{stats['roi']:+.1f}%**"
+                    ),
+                    inline=True
+                )
+            
+            embed.set_footer(text="Use buttons to navigate through your history")
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error showing betting history: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbachievements", description="🎖️ View your unlocked achievements and badges")
+    async def view_achievements(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
+        """View achievements and badges"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            target_user = user or interaction.user
+            user_achievements = UserAchievements(target_user.id, self.db)
+            earned = user_achievements.get_sorted_achievements()
+            
+            embed = discord.Embed(
+                title=f"🎖️ {target_user.name}'s Achievements",
+                description=f"Total earned: **{len(earned)}/20+** badges",
+                color=0xFFD700,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            if not earned:
+                embed.add_field(
+                    name="🚀 No achievements yet",
+                    value="Start placing bets to unlock badges!\nAchievements unlock at different milestones.",
+                    inline=False
+                )
+            else:
+                # Group by tier
+                from LoLBets.core.engine.lolbets_achievements import AchievementTier
+                
+                for tier in [AchievementTier.LEGENDARY, AchievementTier.EPIC, AchievementTier.RARE, AchievementTier.COMMON]:
+                    tier_achievements = [a for a in earned if a.tier == tier]
+                    if tier_achievements:
+                        tier_name = {
+                            AchievementTier.LEGENDARY: "👑 LEGENDARY",
+                            AchievementTier.EPIC: "🟣 EPIC",
+                            AchievementTier.RARE: "🔵 RARE",
+                            AchievementTier.COMMON: "⚪ COMMON",
+                        }[tier]
+                        
+                        achievements_str = "\n".join(
+                            f"{a.emoji} **{a.name}** - {a.description}"
+                            for a in tier_achievements
+                        )
+                        embed.add_field(
+                            name=tier_name,
+                            value=achievements_str,
+                            inline=False
+                        )
+            
+            embed.set_footer(text="Earn more by betting and hitting milestones")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error viewing achievements: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="lbh2h", description="⚔️ Head-to-Head match analysis")
+    async def head_to_head(self, interaction: discord.Interaction):
+        """Analyze team matchups and player statistics"""
+        embed = discord.Embed(
+            title="⚔️ Head-to-Head Analysis",
+            description="Compare teams, players, and compositions",
+            color=0x9B59B6,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        embed.add_field(
+            name="📊 Available Analysis",
+            value=(
+                "**Team Matchups** - Historical Blue vs Red records\n"
+                "**Player H2H** - Individual player comparisons\n"
+                "**Composition Stats** - Champion combo winrates"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Click buttons below to select analysis type")
+        
+        view = H2HView(self)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class ManualGameModal(discord.ui.Modal, title='✏️ Add Custom/Manual Game'):
+    game_id = discord.ui.TextInput(
+        label='Game ID',
+        placeholder='Enter game ID or match identifier',
+        required=True,
+        max_length=50
+    )
+    
+    platform = discord.ui.TextInput(
+        label='Platform',
+        placeholder='euw1, na1, kr, eun1',
+        required=True,
+        max_length=10
+    )
+    
+    team_one = discord.ui.TextInput(
+        label='Team 1 (comma-separated summonernames)',
+        placeholder='Player1, Player2, Player3, Player4, Player5',
+        required=True,
+        max_length=200,
+        style=discord.TextStyle.paragraph
+    )
+    
+    team_two = discord.ui.TextInput(
+        label='Team 2 (comma-separated summonernames)',
+        placeholder='Player1, Player2, Player3, Player4, Player5',
+        required=True,
+        max_length=200,
+        style=discord.TextStyle.paragraph
+    )
+    
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        game_id = self.game_id.value.strip()
+        platform = self.platform.value.strip().lower()
+        team_one_str = self.team_one.value.strip()
+        team_two_str = self.team_two.value.strip()
+        
+        # Validate platform
+        valid_platforms = ['euw1', 'na1', 'kr', 'eun1']
+        if platform not in valid_platforms:
+            await interaction.followup.send(f"❌ Invalid platform! Use: {', '.join(valid_platforms)}", ephemeral=True)
+            return
+        
+        # Parse teams
+        try:
+            team_one = [name.strip() for name in team_one_str.split(',') if name.strip()]
+            team_two = [name.strip() for name in team_two_str.split(',') if name.strip()]
+            
+            if len(team_one) != 5 or len(team_two) != 5:
+                await interaction.followup.send("❌ Each team must have exactly 5 players!", ephemeral=True)
+                return
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error parsing teams: {str(e)}", ephemeral=True)
+            return
+        
+        try:
+            # Create manual game entry (this would need to be implemented in your system)
+            # For now, show confirmation
+            await interaction.followup.send(
+                f"✅ Custom game queued for posting:\n\n"
+                f"Game ID: {game_id}\n"
+                f"Platform: {platform.upper()}\n"
+                f"Team 1: {', '.join(team_one)}\n"
+                f"Team 2: {', '.join(team_two)}\n\n"
+                f"📋 Manual game posting is currently a placeholder.\n"
+                f"You can use `/lbpost` to find an automatic game instead.",
+                ephemeral=True
+            )
+            logger.info(f"📋 Manual game entry by {interaction.user}: {game_id} on {platform}")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+
+class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'):
+    player_name = discord.ui.TextInput(
+        label='Player Name (Summoner Name)',
+        placeholder='Enter player summoner name (e.g., Faker)',
+        required=True,
+        max_length=50
+    )
+    
+    platform = discord.ui.TextInput(
+        label='Platform',
+        placeholder='euw1, na1, kr, or eun1',
+        required=True,
+        max_length=10,
+        default='euw1'
+    )
+    
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        player_name = self.player_name.value.strip()
+        platform = self.platform.value.strip().lower()
+        
+        # Validate platform
+        valid_platforms = ['euw1', 'na1', 'kr', 'eun1']
+        if platform not in valid_platforms:
+            await interaction.followup.send(
+                f"❌ Invalid platform. Use: {', '.join(valid_platforms)}",
+                ephemeral=True
+            )
+            return
+        
+        # Check balance again
+        balance = self.cog.db.get_balance(interaction.user.id)
+        if balance < 1000:
+            await interaction.followup.send(
+                f"❌ Insufficient balance. Required: 1000, Your balance: {balance}",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            # Get player info from Riot API
+            region = platform_to_region(platform)
+            account_data = await self.cog.riot_api.get_account_by_name(player_name, platform)
+            
+            if not account_data or 'puuid' not in account_data:
+                await interaction.followup.send(
+                    f"❌ Player '{player_name}' not found on {platform.upper()}. Please check the name and try again.",
+                    ephemeral=True
+                )
+                return
+            
+            puuid = account_data['puuid']
+            logger.info(f"🎮 User {interaction.user.name} requesting special bet for {player_name} ({puuid}) on {platform}")
+            
+            # Check if player is in active game
+            game_data = await self.cog.riot_api.get_active_game(puuid, region)
+            
+            if not game_data:
+                await interaction.followup.send(
+                    f"❌ Player '{player_name}' is not currently in an active game. Please choose another player.",
+                    ephemeral=True
+                )
+                return
+            
+            game_id = game_data.get('gameId')
+            queue_id = game_data.get('gameQueueConfigId')
+            game_start_time = game_data.get('gameStartTime', 0)
+            
+            # Only accept Ranked Solo/Duo
+            if queue_id != 420:
+                await interaction.followup.send(
+                    f"❌ Player is in a non-ranked game (Queue: {queue_id}). Only Ranked Solo/Duo games are supported. Please choose another player.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check game duration - skip if game is older than 15 minutes
+            if game_start_time > 0:
+                current_time_ms = time.time() * 1000
+                game_duration_minutes = (current_time_ms - game_start_time) / 1000 / 60
+                
+                if game_duration_minutes > 15:
+                    await interaction.followup.send(
+                        f"❌ Game is too old ({game_duration_minutes:.1f} minutes). Please choose a player in a game that started less than 15 minutes ago.",
+                        ephemeral=True
+                    )
+                    return
+                
+                logger.info(f"⏱️ Game duration: {game_duration_minutes:.1f} minutes - accepting")
+            
+            # Check if match already exists
+            open_count = self.cog.db.count_open_matches()
+            if open_count >= 3:
+                await interaction.followup.send(
+                    "❌ There are already 3 active matches. Wait for one to finish before creating a special bet.",
+                    ephemeral=True
+                )
+                return
+            
+            logger.info(f"✅ Found valid ranked game {game_id} for {player_name}")
+            
+            # Build match embed
+            bet_channel_id = self.cog._get_channel_id(interaction.guild_id, 'bet')
+            channel = self.cog.bot.get_channel(bet_channel_id)
+            if not channel:
+                await interaction.followup.send(
+                    "❌ Bet channel not found. Contact an admin.",
+                    ephemeral=True
+                )
+                return
+            
+            blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+            red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+            
+            blue_ordered = self.cog._assign_roles(blue_team)
+            red_ordered = self.cog._assign_roles(red_team)
+            
+            # Enrich player data
+            await self.cog._enrich_players(blue_ordered, region)
+            await self.cog._enrich_players(red_ordered, region)
+            
+            # Apply lobby-wide average for streamer mode
+            all_players = blue_ordered + red_ordered
+            self.cog._apply_lobby_average(all_players)
+
+            odds_blue, odds_red = self.cog._balanced_odds(blue_ordered, red_ordered)
+            chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+            chance_red = round(100 - chance_blue, 1)
+            
+            # Create match in database first
+            match_id = self.cog.db.create_hexbet_match(
+                game_id,
+                platform,
+                bet_channel_id,
+                {'players': blue_ordered, 'odds': odds_blue},
+                {'players': red_ordered, 'odds': odds_red},
+                game_data.get('gameStartTime', 0),
+                special_bet=True,  # Always special for /lbspecial
+                guild_id=interaction.guild_id
+            )
+            
+            if not match_id:
+                await interaction.followup.send(
+                    f"❌ This match already exists or couldn't be created. Choose another player.",
+                    ephemeral=True
+                )
+                return
+            
+            # Build embed with player name as featured
+            featured_label = f"{player_name}#{account_data.get('tagLine', '')}"
+            embed = self.cog._build_embed(
+                game_id, platform, blue_ordered, red_ordered,
+                odds_blue, odds_red, chance_blue, chance_red,
+                featured_label, match_id,
+                game_start_at=game_data.get('gameStartTime')
+            )
+            
+            view = BetView(match_id, odds_blue, odds_red, self.cog, platform, blue_ordered, red_ordered)
+            
+            # Try to send message
+            try:
+                msg = await channel.send(embed=embed, view=view)
+                self.cog.db.set_match_message(match_id, msg.id)
+                logger.info(f"✅ Special bet embed created with message ID {msg.id}")
+                
+                # ONLY NOW deduct the 1000 tokens (embed successfully created)
+                self.cog.db.update_balance(interaction.user.id, -1000)
+                new_balance = self.cog.db.get_balance(interaction.user.id)
+                
+                await interaction.followup.send(
+                    f"✅ **Special bet created!**\n"
+                    f"Player: **{player_name}**\n"
+                    f"Cost: **1000 tokens**\n"
+                    f"New balance: **{new_balance}**\n\n"
+                    f"Match posted in <#{bet_channel_id}>",
+                    ephemeral=True
+                )
+                
+                logger.info(f"💰 Deducted 1000 tokens from {interaction.user.name} (ID: {interaction.user.id}). New balance: {new_balance}")
+                
+            except Exception as e:
+                # If message sending fails, delete the match from database
+                logger.error(f"❌ Failed to send embed: {e}")
+                self.cog.db.settle_match(match_id, winner='cancel')  # Remove match
+                await interaction.followup.send(
+                    f"❌ Failed to create bet embed. No tokens deducted. Try another player.\nError: {str(e)[:100]}",
+                    ephemeral=True
+                )
+                return
+                
+        except Exception as e:
+            logger.error(f"Error creating special bet: {e}", exc_info=True)
+            await interaction.followup.send(
+                f"❌ Error creating special bet. Please try another player.\nDetails: {str(e)[:100]}",
+                ephemeral=True
+            )
+
+
+class BetModal(discord.ui.Modal, title='Place Your Bet'):
+    amount = discord.ui.TextInput(
+        label='Amount to bet',
+        placeholder='Enter amount (e.g., 100)',
+        required=True,
+        min_length=1,
+        max_length=10,
+        style=discord.TextStyle.short
+    )
+    
+    def __init__(self, side: str, odds: float, balance: int, match_id: int, cog: 'Hexbet'):
+        super().__init__()
+        self.side = side
+        self.odds = odds
+        self.balance = balance
+        self.match_id = match_id
+        self.cog = cog
+        self.title = f'Bet on {side.upper()} Team'
+        # Update placeholder to show balance instead of modifying deprecated label
+        self.amount.placeholder = f'Balance: {balance}'
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            bet_amount = int(self.amount.value)
+            
+            if bet_amount <= 0:
+                await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+                return
+            
+            if bet_amount > self.balance:
+                await interaction.response.send_message(f"❌ Not enough balance! You have {self.balance}", ephemeral=True)
+                return
+            
+            match = self.cog.db.get_open_match()
+            if not match or match['id'] != self.match_id:
+                await interaction.response.send_message("❌ This match is no longer open for betting.", ephemeral=True)
+                return
+            
+            potential = int(bet_amount * self.odds)
+            
+            if not self.cog.db.add_bet(match['id'], interaction.user.id, self.side, bet_amount, self.odds, potential):
+                await interaction.response.send_message("⚠️ You already placed a bet on this match!", ephemeral=True)
+                return
+            
+            self.cog.db.record_wager(interaction.user.id, bet_amount)
+            new_balance = self.cog.db.update_balance(interaction.user.id, -bet_amount)
+            
+            embed = discord.Embed(
+                title="✅ Bet Confirmed!",
+                color=0x3498DB if self.side == 'blue' else 0xE74C3C,
+                description=f"**Team:** {self.side.upper()}\n**Amount:** {bet_amount}\n**Odds:** {self.odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            # Log to bet logs channel
+            try:
+                bet_logs_channel_id = self.cog._get_channel_id(interaction.guild_id, 'logs')
+                log_channel = self.cog.bot.get_channel(bet_logs_channel_id)
+                if log_channel:
+                    log_embed = discord.Embed(
+                        title="📊 New Bet",
+                        color=0x3498DB if self.side == 'blue' else 0xE74C3C,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    log_embed.add_field(name="User", value=interaction.user.mention, inline=True)
+                    log_embed.add_field(name="Side", value=self.side.upper(), inline=True)
+                    log_embed.add_field(name="Amount", value=str(bet_amount), inline=True)
+                    log_embed.add_field(name="Odds", value=f"{self.odds}x", inline=True)
+                    log_embed.add_field(name="Potential Win", value=str(potential), inline=True)
+                    log_embed.add_field(name="Match ID", value=str(self.match_id), inline=True)
+                    await log_channel.send(embed=log_embed)
+            except Exception as e:
+                logger.warning(f"Failed to log bet: {e}")
+            
+            # Auto-refresh the match embed with updated bet totals
+            try:
+                await self.cog._rebalance_match_odds(self.match_id)
+                await self.cog._refresh_match_embed(self.match_id)
+            except Exception as e:
+                logger.warning(f"Failed to auto-refresh embed: {e}")
+            
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
+
+
+class BetOUModal(discord.ui.Modal, title='Game Length: Over/Under 22.5 min'):
+    """Bet on game duration Over or Under 22.5 minutes"""
+    ou_choice = discord.ui.TextInput(
+        label='Over or Under',
+        placeholder='Enter: O (Over) or U (Under)',
+        required=True,
+        min_length=1,
+        max_length=1,
+        style=discord.TextStyle.short
+    )
+    amount = discord.ui.TextInput(
+        label='Amount to bet',
+        placeholder='Enter amount (e.g., 100)',
+        required=True,
+        min_length=1,
+        max_length=10,
+        style=discord.TextStyle.short
+    )
+    
+    def __init__(self, balance: int, match_id: int, cog: 'Hexbet'):
+        super().__init__()
+        self.balance = balance
+        self.match_id = match_id
+        self.cog = cog
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            choice = self.ou_choice.value.upper()
+            if choice not in ['O', 'U']:
+                await interaction.response.send_message("❌ Please enter O (Over) or U (Under)!", ephemeral=True)
+                return
+            
+            bet_amount = int(self.amount.value)
+            if bet_amount <= 0:
+                await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+                return
+            if bet_amount > self.balance:
+                await interaction.response.send_message(f"❌ Not enough balance! You have {self.balance}", ephemeral=True)
+                return
+            
+            match = self.cog.db.get_open_match()
+            if not match or match['id'] != self.match_id:
+                await interaction.response.send_message("❌ This match is no longer open for betting.", ephemeral=True)
+                return
+            
+            # O/U odds are 1.9x for both over and under
+            odds = 1.9
+            potential = int(bet_amount * odds)
+            
+            # Store O/U as "ou_over" or "ou_under"
+            bet_side = 'ou_over' if choice == 'O' else 'ou_under'
+            
+            if not self.cog.db.add_bet(match['id'], interaction.user.id, bet_side, bet_amount, odds, potential):
+                await interaction.response.send_message("⚠️ You already placed a bet on this match!", ephemeral=True)
+                return
+            
+            self.cog.db.record_wager(interaction.user.id, bet_amount)
+            new_balance = self.cog.db.update_balance(interaction.user.id, -bet_amount)
+            
+            choice_text = "Over" if choice == 'O' else "Under"
+            embed = discord.Embed(
+                title="✅ O/U Bet Confirmed!",
+                color=0x9B59B6,
+                description=f"**Choice:** {choice_text} 22.5 minutes\n**Amount:** {bet_amount}\n**Odds:** {odds}x\n**Potential Win:** {potential}\n**New Balance:** {new_balance}"
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            # Log to bet logs channel
+            try:
+                bet_logs_channel_id = self.cog._get_channel_id(interaction.guild_id, 'logs')
+                log_channel = self.cog.bot.get_channel(bet_logs_channel_id)
+                if log_channel:
+                    log_embed = discord.Embed(
+                        title="⏱️ O/U Bet",
+                        color=0x9B59B6,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    log_embed.add_field(name="User", value=interaction.user.mention, inline=True)
+                    log_embed.add_field(name="Choice", value=choice_text, inline=True)
+                    log_embed.add_field(name="Amount", value=str(bet_amount), inline=True)
+                    log_embed.add_field(name="Odds", value=f"{odds}x", inline=True)
+                    log_embed.add_field(name="Potential Win", value=str(potential), inline=True)
+                    log_embed.add_field(name="Match ID", value=str(self.match_id), inline=True)
+                    await log_channel.send(embed=log_embed)
+            except Exception as e:
+                logger.warning(f"Failed to log O/U bet: {e}")
+            
+            # Auto-refresh the match embed
+            try:
+                await self.cog._refresh_match_embed(self.match_id)
+            except Exception as e:
+                logger.warning(f"Failed to auto-refresh embed: {e}")
+            
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
+
+
+class LeaderboardView(discord.ui.View):
+    def __init__(self, cog: 'Hexbet', page: int = 1, total_pages: int = 1, sort_by: str = 'balance'):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.page = page
+        self.total_pages = total_pages
+        self.sort_by = sort_by
+        
+        # Disable navigation buttons if on first/last page
+        self.children[1].disabled = (page == 1)  # Previous button (index 1 after dropdown)
+        self.children[3].disabled = (page >= total_pages)  # Next button (index 3 after dropdown)
+    
+    @discord.ui.select(
+        placeholder="📊 Sort by...",
+        options=[
+            discord.SelectOption(label="Balance 💰", value="balance", description="Sort by token balance", emoji="💰"),
+            discord.SelectOption(label="Wygrana 🏆", value="total_won", description="Sort by total tokens won", emoji="🏆")
+        ],
+        custom_id="hexbet_leaderboard_sort"
+    )
+    async def sort_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        try:
+            new_sort = select.values[0]
+            
+            # Get leaderboard data with new sort
+            all_players = self.cog._compute_leaderboard(limit=None, sort_by=new_sort)
+            total_players = len(all_players)
+            per_page = 10
+            total_pages = max(1, (total_players + per_page - 1) // per_page)
+            current_page = 1  # Reset to page 1 when changing sort
+            
+            start_idx = (current_page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_players = all_players[start_idx:end_idx]
+            
+            # Determine title
+            sort_title = "Balance 💰" if new_sort == 'balance' else "Wygrana 🏆"
+            embed = discord.Embed(
+                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {current_page}/{total_pages}",
+                color=0xF1C40F
+            )
+            
+            lines = []
+            for i, row in enumerate(page_players, start=start_idx + 1):
+                medal = ""
+                if i == 1:
+                    medal = "🥇 "
+                elif i == 2:
+                    medal = "🥈 "
+                elif i == 3:
+                    medal = "🥉 "
+                
+                lines.append(
+                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
+                )
+            embed.description = "\n".join(lines)
+            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
+            embed.add_field(
+                name="📋 Useful Commands",
+                value=(
+                    "`/lbbalance` - Check your balance\n"
+                    "`/lbdaily` - Claim 100 daily tokens\n"
+                    "`/lbstats` - View your betting stats\n"
+                    "`/lbspecial` - Create special bet (1000 tokens)\n"
+                    "`/lbplayer` - Search for a player\n"
+                    "`/lbfind` - Find high-elo games"
+                ),
+                inline=False
+            )
+            
+            # Create new view with updated sort
+            new_view = LeaderboardView(self.cog, page=current_page, total_pages=total_pages, sort_by=new_sort)
+            
+            await interaction.response.edit_message(embed=embed, view=new_view)
+        except Exception as e:
+            logger.error(f"Failed to change sort: {e}")
+            await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
+    
+    @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary, custom_id="hexbet_leaderboard_prev")
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            new_page = max(1, self.page - 1)
+            
+            # Get leaderboard data for new page
+            all_players = self.cog._compute_leaderboard(limit=None, sort_by=self.sort_by)
+            total_players = len(all_players)
+            per_page = 10
+            total_pages = max(1, (total_players + per_page - 1) // per_page)
+            new_page = max(1, min(new_page, total_pages))
+            
+            start_idx = (new_page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_players = all_players[start_idx:end_idx]
+            
+            # Build embed
+            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Wygrana 🎯"
+            embed = discord.Embed(
+                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {new_page}/{total_pages}",
+                color=0xF1C40F
+            )
+            
+            lines = []
+            for i, row in enumerate(page_players, start=start_idx + 1):
+                medal = ""
+                if i == 1:
+                    medal = "🥇 "
+                elif i == 2:
+                    medal = "🥈 "
+                elif i == 3:
+                    medal = "🥉 "
+                
+                lines.append(
+                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
+                )
+            embed.description = "\n".join(lines)
+            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
+            embed.add_field(
+                name="📋 Useful Commands",
+                value=(
+                    "`/lbbalance` - Check your balance\n"
+                    "`/lbdaily` - Claim 100 daily tokens\n"
+                    "`/lbstats` - View your betting stats\n"
+                    "`/lbspecial` - Create special bet (1000 tokens)\n"
+                    "`/lbplayer` - Search for a player\n"
+                    "`/lbfind` - Find high-elo games"
+                ),
+                inline=False
+            )
+            
+            # Create new view with updated page
+            new_view = LeaderboardView(self.cog, page=new_page, total_pages=total_pages)
+            
+            # Edit the message instead of sending new one
+            await interaction.response.edit_message(embed=embed, view=new_view)
+        except Exception as e:
+            logger.error(f"Failed to go to previous page: {e}")
+            await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
+    
+    @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.primary, custom_id="hexbet_leaderboard_refresh")
+    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            # Get leaderboard data for current page
+            all_players = self.cog._compute_leaderboard(limit=None, sort_by=self.sort_by)
+            total_players = len(all_players)
+            per_page = 10
+            total_pages = max(1, (total_players + per_page - 1) // per_page)
+            current_page = max(1, min(self.page, total_pages))
+            
+            start_idx = (current_page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_players = all_players[start_idx:end_idx]
+            
+            # Build embed
+            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Wygrana 🏆"
+            embed = discord.Embed(
+                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {current_page}/{total_pages}",
+                color=0xF1C40F
+            )
+            
+            lines = []
+            for i, row in enumerate(page_players, start=start_idx + 1):
+                medal = ""
+                if i == 1:
+                    medal = "🥇 "
+                elif i == 2:
+                    medal = "🥈 "
+                elif i == 3:
+                    medal = "🥉 "
+                
+                lines.append(
+                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
+                )
+            embed.description = "\n".join(lines)
+            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
+            embed.add_field(
+                name="📋 Useful Commands",
+                value=(
+                    "`/lbbalance` - Check your balance\n"
+                    "`/lbdaily` - Claim 100 daily tokens\n"
+                    "`/lbstats` - View your betting stats\n"
+                    "`/lbspecial` - Create special bet (1000 tokens)\n"
+                    "`/lbplayer` - Search for a player\n"
+                    "`/lbfind` - Find high-elo games"
+                ),
+                inline=False
+            )
+            
+            # Create new view with updated page
+            new_view = LeaderboardView(self.cog, page=current_page, total_pages=total_pages, sort_by=self.sort_by)
+            
+            # Edit the message instead of sending new one
+            await interaction.response.edit_message(embed=embed, view=new_view)
+        except Exception as e:
+            logger.error(f"Failed to refresh leaderboard: {e}")
+            await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
+    
+    @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary, custom_id="hexbet_leaderboard_next")
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            new_page = min(self.total_pages, self.page + 1)
+            
+            # Get leaderboard data for new page
+            all_players = self.cog._compute_leaderboard(limit=None, sort_by=self.sort_by)
+            total_players = len(all_players)
+            per_page = 10
+            total_pages = max(1, (total_players + per_page - 1) // per_page)
+            new_page = max(1, min(new_page, total_pages))
+            
+            start_idx = (new_page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_players = all_players[start_idx:end_idx]
+            
+            # Build embed
+            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Wygrana 🎯"
+            embed = discord.Embed(
+                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {new_page}/{total_pages}",
+                color=0xF1C40F
+            )
+            
+            lines = []
+            for i, row in enumerate(page_players, start=start_idx + 1):
+                medal = ""
+                if i == 1:
+                    medal = "🥇 "
+                elif i == 2:
+                    medal = "🥈 "
+                elif i == 3:
+                    medal = "🥉 "
+                
+                lines.append(
+                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
+                )
+            embed.description = "\n".join(lines)
+            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
+            embed.add_field(
+                name="📋 Useful Commands",
+                value=(
+                    "`/lbbalance` - Check your balance\n"
+                    "`/lbdaily` - Claim 100 daily tokens\n"
+                    "`/lbstats` - View your betting stats\n"
+                    "`/lbspecial` - Create special bet (1000 tokens)\n"
+                    "`/lbplayer` - Search for a player\n"
+                    "`/lbfind` - Find high-elo games"
+                ),
+                inline=False
+            )
+            
+            # Create new view with updated page
+            new_view = LeaderboardView(self.cog, page=new_page, total_pages=total_pages, sort_by=self.sort_by)
+            
+            # Edit the message instead of sending new one
+            await interaction.response.edit_message(embed=embed, view=new_view)
+        except Exception as e:
+            logger.error(f"Failed to go to next page: {e}")
+            await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
+
+
+class BetView(discord.ui.View):
+    def __init__(self, match_id: int, odds_blue: float, odds_red: float, cog: Hexbet, platform: str, blue_players: List[dict], red_players: List[dict]):
+        super().__init__(timeout=None)
+        self.match_id = match_id
+        self.odds_blue = odds_blue
+        self.odds_red = odds_red
+        self.cog = cog
+        self.platform = platform
+        self.blue_players = blue_players
+        self.red_players = red_players
+
+    @discord.ui.button(emoji="<:BlueSide:1457209225976484014>", label="Bet Blue", style=discord.ButtonStyle.secondary, custom_id="hexbet_blue")
+    async def bet_blue(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if betting is still open
+        if not await self._is_betting_open(interaction):
+            return
+        balance = self.cog.db.get_balance(interaction.user.id)
+        match = next((m for m in self.cog.db.get_open_matches(limit=20) if m.get('id') == self.match_id), None)
+        current_odds = self.odds_blue
+        if match and isinstance(match.get('blue_team'), dict):
+            current_odds = float(match['blue_team'].get('odds', self.odds_blue))
+        modal = BetModal('blue', current_odds, balance, self.match_id, self.cog)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(emoji="<:RedSide:1457209221031395472>", label="Bet Red", style=discord.ButtonStyle.secondary, custom_id="hexbet_red")
+    async def bet_red(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if betting is still open
+        if not await self._is_betting_open(interaction):
+            return
+        balance = self.cog.db.get_balance(interaction.user.id)
+        match = next((m for m in self.cog.db.get_open_matches(limit=20) if m.get('id') == self.match_id), None)
+        current_odds = self.odds_red
+        if match and isinstance(match.get('red_team'), dict):
+            current_odds = float(match['red_team'].get('odds', self.odds_red))
+        modal = BetModal('red', current_odds, balance, self.match_id, self.cog)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="📊 Game Length", style=discord.ButtonStyle.secondary, custom_id="hexbet_ou")
+    async def bet_ou(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Bet on game duration (Over/Under 22.5 minutes)"""
+        # Check if betting is still open
+        if not await self._is_betting_open(interaction):
+            return
+        balance = self.cog.db.get_balance(interaction.user.id)
+        modal = BetOUModal(balance, self.match_id, self.cog)
+        await interaction.response.send_modal(modal)
+    
+    async def _is_betting_open(self, interaction: discord.Interaction) -> bool:
+        """Check if betting window is still open"""
+        try:
+            conn = self.cog.db.get_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT betting_closes_at, status FROM hexbet_matches WHERE id = %s", (self.match_id,))
+                row = cur.fetchone()
+                if not row:
+                    await interaction.response.send_message("❌ Match not found", ephemeral=True)
+                    self.cog.db.return_connection(conn)
+                    return False
+                
+                betting_closes_at, status = row
+                self.cog.db.return_connection(conn)
+                
+                # Check if match is still open
+                if status != 'open':
+                    await interaction.response.send_message("🔒 This match is already settled", ephemeral=True)
+                    return False
+                
+                # Check if betting window is closed
+                if betting_closes_at:
+                    from datetime import datetime
+                    now_dt = datetime.utcnow()
+                    
+                    if betting_closes_at.tzinfo is not None:
+                        betting_closes_at = betting_closes_at.replace(tzinfo=None)
+                    
+                    if now_dt > betting_closes_at:
+                        time_since_close = (now_dt - betting_closes_at).total_seconds()
+                        mins_ago = int(time_since_close / 60)
+                        await interaction.response.send_message(f"🔒 Betting closed {mins_ago}m ago", ephemeral=True)
+                        return False
+                
+                return True
+        except Exception as e:
+            logger.error(f"Error checking betting window: {e}")
+            await interaction.response.send_message("❌ Error checking betting status", ephemeral=True)
+            return False
+    
+    @discord.ui.button(label="🔗 OP.GG", style=discord.ButtonStyle.secondary, custom_id="hexbet_opgg")
+    async def opgg_link(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Generate OP.GG multisearch link"""
+        try:
+            # Map platform to op.gg region
+            region_map = {
+                'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 
+                'kr': 'kr', 'br1': 'br', 'jp1': 'jp',
+                'la1': 'lan', 'la2': 'las', 'oc1': 'oce',
+                'tr1': 'tr', 'ru': 'ru'
+            }
+            region = region_map.get(self.platform.lower(), 'euw')
+            
+            # Collect all player names with taglines (gameName#tagLine format), excluding streamer mode
+            all_players = self.blue_players + self.red_players
+            names = []
+            for p in all_players:
+                # Skip players with streamer mode
+                if p.get('streamer_mode', False):
+                    continue
+                    
+                riot_id = p.get('riotId', '')
+                if riot_id:
+                    # Keep gameName#tagLine format - OP.GG multisearch uses # (will be URL-encoded)
+                    names.append(riot_id)
+                else:
+                    # Fallback to summonerName
+                    name = p.get('summonerName', '')
+                    if name:
+                        names.append(name)
+            
+            if not names:
+                await interaction.response.send_message("❌ No player names found", ephemeral=True)
+                return
+            
+            # Create multisearch URL with modern OP.GG route
+            url = build_opgg_multisearch_url(region, names)
+            
+            embed = discord.Embed(
+                title="🔗 OP.GG Multisearch",
+                description=f"[Click here to view all players on OP.GG]({url})",
+                color=0x1F8ECD
+            )
+            embed.add_field(name="Region", value=region.upper(), inline=True)
+            embed.add_field(name="Players", value=str(len(names)), inline=True)
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error generating OP.GG link: {e}", exc_info=True)
+            await interaction.response.send_message(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+
+
+async def setup(bot: commands.Bot, riot_api: RiotAPI, db: TrackerDatabase):
+    cog = Hexbet(bot, riot_api, db)
+    await bot.add_cog(cog)
+    
+    # Log all commands in cog
+    cog_commands = [cmd.name for cmd in cog.__cog_app_commands__]
+    logger.info(f"📋 HEXBET Cog commands: {cog_commands}")
+    
+    # Sync command tree to ensure Discord knows about all commands
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"✅ HEXBET commands loaded - Synced {len(synced)} commands")
+        logger.info(f"📝 Synced commands: {[cmd.name for cmd in synced]}")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not sync commands: {e}")
+        logger.info("✅ HEXBET commands loaded (sync will happen on next startup)")
+
+
