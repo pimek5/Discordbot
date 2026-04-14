@@ -591,11 +591,15 @@ class Hexbet(commands.Cog):
         if self.primary_guild_id and payload.guild_id != self.primary_guild_id:
             return
 
-        match_id = self.db.get_match_id_by_message(payload.guild_id, payload.message_id)
+        match_id = await asyncio.to_thread(
+            self.db.get_match_id_by_message,
+            payload.guild_id,
+            payload.message_id,
+        )
         if not match_id:
             return
 
-        match_messages = self.db.get_match_messages(match_id)
+        match_messages = await asyncio.to_thread(self.db.get_match_messages, match_id)
         if not match_messages:
             return
 
@@ -616,7 +620,7 @@ class Hexbet(commands.Cog):
             except Exception as exc:
                 logger.warning(f"⚠️ Failed to delete mirrored HEXBET message {message_id} in guild {guild_id}: {exc}")
 
-        self.db.clear_match_messages(match_id)
+        await asyncio.to_thread(self.db.clear_match_messages, match_id)
 
     async def _create_priority_match_from_game(
         self,
@@ -642,16 +646,14 @@ class Hexbet(commands.Cog):
             logger.info(f"ℹ️ Game {game_id} is already posted")
             return False
 
-        # Prioritize this game by replacing an open match on the same platform.
+        # Prioritize this game by replacing an open match on the same guild/platform.
         for match in open_matches:
+            if match.get('guild_id') != guild_id:
+                continue
             if match.get('platform') != platform:
                 continue
 
-            bets = self.db.get_bets_for_match(match['id'])
-            for bet in bets:
-                self.db.update_balance(bet['user_id'], bet['amount'])
-
-            self.db.settle_match(match['id'], winner='cancel')
+            self.db.refund_match(match['id'])
 
             channel_id = match.get('channel_id')
             message_id = match.get('message_id')
@@ -5117,10 +5119,7 @@ These players will now appear more frequently in betting matches!"""
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
     def _is_staff_or_admin(self, interaction: discord.Interaction) -> bool:
-        staff_role_id = 1153030265782927501
-        admin_role_id = 1274834684429209695
-        user_role_ids = [role.id for role in interaction.user.roles]
-        return staff_role_id in user_role_ids or admin_role_id in user_role_ids
+        return self._has_staff_access(interaction)
 
     @app_commands.command(name="hxspectate", description="Start monitoring a player and prioritize posting their live game")
     @app_commands.describe(
