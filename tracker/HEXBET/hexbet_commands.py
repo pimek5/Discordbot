@@ -29,6 +29,10 @@ from HEXBET.lolpros_scraper import check_and_verify_player
 from HEXBET.dpm_scraper import scrape_dpm_pro_accounts
 from HEXBET.hexbet_config_database import get_hexbet_config_db
 from HEXBET.hexbet_webhooks import get_webhook_manager
+from HEXBET.hexbet_hub_menu import HexbetMainMenuView
+from HEXBET.hexbet_achievements import AchievementChecker, UserAchievements
+from HEXBET.hexbet_history_filter import BetHistoryView, BetAnalyticsView
+from HEXBET.hexbet_h2h_stats import HeadToHeadAnalyzer, H2HView
 
 logger = logging.getLogger('hexbet')
 
@@ -1310,6 +1314,16 @@ class Hexbet(commands.Cog):
                 if payout:
                     self.db.update_balance(user_id, payout)
                 self.db.record_result(user_id, amount, payout, won)
+                
+                # Check and award achievements
+                try:
+                    checker = AchievementChecker(self.db, self)
+                    newly_earned = await checker.check_achievements(user_id, trigger='bet_settled')
+                    if newly_earned:
+                        logger.info(f"🎖️ User {user_id} earned achievements: {', '.join(newly_earned)}")
+                except Exception as ach_err:
+                    logger.warning(f"⚠️ Failed to check achievements for user {user_id}: {ach_err}")
+            
             await self._update_match_message(match, winner, payouts, timeline_summary=timeline_summary)
             logger.info(f"✅ Settled match {match['game_id']} - Winner: {winner.upper()}")
             
@@ -5741,6 +5755,151 @@ These players will now appear more frequently in betting matches!"""
     async def invite_alias(self, interaction: discord.Interaction):
         """Alias for hxinvite - Generate OAuth2 invite link"""
         await self.invite_link(interaction)
+
+    # ============ NEW HUB & FEATURES ============
+
+    @app_commands.command(name="hexbet", description="🎮 HEXBET Central Hub - All features in one place")
+    async def hexbet_hub(self, interaction: discord.Interaction):
+        """Central hub for all HEXBET features - navigate via menu"""
+        embed = discord.Embed(
+            title="🎮 HEXBET - Central Hub",
+            description="Select a category for what you want to do:",
+            color=0x3498DB,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        embed.add_field(
+            name="📋 Categories",
+            value=(
+                "🎯 **Play & Bet** - Find games, manage bets, view history\n"
+                "📊 **Players & Stats** - Search, head-to-head analysis\n"
+                "👤 **My Account** - Balance, daily claim, achievements\n"
+                "ℹ️ **Server Info** - Help, status, invite\n"
+                "🛠️ **Admin** - Manage players, settle matches (staff only)"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Click dropdown below to navigate")
+        
+        view = HexbetMainMenuView(self)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+        logger.info(f"User {interaction.user.id} opened HEXBET hub")
+
+    @app_commands.command(name="betting_history", description="📜 View and filter your betting history")
+    async def betting_history(self, interaction: discord.Interaction):
+        """Advanced bet history with filters and analytics"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            user_id = interaction.user.id
+            view = BetHistoryView(self, user_id)
+            
+            embed = discord.Embed(
+                title="📜 Your Betting History",
+                description="Click buttons below to filter by time period, side, or result",
+                color=0x3498DB,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Get quick stats
+            stats = self.db.get_user_betting_stats(user_id)
+            if stats:
+                embed.add_field(
+                    name="📊 Quick Stats",
+                    value=(
+                        f"Total Bets: **{stats['total_bets']}**\n"
+                        f"Win Rate: **{stats['win_rate']:.1f}%**\n"
+                        f"ROI: **{stats['roi']:+.1f}%**"
+                    ),
+                    inline=True
+                )
+            
+            embed.set_footer(text="Use buttons to navigate through your history")
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error showing betting history: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="achievements", description="🎖️ View your unlocked achievements and badges")
+    async def view_achievements(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
+        """View achievements and badges"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            target_user = user or interaction.user
+            user_achievements = UserAchievements(target_user.id, self.db)
+            earned = user_achievements.get_sorted_achievements()
+            
+            embed = discord.Embed(
+                title=f"🎖️ {target_user.name}'s Achievements",
+                description=f"Total earned: **{len(earned)}/20+** badges",
+                color=0xFFD700,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            if not earned:
+                embed.add_field(
+                    name="🚀 No achievements yet",
+                    value="Start placing bets to unlock badges!\nAchievements unlock at different milestones.",
+                    inline=False
+                )
+            else:
+                # Group by tier
+                from HEXBET.hexbet_achievements import AchievementTier
+                
+                for tier in [AchievementTier.LEGENDARY, AchievementTier.EPIC, AchievementTier.RARE, AchievementTier.COMMON]:
+                    tier_achievements = [a for a in earned if a.tier == tier]
+                    if tier_achievements:
+                        tier_name = {
+                            AchievementTier.LEGENDARY: "👑 LEGENDARY",
+                            AchievementTier.EPIC: "🟣 EPIC",
+                            AchievementTier.RARE: "🔵 RARE",
+                            AchievementTier.COMMON: "⚪ COMMON",
+                        }[tier]
+                        
+                        achievements_str = "\n".join(
+                            f"{a.emoji} **{a.name}** - {a.description}"
+                            for a in tier_achievements
+                        )
+                        embed.add_field(
+                            name=tier_name,
+                            value=achievements_str,
+                            inline=False
+                        )
+            
+            embed.set_footer(text="Earn more by betting and hitting milestones")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error viewing achievements: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+    @app_commands.command(name="h2h", description="⚔️ Head-to-Head match analysis")
+    async def head_to_head(self, interaction: discord.Interaction):
+        """Analyze team matchups and player statistics"""
+        embed = discord.Embed(
+            title="⚔️ Head-to-Head Analysis",
+            description="Compare teams, players, and compositions",
+            color=0x9B59B6,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        embed.add_field(
+            name="📊 Available Analysis",
+            value=(
+                "**Team Matchups** - Historical Blue vs Red records\n"
+                "**Player H2H** - Individual player comparisons\n"
+                "**Composition Stats** - Champion combo winrates"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="Click buttons below to select analysis type")
+        
+        view = H2HView(self)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class ManualGameModal(discord.ui.Modal, title='✏️ Add Custom/Manual Game'):
