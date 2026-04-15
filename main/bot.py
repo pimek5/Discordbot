@@ -104,6 +104,7 @@ import asyncio
 import requests 
 import json
 import datetime
+import random
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 from dotenv import load_dotenv
@@ -125,7 +126,7 @@ logger = logging.getLogger(__name__)
 from database import initialize_database, get_db
 from riot_api import RiotAPI, load_champion_data
 from permissions import has_admin_permissions
-from emoji_dict import get_champion_emoji
+from emoji_dict import CHAMPION_EMOJIS, get_champion_emoji
 import profile_commands
 import stats_commands
 import thread_migration
@@ -321,6 +322,9 @@ loldle_splash_data = {
     'embed_message_id': None,
     'recent_guesses': []
 }
+
+# Pending delayed classic rotations: {guild_id: asyncio.Task}
+loldle_rotation_tasks = {}
 
 # Rank emoji helper (dynamic lookup by name to avoid hardcoded IDs)
 RANK_EMOJI_NAMES = {
@@ -3738,6 +3742,16 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
 LOLDLE_CLASSIC_ATTRIBUTES = ['gender', 'position', 'species', 'resource', 'range', 'region']
 
 
+def normalize_champion_key(name: str) -> str:
+        return ''.join(ch for ch in name.lower() if ch.isalnum())
+
+
+NORMALIZED_CHAMPION_EMOJIS = {
+    normalize_champion_key(champion_name): emoji
+    for champion_name, emoji in CHAMPION_EMOJIS.items()
+}
+
+
 def get_or_create_loldle_classic_game(db, guild_id: int):
         """Return today's classic game id and correct champion."""
         daily_game = db.get_loldle_daily_game(guild_id, 'classic')
@@ -3750,19 +3764,72 @@ def get_or_create_loldle_classic_game(db, guild_id: int):
 
 def get_loldle_champion_emoji(champion_name: str) -> str:
         """Resolve a champion emoji with a couple of normalization fallbacks."""
-        candidates = [
+        normalized = normalize_champion_key(champion_name)
+        emoji = NORMALIZED_CHAMPION_EMOJIS.get(normalized)
+        if emoji:
+            return emoji
+
+        fallback_candidates = [
             champion_name,
             champion_name.replace("'", " "),
             champion_name.replace(" ", ""),
             champion_name.replace("'", ""),
             champion_name.replace(" ", "").replace("'", ""),
             "Chogath" if champion_name in {"Cho'Gath", "Cho Gath"} else champion_name,
+            "Belveth" if champion_name in {"Bel'Veth", "Bel Veth"} else champion_name,
+            "Kaisa" if champion_name in {"Kai'Sa", "Kai Sa"} else champion_name,
+            "Khazix" if champion_name in {"Kha'Zix", "Kha Zix"} else champion_name,
+            "Leblanc" if champion_name in {"LeBlanc", "Le Blanc"} else champion_name,
+            "Velkoz" if champion_name in {"Vel'Koz", "Vel Koz"} else champion_name,
+            "Nunu" if champion_name in {"Nunu & Willump", "Nunu and Willump", "Nunu&Willump"} else champion_name,
         ]
-        for candidate in candidates:
+        for candidate in fallback_candidates:
             emoji = get_champion_emoji(candidate)
             if emoji:
                 return emoji
         return "•"
+
+
+def generate_next_loldle_champion(current_champion: str) -> str:
+        available = [champion_name for champion_name in CHAMPIONS.keys() if champion_name != current_champion]
+        if not available:
+            return current_champion
+        return random.choice(available)
+
+
+async def rotate_loldle_classic_after_delay(guild_id: int, source_game_id: int, delay_seconds: int = 20):
+        """Rotate classic LoLdle after a delay if the same game is still active."""
+        try:
+            await asyncio.sleep(delay_seconds)
+
+            db = get_db()
+            daily_game = db.get_loldle_daily_game(guild_id, 'classic')
+            if not daily_game:
+                return
+
+            # Skip if a newer game has already been created in the meantime.
+            if daily_game['id'] != source_game_id:
+                return
+
+            current_champion = daily_game['champion_name']
+            next_champion = generate_next_loldle_champion(current_champion)
+            db.create_loldle_daily_game(guild_id, next_champion, 'classic')
+            db.reset_loldle_game_progress(source_game_id)
+
+            channel = bot.get_channel(LOLDLE_CHANNEL_ID)
+            if channel:
+                await channel.send("Generating New Loldle...")
+
+            logger.info(
+                "LoLdle rotated (delayed): guild=%s previous_correct='%s' new_correct='%s'",
+                guild_id,
+                current_champion,
+                next_champion,
+            )
+        except Exception as exc:
+            logger.error("LoLdle delayed rotation failed: guild=%s error=%s", guild_id, exc)
+        finally:
+            loldle_rotation_tasks.pop(guild_id, None)
 
 
 def get_loldle_select_emoji(champion_name: str):
@@ -3789,7 +3856,7 @@ def build_loldle_option_buckets(champion_names, bucket_size: int = 25):
 
 
 def build_loldle_header_row() -> str:
-        return "Champion⠀⠀⠀⠀⠀⠀G⠀⠀P⠀⠀S⠀⠀R⠀⠀Ra⠀⠀Re"
+    return "**Champion** | **Gender** | **Position** | **Species** | **Resource** | **Range** | **Region**"
 
 
 def pad_loldle_name(name: str, width: int = 12) -> str:
@@ -3986,6 +4053,17 @@ class LoldleClassicSelectView(discord.ui.View):
 
             guesses_list.append(champion_name)
             solved_now = champion_name == self.correct_champion
+
+            logger.info(
+                "LoLdle guess: user=%s guild=%s game=%s guess='%s' correct='%s' solved=%s",
+                self.user_id,
+                self.guild_id,
+                self.game_id,
+                champion_name,
+                self.correct_champion,
+                solved_now,
+            )
+
             db.update_loldle_player_progress(self.game_id, self.user_id, guesses_list, solved_now)
             if solved_now:
                 db.update_loldle_stats(self.user_id, self.guild_id, True, len(guesses_list))
@@ -3998,6 +4076,19 @@ class LoldleClassicSelectView(discord.ui.View):
 
             if solved_now and interaction.channel:
                 await interaction.channel.send(f"👑 {interaction.user.mention} guessed correct LoLdle.")
+
+                pending_task = loldle_rotation_tasks.get(self.guild_id)
+                if not pending_task or pending_task.done():
+                    await interaction.channel.send("New LoLdle in 20 seconds...")
+                    loldle_rotation_tasks[self.guild_id] = asyncio.create_task(
+                        rotate_loldle_classic_after_delay(self.guild_id, self.game_id, 20)
+                    )
+                else:
+                    logger.info(
+                        "LoLdle rotation already pending: guild=%s game=%s",
+                        self.guild_id,
+                        self.game_id,
+                    )
 
             await interaction.response.edit_message(embed=embed, view=self)
 
@@ -4016,12 +4107,25 @@ async def loldle(interaction: discord.Interaction):
         try:
             db = get_db()
             guild_id = interaction.guild.id
-            game_id, correct_champion = get_or_create_loldle_classic_game(db, guild_id)
+
+            # Always restart classic game on command use to avoid stale state/cache.
+            pending_task = loldle_rotation_tasks.pop(guild_id, None)
+            if pending_task and not pending_task.done():
+                pending_task.cancel()
+
+            daily_game = db.get_loldle_daily_game(guild_id, 'classic')
+            if daily_game:
+                correct_champion = generate_next_loldle_champion(daily_game['champion_name'])
+            else:
+                correct_champion = random.choice(list(CHAMPIONS.keys()))
+
+            game_id = db.create_loldle_daily_game(guild_id, correct_champion, 'classic')
+            db.reset_loldle_game_progress(game_id)
+
             user_id = interaction.user.id
-            progress = db.get_loldle_player_progress(game_id, user_id)
-            guesses_list = normalize_guesses(progress.get('guesses')) if progress else []
-            solved = normalize_db_bool(progress.get('solved', False)) if progress else False
-            solved_count = db.get_loldle_solved_count(game_id)
+            guesses_list = []
+            solved = False
+            solved_count = 0
 
             embed = build_loldle_classic_embed(interaction.user, guesses_list, correct_champion, solved_count, solved)
             view = LoldleClassicSelectView(user_id, guild_id, game_id, correct_champion, guesses_list, solved)
