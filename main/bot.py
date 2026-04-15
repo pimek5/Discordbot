@@ -152,6 +152,20 @@ def normalize_guesses(raw):
             return [part.strip().strip('"') for part in inner.split(',')]
         return [s]
     return [raw]
+
+
+def normalize_db_bool(raw):
+    """Normalize DB values that may come as bool/int/str into a proper boolean."""
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return False
+    if isinstance(raw, (int, float)):
+        return raw != 0
+    if isinstance(raw, str):
+        return raw.strip().lower() in {"1", "true", "t", "yes", "y"}
+    return bool(raw)
+
 import leaderboard_commands
 
 # Orianna configuration
@@ -3761,7 +3775,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
             won = False
         else:
             guesses_list = normalize_guesses(progress.get('guesses'))
-            won = progress.get('solved', False)
+            won = normalize_db_bool(progress.get('solved', False))
             
             # Check if already solved
             if won:
@@ -3814,7 +3828,7 @@ async def loldle(interaction: discord.Interaction, champion: str):
             db.update_loldle_player_progress(game_id, user_id, guesses_list, True)
             
             # Update user's global stats
-            db.update_loldle_stats(user_id, True, len(guesses_list))
+            db.update_loldle_stats(user_id, guild_id, True, len(guesses_list))
             
             # Build winner embed showing final board
             winner_embed = discord.Embed(
@@ -4323,7 +4337,7 @@ async def quote(interaction: discord.Interaction, champion: str):
             won = False
         else:
             guesses_list = normalize_guesses(progress.get('guesses'))
-            won = progress.get('solved', False)
+            won = normalize_db_bool(progress.get('solved', False))
             if won:
                 await interaction.response.send_message(
                     f"✅ You already solved today's Quote! The champion is **{correct_champion}**.",
@@ -4350,7 +4364,7 @@ async def quote(interaction: discord.Interaction, champion: str):
         
         if champion == correct_champion:
             db.update_loldle_player_progress(game_id, user_id, guesses_list, True)
-            db.update_loldle_stats(user_id, True, len(guesses_list))
+            db.update_loldle_stats(user_id, guild_id, True, len(guesses_list))
             
             winner_embed = discord.Embed(
                 title="🎉 Quote Mode - Correct!",
@@ -4489,7 +4503,7 @@ async def emoji(interaction: discord.Interaction, champion: str):
             won = False
         else:
             guesses_list = normalize_guesses(progress.get('guesses'))
-            won = progress.get('solved', False)
+            won = normalize_db_bool(progress.get('solved', False))
             if won:
                 await interaction.response.send_message(
                     f"✅ You already solved today's Emoji! The champion is **{correct_champion}**.",
@@ -4516,7 +4530,7 @@ async def emoji(interaction: discord.Interaction, champion: str):
         
         if champion == correct_champion:
             db.update_loldle_player_progress(game_id, user_id, guesses_list, True)
-            db.update_loldle_stats(user_id, True, len(guesses_list))
+            db.update_loldle_stats(user_id, guild_id, True, len(guesses_list))
             
             winner_embed = discord.Embed(
                 title="🎉 Emoji Mode - Correct!",
@@ -4678,7 +4692,7 @@ async def ability(interaction: discord.Interaction, champion: str):
             won = False
         else:
             guesses_list = normalize_guesses(progress.get('guesses'))
-            won = progress.get('solved', False)
+            won = normalize_db_bool(progress.get('solved', False))
             if won:
                 await interaction.response.send_message(
                     f"✅ You already solved today's Ability! The champion is **{correct_champion}**.",
@@ -4705,7 +4719,7 @@ async def ability(interaction: discord.Interaction, champion: str):
         
         if champion == correct_champion:
             db.update_loldle_player_progress(game_id, user_id, guesses_list, True)
-            db.update_loldle_stats(user_id, True, len(guesses_list))
+            db.update_loldle_stats(user_id, guild_id, True, len(guesses_list))
             
             winner_embed = discord.Embed(
                 title="🎉 Ability Mode - Correct!",
