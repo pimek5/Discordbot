@@ -3752,15 +3752,48 @@ def get_loldle_champion_emoji(champion_name: str) -> str:
         """Resolve a champion emoji with a couple of normalization fallbacks."""
         candidates = [
             champion_name,
+            champion_name.replace("'", " "),
             champion_name.replace(" ", ""),
             champion_name.replace("'", ""),
             champion_name.replace(" ", "").replace("'", ""),
+            "Chogath" if champion_name in {"Cho'Gath", "Cho Gath"} else champion_name,
         ]
         for candidate in candidates:
             emoji = get_champion_emoji(candidate)
             if emoji:
                 return emoji
         return "•"
+
+
+def get_loldle_select_emoji(champion_name: str):
+        """Convert stored champion emoji markup into a PartialEmoji for select options."""
+        raw_emoji = get_loldle_champion_emoji(champion_name)
+        if not raw_emoji or raw_emoji == "•":
+            return None
+        try:
+            return discord.PartialEmoji.from_str(raw_emoji)
+        except Exception:
+            return None
+
+
+def build_loldle_option_buckets(champion_names, bucket_size: int = 25):
+        if not champion_names:
+            return []
+
+        buckets = []
+        for start in range(0, len(champion_names), bucket_size):
+            bucket_items = champion_names[start:start + bucket_size]
+            bucket_label = f"{bucket_items[0]} - {bucket_items[-1]}"
+            buckets.append((bucket_label, bucket_items))
+        return buckets
+
+
+def build_loldle_header_row() -> str:
+        return "Champion⠀⠀⠀⠀⠀⠀G⠀⠀P⠀⠀S⠀⠀R⠀⠀Ra⠀⠀Re"
+
+
+def pad_loldle_name(name: str, width: int = 12) -> str:
+        return name + ("⠀" * max(1, width - len(name)))
 
 
 def get_loldle_found_count(guesses_list, correct_data):
@@ -3788,7 +3821,8 @@ def build_loldle_classic_row(guess_name: str, correct_champion: str, correct_dat
             display_name = guess_name
             emoji = get_loldle_champion_emoji(guess_name)
 
-        return f"{emoji} **{display_name}** | {' | '.join(statuses)}"
+        status_cells = "⠀⠀".join(statuses)
+        return f"{emoji} {pad_loldle_name(display_name)}{status_cells}"
 
 
 def build_loldle_recent_guesses(guesses_list, correct_champion: str) -> str:
@@ -3817,7 +3851,7 @@ def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_cha
             color=0x00C853 if solved_by_user else 0x1F6FEB
         )
 
-        header = "**Champion** | **Gender** | **Position** | **Species** | **Resource** | **Range** | **Region**"
+        header = build_loldle_header_row()
         if guesses_list:
             board_rows = [build_loldle_classic_row(guess_name, correct_champion, correct_data) for guess_name in guesses_list]
             embed.add_field(name="Board", value=header + "\n" + "\n".join(board_rows[-10:]), inline=False)
@@ -3844,7 +3878,7 @@ def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_cha
 
 
 class LoldleClassicSelectView(discord.ui.View):
-        """Personal classic LoLdle board with paginated champion select."""
+        """Classic LoLdle board with grouped champion selectors."""
 
         def __init__(self, user_id: int, guild_id: int, game_id: int, correct_champion: str, guesses_list, solved: bool):
             super().__init__(timeout=900)
@@ -3854,33 +3888,65 @@ class LoldleClassicSelectView(discord.ui.View):
             self.correct_champion = correct_champion
             self.guesses_list = list(guesses_list)
             self.solved = solved
-            self.page_index = 0
-            self.page_size = 25
+            self.bucket_index = 0
+            self.bucket_size = 25
             self._refresh_items()
 
         def _get_available_champions(self):
             return [champion_name for champion_name in sorted(CHAMPIONS.keys()) if champion_name not in self.guesses_list]
 
-        def _get_total_pages(self):
-            available = self._get_available_champions()
-            return max(1, (len(available) + self.page_size - 1) // self.page_size)
+        def _get_buckets(self):
+            return build_loldle_option_buckets(self._get_available_champions(), self.bucket_size)
 
         def _refresh_items(self):
             self.clear_items()
 
-            available = self._get_available_champions()
-            total_pages = self._get_total_pages()
-            self.page_index = min(self.page_index, total_pages - 1)
-            start = self.page_index * self.page_size
-            page_items = available[start:start + self.page_size]
+            buckets = self._get_buckets()
+            self.bucket_index = min(self.bucket_index, max(0, len(buckets) - 1))
+            active_bucket_label, active_bucket_items = buckets[self.bucket_index] if buckets else ("No champions", [])
 
-            select = discord.ui.Select(
-                placeholder="Select a champion guess..." if page_items else "No champions left",
+            bucket_select = discord.ui.Select(
+                placeholder="Choose champion group...",
                 min_values=1,
                 max_values=1,
-                options=[discord.SelectOption(label=champion_name, value=champion_name) for champion_name in page_items] or [discord.SelectOption(label="No champions available", value="__empty__")],
-                disabled=self.solved or not page_items,
+                options=[
+                    discord.SelectOption(
+                        label=bucket_label,
+                        value=str(index),
+                        description=f"{len(bucket_items)} champions"
+                    )
+                    for index, (bucket_label, bucket_items) in enumerate(buckets)
+                ] or [discord.SelectOption(label="No champions available", value="__empty__")],
+                disabled=self.solved or not buckets,
                 row=0,
+            )
+
+            async def bucket_callback(interaction: discord.Interaction):
+                selected = bucket_select.values[0]
+                if selected == "__empty__":
+                    await interaction.response.defer()
+                    return
+                self.bucket_index = int(selected)
+                self._refresh_items()
+                await interaction.response.edit_message(view=self)
+
+            bucket_select.callback = bucket_callback
+            self.add_item(bucket_select)
+
+            select = discord.ui.Select(
+                placeholder=(f"Choose champion from {active_bucket_label} (type to filter)" if active_bucket_items else "No champions left"),
+                min_values=1,
+                max_values=1,
+                options=[
+                    discord.SelectOption(
+                        label=champion_name,
+                        value=champion_name,
+                        emoji=get_loldle_select_emoji(champion_name)
+                    )
+                    for champion_name in active_bucket_items
+                ] or [discord.SelectOption(label="No champions available", value="__empty__")],
+                disabled=self.solved or not active_bucket_items,
+                row=1,
             )
 
             async def select_callback(interaction: discord.Interaction):
@@ -3892,26 +3958,6 @@ class LoldleClassicSelectView(discord.ui.View):
 
             select.callback = select_callback
             self.add_item(select)
-
-            previous_button = discord.ui.Button(label="Prev", style=discord.ButtonStyle.secondary, disabled=self.solved or self.page_index == 0, row=1)
-            next_button = discord.ui.Button(label="Next", style=discord.ButtonStyle.secondary, disabled=self.solved or self.page_index >= total_pages - 1, row=1)
-            page_button = discord.ui.Button(label=f"Page {self.page_index + 1}/{total_pages}", style=discord.ButtonStyle.primary, disabled=True, row=1)
-
-            async def previous_callback(interaction: discord.Interaction):
-                self.page_index -= 1
-                self._refresh_items()
-                await interaction.response.edit_message(view=self)
-
-            async def next_callback(interaction: discord.Interaction):
-                self.page_index += 1
-                self._refresh_items()
-                await interaction.response.edit_message(view=self)
-
-            previous_button.callback = previous_callback
-            next_button.callback = next_callback
-            self.add_item(previous_button)
-            self.add_item(page_button)
-            self.add_item(next_button)
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             if interaction.user.id != self.user_id:
@@ -3979,7 +4025,7 @@ async def loldle(interaction: discord.Interaction):
 
             embed = build_loldle_classic_embed(interaction.user, guesses_list, correct_champion, solved_count, solved)
             view = LoldleClassicSelectView(user_id, guild_id, game_id, correct_champion, guesses_list, solved)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message(embed=embed, view=view)
 
         except Exception as e:
             print(f"❌ Error in /loldle: {e}")
