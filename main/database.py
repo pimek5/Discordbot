@@ -2263,6 +2263,30 @@ class Database:
                 return cur.fetchone()[0]
         finally:
             self.return_connection(conn)
+
+    def get_loldle_unsolved_count(self, game_id: int) -> int:
+        """Get number of active players who have guessed but not solved this game."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COUNT(*)
+                    FROM loldle_player_progress
+                    WHERE game_id = %s AND solved = FALSE AND attempts > 0
+                """, (game_id,))
+                return cur.fetchone()[0]
+        finally:
+            self.return_connection(conn)
+
+    def reset_loldle_game_progress(self, game_id: int):
+        """Clear all player progress rows for a game when rotating champion."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM loldle_player_progress WHERE game_id = %s", (game_id,))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
     
     def get_loldle_leaderboard(self, guild_id: int, limit: int = 10) -> List[Dict]:
         """Get Loldle leaderboard for a guild"""
