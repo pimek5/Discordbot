@@ -2249,6 +2249,20 @@ class Database:
                 conn.commit()
         finally:
             self.return_connection(conn)
+
+    def get_loldle_solved_count(self, game_id: int) -> int:
+        """Get the number of players who solved a specific Loldle game."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COUNT(*)
+                    FROM loldle_player_progress
+                    WHERE game_id = %s AND solved = TRUE
+                """, (game_id,))
+                return cur.fetchone()[0]
+        finally:
+            self.return_connection(conn)
     
     def get_loldle_leaderboard(self, guild_id: int, limit: int = 10) -> List[Dict]:
         """Get Loldle leaderboard for a guild"""

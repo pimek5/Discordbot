@@ -125,6 +125,7 @@ logger = logging.getLogger(__name__)
 from database import initialize_database, get_db
 from riot_api import RiotAPI, load_champion_data
 from permissions import has_admin_permissions
+from emoji_dict import get_champion_emoji
 import profile_commands
 import stats_commands
 import thread_migration
@@ -617,8 +618,7 @@ class LoldleButtonsView(discord.ui.View):
     async def guess_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Sends /loldle command prompt to user"""
         await interaction.response.send_message(
-            "💬 Type `/loldle <champion_name>` in the chat to make your guess!\n"
-            "Example: `/loldle Yasuo`",
+            "💬 Use `/loldle` to open your personal LoLdle board and choose a champion from the select menu.",
             ephemeral=True
         )
     
@@ -3734,300 +3734,256 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
     
     return "🟥"  # Wrong
 
-@bot.tree.command(name="loldle", description="Play daily LoL champion guessing game!", guild=discord.Object(id=GUILD_ID))
-@app_commands.describe(champion="Guess the champion name")
-async def loldle(interaction: discord.Interaction, champion: str):
-    """LoLdle - Guess the daily champion with persistent embed and database tracking!"""
-    
-    # Channel restriction check
-    if interaction.channel_id != LOLDLE_CHANNEL_ID:
-        await interaction.response.send_message(
-            f"❌ This command can only be used in <#{LOLDLE_CHANNEL_ID}>!",
-            ephemeral=True
-        )
-        return
-    
-    try:
 
-        # Get or create daily game in database
-        db = get_db()
-        guild_id = interaction.guild.id
+LOLDLE_CLASSIC_ATTRIBUTES = ['gender', 'position', 'species', 'resource', 'range', 'region']
+
+
+def get_or_create_loldle_classic_game(db, guild_id: int):
+        """Return today's classic game id and correct champion."""
         daily_game = db.get_loldle_daily_game(guild_id, 'classic')
-        
         if not daily_game:
-            # Create new game for today
             correct_champion = get_daily_champion()
             game_id = db.create_loldle_daily_game(guild_id, correct_champion, 'classic')
-            daily_game = {'id': game_id, 'champion_name': correct_champion}
+            return game_id, correct_champion
+        return daily_game['id'], daily_game['champion_name']
+
+
+def get_loldle_champion_emoji(champion_name: str) -> str:
+        """Resolve a champion emoji with a couple of normalization fallbacks."""
+        candidates = [
+            champion_name,
+            champion_name.replace(" ", ""),
+            champion_name.replace("'", ""),
+            champion_name.replace(" ", "").replace("'", ""),
+        ]
+        for candidate in candidates:
+            emoji = get_champion_emoji(candidate)
+            if emoji:
+                return emoji
+        return "•"
+
+
+def get_loldle_found_count(guesses_list, correct_data):
+        found_count = 0
+        for attr in LOLDLE_CLASSIC_ATTRIBUTES:
+            for guess_name in guesses_list:
+                guess_data = CHAMPIONS.get(guess_name, {})
+                if get_hint_emoji(guess_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr) == "🟩":
+                    found_count += 1
+                    break
+        return found_count
+
+
+def build_loldle_classic_row(guess_name: str, correct_champion: str, correct_data: dict) -> str:
+        if guess_name == correct_champion:
+            display_name = "👑"
+            statuses = ["🟩"] * len(LOLDLE_CLASSIC_ATTRIBUTES)
+            emoji = "👑"
         else:
-            correct_champion = daily_game['champion_name']
-            game_id = daily_game['id']
-        
-        user_id = interaction.user.id
-    
-        # Get or initialize player progress from database
-        progress = db.get_loldle_player_progress(game_id, user_id)
-        
-        if not progress:
-            # First guess for this user today
-            progress = {'guesses': [], 'solved': False}
-            guesses_list = []
-            won = False
-        else:
-            guesses_list = normalize_guesses(progress.get('guesses'))
-            won = normalize_db_bool(progress.get('solved', False))
-            
-            # Check if already solved
-            if won:
-                await interaction.response.send_message(
-                    f"✅ You already solved today's LoLdle! The champion is **{correct_champion}**.\nCome back tomorrow for a new challenge!",
-                    ephemeral=True
-                )
-                return
-    
-        # Validate champion name (case-insensitive, handle spaces)
-        raw_input = champion
-        champion = champion.strip().title().replace("'", "'")
-        try:
-            logger.info(
-                "LoLdle classic pre-append: user=%s game=%s input='%s' norm='%s' existing=%s correct=%s",
-                interaction.user.id,
-                game_id,
-                str(raw_input),
-                champion,
-                guesses_list,
-                correct_champion,
-            )
-        except Exception:
-            pass
-        if champion not in CHAMPIONS:
-            await interaction.response.send_message(
-                f"❌ '{champion}' is not a valid champion name. Try again!",
-                ephemeral=True
-            )
-            return
-        
-        # Check if already guessed
-        if champion in guesses_list:
-            await interaction.response.send_message(
-                f"⚠️ You already guessed **{champion}**! Try a different champion.",
-                ephemeral=True
-            )
-            return
-        
-        # Add guess
-        guesses_list.append(champion)
-        
-        # Get champion data
-        guess_data = CHAMPIONS[champion]
+            guess_data = CHAMPIONS.get(guess_name, {})
+            statuses = [
+                get_hint_emoji(guess_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr)
+                for attr in LOLDLE_CLASSIC_ATTRIBUTES
+            ]
+            display_name = guess_name
+            emoji = get_loldle_champion_emoji(guess_name)
+
+        return f"{emoji} **{display_name}** | {' | '.join(statuses)}"
+
+
+def build_loldle_recent_guesses(guesses_list, correct_champion: str) -> str:
+        if not guesses_list:
+            return "No guesses yet"
+
+        parts = []
+        for guess_name in guesses_list[-8:]:
+            if guess_name == correct_champion:
+                parts.append("👑")
+            else:
+                emoji = get_loldle_champion_emoji(guess_name)
+                parts.append(f"{emoji} {guess_name}")
+        return " → ".join(parts)
+
+
+def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_champion: str, solved_count: int, solved_by_user: bool):
         correct_data = CHAMPIONS[correct_champion]
-        
-        # Check if correct
-        if champion == correct_champion:
-            # Update database - player won
-            db.update_loldle_player_progress(game_id, user_id, guesses_list, True)
-            
-            # Update user's global stats
-            db.update_loldle_stats(user_id, guild_id, True, len(guesses_list))
-            
-            # Build winner embed showing final board
-            winner_embed = discord.Embed(
-                title="🎉 CORRECT! Champion Guessed!",
-                description=f"**{interaction.user.mention} Guessed! 👑**\n\nThe champion was **{correct_champion}**!",
-                color=0x00FF00
-            )
-            
-            # Show all guesses history
-            if len(guesses_list) > 1:
-                guesses_summary = []
-                for prev_guess in guesses_list[:-1]:
-                    prev_data = CHAMPIONS.get(prev_guess, {})
-                    attributes_to_check = ['gender', 'position', 'species', 'resource', 'range', 'region']
-                    match_count = sum([
-                        get_hint_emoji(prev_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr) == "🟩"
-                        for attr in attributes_to_check
-                    ])
-                    guesses_summary.append(f"`{prev_guess}` - {match_count}/6 correct")
-                
-                winner_embed.add_field(
-                    name=f"All Guesses ({len(guesses_list)})",
-                    value="\n".join(guesses_summary) + f"\n✅ `{correct_champion}` - CORRECT!",
-                    inline=False
-                )
-            
-            winner_embed.add_field(name="Attempts", value=f"{len(guesses_list)} guess{'es' if len(guesses_list) > 1 else ''}", inline=True)
-            
-            # Try to edit existing embed or create new one
-            embed_msg_id = loldle_data['game_embeds'].get(game_id)
-            
-            if embed_msg_id:
-                try:
-                    channel = interaction.channel
-                    message = await channel.fetch_message(embed_msg_id)
-                    await message.edit(embed=winner_embed)
-                    await interaction.response.send_message(
-                        f"🎉 **Correct!** You guessed **{correct_champion}** in {len(guesses_list)} attempts!",
-                        ephemeral=True
-                    )
-                    logger.info(f"🎮 {interaction.user.name} solved LoLdle in {len(guesses_list)} attempts")
-                    return
-                except discord.NotFound:
-                    pass
-                except Exception as e:
-                    print(f"⚠️ Failed to edit embed: {e}")
-                    pass
-            
-            # Create new embed if edit failed
-            await interaction.response.send_message(embed=winner_embed)
-            try:
-                msg = await interaction.original_response()
-                loldle_data['game_embeds'][game_id] = msg.id
-            except:
-                pass
-            logger.info(f"🎮 {interaction.user.name} solved LoLdle in {len(guesses_list)} attempts")
-            return
-        
-        # Wrong guess - update progress in database
-        db.update_loldle_player_progress(game_id, user_id, guesses_list, False)
-        
-        # Build detailed comparison table showing all guesses
-        attributes_to_check = ['gender', 'position', 'species', 'resource', 'range', 'region']
-        
         embed = discord.Embed(
             title="🎮 LoLdle - Daily Challenge",
-            description="Guess the champion! Each guess reveals clues.",
-            color=0x1DA1F2
+            description=(
+                f"{user.mention} guessed correct LoLdle."
+                if solved_by_user
+                else "Guess the champion! Each guess reveals clues."
+            ),
+            color=0x00C853 if solved_by_user else 0x1F6FEB
         )
 
-        # Latest guess block (full breakdown) - ALWAYS show actual guess values
-        latest_lines = []
-        for attr in attributes_to_check:
-            guess_val = guess_data.get(attr, 'N/A')
-            correct_val = correct_data.get(attr, 'N/A')
-            emoji = get_hint_emoji(guess_val, correct_val, attr)
-            latest_lines.append(f"**{attr.title()}:** {guess_val} {emoji}")
-        embed.add_field(
-            name=f"Latest Guess: {champion}",
-            value="\n".join(latest_lines),
-            inline=False
-        )
+        header = "**Champion** | **Gender** | **Position** | **Species** | **Resource** | **Range** | **Region**"
+        if guesses_list:
+            board_rows = [build_loldle_classic_row(guess_name, correct_champion, correct_data) for guess_name in guesses_list]
+            embed.add_field(name="Board", value=header + "\n" + "\n".join(board_rows[-10:]), inline=False)
+        else:
+            embed.add_field(name="Board", value=header + "\nNo guesses yet. Pick a champion below.", inline=False)
 
-        # Recent guesses (exclude latest, arrow separated) - show up to last 15
-        recent_source = guesses_list[:-1]
-        recent_display = " → ".join(recent_source) if len(recent_source) <= 15 else " → ".join(recent_source[-15:])
-        if not recent_display:
-            recent_display = "—"
         embed.add_field(
             name="Recent Guesses",
-            value=recent_display,
-            inline=True
+            value=build_loldle_recent_guesses(guesses_list, correct_champion),
+            inline=False
         )
-
-        # Progress - count how many attributes have been found correct (🟩) across ALL guesses
-        found_count = 0
-        for attr in attributes_to_check:
-            for g in guesses_list:
-                gdata = CHAMPIONS.get(g, {})
-                gval = gdata.get(attr, 'N/A')
-                if get_hint_emoji(gval, correct_data.get(attr, 'N/A'), attr) == "🟩":
-                    found_count += 1
-                    break  # Found this attribute, move to next
         embed.add_field(
             name="Progress",
-            value=f"{found_count}/6 attributes found",
+            value=f"{get_loldle_found_count(guesses_list, correct_data)}/6 attributes found",
             inline=True
         )
-
-        # Positive / best status per attribute across all guesses (remember best value too)
-        best_status = {}
-        for g in guesses_list:
-            gdata = CHAMPIONS.get(g, {})
-            for attr in attributes_to_check:
-                gval = gdata.get(attr, 'N/A')
-                emoji = get_hint_emoji(gval, correct_data.get(attr, 'N/A'), attr)
-                priority = {'🟩': 3, '🟨': 2, '🟥': 1}.get(emoji, 0)
-                current = best_status.get(attr)
-                if (not current) or (priority > current['priority']):
-                    best_status[attr] = {'emoji': emoji, 'priority': priority, 'value': gval}
-        positive_lines = []
-        for attr in attributes_to_check:
-            info = best_status.get(attr)
-            if info and info['emoji'] in ['🟩', '🟨']:
-                positive_lines.append(f"{attr.title()}: {info['value']} {info['emoji']}")
-            else:
-                positive_lines.append(f"{attr.title()}: {info['emoji'] if info else '⬜'}")
         embed.add_field(
-            name="Positive Guesses",
-            value="\n".join(positive_lines),
+            name="Players Solved",
+            value=str(solved_count),
             inline=True
         )
-
-        # Guessing history (last 2 previous guesses, inline). If only one previous, show that one.
-        history_guesses = guesses_list[:-1][-2:] if len(guesses_list) > 1 else []
-        
-        # Debug logging of counts for visibility in production
-        try:
-            pos_count = sum(1 for v in best_status.values() if v and v.get('emoji') in ['🟩', '🟨'])
-            logger.info(
-                "LoLdle classic counts: user=%s total=%d recent=%d history=%d positives=%d",
-                interaction.user.id,
-                len(guesses_list),
-                len(recent_source),
-                len(history_guesses),
-                pos_count,
-            )
-        except Exception as e:
-            logger.debug(f"LoLdle classic count logging failed: {e}")
-        
-        for past_guess in history_guesses:
-            past_data = CHAMPIONS.get(past_guess, {})
-            lines = []
-            for attr in attributes_to_check:
-                emoji = get_hint_emoji(past_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr)
-                lines.append(f"**{attr.title()}:** {past_data.get(attr, 'N/A')} {emoji}")
-            embed.add_field(
-                name=past_guess,
-                value="\n".join(lines),
-                inline=True
-            )
-        # If there were no previous guesses, still add an empty history section to match layout
-        if not history_guesses:
-            embed.add_field(name="Guessing History", value="No previous guesses", inline=False)
-
-        # Footer legend
         embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong")
-        
-        # Try to edit existing embed or create new one
-        embed_msg_id = loldle_data['game_embeds'].get(game_id)
-        
-        if embed_msg_id:
-            try:
-                channel = interaction.channel
-                message = await channel.fetch_message(embed_msg_id)
-                await message.edit(embed=embed)
-                await interaction.response.send_message(
-                    f"❌ **{champion}** is not correct! Check the updated board above for hints.",
-                    ephemeral=True
-                )
+        return embed
+
+
+class LoldleClassicSelectView(discord.ui.View):
+        """Personal classic LoLdle board with paginated champion select."""
+
+        def __init__(self, user_id: int, guild_id: int, game_id: int, correct_champion: str, guesses_list, solved: bool):
+            super().__init__(timeout=900)
+            self.user_id = user_id
+            self.guild_id = guild_id
+            self.game_id = game_id
+            self.correct_champion = correct_champion
+            self.guesses_list = list(guesses_list)
+            self.solved = solved
+            self.page_index = 0
+            self.page_size = 25
+            self._refresh_items()
+
+        def _get_available_champions(self):
+            return [champion_name for champion_name in sorted(CHAMPIONS.keys()) if champion_name not in self.guesses_list]
+
+        def _get_total_pages(self):
+            available = self._get_available_champions()
+            return max(1, (len(available) + self.page_size - 1) // self.page_size)
+
+        def _refresh_items(self):
+            self.clear_items()
+
+            available = self._get_available_champions()
+            total_pages = self._get_total_pages()
+            self.page_index = min(self.page_index, total_pages - 1)
+            start = self.page_index * self.page_size
+            page_items = available[start:start + self.page_size]
+
+            select = discord.ui.Select(
+                placeholder="Select a champion guess..." if page_items else "No champions left",
+                min_values=1,
+                max_values=1,
+                options=[discord.SelectOption(label=champion_name, value=champion_name) for champion_name in page_items] or [discord.SelectOption(label="No champions available", value="__empty__")],
+                disabled=self.solved or not page_items,
+                row=0,
+            )
+
+            async def select_callback(interaction: discord.Interaction):
+                selected = select.values[0]
+                if selected == "__empty__":
+                    await interaction.response.defer()
+                    return
+                await self.handle_guess(interaction, selected)
+
+            select.callback = select_callback
+            self.add_item(select)
+
+            previous_button = discord.ui.Button(label="Prev", style=discord.ButtonStyle.secondary, disabled=self.solved or self.page_index == 0, row=1)
+            next_button = discord.ui.Button(label="Next", style=discord.ButtonStyle.secondary, disabled=self.solved or self.page_index >= total_pages - 1, row=1)
+            page_button = discord.ui.Button(label=f"Page {self.page_index + 1}/{total_pages}", style=discord.ButtonStyle.primary, disabled=True, row=1)
+
+            async def previous_callback(interaction: discord.Interaction):
+                self.page_index -= 1
+                self._refresh_items()
+                await interaction.response.edit_message(view=self)
+
+            async def next_callback(interaction: discord.Interaction):
+                self.page_index += 1
+                self._refresh_items()
+                await interaction.response.edit_message(view=self)
+
+            previous_button.callback = previous_callback
+            next_button.callback = next_callback
+            self.add_item(previous_button)
+            self.add_item(page_button)
+            self.add_item(next_button)
+
+        async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This LoLdle board belongs to a different user.", ephemeral=True)
+                return False
+            return True
+
+        async def handle_guess(self, interaction: discord.Interaction, champion_name: str):
+            db = get_db()
+            current_progress = db.get_loldle_player_progress(self.game_id, self.user_id)
+            guesses_list = normalize_guesses(current_progress.get('guesses')) if current_progress else []
+            solved = normalize_db_bool(current_progress.get('solved', False)) if current_progress else False
+
+            if solved:
+                solved_count = db.get_loldle_solved_count(self.game_id)
+                embed = build_loldle_classic_embed(interaction.user, guesses_list, self.correct_champion, solved_count, True)
+                self.guesses_list = guesses_list
+                self.solved = True
+                self._refresh_items()
+                await interaction.response.edit_message(embed=embed, view=self)
                 return
-            except discord.NotFound:
-                # Message was deleted, will create new one
-                pass
-            except Exception as e:
-                print(f"⚠️ Failed to edit embed: {e}")
-                pass
-        
-        # Create new embed (first guess or edit failed)
-        await interaction.response.send_message(embed=embed)
+
+            if champion_name in guesses_list:
+                await interaction.response.send_message(f"⚠️ You already guessed **{champion_name}**.", ephemeral=True)
+                return
+
+            guesses_list.append(champion_name)
+            solved_now = champion_name == self.correct_champion
+            db.update_loldle_player_progress(self.game_id, self.user_id, guesses_list, solved_now)
+            if solved_now:
+                db.update_loldle_stats(self.user_id, self.guild_id, True, len(guesses_list))
+
+            solved_count = db.get_loldle_solved_count(self.game_id)
+            self.guesses_list = guesses_list
+            self.solved = solved_now
+            self._refresh_items()
+            embed = build_loldle_classic_embed(interaction.user, guesses_list, self.correct_champion, solved_count, solved_now)
+
+            if solved_now and interaction.channel:
+                await interaction.channel.send(f"👑 {interaction.user.mention} guessed correct LoLdle.")
+
+            await interaction.response.edit_message(embed=embed, view=self)
+
+
+@bot.tree.command(name="loldle", description="Open your personal daily LoLdle board.", guild=discord.Object(id=GUILD_ID))
+async def loldle(interaction: discord.Interaction):
+        """LoLdle - personal classic board with select-menu champion guesses."""
+
+        if interaction.channel_id != LOLDLE_CHANNEL_ID:
+            await interaction.response.send_message(
+                f"❌ This command can only be used in <#{LOLDLE_CHANNEL_ID}>!",
+                ephemeral=True
+            )
+            return
+
         try:
-            msg = await interaction.original_response()
-            loldle_data['game_embeds'][game_id] = msg.id
-        except:
-            pass
-        
-    except Exception as e:
-        print(f"❌ Error in /loldle: {e}")
-        await interaction.response.send_message(f"❌ An error occurred: {e}", ephemeral=True)
+            db = get_db()
+            guild_id = interaction.guild.id
+            game_id, correct_champion = get_or_create_loldle_classic_game(db, guild_id)
+            user_id = interaction.user.id
+            progress = db.get_loldle_player_progress(game_id, user_id)
+            guesses_list = normalize_guesses(progress.get('guesses')) if progress else []
+            solved = normalize_db_bool(progress.get('solved', False)) if progress else False
+            solved_count = db.get_loldle_solved_count(game_id)
+
+            embed = build_loldle_classic_embed(interaction.user, guesses_list, correct_champion, solved_count, solved)
+            view = LoldleClassicSelectView(user_id, guild_id, game_id, correct_champion, guesses_list, solved)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+        except Exception as e:
+            print(f"❌ Error in /loldle: {e}")
+            await interaction.response.send_message(f"❌ An error occurred: {e}", ephemeral=True)
 
 @bot.tree.command(name="loldlestats", description="Check your LoLdle stats for today", guild=discord.Object(id=GUILD_ID))
 async def loldlestats(interaction: discord.Interaction):
@@ -4053,9 +4009,6 @@ async def loldlestats(interaction: discord.Interaction):
         # Get player's today progress
         progress = db.get_loldle_player_progress(game_id, user_id)
         
-        # Get lifetime stats
-        lifetime_stats = db.get_loldle_stats(user_id)
-        
         embed = discord.Embed(
             title=f"📊 LoLdle Stats - {interaction.user.name}",
             color=0x1DA1F2
@@ -4064,7 +4017,7 @@ async def loldlestats(interaction: discord.Interaction):
         # Today's Progress
         if progress:
             guesses_list = normalize_guesses(progress.get('guesses'))
-            won = progress.get('solved', False)
+            won = normalize_db_bool(progress.get('solved', False))
             
             if won:
                 embed.description = f"✅ **Today: Solved!** You guessed in **{len(guesses_list)}** attempts."
@@ -4076,9 +4029,10 @@ async def loldlestats(interaction: discord.Interaction):
                 if guesses_list:
                     embed.add_field(name="Your Guesses", value=", ".join(guesses_list), inline=False)
         else:
-            embed.description = "🎮 **Today:** Not started yet! Use `/loldle <champion>` to play."
+            embed.description = "🎮 **Today:** Not started yet! Use `/loldle` to open your board."
         
         # Lifetime Stats
+        lifetime_stats = db.get_loldle_stats(user_id, guild_id)
         if lifetime_stats:
             total_wins = lifetime_stats.get('total_wins', 0)
             total_games = lifetime_stats.get('total_games', 0)
@@ -4111,9 +4065,10 @@ async def loldletop(interaction: discord.Interaction):
     
     try:
         db = get_db()
+        guild_id = interaction.guild.id
         
         # Get leaderboard from database
-        leaderboard = db.get_loldle_leaderboard(limit=10)
+        leaderboard = db.get_loldle_leaderboard(guild_id, limit=10)
         
         if not leaderboard:
             await interaction.response.send_message(
@@ -4250,7 +4205,7 @@ async def loldlestart(interaction: discord.Interaction, mode: app_commands.Choic
             preview_desc = f"**Ability:** {ability_desc}\nUse `/ability <champion>` to guess!"
             color = 0xE91E63
         else:
-            preview_desc = "A new champion has been selected! Use `/loldle <champion>` to start guessing."
+            preview_desc = "A new champion has been selected! Use `/loldle` to open your personal board and guess from the select menu."
             color = 0x1DA1F2
         
         new_embed = discord.Embed(
