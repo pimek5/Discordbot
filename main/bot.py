@@ -3890,7 +3890,8 @@ def build_loldle_option_buckets(champion_names, bucket_size: int = 25):
 
 
 def build_loldle_header_row() -> str:
-    return "**Champion** | **Gender** | **Position** | **Species** | **Resource** | **Range** | **Region** | **Release Year**"
+    # Compact header helps avoid wrapping on narrower Discord clients.
+    return "**Champ**|**Gender**|**Pos**|**Species**|**Res**|**Range**|**Region**|**Year**"
 
 
 def pad_loldle_name(name: str, width: int = 12) -> str:
@@ -3913,6 +3914,8 @@ def get_loldle_found_count(guesses_list, correct_data):
 
 def format_loldle_attribute_hint(guess_value: str, correct_value: str, attribute_name: str) -> str:
         hint = get_hint_emoji(guess_value, correct_value, attribute_name)
+        if attribute_name == 'release_year' and guess_value == 'N/A':
+            guess_value = '-'
         return f"{hint} {guess_value}"
 
 
@@ -3941,7 +3944,7 @@ def build_loldle_classic_row(guess_name: str, correct_champion: str, correct_dat
             display_name = guess_name
             emoji = get_loldle_champion_emoji(guess_name)
 
-        return f"{emoji} {pad_loldle_name(display_name)} | " + " | ".join(cells)
+        return f"{emoji} {display_name}|" + "|".join(cells)
 
 
 def build_loldle_recent_guesses(guesses_list, correct_champion: str) -> str:
