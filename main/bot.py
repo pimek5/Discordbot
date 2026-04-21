@@ -3731,9 +3731,10 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
         try:
             guess_year = int(str(guess_value))
             correct_year = int(str(correct_value))
-            # Close year guesses still get a partial hint.
-            if abs(guess_year - correct_year) <= 2:
-                return "🟨"
+            if guess_year < correct_year:
+                return "⬆️"
+            if guess_year > correct_year:
+                return "⬇️"
         except (TypeError, ValueError):
             pass
     
@@ -3910,25 +3911,37 @@ def get_loldle_found_count(guesses_list, correct_data):
         return found_count
 
 
+def format_loldle_attribute_hint(guess_value: str, correct_value: str, attribute_name: str) -> str:
+        hint = get_hint_emoji(guess_value, correct_value, attribute_name)
+        return f"{hint} {guess_value}"
+
+
 def build_loldle_classic_row(guess_name: str, correct_champion: str, correct_data: dict) -> str:
+        guess_values = {
+            attr: get_loldle_attribute_value(guess_name, attr)
+            for attr in LOLDLE_CLASSIC_ATTRIBUTES
+        }
+
         if guess_name == correct_champion:
-            display_name = "👑"
-            statuses = ["🟩"] * len(LOLDLE_CLASSIC_ATTRIBUTES)
+            display_name = guess_name
             emoji = "👑"
+            cells = [
+                f"🟩 {guess_values[attr]}"
+                for attr in LOLDLE_CLASSIC_ATTRIBUTES
+            ]
         else:
-            statuses = [
-                get_hint_emoji(
-                    get_loldle_attribute_value(guess_name, attr),
+            cells = [
+                format_loldle_attribute_hint(
+                    guess_values[attr],
                     correct_data.get(attr, 'N/A'),
-                    attr
+                    attr,
                 )
                 for attr in LOLDLE_CLASSIC_ATTRIBUTES
             ]
             display_name = guess_name
             emoji = get_loldle_champion_emoji(guess_name)
 
-        status_cells = "⠀⠀".join(statuses)
-        return f"{emoji} {pad_loldle_name(display_name)}{status_cells}"
+        return f"{emoji} {pad_loldle_name(display_name)} | " + " | ".join(cells)
 
 
 def build_loldle_recent_guesses(guesses_list, correct_champion: str) -> str:
@@ -3980,7 +3993,7 @@ def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_cha
             value=str(solved_count),
             inline=True
         )
-        embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong")
+        embed.set_footer(text="🟩 = Correct | 🟨 = Partial Match | 🟥 = Wrong | ⬆️ = Guess higher year | ⬇️ = Guess lower year")
         return embed
 
 
