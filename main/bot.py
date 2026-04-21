@@ -4051,25 +4051,11 @@ def build_loldle_option_buckets(champion_names, bucket_size: int = 25):
 
 
 def build_loldle_header_row() -> str:
-    return "Champion     | Gender   | Position(s)  | Species      | Resource | Range type | Region(s)    | Release year"
+    return "**Champion**|**Gender**|**Position(s)**|**Species**|**Resource**|**Range type**|**Region(s)**|**Release year**"
 
 
 def pad_loldle_name(name: str, width: int = 12) -> str:
         return name + ("⠀" * max(1, width - len(name)))
-
-
-def _shorten_for_board(value: str, width: int) -> str:
-        text = str(value or "N/A")
-        if len(text) > width:
-            return text[:max(1, width - 1)] + "…"
-        return text.ljust(width)
-
-
-def _format_board_cell(guess_value: str, correct_value: str, attribute_name: str, width: int) -> str:
-        hint = get_hint_emoji(guess_value, correct_value, attribute_name)
-        # Keep cell compact and aligned: emoji + shortened value
-        compact = f"{hint} {_shorten_for_board(guess_value, max(1, width - 2))}"
-        return compact.ljust(width)
 
 
 def get_loldle_found_count(guesses_list, correct_data):
@@ -4092,42 +4078,31 @@ def format_loldle_attribute_hint(guess_value: str, correct_value: str, attribute
 
 
 def build_loldle_classic_row(guess_name: str, correct_champion: str, correct_data: dict) -> str:
-        column_widths = {
-            'gender': 8,
-            'position': 12,
-            'species': 12,
-            'resource': 8,
-            'range': 6,
-            'region': 12,
-            'release_year': 6,
-        }
-
         guess_values = {
             attr: get_loldle_attribute_value(guess_name, attr)
             for attr in LOLDLE_CLASSIC_ATTRIBUTES
         }
 
-        display_name = _shorten_for_board(guess_name, 12)
-
         if guess_name == correct_champion:
+            display_name = guess_name
             emoji = "👑"
             cells = [
-                f"🟩 {_shorten_for_board(guess_values[attr], max(1, column_widths[attr] - 2))}".ljust(column_widths[attr])
+                f"🟩 {guess_values[attr]}"
                 for attr in LOLDLE_CLASSIC_ATTRIBUTES
             ]
         else:
             cells = [
-                _format_board_cell(
+                format_loldle_attribute_hint(
                     guess_values[attr],
                     correct_data.get(attr, 'N/A'),
                     attr,
-                    column_widths[attr],
                 )
                 for attr in LOLDLE_CLASSIC_ATTRIBUTES
             ]
-            emoji = "•"
+            display_name = guess_name
+            emoji = get_loldle_champion_emoji(guess_name)
 
-        return f"{emoji} {display_name} | " + " | ".join(cells)
+        return f"{emoji} {display_name}|" + "|".join(cells)
 
 
 def build_loldle_recent_guesses(guesses_list, correct_champion: str) -> str:
@@ -4150,7 +4125,7 @@ def _truncate_embed_field_value(value: str, max_len: int = 1024) -> str:
         return value[:max_len - 1] + "…"
 
 
-def _build_loldle_board_chunks(header: str, rows, max_len: int = 1000):
+def _build_loldle_board_chunks(header: str, rows, max_len: int = 1024):
         """Split board text into multiple embed-safe chunks (<=1024 chars each)."""
         if not rows:
             return [_truncate_embed_field_value(header + "\nNo guesses yet. Pick a champion below.", max_len)]
@@ -4199,8 +4174,7 @@ def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_cha
 
         for index, chunk in enumerate(board_chunks):
             field_name = "Board" if index == 0 else f"Board (cont. {index})"
-            board_block = f"```md\n{chunk}\n```"
-            embed.add_field(name=field_name, value=board_block, inline=False)
+            embed.add_field(name=field_name, value=chunk, inline=False)
 
         embed.add_field(
             name="Recent Guesses",
