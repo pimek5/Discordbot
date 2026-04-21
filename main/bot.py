@@ -3726,6 +3726,16 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
     """Get emoji hint for guess with partial match support"""
     if guess_value == correct_value:
         return "🟩"  # Correct
+
+    if attribute_name == "release_year":
+        try:
+            guess_year = int(str(guess_value))
+            correct_year = int(str(correct_value))
+            # Close year guesses still get a partial hint.
+            if abs(guess_year - correct_year) <= 2:
+                return "🟨"
+        except (TypeError, ValueError):
+            pass
     
     # Check for partial match in positions (e.g., "Middle Top" vs "Top")
     if attribute_name == "position":
@@ -3739,7 +3749,30 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
     return "🟥"  # Wrong
 
 
-LOLDLE_CLASSIC_ATTRIBUTES = ['gender', 'position', 'species', 'resource', 'range', 'region']
+def load_loldle_release_years():
+    """Load champion release years for the classic LoLdle year column."""
+    try:
+        with open('loldle_release_years.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return {str(k): int(v) for k, v in data.items()}
+    except FileNotFoundError:
+        print("⚠️  loldle_release_years.json not found, release year hints disabled")
+    except Exception as e:
+        print(f"⚠️  Failed to load loldle_release_years.json: {e}")
+    return {}
+
+
+LOLDLE_RELEASE_YEARS = load_loldle_release_years()
+
+LOLDLE_CLASSIC_ATTRIBUTES = ['gender', 'position', 'species', 'resource', 'range', 'region', 'release_year']
+
+
+def get_loldle_attribute_value(champion_name: str, attribute_name: str):
+        if attribute_name == 'release_year':
+            year = LOLDLE_RELEASE_YEARS.get(champion_name)
+            return str(year) if year else 'N/A'
+        return CHAMPIONS.get(champion_name, {}).get(attribute_name, 'N/A')
 
 
 def normalize_champion_key(name: str) -> str:
@@ -3856,7 +3889,7 @@ def build_loldle_option_buckets(champion_names, bucket_size: int = 25):
 
 
 def build_loldle_header_row() -> str:
-    return "**Champion** | **Gender** | **Position** | **Species** | **Resource** | **Range** | **Region**"
+    return "**Champion** | **Gender** | **Position** | **Species** | **Resource** | **Range** | **Region** | **Release Year**"
 
 
 def pad_loldle_name(name: str, width: int = 12) -> str:
@@ -3867,8 +3900,11 @@ def get_loldle_found_count(guesses_list, correct_data):
         found_count = 0
         for attr in LOLDLE_CLASSIC_ATTRIBUTES:
             for guess_name in guesses_list:
-                guess_data = CHAMPIONS.get(guess_name, {})
-                if get_hint_emoji(guess_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr) == "🟩":
+                if get_hint_emoji(
+                    get_loldle_attribute_value(guess_name, attr),
+                    correct_data.get(attr, 'N/A'),
+                    attr
+                ) == "🟩":
                     found_count += 1
                     break
         return found_count
@@ -3880,9 +3916,12 @@ def build_loldle_classic_row(guess_name: str, correct_champion: str, correct_dat
             statuses = ["🟩"] * len(LOLDLE_CLASSIC_ATTRIBUTES)
             emoji = "👑"
         else:
-            guess_data = CHAMPIONS.get(guess_name, {})
             statuses = [
-                get_hint_emoji(guess_data.get(attr, 'N/A'), correct_data.get(attr, 'N/A'), attr)
+                get_hint_emoji(
+                    get_loldle_attribute_value(guess_name, attr),
+                    correct_data.get(attr, 'N/A'),
+                    attr
+                )
                 for attr in LOLDLE_CLASSIC_ATTRIBUTES
             ]
             display_name = guess_name
@@ -3907,7 +3946,8 @@ def build_loldle_recent_guesses(guesses_list, correct_champion: str) -> str:
 
 
 def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_champion: str, solved_count: int, solved_by_user: bool):
-        correct_data = CHAMPIONS[correct_champion]
+        correct_data = dict(CHAMPIONS[correct_champion])
+        correct_data['release_year'] = get_loldle_attribute_value(correct_champion, 'release_year')
         embed = discord.Embed(
             title="🎮 LoLdle - Daily Challenge",
             description=(
@@ -3932,7 +3972,7 @@ def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_cha
         )
         embed.add_field(
             name="Progress",
-            value=f"{get_loldle_found_count(guesses_list, correct_data)}/6 attributes found",
+            value=f"{get_loldle_found_count(guesses_list, correct_data)}/{len(LOLDLE_CLASSIC_ATTRIBUTES)} attributes found",
             inline=True
         )
         embed.add_field(
