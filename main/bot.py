@@ -4119,6 +4119,26 @@ def build_loldle_recent_guesses(guesses_list, correct_champion: str) -> str:
         return " → ".join(parts)
 
 
+def build_loldle_correct_guesses(guesses_list, correct_champion: str) -> str:
+        """Show only correctly matched attributes from the latest guess."""
+        if not guesses_list:
+            return "No correct attributes yet"
+
+        latest_guess = guesses_list[-1]
+        parts = []
+
+        for attr in LOLDLE_CLASSIC_ATTRIBUTES:
+            guess_value = get_loldle_attribute_value(latest_guess, attr)
+            correct_value = get_loldle_attribute_value(correct_champion, attr)
+            if get_hint_emoji(guess_value, correct_value, attr) == "🟩":
+                parts.append(f"🟩 {guess_value}")
+
+        if not parts:
+            return "No correct attributes yet"
+
+        return "|" + "|".join(parts) + "|"
+
+
 def _truncate_embed_field_value(value: str, max_len: int = 1024) -> str:
         if len(value) <= max_len:
             return value
@@ -4179,7 +4199,12 @@ def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_cha
         embed.add_field(
             name="Recent Guesses",
             value=_truncate_embed_field_value(build_loldle_recent_guesses(guesses_list, correct_champion)),
-            inline=False
+            inline=True
+        )
+        embed.add_field(
+            name="Correct Guesses",
+            value=_truncate_embed_field_value(build_loldle_correct_guesses(guesses_list, correct_champion)),
+            inline=True
         )
         embed.add_field(
             name="Progress",
