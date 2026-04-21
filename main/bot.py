@@ -4051,11 +4051,25 @@ def build_loldle_option_buckets(champion_names, bucket_size: int = 25):
 
 
 def build_loldle_header_row() -> str:
-    return "**Champion**|**Gender**|**Position(s)**|**Species**|**Resource**|**Range type**|**Region(s)**|**Release year**"
+    return "Champion     | Gender   | Position(s)  | Species      | Resource | Range type | Region(s)    | Release year"
 
 
 def pad_loldle_name(name: str, width: int = 12) -> str:
         return name + ("⠀" * max(1, width - len(name)))
+
+
+def _shorten_for_board(value: str, width: int) -> str:
+        text = str(value or "N/A")
+        if len(text) > width:
+            return text[:max(1, width - 1)] + "…"
+        return text.ljust(width)
+
+
+def _format_board_cell(guess_value: str, correct_value: str, attribute_name: str, width: int) -> str:
+        hint = get_hint_emoji(guess_value, correct_value, attribute_name)
+        # Keep cell compact and aligned: emoji + shortened value
+        compact = f"{hint} {_shorten_for_board(guess_value, max(1, width - 2))}"
+        return compact.ljust(width)
 
 
 def get_loldle_found_count(guesses_list, correct_data):
@@ -4078,31 +4092,42 @@ def format_loldle_attribute_hint(guess_value: str, correct_value: str, attribute
 
 
 def build_loldle_classic_row(guess_name: str, correct_champion: str, correct_data: dict) -> str:
+        column_widths = {
+            'gender': 8,
+            'position': 12,
+            'species': 12,
+            'resource': 8,
+            'range': 6,
+            'region': 12,
+            'release_year': 6,
+        }
+
         guess_values = {
             attr: get_loldle_attribute_value(guess_name, attr)
             for attr in LOLDLE_CLASSIC_ATTRIBUTES
         }
 
+        display_name = _shorten_for_board(guess_name, 12)
+
         if guess_name == correct_champion:
-            display_name = guess_name
             emoji = "👑"
             cells = [
-                f"🟩 {guess_values[attr]}"
+                f"🟩 {_shorten_for_board(guess_values[attr], max(1, column_widths[attr] - 2))}".ljust(column_widths[attr])
                 for attr in LOLDLE_CLASSIC_ATTRIBUTES
             ]
         else:
             cells = [
-                format_loldle_attribute_hint(
+                _format_board_cell(
                     guess_values[attr],
                     correct_data.get(attr, 'N/A'),
                     attr,
+                    column_widths[attr],
                 )
                 for attr in LOLDLE_CLASSIC_ATTRIBUTES
             ]
-            display_name = guess_name
-            emoji = get_loldle_champion_emoji(guess_name)
+            emoji = "•"
 
-        return f"{emoji} {display_name}|" + "|".join(cells)
+        return f"{emoji} {display_name} | " + " | ".join(cells)
 
 
 def build_loldle_recent_guesses(guesses_list, correct_champion: str) -> str:
@@ -4117,6 +4142,38 @@ def build_loldle_recent_guesses(guesses_list, correct_champion: str) -> str:
                 emoji = get_loldle_champion_emoji(guess_name)
                 parts.append(f"{emoji} {guess_name}")
         return " → ".join(parts)
+
+
+def _truncate_embed_field_value(value: str, max_len: int = 1024) -> str:
+        if len(value) <= max_len:
+            return value
+        return value[:max_len - 1] + "…"
+
+
+def _build_loldle_board_chunks(header: str, rows, max_len: int = 1000):
+        """Split board text into multiple embed-safe chunks (<=1024 chars each)."""
+        if not rows:
+            return [_truncate_embed_field_value(header + "\nNo guesses yet. Pick a champion below.", max_len)]
+
+        chunks = []
+        current = header
+
+        for row in rows:
+            candidate = f"{current}\n{row}"
+            if len(candidate) <= max_len:
+                current = candidate
+            else:
+                chunks.append(_truncate_embed_field_value(current, max_len))
+                current = row
+
+                if len(current) > max_len:
+                    chunks.append(_truncate_embed_field_value(current, max_len))
+                    current = ""
+
+        if current:
+            chunks.append(_truncate_embed_field_value(current, max_len))
+
+        return chunks
 
 
 def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_champion: str, solved_count: int, solved_by_user: bool):
@@ -4135,14 +4192,19 @@ def build_loldle_classic_embed(user: discord.abc.User, guesses_list, correct_cha
 
         header = build_loldle_header_row()
         if guesses_list:
-            board_rows = [build_loldle_classic_row(guess_name, correct_champion, correct_data) for guess_name in guesses_list]
-            embed.add_field(name="Board", value=header + "\n" + "\n".join(board_rows[-10:]), inline=False)
+            board_rows = [build_loldle_classic_row(guess_name, correct_champion, correct_data) for guess_name in guesses_list][-10:]
+            board_chunks = _build_loldle_board_chunks(header, board_rows)
         else:
-            embed.add_field(name="Board", value=header + "\nNo guesses yet. Pick a champion below.", inline=False)
+            board_chunks = _build_loldle_board_chunks(header, [])
+
+        for index, chunk in enumerate(board_chunks):
+            field_name = "Board" if index == 0 else f"Board (cont. {index})"
+            board_block = f"```md\n{chunk}\n```"
+            embed.add_field(name=field_name, value=board_block, inline=False)
 
         embed.add_field(
             name="Recent Guesses",
-            value=build_loldle_recent_guesses(guesses_list, correct_champion),
+            value=_truncate_embed_field_value(build_loldle_recent_guesses(guesses_list, correct_champion)),
             inline=False
         )
         embed.add_field(
@@ -4172,7 +4234,18 @@ class LoldleClassicSelectView(discord.ui.View):
             self.solved = solved
             self.bucket_index = 0
             self.bucket_size = 25
+            self.message = None
             self._refresh_items()
+
+        async def on_timeout(self):
+            # Disable controls after timeout to avoid stale interactions.
+            for item in self.children:
+                item.disabled = True
+            if self.message:
+                try:
+                    await self.message.edit(view=self)
+                except Exception:
+                    pass
 
         def _get_available_champions(self):
             return [champion_name for champion_name in sorted(CHAMPIONS.keys()) if champion_name not in self.guesses_list]
@@ -4345,6 +4418,7 @@ async def loldle(interaction: discord.Interaction):
             embed = build_loldle_classic_embed(interaction.user, guesses_list, correct_champion, solved_count, solved)
             view = LoldleClassicSelectView(user_id, guild_id, game_id, correct_champion, guesses_list, solved)
             await interaction.response.send_message(embed=embed, view=view)
+            view.message = await interaction.original_response()
 
         except Exception as e:
             print(f"❌ Error in /loldle: {e}")
