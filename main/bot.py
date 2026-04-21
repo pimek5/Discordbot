@@ -3750,21 +3750,179 @@ def get_hint_emoji(guess_value, correct_value, attribute_name=""):
     return "🟥"  # Wrong
 
 
-def load_loldle_release_years():
-    """Load champion release years for the classic LoLdle year column."""
-    try:
-        with open('loldle_release_years.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                return {str(k): int(v) for k, v in data.items()}
-    except FileNotFoundError:
-        print("⚠️  loldle_release_years.json not found, release year hints disabled")
-    except Exception as e:
-        print(f"⚠️  Failed to load loldle_release_years.json: {e}")
-    return {}
-
-
-LOLDLE_RELEASE_YEARS = load_loldle_release_years()
+LOLDLE_RELEASE_YEARS = {
+    "Aatrox": 2013,
+    "Ahri": 2011,
+    "Akali": 2010,
+    "Akshan": 2021,
+    "Alistar": 2009,
+    "Ambessa": 2024,
+    "Amumu": 2009,
+    "Anivia": 2009,
+    "Annie": 2009,
+    "Aphelios": 2019,
+    "Ashe": 2009,
+    "Aurelion Sol": 2016,
+    "Aurora": 2024,
+    "Azir": 2014,
+    "Bard": 2015,
+    "Bel'Veth": 2022,
+    "Blitzcrank": 2009,
+    "Brand": 2011,
+    "Braum": 2014,
+    "Briar": 2023,
+    "Caitlyn": 2011,
+    "Camille": 2016,
+    "Cassiopeia": 2010,
+    "Cho'Gath": 2009,
+    "Corki": 2012,
+    "Darius": 2012,
+    "Diana": 2009,
+    "Dr. Mundo": 2012,
+    "Draven": 2015,
+    "Ekko": 2012,
+    "Elise": 2009,
+    "Evelynn": 2010,
+    "Ezreal": 2009,
+    "Fiddlesticks": 2012,
+    "Fiora": 2011,
+    "Fizz": 2010,
+    "Galio": 2009,
+    "Gangplank": 2010,
+    "Garen": 2009,
+    "Gnar": 2010,
+    "Gragas": 2014,
+    "Graves": 2010,
+    "Gwen": 2011,
+    "Hecarim": 2021,
+    "Heimerdinger": 2022,
+    "Hwei": 2012,
+    "Illaoi": 2009,
+    "Irelia": 2023,
+    "Ivern": 2009,
+    "Janna": 2011,
+    "Jarvan IV": 2009,
+    "Jax": 2012,
+    "Jayce": 2016,
+    "Jhin": 2013,
+    "Jinx": 2022,
+    "K'Sante": 2018,
+    "Kai'Sa": 2014,
+    "Kalista": 2011,
+    "Karma": 2009,
+    "Karthus": 2009,
+    "Kassadin": 2009,
+    "Katarina": 2009,
+    "Kayle": 2017,
+    "Kayn": 2010,
+    "Kennen": 2012,
+    "Kha'Zix": 2015,
+    "Kindred": 2016,
+    "Kled": 2010,
+    "Kog'Maw": 2015,
+    "LeBlanc": 2015,
+    "Lee Sin": 2010,
+    "Leona": 2016,
+    "Lillia": 2010,
+    "Lissandra": 2011,
+    "Lucian": 2011,
+    "Lulu": 2020,
+    "Lux": 2013,
+    "Malphite": 2013,
+    "Malzahar": 2012,
+    "Maokai": 2010,
+    "Master Yi": 2009,
+    "Mel": 2010,
+    "Milio": 2011,
+    "Miss Fortune": 2009,
+    "Mordekaiser": 2025,
+    "Morgana": 2023,
+    "Naafiri": 2010,
+    "Nami": 2009,
+    "Nasus": 2023,
+    "Nautilus": 2012,
+    "Neeko": 2009,
+    "Nidalee": 2012,
+    "Nilah": 2018,
+    "Nocturne": 2009,
+    "Nunu & Willump": 2022,
+    "Olaf": 2011,
+    "Orianna": 2009,
+    "Ornn": 2010,
+    "Pantheon": 2011,
+    "Poppy": 2017,
+    "Pyke": 2010,
+    "Qiyana": 2010,
+    "Quinn": 2018,
+    "Rakan": 2019,
+    "Rammus": 2013,
+    "Rek'Sai": 2017,
+    "Rell": 2009,
+    "Renata Glasc": 2014,
+    "Renekton": 2020,
+    "Rengar": 2011,
+    "Riven": 2012,
+    "Rumble": 2011,
+    "Ryze": 2011,
+    "Samira": 2009,
+    "Sejuani": 2020,
+    "Senna": 2012,
+    "Seraphine": 2019,
+    "Sett": 2020,
+    "Shaco": 2020,
+    "Shen": 2009,
+    "Shyvana": 2010,
+    "Singed": 2011,
+    "Sion": 2009,
+    "Sivir": 2009,
+    "Skarner": 2009,
+    "Smolder": 2011,
+    "Sona": 2024,
+    "Soraka": 2010,
+    "Swain": 2009,
+    "Sylas": 2010,
+    "Syndra": 2019,
+    "Tahm Kench": 2012,
+    "Taliyah": 2016,
+    "Talon": 2011,
+    "Taric": 2009,
+    "Teemo": 2009,
+    "Thresh": 2013,
+    "Tristana": 2009,
+    "Trundle": 2010,
+    "Tryndamere": 2009,
+    "Twisted Fate": 2009,
+    "Twitch": 2009,
+    "Udyr": 2010,
+    "Urgot": 2012,
+    "Varus": 2011,
+    "Vayne": 2009,
+    "Veigar": 2014,
+    "Vel'Koz": 2021,
+    "Vex": 2012,
+    "Vi": 2021,
+    "Viego": 2011,
+    "Viktor": 2010,
+    "Vladimir": 2011,
+    "Volibear": 2009,
+    "Warwick": 2011,
+    "Wukong": 2017,
+    "Xayah": 2011,
+    "Xerath": 2010,
+    "Xin Zhao": 2013,
+    "Yasuo": 2020,
+    "Yone": 2011,
+    "Yorick": 2025,
+    "Yunara": 2019,
+    "Yuumi": 2025,
+    "Zac": 2013,
+    "Zed": 2012,
+    "Zeri": 2022,
+    "Ziggs": 2012,
+    "Zilean": 2009,
+    "Zoe": 2017,
+    "Zyra": 2012,
+}
 
 LOLDLE_CLASSIC_ATTRIBUTES = ['gender', 'position', 'species', 'resource', 'range', 'region', 'release_year']
 
@@ -3772,6 +3930,9 @@ LOLDLE_CLASSIC_ATTRIBUTES = ['gender', 'position', 'species', 'resource', 'range
 def get_loldle_attribute_value(champion_name: str, attribute_name: str):
         if attribute_name == 'release_year':
             year = LOLDLE_RELEASE_YEARS.get(champion_name)
+            if year is None:
+                alt_name = champion_name.replace('’', "'")
+                year = LOLDLE_RELEASE_YEARS.get(alt_name)
             return str(year) if year else 'N/A'
         return CHAMPIONS.get(champion_name, {}).get(attribute_name, 'N/A')
 
@@ -3890,8 +4051,7 @@ def build_loldle_option_buckets(champion_names, bucket_size: int = 25):
 
 
 def build_loldle_header_row() -> str:
-    # Compact header helps avoid wrapping on narrower Discord clients.
-    return "**Champ**|**Gender**|**Pos**|**Species**|**Res**|**Range**|**Region**|**Year**"
+    return "**Champion**|**Gender**|**Position(s)**|**Species**|**Resource**|**Range type**|**Region(s)**|**Release year**"
 
 
 def pad_loldle_name(name: str, width: int = 12) -> str:
@@ -3914,8 +4074,6 @@ def get_loldle_found_count(guesses_list, correct_data):
 
 def format_loldle_attribute_hint(guess_value: str, correct_value: str, attribute_name: str) -> str:
         hint = get_hint_emoji(guess_value, correct_value, attribute_name)
-        if attribute_name == 'release_year' and guess_value == 'N/A':
-            guess_value = '-'
         return f"{hint} {guess_value}"
 
 
