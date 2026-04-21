@@ -324,8 +324,6 @@ loldle_splash_data = {
 }
 
 # Pending delayed classic rotations: {guild_id: asyncio.Task}
-loldle_rotation_tasks = {}
-
 # Rank emoji helper (dynamic lookup by name to avoid hardcoded IDs)
 RANK_EMOJI_NAMES = {
     'iron': 'rank_Iron',
@@ -3947,16 +3945,6 @@ NORMALIZED_CHAMPION_EMOJIS = {
 }
 
 
-def get_or_create_loldle_classic_game(db, guild_id: int):
-        """Return today's classic game id and correct champion."""
-        daily_game = db.get_loldle_daily_game(guild_id, 'classic')
-        if not daily_game:
-            correct_champion = get_daily_champion()
-            game_id = db.create_loldle_daily_game(guild_id, correct_champion, 'classic')
-            return game_id, correct_champion
-        return daily_game['id'], daily_game['champion_name']
-
-
 def get_loldle_champion_emoji(champion_name: str) -> str:
         """Resolve a champion emoji with a couple of normalization fallbacks."""
         normalized = normalize_champion_key(champion_name)
@@ -3983,48 +3971,6 @@ def get_loldle_champion_emoji(champion_name: str) -> str:
             if emoji:
                 return emoji
         return "•"
-
-
-def generate_next_loldle_champion(current_champion: str) -> str:
-        available = [champion_name for champion_name in CHAMPIONS.keys() if champion_name != current_champion]
-        if not available:
-            return current_champion
-        return random.choice(available)
-
-
-async def rotate_loldle_classic_after_delay(guild_id: int, source_game_id: int, delay_seconds: int = 20):
-        """Rotate classic LoLdle after a delay if the same game is still active."""
-        try:
-            await asyncio.sleep(delay_seconds)
-
-            db = get_db()
-            daily_game = db.get_loldle_daily_game(guild_id, 'classic')
-            if not daily_game:
-                return
-
-            # Skip if a newer game has already been created in the meantime.
-            if daily_game['id'] != source_game_id:
-                return
-
-            current_champion = daily_game['champion_name']
-            next_champion = generate_next_loldle_champion(current_champion)
-            db.create_loldle_daily_game(guild_id, next_champion, 'classic')
-            db.reset_loldle_game_progress(source_game_id)
-
-            channel = bot.get_channel(LOLDLE_CHANNEL_ID)
-            if channel:
-                await channel.send("Generating New Loldle...")
-
-            logger.info(
-                "LoLdle rotated (delayed): guild=%s previous_correct='%s' new_correct='%s'",
-                guild_id,
-                current_champion,
-                next_champion,
-            )
-        except Exception as exc:
-            logger.error("LoLdle delayed rotation failed: guild=%s error=%s", guild_id, exc)
-        finally:
-            loldle_rotation_tasks.pop(guild_id, None)
 
 
 def get_loldle_select_emoji(champion_name: str):
@@ -4362,22 +4308,6 @@ class LoldleClassicSelectView(discord.ui.View):
             self._refresh_items()
             embed = build_loldle_classic_embed(interaction.user, guesses_list, self.correct_champion, solved_count, solved_now)
 
-            if solved_now and interaction.channel:
-                await interaction.channel.send(f"👑 {interaction.user.mention} guessed correct LoLdle.")
-
-                pending_task = loldle_rotation_tasks.get(self.guild_id)
-                if not pending_task or pending_task.done():
-                    await interaction.channel.send("New LoLdle in 20 seconds...")
-                    loldle_rotation_tasks[self.guild_id] = asyncio.create_task(
-                        rotate_loldle_classic_after_delay(self.guild_id, self.game_id, 20)
-                    )
-                else:
-                    logger.info(
-                        "LoLdle rotation already pending: guild=%s game=%s",
-                        self.guild_id,
-                        self.game_id,
-                    )
-
             await interaction.response.edit_message(embed=embed, view=self)
 
 
@@ -4395,17 +4325,7 @@ async def loldle(interaction: discord.Interaction):
         try:
             db = get_db()
             guild_id = interaction.guild.id
-
-            # Always restart classic game on command use to avoid stale state/cache.
-            pending_task = loldle_rotation_tasks.pop(guild_id, None)
-            if pending_task and not pending_task.done():
-                pending_task.cancel()
-
-            daily_game = db.get_loldle_daily_game(guild_id, 'classic')
-            if daily_game:
-                correct_champion = generate_next_loldle_champion(daily_game['champion_name'])
-            else:
-                correct_champion = random.choice(list(CHAMPIONS.keys()))
+            correct_champion = random.choice(list(CHAMPIONS.keys()))
 
             game_id = db.create_loldle_daily_game(guild_id, correct_champion, 'classic')
             db.reset_loldle_game_progress(game_id)
