@@ -2104,20 +2104,49 @@ class Hexbet(commands.Cog):
         return final_ordered
 
     async def _enrich_players(self, players: List[dict], region: str):
-        tasks_rank = []
-        for p in players:
-            puuid = p.get('puuid')
+        async def _fetch_rank_stats(player: dict) -> List[dict]:
+            puuid = player.get('puuid')
             if not puuid:
-                logger.warning(f"⚠️ Player {p.get('riotIdGameName', 'unknown')} missing PUUID - keys: {list(p.keys())}")
+                logger.warning(f"⚠️ Player {player.get('riotIdGameName', 'unknown')} missing PUUID - keys: {list(player.keys())}")
+
+            # Primary path: by PUUID (most reliable when available).
             if puuid:
-                tasks_rank.append(self.riot_api.get_ranked_stats_by_puuid(puuid, region))
-            else:
-                tasks_rank.append(asyncio.sleep(0))  # Dummy task if no PUUID
+                try:
+                    stats_by_puuid = await self.riot_api.get_ranked_stats_by_puuid(puuid, region)
+                    if isinstance(stats_by_puuid, list):
+                        return stats_by_puuid
+                except Exception as e:
+                    logger.warning(f"⚠️ Ranked-by-puuid failed for {player.get('summonerName', 'unknown')}: {e}")
+
+            # Fallback path: by encrypted summonerId from spectator payload.
+            summoner_id = player.get('summonerId')
+            if summoner_id:
+                try:
+                    stats_by_summoner = await self.riot_api.get_ranked_stats(summoner_id, region)
+                    if isinstance(stats_by_summoner, list):
+                        logger.info(f"↩️ Fallback ranked-by-summonerId succeeded for {player.get('summonerName', 'unknown')}")
+                        return stats_by_summoner
+                except Exception as e:
+                    logger.warning(f"⚠️ Ranked-by-summonerId failed for {player.get('summonerName', 'unknown')}: {e}")
+
+            return []
+
+        semaphore = asyncio.Semaphore(4)
+
+        async def _fetch_rank_stats_guarded(player: dict) -> List[dict]:
+            async with semaphore:
+                return await _fetch_rank_stats(player)
+
+        tasks_rank = [_fetch_rank_stats_guarded(p) for p in players]
         ranks = await asyncio.gather(*tasks_rank, return_exceptions=True)
         
         # First pass: get basic stats and mark streamer mode
         for p, r in zip(players, ranks):
-            stats = r if isinstance(r, list) else []
+            if isinstance(r, Exception):
+                logger.warning(f"⚠️ Ranked enrichment task failed for {p.get('summonerName', 'unknown')}: {r}")
+                stats = []
+            else:
+                stats = r if isinstance(r, list) else []
             if not stats:
                 logger.warning(f"⚠️ No ranked stats for {p.get('riotIdGameName', 'unknown')} - response: {r}")
             tier, division, wr = pick_rank_entry(stats)
