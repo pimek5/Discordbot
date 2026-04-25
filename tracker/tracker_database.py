@@ -94,6 +94,9 @@ class TrackerDatabase:
                         game_start_at TIMESTAMP,
                         betting_closes_at TIMESTAMP,
                         special_bet BOOLEAN DEFAULT FALSE,
+                        requested_by_user_id BIGINT,
+                        requested_by_name VARCHAR(120),
+                        request_source VARCHAR(20),
                         created_at TIMESTAMP DEFAULT NOW(),
                         updated_at TIMESTAMP DEFAULT NOW()
                     );
@@ -142,6 +145,18 @@ class TrackerDatabase:
                 try:
                     cur.execute("ALTER TABLE hexbet_matches ADD COLUMN IF NOT EXISTS special_bet BOOLEAN DEFAULT FALSE")
                     logger.info("✅ Migrated: special_bet column")
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    if "already exists" not in str(e):
+                        logger.warning(f"Migration note: {e}")
+                    cur = conn.cursor()
+
+                # Migration: add requester metadata columns for hxspecial/hxfind requests
+                try:
+                    cur.execute("ALTER TABLE hexbet_matches ADD COLUMN IF NOT EXISTS requested_by_user_id BIGINT")
+                    cur.execute("ALTER TABLE hexbet_matches ADD COLUMN IF NOT EXISTS requested_by_name VARCHAR(120)")
+                    cur.execute("ALTER TABLE hexbet_matches ADD COLUMN IF NOT EXISTS request_source VARCHAR(20)")
+                    logger.info("✅ Migrated: requester metadata columns")
                 except psycopg2.Error as e:
                     conn.rollback()
                     if "already exists" not in str(e):
@@ -388,7 +403,21 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def create_hexbet_match(self, game_id: int, platform: str, channel_id: int, blue_team: dict, red_team: dict, start_time: int, special_bet: bool = False, betting_window_minutes: int = 3, guild_id: int = None) -> int:
+    def create_hexbet_match(
+        self,
+        game_id: int,
+        platform: str,
+        channel_id: int,
+        blue_team: dict,
+        red_team: dict,
+        start_time: int,
+        special_bet: bool = False,
+        betting_window_minutes: int = 3,
+        guild_id: int = None,
+        requested_by_user_id: int = None,
+        requested_by_name: str = None,
+        request_source: str = None,
+    ) -> int:
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
@@ -402,11 +431,39 @@ class TrackerDatabase:
                 # Try to insert, if exists do nothing
                 # betting_closes_at is set automatically by database: NOW() + betting_window_minutes
                 cur.execute("""
-                    INSERT INTO hexbet_matches (game_id, platform, channel_id, blue_team, red_team, start_time, game_start_at, betting_closes_at, special_bet, guild_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s), NOW() + INTERVAL '%s minutes', %s, %s)
+                    INSERT INTO hexbet_matches (
+                        game_id,
+                        platform,
+                        channel_id,
+                        blue_team,
+                        red_team,
+                        start_time,
+                        game_start_at,
+                        betting_closes_at,
+                        special_bet,
+                        guild_id,
+                        requested_by_user_id,
+                        requested_by_name,
+                        request_source
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, TO_TIMESTAMP(%s), NOW() + INTERVAL '%s minutes', %s, %s, %s, %s, %s)
                     ON CONFLICT (game_id) DO NOTHING
                     RETURNING id
-                """, (game_id, platform, channel_id, json.dumps(blue_team), json.dumps(red_team), start_time, game_start_at, betting_window_minutes, special_bet, guild_id))
+                """, (
+                    game_id,
+                    platform,
+                    channel_id,
+                    json.dumps(blue_team),
+                    json.dumps(red_team),
+                    start_time,
+                    game_start_at,
+                    betting_window_minutes,
+                    special_bet,
+                    guild_id,
+                    requested_by_user_id,
+                    requested_by_name,
+                    request_source,
+                ))
                 row = cur.fetchone()
                 conn.commit()
                 
@@ -872,7 +929,7 @@ class TrackerDatabase:
             self.return_connection(conn)
 
     def cleanup_old_bets(self, minutes: int = 1):
-        """Delete settled matches and their bets older than specified minutes (0 = all settled)"""
+        """Delete resolved matches (settled/refunded) and their bets older than specified minutes (0 = all resolved)."""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
@@ -885,9 +942,9 @@ class TrackerDatabase:
                 
                 # First check what we're about to delete
                 query = f"""
-                    SELECT id, status, winner, updated_at 
+                    SELECT id, status, winner, updated_at
                     FROM hexbet_matches
-                    WHERE status = 'settled'
+                    WHERE status IN ('settled', 'refunded')
                     {time_filter}
                 """
                 cur.execute(query)
@@ -902,7 +959,7 @@ class TrackerDatabase:
                     DELETE FROM hexbet_bets
                     WHERE match_id IN (
                         SELECT id FROM hexbet_matches
-                        WHERE status = 'settled'
+                        WHERE status IN ('settled', 'refunded')
                         {time_filter}
                     )
                 """
@@ -913,7 +970,7 @@ class TrackerDatabase:
                 # Delete settled matches
                 query = f"""
                     DELETE FROM hexbet_matches
-                    WHERE status = 'settled'
+                    WHERE status IN ('settled', 'refunded')
                     {time_filter}
                 """
                 cur.execute(query)
@@ -926,22 +983,22 @@ class TrackerDatabase:
             self.return_connection(conn)
 
     def get_old_settled_matches(self, minutes: int = 1):
-        """Get settled matches older than specified minutes (0 = all settled matches)"""
+        """Get resolved matches (settled/refunded) older than specified minutes (0 = all resolved matches)."""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
                 if minutes == 0:
-                    # Get ALL settled matches
+                    # Get ALL resolved matches
                     cur.execute("""
                         SELECT id, game_id, platform, channel_id, message_id, status, winner, updated_at
                         FROM hexbet_matches
-                        WHERE status = 'settled'
+                        WHERE status IN ('settled', 'refunded')
                     """)
                 else:
                     cur.execute("""
                         SELECT id, game_id, platform, channel_id, message_id, status, winner, updated_at
                         FROM hexbet_matches
-                        WHERE status = 'settled'
+                        WHERE status IN ('settled', 'refunded')
                         AND updated_at < NOW() - make_interval(mins => %s)
                     """, (minutes,))
                 rows = cur.fetchall()

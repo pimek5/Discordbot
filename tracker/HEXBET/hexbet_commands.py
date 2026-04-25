@@ -563,8 +563,8 @@ class Hexbet(commands.Cog):
                         else:
                             logger.warning(f"⚠️ Match {match_id} has no channel_id or message_id")
             
-            # Now delete from database (no time filter)
-            deleted_matches, deleted_bets = self.db.cleanup_old_bets(minutes=0)
+            # Delete from database only after retention window so message/delete logic stays in sync.
+            deleted_matches, deleted_bets = self.db.cleanup_old_bets(minutes=3)
             logger.info(f"🗑️ Cleanup result: {deleted_matches} matches, {deleted_bets} bets deleted from DB")
             
             if deleted_matches == 0 and deleted_bets == 0:
@@ -720,6 +720,7 @@ class Hexbet(commands.Cog):
         )
         msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
         self.db.set_match_message(match_id, msg.id)
+        self.db.add_match_message(match_id, guild_id, bet_channel_id, msg.id)
 
         logger.info(
             f"✅ Spectate posted priority game {game_id} for {featured_player} (special={is_special_bet}, meets_requirements={meets_special_requirements})"
@@ -1379,10 +1380,18 @@ class Hexbet(commands.Cog):
         """Update match message to show final result and send notifications"""
         # Get all guild messages for this match
         match_messages = self.db.get_match_messages(match['id'])
-        
+
+        # Legacy fallback: some older/special flows only persisted message_id on hexbet_matches.
         if not match_messages:
-            logger.warning(f"No messages found for match {match['id']}")
-            return
+            legacy_channel_id = match.get('channel_id')
+            legacy_message_id = match.get('message_id')
+            legacy_guild_id = match.get('guild_id')
+            if legacy_channel_id and legacy_message_id:
+                match_messages = [(legacy_guild_id or 0, legacy_channel_id, legacy_message_id)]
+                logger.info(f"Using legacy message mapping for match {match['id']}")
+            else:
+                logger.warning(f"No messages found for match {match['id']}")
+                return
         
         # Calculate bet statistics once
         winners = [(uid, payout) for uid, _, payout, won in payouts if won]
@@ -2868,6 +2877,46 @@ class Hexbet(commands.Cog):
                 logger.warning(f"Failed to fetch bet info: {e}")
         
         embed.add_field(name="📈 Odds", value=f"Blue: **{odds_blue}x**\nRed: **{odds_red}x**{bet_info}", inline=False)
+
+        # Add requester metadata for manually requested bets (/hxspecial and /hxfind with nickname).
+        if match_id:
+            try:
+                conn = self.db.get_connection()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT requested_by_user_id, requested_by_name, request_source
+                        FROM hexbet_matches
+                        WHERE id = %s
+                        """,
+                        (match_id,),
+                    )
+                    row = cur.fetchone()
+
+                if row:
+                    requested_by_user_id, requested_by_name, request_source = row
+                    if requested_by_user_id:
+                        display = f"<@{requested_by_user_id}>"
+                    elif requested_by_name:
+                        display = requested_by_name
+                    else:
+                        display = None
+
+                    if display:
+                        source_label = (request_source or "manual").upper()
+                        embed.add_field(
+                            name="🧾 Request",
+                            value=f"By: {display}\nSource: `{source_label}`",
+                            inline=False,
+                        )
+            except Exception as e:
+                logger.warning(f"Failed to attach requester metadata for match {match_id}: {e}")
+            finally:
+                try:
+                    self.db.return_connection(conn)
+                except Exception:
+                    pass
+
         embed.set_footer(text="Use /bet side:<blue/red> amount:<value> or buttons below.")
         return embed
 
@@ -3856,7 +3905,10 @@ class Hexbet(commands.Cog):
                         {'players': red_ordered, 'odds': odds_red},
                         game_data.get('gameStartTime', 0),
                         special_bet=True,
-                        guild_id=interaction.guild_id
+                        guild_id=interaction.guild_id,
+                        requested_by_user_id=interaction.user.id,
+                        requested_by_name=str(interaction.user),
+                        request_source='hxfind',
                     )
                     
                     if not match_id:
@@ -3871,6 +3923,7 @@ class Hexbet(commands.Cog):
                     # Send embed without content message
                     msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
                     self.db.set_match_message(match_id, msg.id)
+                    self.db.add_match_message(match_id, interaction.guild_id, bet_channel_id, msg.id)
                     
                     logger.info(f"✅ Posted priority match {match_id} with {nickname}")
                     await interaction.followup.send(f"🎯 Priority game posted with **{nickname}**!")
@@ -6123,7 +6176,10 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
                 {'players': red_ordered, 'odds': odds_red},
                 game_data.get('gameStartTime', 0),
                 special_bet=True,  # Always special for /hxspecial
-                guild_id=interaction.guild_id
+                guild_id=interaction.guild_id,
+                requested_by_user_id=interaction.user.id,
+                requested_by_name=str(interaction.user),
+                request_source='hxspecial',
             )
             
             if not match_id:
@@ -6148,6 +6204,7 @@ class SpecialBetModal(discord.ui.Modal, title='Create Special Bet (1000 tokens)'
             try:
                 msg = await channel.send(embed=embed, view=view)
                 self.cog.db.set_match_message(match_id, msg.id)
+                self.cog.db.add_match_message(match_id, interaction.guild_id, bet_channel_id, msg.id)
                 logger.info(f"✅ Special bet embed created with message ID {msg.id}")
                 
                 # ONLY NOW deduct the 1000 tokens (embed successfully created)
