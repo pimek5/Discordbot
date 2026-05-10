@@ -154,7 +154,7 @@ class CreatorCommands(commands.Cog):
             
             # Save to DB
             db = self._get_db(interaction)
-            creator_id = db.add_creator(target_user.id, platform, url, profile_data)
+            creator_id = db.add_creator(target_user.id, platform, url, profile_data, interaction.guild_id)
             if not creator_id:
                 await interaction.followup.send("❌ Failed to add creator to database!", ephemeral=True)
                 return
@@ -505,7 +505,7 @@ class CreatorCommands(commands.Cog):
                             failed_count += 1
                             continue
 
-                        db.add_creator(creator['discord_user_id'], creator_platform, creator['profile_url'], profile_data)
+                        db.add_creator(creator['discord_user_id'], creator_platform, creator['profile_url'], profile_data, interaction.guild_id)
 
                         # Re-seed content
                         content = []
@@ -579,7 +579,7 @@ class CreatorCommands(commands.Cog):
                             failed_platforms.append(creator_platform)
                             continue
 
-                        db.add_creator(target_user.id, creator_platform, creator['profile_url'], profile_data)
+                        db.add_creator(target_user.id, creator_platform, creator['profile_url'], profile_data, interaction.guild_id)
 
                         # Re-seed content
                         content = []
@@ -630,7 +630,7 @@ class CreatorCommands(commands.Cog):
                 await interaction.followup.send("❌ Failed to fetch profile data!", ephemeral=True)
                 return
 
-            db.add_creator(target_user.id, platform, creator['profile_url'], profile_data)
+            db.add_creator(target_user.id, platform, creator['profile_url'], profile_data, interaction.guild_id)
 
             # Re-seed existing content to keep random pool fresh (no notifications)
             content = []

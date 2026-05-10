@@ -207,14 +207,15 @@ class CreatorBot(commands.Bot):
 
                 for creator in creators:
                     creator_id = creator['id']
+                    guild_id = creator.get('guild_id')
                     platform = creator['platform']
                     profile_url = creator['profile_url']
                     discord_user_id = creator['discord_user_id']
 
                     if platform == 'runeforge':
-                        await self.check_runeforge_updates(db, creator_id, profile_url, discord_user_id)
+                        await self.check_runeforge_updates(db, creator_id, guild_id, profile_url, discord_user_id)
                     elif platform == 'divineskins':
-                        await self.check_divineskins_updates(db, creator_id, profile_url, discord_user_id)
+                        await self.check_divineskins_updates(db, creator_id, guild_id, profile_url, discord_user_id)
 
                     await asyncio.sleep(2)
                 
@@ -463,7 +464,7 @@ class CreatorBot(commands.Bot):
         await self.wait_until_ready()
         logger.info("✅ Random mod from all task started (every 2 hours)")
     
-    async def check_runeforge_updates(self, db, creator_id: int, profile_url: str, discord_user_id: int):
+    async def check_runeforge_updates(self, db, creator_id: int, guild_id: int, profile_url: str, discord_user_id: int):
         try:
             username = profile_url.split('/users/')[-1].strip('/')
             
@@ -487,6 +488,7 @@ class CreatorBot(commands.Bot):
                 if not existing:
                     await self.send_notification(
                         db,
+                        guild_id,
                         discord_user_id,
                         username,
                         'Posted new mod',
@@ -501,6 +503,7 @@ class CreatorBot(commands.Bot):
                     # Send webhook notification for new mod
                     await self.send_webhook_notification(
                         db,
+                        guild_id,
                         creator_id,
                         username,
                         'new_mod',
@@ -513,6 +516,7 @@ class CreatorBot(commands.Bot):
                 elif existing['updated_at'] != updated_at:
                     await self.send_notification(
                         db,
+                        guild_id,
                         discord_user_id,
                         username,
                         'Updated mod',
@@ -527,6 +531,7 @@ class CreatorBot(commands.Bot):
                     # Send webhook notification for updated mod
                     await self.send_webhook_notification(
                         db,
+                        guild_id,
                         creator_id,
                         username,
                         'updated_mod',
@@ -540,7 +545,7 @@ class CreatorBot(commands.Bot):
         except Exception as e:
             logger.error("❌ Error checking RuneForge for %s: %s", profile_url, e)
     
-    async def check_divineskins_updates(self, db, creator_id: int, profile_url: str, discord_user_id: int):
+    async def check_divineskins_updates(self, db, creator_id: int, guild_id: int, profile_url: str, discord_user_id: int):
         """[Not working for now] - DivineSkins requires JavaScript execution (CSR)"""
         try:
             username = profile_url.rstrip('/').split('/')[-1]
@@ -565,6 +570,7 @@ class CreatorBot(commands.Bot):
                 if not existing:
                     await self.send_notification(
                         db,
+                        guild_id,
                         discord_user_id,
                         username,
                         'Posted new skin',
@@ -579,6 +585,7 @@ class CreatorBot(commands.Bot):
                     # Send webhook notification for new skin
                     await self.send_webhook_notification(
                         db,
+                        guild_id,
                         creator_id,
                         username,
                         'new_skin',
@@ -591,6 +598,7 @@ class CreatorBot(commands.Bot):
                 elif existing['updated_at'] != updated_at:
                     await self.send_notification(
                         db,
+                        guild_id,
                         discord_user_id,
                         username,
                         'Updated skin',
@@ -605,6 +613,7 @@ class CreatorBot(commands.Bot):
                     # Send webhook notification for updated skin
                     await self.send_webhook_notification(
                         db,
+                        guild_id,
                         creator_id,
                         username,
                         'updated_skin',
@@ -618,14 +627,16 @@ class CreatorBot(commands.Bot):
         except Exception as e:
             logger.error("❌ Error checking Divine Skins for %s: %s", profile_url, e)
     
-    async def send_webhook_notification(self, db, creator_id: int, username: str, event_type: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
-        """Send webhook notifications to all configured guild webhooks with creator info"""
+    async def send_webhook_notification(self, db, guild_id: int, creator_id: int, username: str, event_type: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
+        """Send webhook notifications to the source guild with creator info."""
         try:
-            # Get all guild webhooks
-            all_webhooks = db.get_all_guild_webhooks()
+            if guild_id is not None:
+                all_webhooks = db.get_guild_webhooks(guild_id)
+            else:
+                all_webhooks = db.get_all_guild_webhooks()
             
             if not all_webhooks:
-                logger.debug("ℹ️ No webhooks configured for any guild")
+                logger.debug("ℹ️ No webhooks configured for guild %s", guild_id)
                 return
             
             # Fetch creator profile for avatar and additional info
@@ -700,9 +711,14 @@ class CreatorBot(commands.Bot):
         except Exception as e:
             logger.error("❌ Error sending webhook notifications: %s", e)
     
-    async def send_notification(self, db, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
+    async def send_notification(self, db, guild_id: int, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
         try:
-            guild_configs = db.get_all_guild_configs()
+            if guild_id is not None:
+                guild_config = db.get_guild_config(guild_id)
+                guild_configs = [guild_config] if guild_config else []
+            else:
+                guild_configs = db.get_all_guild_configs()
+
             is_new_mod = 'posted new' in action.lower()
 
             user = self.get_user(discord_user_id)
@@ -815,13 +831,17 @@ class CreatorBot(commands.Bot):
                 if channel:
                     channels.append(channel)
 
-            if not channels and NOTIFICATION_CHANNEL_ID:
+            if not channels and guild_id is None and NOTIFICATION_CHANNEL_ID:
                 fallback_channel = self.get_channel(NOTIFICATION_CHANNEL_ID)
                 if fallback_channel:
                     channels.append(fallback_channel)
 
             if not channels:
-                logger.error("❌ No notification channels found for creator database %s", getattr(db, 'label', 'unknown'))
+                logger.error(
+                    "❌ No notification channels found for creator database %s (guild_id=%s)",
+                    getattr(db, 'label', 'unknown'),
+                    guild_id,
+                )
                 return
 
             for channel in channels:

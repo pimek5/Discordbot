@@ -43,6 +43,7 @@ class CreatorDatabase:
                     """
                     CREATE TABLE IF NOT EXISTS creators (
                         id SERIAL PRIMARY KEY,
+                        guild_id BIGINT,
                         discord_user_id BIGINT NOT NULL,
                         platform VARCHAR(20) NOT NULL,
                         profile_url TEXT NOT NULL,
@@ -170,6 +171,7 @@ class CreatorDatabase:
             with self.conn.cursor() as cur:
                 # Add missing columns to guild_config if they don't exist
                 migration_queries = [
+                    "ALTER TABLE creators ADD COLUMN IF NOT EXISTS guild_id BIGINT",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS random_mod_channel_id BIGINT",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS new_mod_channel_id BIGINT",
                     "ALTER TABLE guild_config ADD COLUMN IF NOT EXISTS bot_avatar_url TEXT",
@@ -197,16 +199,20 @@ class CreatorDatabase:
             logger.warning("⚠️ Migration error (non-critical): %s", e)
             self.conn.rollback()
     # ==================== CREATORS ====================
-    def add_creator(self, discord_user_id: int, platform: str, profile_url: str, profile_data: dict):
+    def add_creator(self, discord_user_id: int, platform: str, profile_url: str, profile_data: dict, guild_id: int = None):
         try:
             with self.conn.cursor() as cur:
+                if guild_id is not None:
+                    cur.execute("INSERT INTO guild_config (guild_id) VALUES (%s) ON CONFLICT DO NOTHING", (guild_id,))
+
                 cur.execute(
                     """
                     INSERT INTO creators 
-                    (discord_user_id, platform, profile_url, username, rank, total_mods, total_downloads, total_views, followers, following, joined_date)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (guild_id, discord_user_id, platform, profile_url, username, rank, total_mods, total_downloads, total_views, followers, following, joined_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (discord_user_id, platform, username)
                     DO UPDATE SET
+                        guild_id = COALESCE(EXCLUDED.guild_id, creators.guild_id),
                         rank = EXCLUDED.rank,
                         total_mods = EXCLUDED.total_mods,
                         total_downloads = EXCLUDED.total_downloads,
@@ -217,6 +223,7 @@ class CreatorDatabase:
                     RETURNING id
                     """,
                     (
+                        guild_id,
                         discord_user_id,
                         platform,
                         profile_url,
