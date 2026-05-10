@@ -9,22 +9,29 @@ import os
 import logging
 import hashlib
 import secrets
+from typing import Dict
 
 logger = logging.getLogger('creator_database')
 
 DATABASE_URL = os.getenv('DATABASE_URL')
+SPECIAL_CREATOR_GUILD_ID = 1231167221330350111
+SPECIAL_GUILD_DATABASE_URL = os.getenv(f'CREATOR_DATABASE_URL_GUILD_{SPECIAL_CREATOR_GUILD_ID}')
 
 
 class CreatorDatabase:
-    def __init__(self):
+    def __init__(self, database_url: str = None, label: str = 'default'):
         self.conn = None
+        self.database_url = database_url or DATABASE_URL
+        self.label = label
         self.connect()
         self.create_tables()
     
     def connect(self):
         try:
-            self.conn = psycopg2.connect(DATABASE_URL)
-            logger.info("✅ Connected to database")
+            if not self.database_url:
+                raise ValueError("DATABASE_URL is not configured")
+            self.conn = psycopg2.connect(self.database_url)
+            logger.info("✅ Connected to database (%s)", self.label)
         except Exception as e:
             logger.error("❌ Database connection failed: %s", e)
             raise
@@ -414,6 +421,16 @@ class CreatorDatabase:
         except Exception as e:
             logger.error("❌ Error getting guild config: %s", e)
             return None
+
+    def get_all_guild_configs(self):
+        """Get all guild configurations stored in this database."""
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM guild_config ORDER BY guild_id")
+                return cur.fetchall()
+        except Exception as e:
+            logger.error("❌ Error getting all guild configs: %s", e)
+            return []
     
     # ==================== WEBHOOKS ====================
     def add_webhook(self, guild_id: int, webhook_url: str, webhook_secret: str = None):
@@ -659,11 +676,37 @@ class CreatorDatabase:
             return []
 
 
-_db_instance = None
+_db_instances: Dict[str, CreatorDatabase] = {}
 
 
-def get_creator_db():
-    global _db_instance
-    if _db_instance is None:
-        _db_instance = CreatorDatabase()
-    return _db_instance
+def _database_url_for_guild(guild_id: int = 0) -> str:
+    if guild_id == SPECIAL_CREATOR_GUILD_ID and SPECIAL_GUILD_DATABASE_URL:
+        return SPECIAL_GUILD_DATABASE_URL
+    return DATABASE_URL
+
+
+def _database_label_for_guild(guild_id: int = 0) -> str:
+    if guild_id == SPECIAL_CREATOR_GUILD_ID and SPECIAL_GUILD_DATABASE_URL:
+        return f'guild:{guild_id}'
+    return 'default'
+
+
+def get_creator_db(guild_id: int = 0):
+    database_url = _database_url_for_guild(guild_id)
+    label = _database_label_for_guild(guild_id)
+    cache_key = f'{label}|{database_url}'
+
+    instance = _db_instances.get(cache_key)
+    if instance is None:
+        instance = CreatorDatabase(database_url=database_url, label=label)
+        _db_instances[cache_key] = instance
+    return instance
+
+
+def get_all_creator_dbs():
+    databases = [get_creator_db()]
+    if SPECIAL_GUILD_DATABASE_URL:
+        special_db = get_creator_db(SPECIAL_CREATOR_GUILD_ID)
+        if all(existing is not special_db for existing in databases):
+            databases.append(special_db)
+    return databases

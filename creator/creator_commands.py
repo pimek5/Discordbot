@@ -27,6 +27,12 @@ class CreatorCommands(commands.Cog):
         self.bot = bot
         self.runeforge_scraper = RuneForgeScraper()
         self.divineskins_scraper = DivineSkinsScraper()
+    
+    def _get_guild_id(self, interaction: discord.Interaction) -> int:
+        return interaction.guild_id if interaction.guild else 0
+    
+    def _get_db(self, interaction: discord.Interaction):
+        return get_creator_db(self._get_guild_id(interaction))
 
     def _get_display_name(self, user: discord.abc.User) -> str:
         return getattr(user, "display_name", None) or getattr(user, "global_name", None) or user.name
@@ -147,7 +153,7 @@ class CreatorCommands(commands.Cog):
                 return
             
             # Save to DB
-            db = get_creator_db()
+            db = self._get_db(interaction)
             creator_id = db.add_creator(target_user.id, platform, url, profile_data)
             if not creator_id:
                 await interaction.followup.send("❌ Failed to add creator to database!", ephemeral=True)
@@ -219,7 +225,7 @@ class CreatorCommands(commands.Cog):
                     ephemeral=True
                 )
                 return
-            db = get_creator_db()
+            db = self._get_db(interaction)
             creator = db.get_creator(target_user.id, platform)
             if not creator:
                 await interaction.followup.send(
@@ -301,7 +307,7 @@ class CreatorCommands(commands.Cog):
                     ephemeral=True
                 )
                 return
-            db = get_creator_db()
+            db = self._get_db(interaction)
             success = db.remove_creator(target_user.id, platform)
             if success:
                 await interaction.followup.send(
@@ -341,8 +347,8 @@ class CreatorCommands(commands.Cog):
         platform: str = None,
         username: str = None,
     ):
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
+        db = self._get_db(interaction)
+        guild_id = self._get_guild_id(interaction)
         user_id = interaction.user.id
 
         if action.value == "list":
@@ -447,7 +453,7 @@ class CreatorCommands(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            db = get_creator_db()
+            db = self._get_db(interaction)
 
             user_input = user.strip() if user else None
             if user_input and user_input.lower() == "all":
@@ -986,8 +992,8 @@ class CreatorCommands(commands.Cog):
         
         await interaction.response.defer(ephemeral=True)
         try:
-            db = get_creator_db()
-            guild_id = interaction.guild_id if interaction.guild else 0
+            db = self._get_db(interaction)
+            guild_id = self._get_guild_id(interaction)
             config = db.get_guild_config(guild_id) or {}
             
             # Create embed
@@ -1176,8 +1182,8 @@ class CreatorCommands(commands.Cog):
     @config_group.command(name="view", description="View current server configuration")
     async def config_view(self, interaction: discord.Interaction):
         """View the current configuration for this server"""
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
+        db = self._get_db(interaction)
+        guild_id = self._get_guild_id(interaction)
         
         config = db.get_guild_config(guild_id)
         
@@ -1230,8 +1236,8 @@ class CreatorCommands(commands.Cog):
             await interaction.response.send_message("❌ Invalid URL. Must start with http:// or https://", ephemeral=True)
             return
         
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
+        db = self._get_db(interaction)
+        guild_id = self._get_guild_id(interaction)
         
         try:
             result = db.add_webhook(guild_id, webhook_url)
@@ -1259,8 +1265,8 @@ class CreatorCommands(commands.Cog):
             await interaction.response.send_message("❌ Only administrators can manage webhooks!", ephemeral=True)
             return
         
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
+        db = self._get_db(interaction)
+        guild_id = self._get_guild_id(interaction)
         
         webhooks = db.get_guild_webhooks(guild_id)
         
@@ -1296,8 +1302,8 @@ class CreatorCommands(commands.Cog):
             await interaction.response.send_message("❌ Only administrators can manage webhooks!", ephemeral=True)
             return
         
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
+        db = self._get_db(interaction)
+        guild_id = self._get_guild_id(interaction)
         
         try:
             # Try parsing as ID first
@@ -1359,8 +1365,8 @@ class CreatorCommands(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            db = get_creator_db()
-            guild_id = interaction.guild_id if interaction.guild else 0
+            db = self._get_db(interaction)
+            guild_id = self._get_guild_id(interaction)
             user_id = interaction.user.id
             
             key, key_info = db.create_api_key(guild_id, user_id)
@@ -1419,8 +1425,8 @@ class CreatorCommands(commands.Cog):
             )
             return
         
-        db = get_creator_db()
-        guild_id = interaction.guild_id if interaction.guild else 0
+        db = self._get_db(interaction)
+        guild_id = self._get_guild_id(interaction)
         user_id = interaction.user.id
         
         keys = db.get_api_keys(guild_id, user_id)
@@ -1463,7 +1469,7 @@ class CreatorCommands(commands.Cog):
             )
             return
         
-        db = get_creator_db()
+        db = self._get_db(interaction)
         
         # Determine if it's an ID or prefix
         api_key_id = None

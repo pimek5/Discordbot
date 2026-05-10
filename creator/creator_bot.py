@@ -11,7 +11,7 @@ import asyncio
 from datetime import datetime
 
 # Local modules (same folder)
-from creator_database import get_creator_db
+from creator_database import get_creator_db, get_all_creator_dbs, SPECIAL_CREATOR_GUILD_ID
 from creator_scraper import RuneForgeScraper, DivineSkinsScraper
 
 # Logging setup
@@ -24,6 +24,7 @@ logger = logging.getLogger('creator_bot')
 # Bot configuration via env
 DISCORD_TOKEN = os.getenv('CREATOR_BOT_TOKEN')
 GUILD_ID = int(os.getenv('GUILD_ID', '0'))
+COMMAND_SYNC_GUILD_IDS = sorted({guild_id for guild_id in (GUILD_ID, SPECIAL_CREATOR_GUILD_ID) if guild_id})
 NOTIFICATION_CHANNEL_ID = int(os.getenv('CREATOR_NOTIFICATION_CHANNEL_ID', '0'))
 HOURLY_MOD_CHANNEL_ID = 1450391066330005586  # Kanał dla losowych modów co godzinę
 CREATOR_GUIDE_CHANNEL_ID = 1459967029036453980  # Kanał na stały embed z komendami i guide
@@ -61,12 +62,13 @@ class CreatorBot(commands.Bot):
         await self.load_extension('creator_commands')
         logger.info("✅ Commands loaded")
         
-        # Sync commands to a single guild if provided
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            logger.info("✅ Commands synced to guild %s", GUILD_ID)
+        # Sync commands to dedicated guilds for fast propagation.
+        if COMMAND_SYNC_GUILD_IDS:
+            for guild_id in COMMAND_SYNC_GUILD_IDS:
+                guild = discord.Object(id=guild_id)
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                logger.info("✅ Commands synced to guild %s", guild_id)
         else:
             await self.tree.sync()
             logger.info("✅ Commands synced globally")
@@ -200,23 +202,21 @@ class CreatorBot(commands.Bot):
         logger.info("🔍 Checking for new mods/skins...")
         
         try:
-            db = get_creator_db()
-            creators = db.get_all_creators()
-            
-            for creator in creators:
-                creator_id = creator['id']
-                platform = creator['platform']  # 'runeforge' or 'divineskins'
-                profile_url = creator['profile_url']
-                discord_user_id = creator['discord_user_id']
-                
-                if platform == 'runeforge':
-                    await self.check_runeforge_updates(creator_id, profile_url, discord_user_id)
-                elif platform == 'divineskins':
-                    # [Not working for now] - DivineSkins requires JavaScript execution (CSR)
-                    await self.check_divineskins_updates(creator_id, profile_url, discord_user_id)
-                
-                # Rate limiting (be nice)
-                await asyncio.sleep(2)
+            for db in get_all_creator_dbs():
+                creators = db.get_all_creators()
+
+                for creator in creators:
+                    creator_id = creator['id']
+                    platform = creator['platform']
+                    profile_url = creator['profile_url']
+                    discord_user_id = creator['discord_user_id']
+
+                    if platform == 'runeforge':
+                        await self.check_runeforge_updates(db, creator_id, profile_url, discord_user_id)
+                    elif platform == 'divineskins':
+                        await self.check_divineskins_updates(db, creator_id, profile_url, discord_user_id)
+
+                    await asyncio.sleep(2)
                 
         except Exception as e:
             logger.error("❌ Error monitoring creators: %s", e)
@@ -232,111 +232,101 @@ class CreatorBot(commands.Bot):
         """Send a random mod from subscribed creators every hour"""
         try:
             logger.info("🎲 Sending random mod from subscribed creators (every 1 hour)...")
-            
-            db = get_creator_db()
-            random_mod = db.get_random_mod()
-            
-            if not random_mod:
-                logger.warning("⚠️ No mods found from subscribed creators")
-                return
-            
-            # Get guild and config for channel selection
-            guild = None
-            if self.guilds:
-                guild = self.guilds[0]
-            
-            if not guild:
-                logger.warning("⚠️ Bot not in any guild, using fallback channel")
-                channel = self.get_channel(HOURLY_MOD_CHANNEL_ID)
-            else:
-                config = db.get_guild_config(guild.id) or {}
-                channel_id = config.get('random_mod_channel_id') or HOURLY_MOD_CHANNEL_ID
-                channel = self.get_channel(channel_id)
-            
-            if not channel:
-                logger.error("❌ Random mod channel not found")
-                return
-            
-            # Extract mod details
-            mod_name = random_mod['mod_name']
-            mod_url = random_mod['mod_url']
-            platform = random_mod['platform']
-            username = random_mod['username']
-            discord_user_id = random_mod['discord_user_id']
-            
-            user = self.get_user(discord_user_id)
-            
-            platform_emoji = "🔧" if platform == 'runeforge' else "✨"
-            platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
-            color = 0xf39c12  # Orange color
-            
-            # Fetch detailed mod information
-            mod_details = {}
-            try:
-                if platform == 'runeforge':
-                    mod_details = await self.runeforge_scraper.get_mod_details(mod_url)
-                else:
-                    mod_details = await self.divineskins_scraper.get_mod_details(mod_url)
-            except Exception as e:
-                logger.warning("⚠️ Error fetching mod details: %s", e)
-            
-            # Use detailed data if available
-            final_name = mod_details.get('name', mod_name)
-            final_description = mod_details.get('description', f"Check out this {'mod' if platform == 'runeforge' else 'skin'}!")
-            final_views = mod_details.get('views', 0)
-            final_likes = mod_details.get('likes', 0)
-            final_version = mod_details.get('version', '')
-            final_tags = mod_details.get('tags', [])
-            final_image = mod_details.get('image_url', None)
-            
-            # Create rich embed
-            embed = discord.Embed(
-                title=f"🎲 Random {platform_emoji} {'Mod' if platform == 'runeforge' else 'Skin'} from Subscribed Creators",
-                description=f"**{final_name}**\n{final_description[:200]}{'...' if len(final_description) > 200 else ''}",
-                color=color,
-                url=mod_url,
-                timestamp=datetime.now()
-            )
-            
-            # Set main image
-            if final_image:
-                embed.set_image(url=final_image)
-            
-            # Author info
-            embed.set_author(
-                name=f"By {username}",
-                icon_url=user.display_avatar.url if user else None
-            )
-            
-            # Stats
-            stats = []
-            if final_views:
-                stats.append(f"👁️ {final_views:,} views")
-            if final_likes:
-                stats.append(f"❤️ {final_likes:,} likes")
-            if stats:
-                embed.add_field(name="📊 Stats", value=" • ".join(stats), inline=False)
-            
-            # Version
-            if final_version:
-                embed.add_field(name="🔖 Version", value=f"`{final_version}`", inline=True)
-            
-            # Platform
-            embed.add_field(name="🌐 Platform", value=platform_name, inline=True)
-            
-            # Tags
-            if final_tags:
-                tags_str = " • ".join([f"`{tag}`" for tag in final_tags[:5]])
-                embed.add_field(name="🏷️ Tags", value=tags_str, inline=False)
-            
-            # Footer
-            embed.set_footer(
-                text=f"Subscribed Creator • {platform_name}",
-                icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png" if platform == 'runeforge' else "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png"
-            )
-            
-            await channel.send(embed=embed)
-            logger.info("✅ Random mod from subscribed sent: %s - %s", username, mod_name)
+
+            for db in get_all_creator_dbs():
+                random_mod = db.get_random_mod()
+                if not random_mod:
+                    logger.warning("⚠️ No mods found from subscribed creators in one database")
+                    continue
+
+                configs = db.get_all_guild_configs()
+                target_channels = []
+                for config in configs:
+                    channel_id = config.get('random_mod_channel_id') or HOURLY_MOD_CHANNEL_ID
+                    channel = self.get_channel(channel_id)
+                    if channel:
+                        target_channels.append(channel)
+
+                if not target_channels:
+                    fallback_channel = self.get_channel(HOURLY_MOD_CHANNEL_ID)
+                    if fallback_channel:
+                        target_channels.append(fallback_channel)
+
+                if not target_channels:
+                    logger.error("❌ Random mod channel not found for configured creator databases")
+                    continue
+
+                mod_name = random_mod['mod_name']
+                mod_url = random_mod['mod_url']
+                platform = random_mod['platform']
+                username = random_mod['username']
+                discord_user_id = random_mod['discord_user_id']
+
+                user = self.get_user(discord_user_id)
+
+                platform_emoji = "🔧" if platform == 'runeforge' else "✨"
+                platform_name = "RuneForge" if platform == 'runeforge' else "Divine Skins"
+                color = 0xf39c12
+
+                mod_details = {}
+                try:
+                    if platform == 'runeforge':
+                        mod_details = await self.runeforge_scraper.get_mod_details(mod_url)
+                    else:
+                        mod_details = await self.divineskins_scraper.get_mod_details(mod_url)
+                except Exception as e:
+                    logger.warning("⚠️ Error fetching mod details: %s", e)
+
+                final_name = mod_details.get('name', mod_name)
+                final_description = mod_details.get('description', f"Check out this {'mod' if platform == 'runeforge' else 'skin'}!")
+                final_views = mod_details.get('views', 0)
+                final_likes = mod_details.get('likes', 0)
+                final_version = mod_details.get('version', '')
+                final_tags = mod_details.get('tags', [])
+                final_image = mod_details.get('image_url', None)
+
+                embed = discord.Embed(
+                    title=f"🎲 Random {platform_emoji} {'Mod' if platform == 'runeforge' else 'Skin'} from Subscribed Creators",
+                    description=f"**{final_name}**\n{final_description[:200]}{'...' if len(final_description) > 200 else ''}",
+                    color=color,
+                    url=mod_url,
+                    timestamp=datetime.now()
+                )
+
+                if final_image:
+                    embed.set_image(url=final_image)
+
+                embed.set_author(
+                    name=f"By {username}",
+                    icon_url=user.display_avatar.url if user else None
+                )
+
+                stats = []
+                if final_views:
+                    stats.append(f"👁️ {final_views:,} views")
+                if final_likes:
+                    stats.append(f"❤️ {final_likes:,} likes")
+                if stats:
+                    embed.add_field(name="📊 Stats", value=" • ".join(stats), inline=False)
+
+                if final_version:
+                    embed.add_field(name="🔖 Version", value=f"`{final_version}`", inline=True)
+
+                embed.add_field(name="🌐 Platform", value=platform_name, inline=True)
+
+                if final_tags:
+                    tags_str = " • ".join([f"`{tag}`" for tag in final_tags[:5]])
+                    embed.add_field(name="🏷️ Tags", value=tags_str, inline=False)
+
+                embed.set_footer(
+                    text=f"Subscribed Creator • {platform_name}",
+                    icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png" if platform == 'runeforge' else "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png"
+                )
+
+                for channel in target_channels:
+                    await channel.send(embed=embed)
+
+                logger.info("✅ Random mod from subscribed sent: %s - %s", username, mod_name)
             
         except Exception as e:
             logger.error("❌ Error sending random mod from subscribed: %s", e)
@@ -473,7 +463,7 @@ class CreatorBot(commands.Bot):
         await self.wait_until_ready()
         logger.info("✅ Random mod from all task started (every 2 hours)")
     
-    async def check_runeforge_updates(self, creator_id: int, profile_url: str, discord_user_id: int):
+    async def check_runeforge_updates(self, db, creator_id: int, profile_url: str, discord_user_id: int):
         try:
             username = profile_url.split('/users/')[-1].strip('/')
             
@@ -483,8 +473,6 @@ class CreatorBot(commands.Bot):
                 return
             
             mods = await self.runeforge_scraper.get_user_mods(username)
-            
-            db = get_creator_db()
             
             for mod in mods:
                 mod_id = mod['id']
@@ -498,6 +486,7 @@ class CreatorBot(commands.Bot):
                 
                 if not existing:
                     await self.send_notification(
+                        db,
                         discord_user_id,
                         username,
                         'Posted new mod',
@@ -511,6 +500,7 @@ class CreatorBot(commands.Bot):
                     
                     # Send webhook notification for new mod
                     await self.send_webhook_notification(
+                        db,
                         creator_id,
                         username,
                         'new_mod',
@@ -522,6 +512,7 @@ class CreatorBot(commands.Bot):
                     )
                 elif existing['updated_at'] != updated_at:
                     await self.send_notification(
+                        db,
                         discord_user_id,
                         username,
                         'Updated mod',
@@ -535,6 +526,7 @@ class CreatorBot(commands.Bot):
                     
                     # Send webhook notification for updated mod
                     await self.send_webhook_notification(
+                        db,
                         creator_id,
                         username,
                         'updated_mod',
@@ -548,7 +540,7 @@ class CreatorBot(commands.Bot):
         except Exception as e:
             logger.error("❌ Error checking RuneForge for %s: %s", profile_url, e)
     
-    async def check_divineskins_updates(self, creator_id: int, profile_url: str, discord_user_id: int):
+    async def check_divineskins_updates(self, db, creator_id: int, profile_url: str, discord_user_id: int):
         """[Not working for now] - DivineSkins requires JavaScript execution (CSR)"""
         try:
             username = profile_url.rstrip('/').split('/')[-1]
@@ -559,8 +551,6 @@ class CreatorBot(commands.Bot):
                 return
             
             skins = await self.divineskins_scraper.get_user_skins(username)
-            
-            db = get_creator_db()
             
             for skin in skins:
                 skin_id = skin['id']
@@ -574,6 +564,7 @@ class CreatorBot(commands.Bot):
                 
                 if not existing:
                     await self.send_notification(
+                        db,
                         discord_user_id,
                         username,
                         'Posted new skin',
@@ -587,6 +578,7 @@ class CreatorBot(commands.Bot):
                     
                     # Send webhook notification for new skin
                     await self.send_webhook_notification(
+                        db,
                         creator_id,
                         username,
                         'new_skin',
@@ -598,6 +590,7 @@ class CreatorBot(commands.Bot):
                     )
                 elif existing['updated_at'] != updated_at:
                     await self.send_notification(
+                        db,
                         discord_user_id,
                         username,
                         'Updated skin',
@@ -611,6 +604,7 @@ class CreatorBot(commands.Bot):
                     
                     # Send webhook notification for updated skin
                     await self.send_webhook_notification(
+                        db,
                         creator_id,
                         username,
                         'updated_skin',
@@ -624,11 +618,9 @@ class CreatorBot(commands.Bot):
         except Exception as e:
             logger.error("❌ Error checking Divine Skins for %s: %s", profile_url, e)
     
-    async def send_webhook_notification(self, creator_id: int, username: str, event_type: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
+    async def send_webhook_notification(self, db, creator_id: int, username: str, event_type: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
         """Send webhook notifications to all configured guild webhooks with creator info"""
         try:
-            db = get_creator_db()
-            
             # Get all guild webhooks
             all_webhooks = db.get_all_guild_webhooks()
             
@@ -708,32 +700,10 @@ class CreatorBot(commands.Bot):
         except Exception as e:
             logger.error("❌ Error sending webhook notifications: %s", e)
     
-    async def send_notification(self, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
+    async def send_notification(self, db, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
         try:
-            db = get_creator_db()
-            
-            # Get guild from bot - use first guild or default
-            guild = None
-            if self.guilds:
-                guild = self.guilds[0]
-            
-            if not guild:
-                logger.error("❌ Bot not in any guild")
-                return
-            
-            # Determine which channel to use based on action
-            config = db.get_guild_config(guild.id) or {}
+            guild_configs = db.get_all_guild_configs()
             is_new_mod = 'posted new' in action.lower()
-            
-            if is_new_mod:
-                channel_id = config.get('new_mod_channel_id') or NOTIFICATION_CHANNEL_ID
-            else:
-                channel_id = config.get('notification_channel_id') or NOTIFICATION_CHANNEL_ID
-            
-            channel = self.get_channel(channel_id)
-            if not channel:
-                logger.error("❌ Notification channel %s not found", channel_id)
-                return
 
             user = self.get_user(discord_user_id)
             
@@ -835,8 +805,27 @@ class CreatorBot(commands.Bot):
                 icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png" if platform == 'runeforge' else "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png"
             )
 
-            # Send embed only (no author mention to avoid pings)
-            await channel.send(embed=embed)
+            channels = []
+            for config in guild_configs:
+                if is_new_mod:
+                    channel_id = config.get('new_mod_channel_id') or NOTIFICATION_CHANNEL_ID
+                else:
+                    channel_id = config.get('notification_channel_id') or NOTIFICATION_CHANNEL_ID
+                channel = self.get_channel(channel_id)
+                if channel:
+                    channels.append(channel)
+
+            if not channels and NOTIFICATION_CHANNEL_ID:
+                fallback_channel = self.get_channel(NOTIFICATION_CHANNEL_ID)
+                if fallback_channel:
+                    channels.append(fallback_channel)
+
+            if not channels:
+                logger.error("❌ No notification channels found for creator database %s", getattr(db, 'label', 'unknown'))
+                return
+
+            for channel in channels:
+                await channel.send(embed=embed)
             logger.info("✅ Rich notification sent: %s - %s - %s", username, action, mod_name)
         except Exception as e:
             logger.error("❌ Error sending notification: %s", e)
