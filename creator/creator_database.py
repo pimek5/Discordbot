@@ -313,6 +313,19 @@ class CreatorDatabase:
         except Exception as e:
             logger.error("❌ Error getting creators: %s", e)
             return []
+
+    def get_creators_for_guild(self, guild_id: int):
+        """Return creators that belong to a specific guild."""
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM creators WHERE guild_id = %s ORDER BY platform, username",
+                    (guild_id,),
+                )
+                return cur.fetchall()
+        except Exception as e:
+            logger.error("❌ Error getting creators for guild: %s", e)
+            return []
     
     def remove_creator(self, discord_user_id: int, platform: str):
         try:

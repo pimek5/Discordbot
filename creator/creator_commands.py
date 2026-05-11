@@ -427,7 +427,65 @@ class CreatorCommands(commands.Cog):
             return
 
         await interaction.response.send_message("❌ Unsupported action.", ephemeral=True)
-    
+
+    @creator_group.command(name="list", description="List all tracked creators on this server")
+    async def list_creators(
+        self,
+        interaction: discord.Interaction,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            db = self._get_db(interaction)
+            guild_id = self._get_guild_id(interaction)
+            creators = db.get_creators_for_guild(guild_id)
+
+            if not creators:
+                await interaction.followup.send(
+                    "📋 No creators are being tracked on this server yet.",
+                    ephemeral=True,
+                )
+                return
+
+            # Group by platform
+            by_platform: dict[str, list] = {}
+            for c in creators:
+                plat = c.get('platform', 'unknown')
+                by_platform.setdefault(plat, []).append(c)
+
+            platform_labels = {
+                'runeforge': '<:runeforge:1> RuneForge',
+                'divineskins': '✨ Divine Skins',
+            }
+
+            embed = discord.Embed(
+                title="📋 Tracked Creators",
+                description=f"**{len(creators)}** creator(s) tracked on this server",
+                colour=discord.Colour.blurple(),
+                timestamp=datetime.utcnow(),
+            )
+
+            for plat, rows in by_platform.items():
+                label = platform_labels.get(plat, plat.title())
+                lines = []
+                for c in rows:
+                    username = c.get('username') or c.get('normalized_username') or 'Unknown'
+                    profile_url = c.get('profile_url', '')
+                    user_id = c.get('discord_user_id')
+                    mention = f'<@{user_id}>' if user_id else ''
+                    link = f'[{username}]({profile_url})' if profile_url else username
+                    lines.append(f'• {link} — {mention}' if mention else f'• {link}')
+                embed.add_field(
+                    name=label,
+                    value='\n'.join(lines) or '—',
+                    inline=False,
+                )
+
+            embed.set_footer(text="Use /creator add to track more creators")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            logger.error("❌ Error listing creators: %s", e)
+            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+
     @creator_group.command(name="refresh", description="Manually refresh a creator's data (Admin only)")
     @app_commands.describe(
         platform="Platform (runeforge, divineskins, or all)",
