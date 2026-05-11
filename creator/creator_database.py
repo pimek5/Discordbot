@@ -259,6 +259,24 @@ class CreatorDatabase:
         except Exception as e:
             logger.error("❌ Error getting creator: %s", e)
             return None
+
+    def has_creator_in_guild(self, guild_id: int, discord_user_id: int, platform: str) -> bool:
+        """Check if a creator is tracked for a specific guild."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM creators
+                    WHERE guild_id = %s AND discord_user_id = %s AND platform = %s
+                    LIMIT 1
+                    """,
+                    (guild_id, discord_user_id, platform),
+                )
+                return cur.fetchone() is not None
+        except Exception as e:
+            logger.error("❌ Error checking creator in guild: %s", e)
+            return False
     
     def get_creator_by_id(self, creator_id: int):
         """Get creator by ID"""

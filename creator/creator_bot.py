@@ -822,19 +822,50 @@ class CreatorBot(commands.Bot):
             )
 
             channels = []
+            added_channel_ids = set()
+
+            def _add_channel_if_exists(channel_id):
+                if not channel_id:
+                    return
+                channel = self.get_channel(channel_id)
+                if channel and channel.id not in added_channel_ids:
+                    channels.append(channel)
+                    added_channel_ids.add(channel.id)
+
             for config in guild_configs:
                 if is_new_mod:
                     channel_id = config.get('new_mod_channel_id') or NOTIFICATION_CHANNEL_ID
                 else:
                     channel_id = config.get('notification_channel_id') or NOTIFICATION_CHANNEL_ID
-                channel = self.get_channel(channel_id)
-                if channel:
-                    channels.append(channel)
+                _add_channel_if_exists(channel_id)
 
             if not channels and guild_id is None and NOTIFICATION_CHANNEL_ID:
-                fallback_channel = self.get_channel(NOTIFICATION_CHANNEL_ID)
-                if fallback_channel:
-                    channels.append(fallback_channel)
+                _add_channel_if_exists(NOTIFICATION_CHANNEL_ID)
+
+            # Cross-guild mirror: when a new RuneForge mod is posted on the main guild,
+            # send the same embed to all other guilds using each guild's configured channel.
+            should_mirror_new_main_mod = (
+                guild_id == GUILD_ID
+                and platform == 'runeforge'
+                and is_new_mod
+                and not is_update
+            )
+            if should_mirror_new_main_mod:
+                mirrored_guilds = 0
+                for other_db in get_all_creator_dbs():
+                    for cfg in other_db.get_all_guild_configs():
+                        target_guild_id = cfg.get('guild_id')
+                        if not target_guild_id or target_guild_id == guild_id:
+                            continue
+                        if not other_db.has_creator_in_guild(target_guild_id, discord_user_id, platform):
+                            continue
+                        mirrored_guilds += 1
+                        target_channel_id = cfg.get('new_mod_channel_id') or cfg.get('notification_channel_id') or NOTIFICATION_CHANNEL_ID
+                        _add_channel_if_exists(target_channel_id)
+                logger.info(
+                    "📡 Mirroring main-guild new mod notification to %s guild(s) tracking this creator",
+                    mirrored_guilds,
+                )
 
             if not channels:
                 logger.error(
