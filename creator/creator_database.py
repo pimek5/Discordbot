@@ -198,9 +198,26 @@ class CreatorDatabase:
         except Exception as e:
             logger.warning("⚠️ Migration error (non-critical): %s", e)
             self.conn.rollback()
+
+    @staticmethod
+    def _normalize_username(username: str) -> str:
+        """Normalize profile usernames to a stable canonical value."""
+        if not username:
+            return ''
+        normalized = username.strip().strip('/')
+        normalized = normalized.split('?', 1)[0]
+        if normalized.lower().endswith('/mods'):
+            normalized = normalized[:-5]
+        return normalized.strip().strip('/')
+
     # ==================== CREATORS ====================
     def add_creator(self, discord_user_id: int, platform: str, profile_url: str, profile_data: dict, guild_id: int = None):
         try:
+            normalized_username = self._normalize_username(profile_data.get('username'))
+            if not normalized_username:
+                logger.error("❌ Error adding creator: empty normalized username")
+                return None
+
             with self.conn.cursor() as cur:
                 if guild_id is not None:
                     cur.execute("INSERT INTO guild_config (guild_id) VALUES (%s) ON CONFLICT DO NOTHING", (guild_id,))
@@ -227,7 +244,7 @@ class CreatorDatabase:
                         discord_user_id,
                         platform,
                         profile_url,
-                        profile_data.get('username'),
+                        normalized_username,
                         profile_data.get('rank'),
                         profile_data.get('total_mods', 0),
                         profile_data.get('total_downloads', 0),
@@ -239,7 +256,7 @@ class CreatorDatabase:
                 )
                 creator_id = cur.fetchone()[0]
                 self.conn.commit()
-                logger.info("✅ Creator added/updated: %s (ID: %s)", profile_data.get('username'), creator_id)
+                logger.info("✅ Creator added/updated: %s (ID: %s)", normalized_username, creator_id)
                 return creator_id
         except Exception as e:
             logger.error("❌ Error adding creator: %s", e)
@@ -320,6 +337,11 @@ class CreatorDatabase:
     def add_mod(self, creator_id: int, mod_id: str, mod_name: str, mod_url: str, updated_at: str, platform: str):
         try:
             with self.conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM creators WHERE id = %s", (creator_id,))
+                if not cur.fetchone():
+                    logger.warning("⚠️ Skipping mod insert; creator_id %s no longer exists", creator_id)
+                    return False
+
                 cur.execute(
                     """
                     INSERT INTO mods (creator_id, mod_id, mod_name, mod_url, platform, updated_at)
@@ -329,9 +351,11 @@ class CreatorDatabase:
                     (creator_id, mod_id, mod_name, mod_url, platform, updated_at),
                 )
                 self.conn.commit()
+                return True
         except Exception as e:
             logger.error("❌ Error adding mod: %s", e)
             self.conn.rollback()
+            return False
     
     def get_mod(self, mod_id: str, platform: str):
         try:

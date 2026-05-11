@@ -505,7 +505,16 @@ class CreatorCommands(commands.Cog):
                             failed_count += 1
                             continue
 
-                        db.add_creator(creator['discord_user_id'], creator_platform, creator['profile_url'], profile_data, interaction.guild_id)
+                        refreshed_creator_id = db.add_creator(
+                            creator['discord_user_id'],
+                            creator_platform,
+                            creator['profile_url'],
+                            profile_data,
+                            interaction.guild_id,
+                        )
+                        if not refreshed_creator_id:
+                            failed_count += 1
+                            continue
 
                         # Re-seed content
                         content = []
@@ -517,7 +526,7 @@ class CreatorCommands(commands.Cog):
                         if content:
                             for item in content:
                                 db.add_mod(
-                                    creator['id'],
+                                    refreshed_creator_id,
                                     item.get('id', ''),
                                     item.get('name', 'Untitled'),
                                     item.get('url', creator['profile_url']),
@@ -579,7 +588,16 @@ class CreatorCommands(commands.Cog):
                             failed_platforms.append(creator_platform)
                             continue
 
-                        db.add_creator(target_user.id, creator_platform, creator['profile_url'], profile_data, interaction.guild_id)
+                        refreshed_creator_id = db.add_creator(
+                            target_user.id,
+                            creator_platform,
+                            creator['profile_url'],
+                            profile_data,
+                            interaction.guild_id,
+                        )
+                        if not refreshed_creator_id:
+                            failed_platforms.append(creator_platform)
+                            continue
 
                         # Re-seed content
                         content = []
@@ -591,7 +609,7 @@ class CreatorCommands(commands.Cog):
                         if content:
                             for item in content:
                                 db.add_mod(
-                                    creator['id'],
+                                    refreshed_creator_id,
                                     item.get('id', ''),
                                     item.get('name', 'Untitled'),
                                     item.get('url', creator['profile_url']),
@@ -630,7 +648,16 @@ class CreatorCommands(commands.Cog):
                 await interaction.followup.send("❌ Failed to fetch profile data!", ephemeral=True)
                 return
 
-            db.add_creator(target_user.id, platform, creator['profile_url'], profile_data, interaction.guild_id)
+            refreshed_creator_id = db.add_creator(
+                target_user.id,
+                platform,
+                creator['profile_url'],
+                profile_data,
+                interaction.guild_id,
+            )
+            if not refreshed_creator_id:
+                await interaction.followup.send("❌ Failed to refresh creator in database!", ephemeral=True)
+                return
 
             # Re-seed existing content to keep random pool fresh (no notifications)
             content = []
@@ -642,7 +669,7 @@ class CreatorCommands(commands.Cog):
             if content:
                 for item in content:
                     db.add_mod(
-                        creator['id'],
+                        refreshed_creator_id,
                         item.get('id', ''),
                         item.get('name', 'Untitled'),
                         item.get('url', creator['profile_url']),

@@ -466,6 +466,10 @@ class CreatorBot(commands.Bot):
     
     async def check_runeforge_updates(self, db, creator_id: int, guild_id: int, profile_url: str, discord_user_id: int):
         try:
+            if not db.get_creator_by_id(creator_id):
+                logger.warning("⚠️ Skipping RuneForge check; creator %s was removed", creator_id)
+                return
+
             username = profile_url.split('/users/')[-1].strip('/')
             
             # Validate username (skip malformed URLs)
@@ -548,6 +552,10 @@ class CreatorBot(commands.Bot):
     async def check_divineskins_updates(self, db, creator_id: int, guild_id: int, profile_url: str, discord_user_id: int):
         """[Not working for now] - DivineSkins requires JavaScript execution (CSR)"""
         try:
+            if not db.get_creator_by_id(creator_id):
+                logger.warning("⚠️ Skipping DivineSkins check; creator %s was removed", creator_id)
+                return
+
             username = profile_url.rstrip('/').split('/')[-1]
             
             # Validate username (skip malformed URLs)
