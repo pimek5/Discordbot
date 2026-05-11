@@ -184,6 +184,12 @@ class CreatorDatabase:
                     "ALTER TABLE webhooks ADD COLUMN IF NOT EXISTS include_creator_avatar BOOLEAN DEFAULT TRUE",
                     "ALTER TABLE webhooks ADD COLUMN IF NOT EXISTS include_creator_nickname BOOLEAN DEFAULT TRUE",
                     "ALTER TABLE api_keys ALTER COLUMN key_prefix TYPE VARCHAR(50)",
+                    # Per-guild creator rows: replace global unique with per-guild unique
+                    "ALTER TABLE creators DROP CONSTRAINT IF EXISTS creators_discord_user_id_platform_username_key",
+                    "CREATE UNIQUE INDEX IF NOT EXISTS creators_per_guild_unique_idx ON creators (COALESCE(guild_id, -1), discord_user_id, platform, username)",
+                    # Per-creator mods: replace global (mod_id, platform) with (creator_id, mod_id, platform)
+                    "ALTER TABLE mods DROP CONSTRAINT IF EXISTS mods_mod_id_platform_key",
+                    "ALTER TABLE mods ADD CONSTRAINT mods_creator_mod_platform_key UNIQUE (creator_id, mod_id, platform)",
                 ]
                 
                 for query in migration_queries:
@@ -227,9 +233,8 @@ class CreatorDatabase:
                     INSERT INTO creators 
                     (guild_id, discord_user_id, platform, profile_url, username, rank, total_mods, total_downloads, total_views, followers, following, joined_date)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (discord_user_id, platform, username)
+                    ON CONFLICT (COALESCE(guild_id, -1), discord_user_id, platform, username)
                     DO UPDATE SET
-                        guild_id = COALESCE(EXCLUDED.guild_id, creators.guild_id),
                         rank = EXCLUDED.rank,
                         total_mods = EXCLUDED.total_mods,
                         total_downloads = EXCLUDED.total_downloads,
@@ -264,6 +269,7 @@ class CreatorDatabase:
             return None
     
     def get_creator(self, discord_user_id: int, platform: str):
+        """Return the first matching creator row (any guild). Use get_creators_by_user for all guilds."""
         try:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
@@ -276,6 +282,19 @@ class CreatorDatabase:
         except Exception as e:
             logger.error("❌ Error getting creator: %s", e)
             return None
+
+    def get_creators_by_user(self, discord_user_id: int, platform: str):
+        """Return ALL creator rows for this user+platform (one per guild)."""
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM creators WHERE discord_user_id = %s AND platform = %s",
+                    (discord_user_id, platform),
+                )
+                return cur.fetchall()
+        except Exception as e:
+            logger.error("❌ Error getting creators by user: %s", e)
+            return []
 
     def has_creator_in_guild(self, guild_id: int, discord_user_id: int, platform: str) -> bool:
         """Check if a creator is tracked for a specific guild."""
@@ -359,7 +378,7 @@ class CreatorDatabase:
                     """
                     INSERT INTO mods (creator_id, mod_id, mod_name, mod_url, platform, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (mod_id, platform) DO NOTHING
+                    ON CONFLICT (creator_id, mod_id, platform) DO NOTHING
                     """,
                     (creator_id, mod_id, mod_name, mod_url, platform, updated_at),
                 )
@@ -370,30 +389,30 @@ class CreatorDatabase:
             self.conn.rollback()
             return False
     
-    def get_mod(self, mod_id: str, platform: str):
+    def get_mod(self, creator_id: int, mod_id: str, platform: str):
         try:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT * FROM mods WHERE mod_id = %s AND platform = %s
+                    SELECT * FROM mods WHERE creator_id = %s AND mod_id = %s AND platform = %s
                     """,
-                    (mod_id, platform),
+                    (creator_id, mod_id, platform),
                 )
                 return cur.fetchone()
         except Exception as e:
             logger.error("❌ Error getting mod: %s", e)
             return None
-    
-    def update_mod(self, mod_id: str, updated_at: str, platform: str):
+
+    def update_mod(self, creator_id: int, mod_id: str, updated_at: str, platform: str):
         try:
             with self.conn.cursor() as cur:
                 cur.execute(
                     """
-                    UPDATE mods 
+                    UPDATE mods
                     SET updated_at = %s, is_update = TRUE, notified_at = CURRENT_TIMESTAMP
-                    WHERE mod_id = %s AND platform = %s
+                    WHERE creator_id = %s AND mod_id = %s AND platform = %s
                     """,
-                    (updated_at, mod_id, platform),
+                    (updated_at, creator_id, mod_id, platform),
                 )
                 self.conn.commit()
         except Exception as e:

@@ -487,7 +487,7 @@ class CreatorBot(commands.Bot):
                 views = mod.get('views', 0)
                 downloads = mod.get('downloads', 0)
                 
-                existing = db.get_mod(mod_id, 'runeforge')
+                existing = db.get_mod(creator_id, mod_id, 'runeforge')
                 
                 if not existing:
                     await self.send_notification(
@@ -504,14 +504,13 @@ class CreatorBot(commands.Bot):
                     )
                     db.add_mod(creator_id, mod_id, mod_name, mod_url, updated_at, 'runeforge')
 
-                    # Seed mod in all other databases that track this creator
-                    # so their monitoring loops won't re-notify about the same mod.
-                    for other_db in get_all_creator_dbs():
-                        if other_db is db:
-                            continue
-                        other_creator = other_db.get_creator(discord_user_id, 'runeforge')
-                        if other_creator:
-                            other_db.add_mod(other_creator['id'], mod_id, mod_name, mod_url, updated_at, 'runeforge')
+                    # Seed mod in every other guild row (same DB or other DBs) tracking
+                    # this creator, so their monitoring loops won't re-notify.
+                    for seed_db in get_all_creator_dbs():
+                        for other_creator in seed_db.get_creators_by_user(discord_user_id, 'runeforge'):
+                            if other_creator['id'] == creator_id:
+                                continue
+                            seed_db.add_mod(other_creator['id'], mod_id, mod_name, mod_url, updated_at, 'runeforge')
 
                     # Send webhook notification for new mod
                     await self.send_webhook_notification(
@@ -539,7 +538,7 @@ class CreatorBot(commands.Bot):
                         views,
                         downloads
                     )
-                    db.update_mod(mod_id, updated_at, 'runeforge')
+                    db.update_mod(creator_id, mod_id, updated_at, 'runeforge')
                     
                     # Send webhook notification for updated mod
                     await self.send_webhook_notification(
@@ -582,7 +581,7 @@ class CreatorBot(commands.Bot):
                 views = skin.get('views', 0)
                 downloads = skin.get('downloads', 0)
                 
-                existing = db.get_mod(skin_id, 'divineskins')
+                existing = db.get_mod(creator_id, skin_id, 'divineskins')
                 
                 if not existing:
                     await self.send_notification(
@@ -599,13 +598,12 @@ class CreatorBot(commands.Bot):
                     )
                     db.add_mod(creator_id, skin_id, skin_name, skin_url, updated_at, 'divineskins')
 
-                    # Seed skin in all other databases that track this creator
-                    for other_db in get_all_creator_dbs():
-                        if other_db is db:
-                            continue
-                        other_creator = other_db.get_creator(discord_user_id, 'divineskins')
-                        if other_creator:
-                            other_db.add_mod(other_creator['id'], skin_id, skin_name, skin_url, updated_at, 'divineskins')
+                    # Seed skin in every other guild row tracking this creator
+                    for seed_db in get_all_creator_dbs():
+                        for other_creator in seed_db.get_creators_by_user(discord_user_id, 'divineskins'):
+                            if other_creator['id'] == creator_id:
+                                continue
+                            seed_db.add_mod(other_creator['id'], skin_id, skin_name, skin_url, updated_at, 'divineskins')
 
                     # Send webhook notification for new skin
                     await self.send_webhook_notification(
@@ -633,7 +631,7 @@ class CreatorBot(commands.Bot):
                         views,
                         downloads
                     )
-                    db.update_mod(skin_id, updated_at, 'divineskins')
+                    db.update_mod(creator_id, skin_id, updated_at, 'divineskins')
                     
                     # Send webhook notification for updated skin
                     await self.send_webhook_notification(
