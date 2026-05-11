@@ -503,7 +503,16 @@ class CreatorBot(commands.Bot):
                         downloads
                     )
                     db.add_mod(creator_id, mod_id, mod_name, mod_url, updated_at, 'runeforge')
-                    
+
+                    # Seed mod in all other databases that track this creator
+                    # so their monitoring loops won't re-notify about the same mod.
+                    for other_db in get_all_creator_dbs():
+                        if other_db is db:
+                            continue
+                        other_creator = other_db.get_creator(discord_user_id, 'runeforge')
+                        if other_creator:
+                            other_db.add_mod(other_creator['id'], mod_id, mod_name, mod_url, updated_at, 'runeforge')
+
                     # Send webhook notification for new mod
                     await self.send_webhook_notification(
                         db,
@@ -589,7 +598,15 @@ class CreatorBot(commands.Bot):
                         downloads
                     )
                     db.add_mod(creator_id, skin_id, skin_name, skin_url, updated_at, 'divineskins')
-                    
+
+                    # Seed skin in all other databases that track this creator
+                    for other_db in get_all_creator_dbs():
+                        if other_db is db:
+                            continue
+                        other_creator = other_db.get_creator(discord_user_id, 'divineskins')
+                        if other_creator:
+                            other_db.add_mod(other_creator['id'], skin_id, skin_name, skin_url, updated_at, 'divineskins')
+
                     # Send webhook notification for new skin
                     await self.send_webhook_notification(
                         db,
@@ -850,15 +867,10 @@ class CreatorBot(commands.Bot):
             if not channels and guild_id is None and NOTIFICATION_CHANNEL_ID:
                 _add_channel_if_exists(NOTIFICATION_CHANNEL_ID)
 
-            # Cross-guild mirror: when a new RuneForge mod is posted on the main guild,
-            # send the same embed to all other guilds using each guild's configured channel.
-            should_mirror_new_main_mod = (
-                guild_id == GUILD_ID
-                and platform == 'runeforge'
-                and is_new_mod
-                and not is_update
-            )
-            if should_mirror_new_main_mod:
+            # Cross-guild mirror: for any new mod, broadcast to ALL guilds (across all
+            # databases) that track this creator, so every server gets the notification
+            # regardless of which DB detected the update first.
+            if is_new_mod and not is_update:
                 mirrored_guilds = 0
                 for other_db in get_all_creator_dbs():
                     for cfg in other_db.get_all_guild_configs():
@@ -870,10 +882,12 @@ class CreatorBot(commands.Bot):
                         mirrored_guilds += 1
                         target_channel_id = cfg.get('new_mod_channel_id') or cfg.get('notification_channel_id') or NOTIFICATION_CHANNEL_ID
                         _add_channel_if_exists(target_channel_id)
-                logger.info(
-                    "📡 Mirroring main-guild new mod notification to %s guild(s) tracking this creator",
-                    mirrored_guilds,
-                )
+                if mirrored_guilds:
+                    logger.info(
+                        "📡 Mirrored new mod notification to %s additional guild(s) tracking %s",
+                        mirrored_guilds,
+                        username,
+                    )
 
             if not channels:
                 logger.error(
