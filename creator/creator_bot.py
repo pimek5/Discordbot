@@ -242,10 +242,14 @@ class CreatorBot(commands.Bot):
 
                 configs = db.get_all_guild_configs()
                 target_channels = []
+                seen_channel_ids = set()
                 for config in configs:
                     channel_id = config.get('random_mod_channel_id') or HOURLY_MOD_CHANNEL_ID
+                    if channel_id in seen_channel_ids:
+                        continue
                     channel = self.get_channel(channel_id)
                     if channel:
+                        seen_channel_ids.add(channel_id)
                         target_channels.append(channel)
 
                 if not target_channels:
