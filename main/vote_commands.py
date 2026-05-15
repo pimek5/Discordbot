@@ -18,7 +18,7 @@ logger = logging.getLogger('vote_commands')
 # Configuration
 VOTING_CHANNEL_ID = 1473497433336975573
 ADMIN_ROLE_ID = 1153030265782927501
-BOOSTER_ROLE_IDS = [1168616737692991499, 1173564965152637018]  # Server Boosters, Elite
+BOOSTER_ROLE_IDS = [1168616737692991499]  # Server Boosters
 
 class VoteCommands(commands.Cog):
     def __init__(self, bot):
