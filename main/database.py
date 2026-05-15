@@ -1763,7 +1763,46 @@ class Database:
                 return [row['champion_name'] for row in cur.fetchall()]
         finally:
             self.return_connection(conn)
-    
+
+    def fix_non_booster_points(self, session_id: int, non_booster_user_ids: list) -> int:
+        """Set points=1 for all votes by users who are not Server Boosters in a session.
+        Returns number of rows updated."""
+        if not non_booster_user_ids:
+            return 0
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE voting_votes
+                    SET points = 1
+                    WHERE session_id = %s
+                      AND user_id = ANY(%s)
+                      AND points = 2
+                """, (session_id, non_booster_user_ids))
+                updated = cur.rowcount
+                conn.commit()
+                return updated
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error fixing booster points: {e}")
+            return 0
+        finally:
+            self.return_connection(conn)
+
+    def get_votes_with_double_points(self, session_id: int) -> list:
+        """Return distinct user_ids that have points=2 in a session."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT DISTINCT user_id
+                    FROM voting_votes
+                    WHERE session_id = %s AND points = 2
+                """, (session_id,))
+                return [row[0] for row in cur.fetchall()]
+        finally:
+            self.return_connection(conn)
+
     # ==================== WORKER OPERATIONS ====================
     
     def get_all_users_with_accounts(self) -> List[Dict]:

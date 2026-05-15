@@ -652,5 +652,69 @@ class VoteCommands(commands.Cog):
         
         logger.info(f"Champion {normalized} included back by {interaction.user.name}")
 
+    @app_commands.command(name="votefixpoints", description="[ADMIN] Fix x2 points for users without Server Booster role")
+    async def vote_fix_points(self, interaction: discord.Interaction):
+        """Correct voting_votes rows: set points=1 for non-boosters (admin only)."""
+        if not self.has_admin_role(interaction):
+            await interaction.response.send_message("❌ No permission.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        db = get_db()
+        session = db.get_active_voting_session(interaction.guild_id)
+        if not session:
+            await interaction.followup.send("❌ No active voting session.", ephemeral=True)
+            return
+
+        session_id = session['id']
+
+        # Get all user_ids with points=2 in this session
+        double_users = db.get_votes_with_double_points(session_id)
+        if not double_users:
+            await interaction.followup.send("✅ No votes with x2 points found.", ephemeral=True)
+            return
+
+        # Check each user against current Server Booster role
+        guild = interaction.guild
+        non_boosters = []
+        for uid in double_users:
+            member = guild.get_member(uid)
+            if member is None:
+                # User left server — they can't be a booster
+                non_boosters.append(uid)
+                continue
+            if not any(role.id in BOOSTER_ROLE_IDS for role in member.roles):
+                non_boosters.append(uid)
+
+        if not non_boosters:
+            await interaction.followup.send(
+                f"✅ All {len(double_users)} user(s) with x2 points are valid Server Boosters. Nothing to fix.",
+                ephemeral=True,
+            )
+            return
+
+        updated = db.fix_non_booster_points(session_id, non_boosters)
+
+        # Refresh the voting embed
+        try:
+            results = db.get_voting_results(session_id)
+            session = db.get_active_voting_session(interaction.guild_id)
+            excluded = session.get('excluded_champions') or []
+            embed = self.create_voting_embed(results, session_id, excluded)
+            if session['message_id']:
+                channel = self.bot.get_channel(session['channel_id'])
+                if channel:
+                    message = await channel.fetch_message(session['message_id'])
+                    await message.edit(embed=embed)
+        except Exception as e:
+            logger.error(f"Failed to refresh embed after fix: {e}")
+
+        await interaction.followup.send(
+            f"✅ Fixed **{updated}** vote row(s) for **{len(non_boosters)}** non-booster user(s). Points set to 1.",
+            ephemeral=True,
+        )
+        logger.info(f"votefixpoints: fixed {updated} rows for {len(non_boosters)} users in session {session_id}")
+
 async def setup(bot):
     await bot.add_cog(VoteCommands(bot))
