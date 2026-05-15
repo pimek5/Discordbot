@@ -87,6 +87,92 @@ class CreatorBot(commands.Bot):
             self.update_status.start()
         await self.ensure_creator_guide_message()
 
+    # ── Forum thread mirror ──────────────────────────────────────────────────
+    FORUM_MIRROR_GUILD_ID   = 1231167221330350111
+    FORUM_MIRROR_CHANNEL_ID = 1504857433040879656
+
+    async def on_thread_create(self, thread: discord.Thread):
+        """Mirror every new forum post in guild 1231167221330350111 to the announce channel."""
+        try:
+            if thread.guild.id != self.FORUM_MIRROR_GUILD_ID:
+                return
+            if not isinstance(thread.parent, discord.ForumChannel):
+                return
+
+            channel = self.get_channel(self.FORUM_MIRROR_CHANNEL_ID)
+            if not channel:
+                logger.warning("⚠️ Forum mirror channel %s not found", self.FORUM_MIRROR_CHANNEL_ID)
+                return
+
+            author = thread.owner
+            author_name  = author.display_name if author else "Unknown"
+            author_avatar = author.display_avatar.url if author else None
+
+            # Grab the starter message for description / image
+            starter_message = thread.starter_message
+            if starter_message is None:
+                try:
+                    starter_message = await thread.fetch_message(thread.id)
+                except Exception:
+                    starter_message = None
+
+            description = ""
+            image_url   = None
+            if starter_message:
+                description = (starter_message.content or "")[:300]
+                if starter_message.attachments:
+                    att = starter_message.attachments[0]
+                    if att.content_type and att.content_type.startswith("image/"):
+                        image_url = att.url
+
+            # Tags
+            applied_tags = [tag.name for tag in (thread.applied_tags or [])]
+
+            embed = discord.Embed(
+                title=f"📌 {thread.name}",
+                description=description or None,
+                color=0x5865F2,
+                url=f"https://discord.com/channels/{thread.guild.id}/{thread.id}",
+                timestamp=datetime.now(),
+            )
+
+            if image_url:
+                embed.set_image(url=image_url)
+
+            embed.set_author(
+                name=f"By {author_name}",
+                icon_url=author_avatar,
+            )
+
+            embed.add_field(
+                name="📂 Forum",
+                value=f"<#{thread.parent_id}>",
+                inline=True,
+            )
+
+            if applied_tags:
+                embed.add_field(
+                    name="🏷️ Tags",
+                    value=" • ".join(f"`{t}`" for t in applied_tags[:5]),
+                    inline=True,
+                )
+
+            embed.set_footer(text=f"New post in #{thread.parent.name}")
+
+            view = discord.ui.View()
+            view.add_item(discord.ui.Button(
+                label="Go to post",
+                url=f"https://discord.com/channels/{thread.guild.id}/{thread.id}",
+                style=discord.ButtonStyle.link,
+            ))
+
+            await channel.send(embed=embed, view=view)
+            logger.info("📌 Mirrored forum post '%s' by %s → #%s", thread.name, author_name, channel.name)
+        except Exception as e:
+            logger.error("❌ on_thread_create mirror error: %s", e)
+
+    # ────────────────────────────────────────────────────────────────────────
+
     @tasks.loop(minutes=5)
     async def update_status(self):
         """Rotate bot status every 5 minutes"""
