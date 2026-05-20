@@ -782,15 +782,7 @@ def create_bot():
         if _should_ignore_thread_update(message.channel):
             return
 
-        # Fantome-specific tracking (kept for backward compat)
-        if any(_is_fantome_attachment(att) for att in message.attachments):
-            try:
-                await _post_thread_fantome_update(message.channel, message, force_posted=False)
-            except Exception as e:
-                logger.error("Failed to post thread fantome update: %s", e)
-            return
-
-        # General file update announcement — all non-ignored threads
+        # General file update announcement — all non-ignored threads (including .fantome)
         if not message.attachments:
             return
 
