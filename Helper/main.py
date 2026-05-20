@@ -624,6 +624,60 @@ def create_bot():
     def _should_ignore_thread_update(thread: discord.Thread) -> bool:
         return thread.parent_id in THREAD_UPDATE_IGNORED_PARENT_IDS
 
+    async def _post_forum_announcement(thread: discord.Thread, source_message: Optional[discord.Message], is_new: bool):
+        """Post a New Post or Updated/Fixed Post embed to the forum log channel."""
+        if _should_ignore_thread_update(thread):
+            return
+        if source_message and source_message.id in bot.thread_update_processed_messages:
+            return
+
+        log_channel = bot.get_channel(THREAD_UPDATE_LOG_CHANNEL_ID)
+        if log_channel is None:
+            try:
+                log_channel = await bot.fetch_channel(THREAD_UPDATE_LOG_CHANNEL_ID)
+            except Exception as e:
+                logger.warning("Could not fetch forum log channel: %s", e)
+                return
+
+        author = thread.owner
+        author_name = author.display_name if author else "Unknown"
+        author_avatar = author.display_avatar.url if author else None
+
+        preview_image = await _find_thread_preview_image(thread, source_message=source_message)
+
+        applied_tags = [tag.name for tag in (thread.applied_tags or [])]
+
+        if is_new:
+            title = f"📌 New Post — {thread.name}"
+            color = discord.Color.green()
+            status = "New Post"
+        else:
+            title = f"🔄 Updated — {thread.name}"
+            color = discord.Color.orange()
+            status = "Updated/Fixed Post"
+
+        thread_link = source_message.jump_url if source_message else thread.jump_url
+        embed = discord.Embed(
+            title=title,
+            description=f"[Open thread]({thread_link})",
+            color=color,
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.set_author(name=f"By {author_name}", icon_url=author_avatar)
+        embed.add_field(name="Thread", value=thread.mention, inline=True)
+        embed.add_field(name="Status", value=status, inline=True)
+        embed.add_field(name="Channel", value=f"<#{thread.parent_id}>" if thread.parent_id else "Unknown", inline=True)
+        if applied_tags:
+            embed.add_field(name="🏷️ Tags", value=" • ".join(f"`{t}`" for t in applied_tags[:5]), inline=False)
+        if preview_image:
+            embed.set_image(url=preview_image)
+
+        view = ThreadUpdateLinksView()
+        await log_channel.send(content=f"<@&{THREAD_UPDATE_NOTIFY_ROLE_ID}>", embed=embed, view=view)
+        if source_message:
+            bot.thread_update_processed_messages.add(source_message.id)
+        logger.info("Forum announcement posted: thread=%s is_new=%s", thread.id, is_new)
+
     async def _post_thread_fantome_update(thread: discord.Thread, source_message: discord.Message, force_posted: bool = False):
         if not isinstance(thread, discord.Thread):
             return
@@ -707,6 +761,10 @@ def create_bot():
 
             if starter_message and any(_is_fantome_attachment(att) for att in starter_message.attachments):
                 await _post_thread_fantome_update(thread, starter_message, force_posted=True)
+
+            # General forum announcement for all non-ignored forum channels
+            if isinstance(thread.parent, discord.ForumChannel) and not _should_ignore_thread_update(thread):
+                await _post_forum_announcement(thread, starter_message, is_new=True)
         except Exception as e:
             logger.error("Failed to process thread create flow: %s", e)
 
@@ -720,13 +778,25 @@ def create_bot():
             return
         if _should_ignore_thread_update(message.channel):
             return
-        if not any(_is_fantome_attachment(att) for att in message.attachments):
+
+        # Fantome-specific tracking (kept for backward compat)
+        if any(_is_fantome_attachment(att) for att in message.attachments):
+            try:
+                await _post_thread_fantome_update(message.channel, message, force_posted=False)
+            except Exception as e:
+                logger.error("Failed to post thread fantome update: %s", e)
+            return
+
+        # General forum file update announcement
+        if not isinstance(message.channel.parent, discord.ForumChannel):
+            return
+        if not message.attachments:
             return
 
         try:
-            await _post_thread_fantome_update(message.channel, message, force_posted=False)
+            await _post_forum_announcement(message.channel, message, is_new=False)
         except Exception as e:
-            logger.error("Failed to post thread fantome update: %s", e)
+            logger.error("Failed to post forum file update announcement: %s", e)
 
     @bot.event
     async def on_presence_update(before: discord.Member, after: discord.Member):
