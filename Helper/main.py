@@ -21,6 +21,7 @@ THREAD_UPDATE_IGNORED_PARENT_IDS = {
 }
 THREAD_UPDATE_LOG_CHANNEL_ID = 1372734313594093638
 THREAD_UPDATE_NOTIFY_ROLE_ID = 1173564965152637018
+MAIN_GUILD_ID = 1153027935553454191  # Main server — forum announcements only fire here
 ORDER_BUTTON_URL = "https://ptb.discord.com/channels/1153027935553454191/1245400205063618570"
 REPORT_ISSUES_BUTTON_URL = "https://ptb.discord.com/channels/1153027935553454191/1264484659765448804"
 AUTO_TRIAGE_KEYWORDS = {
@@ -626,6 +627,8 @@ def create_bot():
 
     async def _post_forum_announcement(thread: discord.Thread, source_message: Optional[discord.Message], is_new: bool):
         """Post a New Post or Updated/Fixed Post embed to the forum log channel."""
+        if thread.guild is None or thread.guild.id != MAIN_GUILD_ID:
+            return
         if _should_ignore_thread_update(thread):
             return
         if source_message and source_message.id in bot.thread_update_processed_messages:
