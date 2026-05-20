@@ -762,8 +762,8 @@ def create_bot():
             if starter_message and any(_is_fantome_attachment(att) for att in starter_message.attachments):
                 await _post_thread_fantome_update(thread, starter_message, force_posted=True)
 
-            # General forum announcement for all non-ignored forum channels
-            if isinstance(thread.parent, discord.ForumChannel) and not _should_ignore_thread_update(thread):
+            # General announcement for all non-ignored threads
+            if not _should_ignore_thread_update(thread):
                 await _post_forum_announcement(thread, starter_message, is_new=True)
         except Exception as e:
             logger.error("Failed to process thread create flow: %s", e)
@@ -787,9 +787,7 @@ def create_bot():
                 logger.error("Failed to post thread fantome update: %s", e)
             return
 
-        # General forum file update announcement
-        if not isinstance(message.channel.parent, discord.ForumChannel):
-            return
+        # General file update announcement — all non-ignored threads
         if not message.attachments:
             return
 
