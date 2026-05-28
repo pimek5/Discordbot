@@ -623,8 +623,8 @@ class ProfileCommands(commands.Cog):
     
     @app_commands.command(name="link", description="Link your Riot account to Discord")
     @app_commands.describe(
-        riot_id="Your Riot ID (Name#TAG)",
-        region="Your region (will auto-detect if wrong)"
+        riot_id="Your Riot ID (Name#TAG, e.g. Faker#KR1)",
+        region="Your region"
     )
     @app_commands.choices(region=[
         app_commands.Choice(name="EUW - Europe West", value="euw"),
@@ -640,457 +640,217 @@ class ProfileCommands(commands.Cog):
         app_commands.Choice(name="RU - Russia", value="ru"),
     ])
     async def link(self, interaction: discord.Interaction, riot_id: str, region: str):
-        """Link Riot account with verification"""
+        """Link Riot account — starts icon verification flow."""
         await interaction.response.defer(ephemeral=True)
-        
+
         db = get_db()
-        
-        # Parse Riot ID
+
+        # ── Validate Riot ID format ──────────────────────────────────────────
         if '#' not in riot_id:
             await interaction.followup.send(
-                "❌ Invalid Riot ID format! Use: `Name#TAG` (e.g., `Faker#KR1`)",
-                ephemeral=True
+                "❌ Invalid format! Use `Name#TAG` (e.g. `Faker#KR1`).",
+                ephemeral=True,
             )
             return
-        
+
         game_name, tag_line = riot_id.split('#', 1)
-        
-        # Get account from Riot API
-        logger.info(f"🔍 Looking up: {game_name}#{tag_line} in {region}")
-        
-        # Try specified region first
+        game_name = game_name.strip()
+        tag_line = tag_line.strip()
+
+        if not game_name or not tag_line:
+            await interaction.followup.send(
+                "❌ Both name and tag must be non-empty.",
+                ephemeral=True,
+            )
+            return
+
+        # ── Look up Riot account ─────────────────────────────────────────────
         routing = RIOT_REGIONS[region]
         account_data = await self.riot_api.get_account_by_riot_id(game_name, tag_line, routing)
-        
-        # If not found, try auto-detection
         if not account_data:
-            logger.info(f"⚠️ Not found in {region}, trying auto-detection...")
             account_data = await self.riot_api.get_account_by_riot_id(game_name, tag_line)
-        
+
         if not account_data:
             await interaction.followup.send(
-                f"❌ Could not find account **{riot_id}**!\nMake sure the name and tag are correct.",
-                ephemeral=True
+                f"❌ Account **{game_name}#{tag_line}** not found. Check the name and tag.",
+                ephemeral=True,
             )
             return
-        
+
         puuid = account_data['puuid']
-        
-        # Find which region they play on
-        detected_region = await self.riot_api.find_summoner_region(puuid)
-        
-        if not detected_region:
-            # Fallback to specified region
-            detected_region = region
-            logger.warning(f"⚠️ Could not auto-detect region, using {region}")
-        elif detected_region != region:
-            logger.info(f"✅ Auto-detected correct region: {detected_region} (you selected {region})")
-        
-        # Get summoner data
+
+        # ── Detect the correct platform region ──────────────────────────────
+        detected_region = await self.riot_api.find_summoner_region(puuid) or region
+
+        # ── Fetch summoner data to get current profile icon ──────────────────
         summoner_data = await self.riot_api.get_summoner_by_puuid(puuid, detected_region)
-        
-        if not summoner_data:
-            await interaction.followup.send(
-                f"❌ Could not fetch summoner data from {detected_region}. Try again later.",
-                ephemeral=True
-            )
-            return
-        
-        summoner_level = summoner_data.get('summonerLevel', 1)
-        current_icon = summoner_data.get('profileIconId', 0)
-        
-        # Generate random icon ID for verification - must differ from current icon
-        import random
-        verification_icon = current_icon
-        while verification_icon == current_icon:
-            verification_icon = random.randint(0, 28)
-        
-        # Save to database (no longer need summoner_id)
-        user_id = db.get_or_create_user(interaction.user.id)
-        db.create_verification_code(
-            user_id, str(verification_icon), game_name, tag_line, 
-            detected_region, puuid, expires_minutes=10
-        )
-        
-        # Create embed
-        embed = discord.Embed(
-            title="🔗 Link Your Account",
-            description=f"To link **{game_name}#{tag_line}** ({detected_region.upper()}), change your profile icon:",
-            color=0x1F8EFA
-        )
-        
-        embed.add_field(
-            name="📌 Step 1: Open League Client",
-            value="Make sure you're logged into the correct account",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🖼️ Step 2: Change Profile Icon (Settings only)",
-            value=f"1. Click your avatar in League Client\n"
-                  f"2. Go to **Settings → Profile Icon**\n"
-                  f"3. Select icon: **#{verification_icon}**\n"
-                  f"4. Return to profile (no need to play games!)\n\n"
-                  f"[Preview Icon](https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{verification_icon}.jpg)",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="✅ Step 3: Verify (Auto-checks every 5 seconds)",
-            value=f"After changing icon, use `/verifyacc` and **wait**\n"
-                f"• Bot checks rapidly at first, then less often\n"
-                  f"• Verification completes automatically when detected\n"
-                  f"• **Timeout: 10 minutes** from now",
-            inline=False
-        )
-        
-        embed.set_footer(text=f"Your current icon: #{current_icon} | Verification expires in 10 minutes | No gameplay required!")
-        embed.set_thumbnail(url=f"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{verification_icon}.jpg")
-        
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="autolink", description="Quick-link your Riot account (no icon verification needed)")
-    @app_commands.describe(
-        riot_id="Your Riot ID from Discord Connections (Name#TAG)"
-    )
-    async def autolink(self, interaction: discord.Interaction, riot_id: str):
-        """Quick-link a Riot account without icon verification.
-        Use the Riot ID shown in your Discord Connections."""
-        await interaction.response.defer(ephemeral=True)
-        
-        db = get_db()
-        
-        # Parse Riot ID
-        if '#' not in riot_id:
-            await interaction.followup.send(
-                "❌ Invalid Riot ID format! Use: `Name#TAG`\n"
-                "💡 Copy your Riot ID from **Discord Settings → Connections → Riot Games**",
-                ephemeral=True
-            )
-            return
-        
-        game_name, tag_line = riot_id.split('#', 1)
-        
-        # Get account from Riot API
-        logger.info(f"🔍 Auto-linking: {game_name}#{tag_line}")
-        account_data = await self.riot_api.get_account_by_riot_id(game_name, tag_line)
-        
-        if not account_data:
-            await interaction.followup.send(
-                f"❌ Could not find account **{riot_id}** on Riot API!\n"
-                "Make sure you copied the exact Riot ID from your Discord connections.",
-                ephemeral=True
-            )
-            return
-        
-        puuid = account_data['puuid']
-        routing = account_data.get('_routing')
-
-        # Build candidate regions:
-        # 1) Regions matching account routing (if present)
-        # 2) Full platform scan fallback (for cases where routing is misleading)
-        routing_candidates = []
-        if routing:
-            routing_candidates = [r for r, rout in RIOT_REGIONS.items() if rout == routing]
-            logger.info(f"🎯 Routing candidate regions: {routing_candidates}")
-
-        all_platform_regions = list(dict.fromkeys(PLATFORM_ROUTES.keys()))
-
-        region_candidates = []
-        for reg in routing_candidates + all_platform_regions:
-            if reg not in region_candidates:
-                region_candidates.append(reg)
-
-        detected_region = None
-        summoner_data = None
-        for candidate_region in region_candidates:
-            data = await self.riot_api.get_summoner_by_puuid(puuid, candidate_region)
-            if data:
-                detected_region = candidate_region
-                summoner_data = data
-                logger.info(f"✅ Auto-detected playable region: {detected_region}")
-                break
-
-        if not detected_region or not summoner_data:
-            await interaction.followup.send(
-                f"❌ Could not detect playable region for **{riot_id}**. Try `/link` with manual region selection.",
-                ephemeral=True
-            )
-            return
-
         if not summoner_data:
             await interaction.followup.send(
                 f"❌ Could not fetch summoner data from {detected_region.upper()}. Try again later.",
-                ephemeral=True
+                ephemeral=True,
             )
             return
-        
-        # Check if already linked
+
+        current_icon = int(summoner_data.get('profileIconId', 0) or 0)
+
+        # ── Choose a verification icon different from the current one ────────
+        verification_icon = current_icon
+        while verification_icon == current_icon:
+            verification_icon = random.randint(0, 28)
+
+        # ── Save pending verification (10-minute window) ─────────────────────
         user_id = db.get_or_create_user(interaction.user.id)
-        existing_accounts = db.get_user_accounts(user_id)
-        if existing_accounts:
-            for acc in existing_accounts:
-                if acc.get('puuid') == puuid:
-                    await interaction.followup.send(
-                        f"ℹ️ Account **{game_name}#{tag_line}** is already linked!",
-                        ephemeral=True
-                    )
-                    return
-        
-        # Direct link - no icon verification needed (trusted from Discord connections)
-        db.add_league_account(
-            user_id,
-            detected_region,
-            game_name,
-            tag_line,
-            puuid,
-            summoner_id=None,
-            verified=True
+        db.create_verification_code(
+            user_id, str(verification_icon), game_name, tag_line,
+            detected_region, puuid, expires_minutes=10,
         )
-        
-        # Get initial mastery snapshot
-        mastery_data = await self.riot_api.get_champion_mastery(puuid, detected_region, 200)
-        if mastery_data:
-            for champ in mastery_data:
-                db.update_champion_mastery(
-                    user_id,
-                    champ['championId'],
-                    champ['championPoints'],
-                    champ['championLevel'],
-                    champ.get('chestGranted', False),
-                    champ.get('tokensEarned', 0),
-                    champ.get('lastPlayTime')
-                )
-            logger.info(f"✅ Saved {len(mastery_data)} champion masteries for autolink")
-        
-        # Add to guild members
-        if interaction.guild:
-            db.add_guild_member(interaction.guild.id, user_id)
-        
-        # Update rank/region roles
-        try:
-            from bot import update_user_rank_roles
-            if interaction.guild:
-                await update_user_rank_roles(interaction.user.id, interaction.guild.id)
-            else:
-                await update_user_rank_roles(interaction.user.id)
-        except Exception as e:
-            logger.warning(f"Failed to update rank roles: {e}")
-        
-        logger.info(f"✅ Auto-linked: {game_name}#{tag_line} ({detected_region}) for {interaction.user}")
-        
-        # Success embed
+
+        icon_url = (
+            "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data"
+            f"/global/default/v1/profile-icons/{verification_icon}.jpg"
+        )
+
         embed = discord.Embed(
-            title="✅ Account Linked Successfully!",
-            description=f"**{game_name}#{tag_line}** has been linked to your Discord account.",
-            color=0x00FF00
+            title="🔗 Link Account — Icon Verification",
+            description=(
+                f"To link **{game_name}#{tag_line}** ({detected_region.upper()}) "
+                "follow the steps below:"
+            ),
+            color=0x1F8EFA,
         )
-        
-        summoner_level = summoner_data.get('summonerLevel', 0)
         embed.add_field(
-            name="🎮 Account Info",
-            value=f"📍 Region: **{detected_region.upper()}**\n"
-                  f"📊 Level: **{summoner_level}**",
-            inline=False
+            name="Step 1 — Open League Client",
+            value="Make sure you are logged into the **correct account**.",
+            inline=False,
         )
-        
         embed.add_field(
-            name="🚀 What's Next?",
-            value="• `/profile` - View your complete stats\n"
-                  "• `/matches` - See recent match history\n"
-                  "• `/lp` - Track your LP gains\n"
-                  "• `/autolink Name#TAG` - Link more accounts",
-            inline=False
+            name=f"Step 2 — Change profile icon to **#{verification_icon}**",
+            value=(
+                "1. Click your avatar in the LoL client\n"
+                "2. Go to **Settings → Profile Icon**\n"
+                f"3. Select icon number **{verification_icon}**\n"
+                "4. Confirm — no game needed!\n\n"
+                f"[Preview icon]({icon_url})"
+            ),
+            inline=False,
         )
-        
-        embed.set_footer(text="🔗 Linked via Discord Connections (no verification needed)")
-        
+        embed.add_field(
+            name="Step 3 — Run `/verifyacc`",
+            value=(
+                "After changing the icon, type `/verifyacc`.\n"
+                "The bot will automatically detect the change and link your account.\n"
+                "**Verification expires in 10 minutes.**"
+            ),
+            inline=False,
+        )
+        embed.set_thumbnail(url=icon_url)
+        embed.set_footer(text=f"Current icon: #{current_icon} | Required icon: #{verification_icon}")
+
         await interaction.followup.send(embed=embed, ephemeral=True)
-    
-    @app_commands.command(name="verifyacc", description="Complete account verification")
+
+    # ── /verifyacc ────────────────────────────────────────────────────────────
+
+    @app_commands.command(name="verifyacc", description="Complete account verification after changing your icon")
     async def verifyacc(self, interaction: discord.Interaction):
-        """Verify League client code"""
+        """Poll Riot API until the expected icon is detected, then link the account."""
         await interaction.response.defer(ephemeral=True)
-        
+
         db = get_db()
-        
-        # Get user from database
+
+        # ── Check user exists ────────────────────────────────────────────────
         user = db.get_user_by_discord_id(interaction.user.id)
         if not user:
             await interaction.followup.send(
-                "❌ No account found! Use `/link` first.",
-                ephemeral=True
+                "❌ No pending verification found. Use `/link` first.",
+                ephemeral=True,
             )
             return
-        
-        # Get verification code
+
+        # ── Check pending verification ───────────────────────────────────────
         verification = db.get_verification_code(user['id'])
-        
         if not verification:
             await interaction.followup.send(
-                "❌ No pending verification found or code expired!\nUse `/link` to start over.",
-                ephemeral=True
+                "❌ No pending verification found or it has expired. Use `/link` to start over.",
+                ephemeral=True,
             )
             return
-        
-        # Check if expired
-        if datetime.now() > verification['expires_at']:
-            db.delete_verification_code(user['id'])
-            await interaction.followup.send(
-                "❌ Verification expired! Use `/link` to get a new icon.",
-                ephemeral=True
-            )
-            return
-        
-        # Poll Riot API with adaptive intervals until icon matches or verification expires.
-        # This is faster for normal cases and lighter on Riot API over longer waits.
-        logger.info(f"🔐 Verifying icon for {verification['riot_id_game_name']}#{verification['riot_id_tagline']}")
 
-        expected_icon = int(verification['code'])  # Icon ID stored as code
-        summoner_data = None
-        current_icon = 0
-        resolved_region = verification['region']
+        expected_icon = int(verification['code'])
+        puuid = verification['puuid']
+        region = verification['region']
+        game_name = verification['riot_id_game_name']
+        tag_line = verification['riot_id_tagline']
+        expires_at = verification['expires_at']
+
+        logger.info("🔐 Verifying icon for %s#%s — expected #%s", game_name, tag_line, expected_icon)
+
+        # ── Poll until icon matches or window expires ─────────────────────────
         verified = False
-        had_profile_fetch = False
+        current_icon = None
         started_at = datetime.now()
-        attempts = 0
-        fallback_every_n_attempts = 4
+        attempt = 0
 
-        # Resolve region once up front if needed.
-        first_try = await self.riot_api.get_summoner_by_puuid(
-            verification['puuid'],
-            resolved_region,
-            retries=1,
-        )
-        if first_try:
-            summoner_data = first_try
-        else:
-            fallback = await self.riot_api.get_summoner_by_puuid_any_region(
-                verification['puuid'],
-                preferred_region=verification['region'],
-                retries_per_region=1,
-            )
-            if fallback:
-                resolved_region = fallback['region']
-                summoner_data = fallback['data']
-                logger.info(
-                    "🔁 Verification fallback resolved region %s for %s#%s",
-                    resolved_region,
-                    verification['riot_id_game_name'],
-                    verification['riot_id_tagline'],
+        while datetime.now() < expires_at:
+            attempt += 1
+
+            summoner = await self.riot_api.get_summoner_by_puuid(puuid, region, retries=1)
+
+            # Every 4th attempt try a full region fallback to handle region mismatches
+            if not summoner and attempt % 4 == 0:
+                fallback = await self.riot_api.get_summoner_by_puuid_any_region(
+                    puuid, preferred_region=region, retries_per_region=1,
                 )
+                if fallback:
+                    region = fallback['region']
+                    summoner = fallback['data']
 
-        while datetime.now() <= verification['expires_at']:
-            attempts += 1
-
-            if summoner_data is None:
-                summoner_data = await self.riot_api.get_summoner_by_puuid(
-                    verification['puuid'],
-                    resolved_region,
-                    retries=1,
-                )
-
-            if summoner_data:
-                had_profile_fetch = True
-                current_icon = int(summoner_data.get('profileIconId', 0) or 0)
+            if summoner:
+                current_icon = int(summoner.get('profileIconId', 0) or 0)
                 if current_icon == expected_icon:
                     verified = True
                     break
 
-            # Periodically re-resolve region (not every loop) to avoid heavy API fan-out.
-            if attempts % fallback_every_n_attempts == 0:
-                fallback = await self.riot_api.get_summoner_by_puuid_any_region(
-                    verification['puuid'],
-                    preferred_region=resolved_region,
-                    retries_per_region=1,
-                )
-                if fallback:
-                    resolved_region = fallback['region']
-                    summoner_data = fallback['data']
-                else:
-                    summoner_data = None
-            else:
-                summoner_data = None
-
             elapsed = (datetime.now() - started_at).total_seconds()
-            if elapsed < 30:
-                poll_interval_seconds = 2
-            elif elapsed < 120:
-                poll_interval_seconds = 5
-            else:
-                poll_interval_seconds = 10
+            await asyncio.sleep(5 if elapsed < 120 else 10)
 
-            await asyncio.sleep(poll_interval_seconds)
-
-        if not verified and not had_profile_fetch:
-            await interaction.followup.send(
-                "❌ Could not fetch your profile during verification window. Use `/link` and try again.",
-                ephemeral=True
-            )
-            return
-
+        # ── Timeout ───────────────────────────────────────────────────────────
         if not verified:
-            time_left = max(0, (verification['expires_at'] - datetime.now()).total_seconds() / 60)
-            
             embed = discord.Embed(
-                title="⏳ Verification Timeout",
-                description=f"Icon change didn't sync within 10 minutes. This can happen if:\n"
-                           f"• Riot servers were slow to update\n"
-                           f"• Icon change didn't save properly\n\n"
-                           f"The good news: Just try again!",
-                color=0xFF9900
+                title="⏳ Verification Timed Out",
+                description=(
+                    "The icon change was not detected within 10 minutes.\n\n"
+                    "Common reasons:\n"
+                    "• The icon was not saved in the client\n"
+                    "• Riot servers are slow to sync\n"
+                    "• You were logged into the wrong account"
+                ),
+                color=0xFF9900,
             )
-            
+            if current_icon is not None:
+                embed.add_field(name="Current icon", value=f"**#{current_icon}**", inline=True)
+            embed.add_field(name="Required icon", value=f"**#{expected_icon}**", inline=True)
             embed.add_field(
-                name="Current Icon",
-                value=f"**#{current_icon}**",
-                inline=True
+                name="What to do",
+                value="Use `/link` again to generate a new verification code.",
+                inline=False,
             )
-            
-            embed.add_field(
-                name="Required Icon",
-                value=f"**#{expected_icon}**",
-                inline=True
+            embed.set_thumbnail(
+                url=(
+                    "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data"
+                    f"/global/default/v1/profile-icons/{expected_icon}.jpg"
+                )
             )
-            
-            embed.add_field(
-                name="🔄 Try again:",
-                value=f"1. In League Client → Settings → Profile Icon\n"
-                        f"2. Make sure icon is set to **#{expected_icon}**\n"
-                      f"3. Run `/verifyacc` again (new 10-minute window)\n"
-                        f"4. Wait for auto-verification",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="💡 Tip",
-                value="If it keeps timing out, try `/link` to get a different icon number and retry.",
-                inline=False
-            )
-            
-            embed.set_thumbnail(url=f"https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/{expected_icon}.jpg")
-            
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
-        
-        # Success! Add account to database (summoner_id no longer available)
+
+        # ── Success — link the account ────────────────────────────────────────
         db.add_league_account(
-            user['id'],
-            resolved_region,
-            verification['riot_id_game_name'],
-            verification['riot_id_tagline'],
-            verification['puuid'],
-            summoner_id=None,  # No longer provided by API
-            verified=True
+            user['id'], region, game_name, tag_line, puuid,
+            summoner_id=None, verified=True,
         )
-        
-        # Get initial mastery snapshot
-        mastery_data = await self.riot_api.get_champion_mastery(
-            verification['puuid'], 
-            resolved_region, 
-            200
-        )
-        
+
+        # Fetch initial mastery snapshot
+        mastery_data = await self.riot_api.get_champion_mastery(puuid, region, 200)
         if mastery_data:
             for champ in mastery_data:
                 db.update_champion_mastery(
@@ -1100,75 +860,58 @@ class ProfileCommands(commands.Cog):
                     champ['championLevel'],
                     champ.get('chestGranted', False),
                     champ.get('tokensEarned', 0),
-                    champ.get('lastPlayTime')
+                    champ.get('lastPlayTime'),
                 )
-            logger.info(f"✅ Saved {len(mastery_data)} champion masteries")
-        
-        # Add to guild members
+
         if interaction.guild:
             db.add_guild_member(interaction.guild.id, user['id'])
-        
-        # Clean up verification code
+
         db.delete_verification_code(user['id'])
-        
-        # Update rank/region roles (server-specific if invoked in a guild)
+
         try:
             from bot import update_user_rank_roles
-            if interaction.guild:
-                # Update roles in the current server
-                await update_user_rank_roles(interaction.user.id, interaction.guild.id)
-            else:
-                # Update roles in the primary guild using default
-                await update_user_rank_roles(interaction.user.id)
+            guild_id = interaction.guild.id if interaction.guild else None
+            await update_user_rank_roles(interaction.user.id, guild_id)
         except Exception as e:
-            logger.warning(f"Failed to update rank roles: {e}")
-        
+            logger.warning("Failed to update rank roles: %s", e)
+
+        logger.info("✅ Verified: %s#%s (%s) for %s", game_name, tag_line, region, interaction.user)
+
         embed = discord.Embed(
-            title="✅ Account Verified Successfully!",
-            description=f"Welcome to **Kassalytics**! Your account has been linked and verified.",
-            color=0x00FF00
+            title="✅ Account Verified!",
+            description=f"**{game_name}#{tag_line}** has been linked to your Discord account.",
+            color=0x00FF00,
         )
-        
         embed.add_field(
-            name="🎮 Linked Account",
-            value=f"**{verification['riot_id_game_name']}#{verification['riot_id_tagline']}**\n"
-                  f"📍 Region: **{resolved_region.upper()}**\n"
-                  f"🎉 You can now change your icon back!",
-            inline=False
+            name="Account",
+            value=f"📍 Region: **{region.upper()}**\n🎉 You can now change your icon back!",
+            inline=False,
         )
-        
         embed.add_field(
-            name="🏆 Roles Updated",
-            value="Your Discord rank and region roles have been automatically updated to match your League profile.",
-            inline=False
+            name="Roles updated",
+            value="Your Discord rank and region roles have been automatically updated.",
+            inline=False,
         )
-        
         if mastery_data:
-            mastery_count = len(mastery_data)
-            total_points = sum(c['championPoints'] for c in mastery_data)
-            if total_points >= 1000000:
-                points_str = f"{total_points/1000000:.1f}M"
-            else:
-                points_str = f"{total_points/1000:.0f}K"
-            
+            total_pts = sum(c['championPoints'] for c in mastery_data)
+            pts_str = f"{total_pts / 1_000_000:.1f}M" if total_pts >= 1_000_000 else f"{total_pts / 1000:.0f}K"
             embed.add_field(
-                name="📊 Mastery Snapshot",
-                value=f"**{mastery_count}** champions tracked\n**{points_str}** total mastery points",
-                inline=False
+                name="Mastery snapshot",
+                value=f"**{len(mastery_data)}** champions · **{pts_str}** total points",
+                inline=False,
             )
-        
         embed.add_field(
-            name="🚀 Get Started",
-            value="• `/profile` - View your complete stats\n"
-                  "• `/stats [champion]` - Champion performance\n"
-                  "• `/points` - Your top masteries\n"
-                  "• `/matches` - Recent match history\n"
-                  "• `/lp` - Today's LP gains/losses",
-            inline=False
+            name="Get started",
+            value=(
+                "• `/profile` — Your stats\n"
+                "• `/stats [champion]` — Champion performance\n"
+                "• `/lp` — Today's LP changes\n"
+                "• `/matches` — Match history"
+            ),
+            inline=False,
         )
-        
-        embed.set_footer(text="💡 Tip: Use /accounts to manage multiple linked accounts")
-        
+        embed.set_footer(text="Use /accounts to manage multiple linked accounts")
+
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="setmain", description="Set your main Riot account")
