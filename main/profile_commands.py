@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any
 import logging
 import asyncio
 import io
+import aiohttp
 
 import matplotlib
 matplotlib.use('Agg')  # Render charts headlessly
@@ -913,6 +914,176 @@ class ProfileCommands(commands.Cog):
         embed.set_footer(text="Use /accounts to manage multiple linked accounts")
 
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # ── /autolink ─────────────────────────────────────────────────────────────
+
+    async def _fetch_riot_connections(self, guild_id: int, user_id: int) -> List[Dict]:
+        """Fetch public Riot Games connections from Discord's profile API."""
+        url = f"https://discord.com/api/v10/users/{user_id}/profile"
+        params = {"guild_id": str(guild_id), "with_mutual_guilds": "false"}
+        headers = {"Authorization": f"Bot {self.bot.http.token}"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, params=params) as resp:
+                    if resp.status != 200:
+                        logger.warning("Discord profile API returned %s for user %s", resp.status, user_id)
+                        return []
+                    data = await resp.json()
+                    return [
+                        c for c in data.get("connected_accounts", [])
+                        if c.get("type") == "riotgames" and c.get("visibility") == 1
+                    ]
+        except Exception as e:
+            logger.error("Failed to fetch Discord connections: %s", e)
+            return []
+
+    @app_commands.command(name="autolink", description="Link your Riot account using your Discord Connections")
+    async def autolink(self, interaction: discord.Interaction):
+        """Read Riot Games connection from Discord server Connections and link it."""
+        await interaction.response.defer(ephemeral=True)
+
+        if not interaction.guild:
+            await interaction.followup.send(
+                "❌ This command can only be used inside a server.",
+                ephemeral=True,
+            )
+            return
+
+        connections = await self._fetch_riot_connections(interaction.guild.id, interaction.user.id)
+
+        if not connections:
+            embed = discord.Embed(
+                title="❌ No Riot Connection Found",
+                description=(
+                    "Your Discord account has no visible **Riot Games** connection in this server.\n\n"
+                    "**How to connect:**\n"
+                    "1. Open **Discord Settings → Connections**\n"
+                    "2. Click **Riot Games** and log in\n"
+                    "3. Make sure visibility is set to **Everyone**\n"
+                    "4. Run `/autolink` again\n\n"
+                    "If you'd rather verify manually, use `/link`."
+                ),
+                color=0xFF4444,
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        if len(connections) == 1:
+            # Single connection — link directly without menu
+            riot_id = connections[0]["name"]
+            if "#" not in riot_id:
+                await interaction.followup.send(
+                    f"❌ Could not parse Riot ID `{riot_id}` from your Discord connection.",
+                    ephemeral=True,
+                )
+                return
+
+            game_name, tag_line = riot_id.split("#", 1)
+
+            account_data = await self.riot_api.get_account_by_riot_id(game_name, tag_line)
+            if not account_data:
+                await interaction.followup.send(
+                    f"❌ Could not find `{riot_id}` on Riot API. Check that the Riot ID is correct.",
+                    ephemeral=True,
+                )
+                return
+
+            puuid = account_data["puuid"]
+            routing = account_data.get("_routing")
+
+            region_candidates = []
+            if routing:
+                for r, rout in RIOT_REGIONS.items():
+                    if rout == routing and r not in region_candidates:
+                        region_candidates.append(r)
+            for r in PLATFORM_ROUTES:
+                if r not in region_candidates:
+                    region_candidates.append(r)
+
+            detected_region = None
+            summoner_data = None
+            for candidate in region_candidates:
+                data = await self.riot_api.get_summoner_by_puuid(puuid, candidate)
+                if data:
+                    detected_region = candidate
+                    summoner_data = data
+                    break
+
+            if not detected_region:
+                await interaction.followup.send(
+                    f"❌ Could not detect a playable region for `{riot_id}`. Try `/link` instead.",
+                    ephemeral=True,
+                )
+                return
+
+            db = get_db()
+            user_id = db.get_or_create_user(interaction.user.id)
+
+            # Check for duplicate
+            for acc in (db.get_user_accounts(user_id) or []):
+                if acc.get("puuid") == puuid:
+                    await interaction.followup.send(
+                        f"ℹ️ **{riot_id}** is already linked to your account.",
+                        ephemeral=True,
+                    )
+                    return
+
+            db.add_league_account(user_id, detected_region, game_name, tag_line, puuid, summoner_id=None, verified=True)
+
+            mastery_data = await self.riot_api.get_champion_mastery(puuid, detected_region, 200)
+            if mastery_data:
+                for champ in mastery_data:
+                    db.update_champion_mastery(
+                        user_id, champ["championId"], champ["championPoints"],
+                        champ["championLevel"], champ.get("chestGranted", False),
+                        champ.get("tokensEarned", 0), champ.get("lastPlayTime"),
+                    )
+
+            if interaction.guild:
+                db.add_guild_member(interaction.guild.id, user_id)
+
+            try:
+                from bot import update_user_rank_roles
+                guild_id = interaction.guild.id if interaction.guild else None
+                await update_user_rank_roles(interaction.user.id, guild_id)
+            except Exception as e:
+                logger.warning("Failed to update rank roles: %s", e)
+
+            logger.info("✅ Autolinked via Discord connections: %s (%s) for %s", riot_id, detected_region, interaction.user)
+
+            embed = discord.Embed(
+                title="✅ Account Linked!",
+                description=f"**{game_name}#{tag_line}** has been linked from your Discord connection.",
+                color=0x00FF00,
+            )
+            embed.add_field(
+                name="Account",
+                value=f"📍 Region: **{detected_region.upper()}**",
+                inline=False,
+            )
+            if mastery_data:
+                total = sum(c["championPoints"] for c in mastery_data)
+                pts = f"{total / 1_000_000:.1f}M" if total >= 1_000_000 else f"{total / 1000:.0f}K"
+                embed.add_field(name="Mastery snapshot", value=f"**{len(mastery_data)}** champions · **{pts}** total points", inline=False)
+            embed.add_field(
+                name="Get started",
+                value="• `/profile` — Your stats\n• `/lp` — LP changes\n• `/matches` — Match history",
+                inline=False,
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        else:
+            # Multiple connections — show select menu
+            embed = discord.Embed(
+                title="🔗 Select Account to Link",
+                description=(
+                    f"Found **{len(connections)}** Riot account(s) connected to your Discord.\n"
+                    "Select which one(s) to link:"
+                ),
+                color=0x1F8EFA,
+            )
+            view = AutolinkView(connections, self.riot_api)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     @app_commands.command(name="setmain", description="Set your main Riot account")
     @app_commands.describe(riot_id="Riot ID of the account to set as main (Name#TAG)")
