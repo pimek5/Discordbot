@@ -917,25 +917,35 @@ class ProfileCommands(commands.Cog):
 
     # ── /autolink ─────────────────────────────────────────────────────────────
 
-    async def _fetch_riot_connections(self, guild_id: int, user_id: int) -> List[Dict]:
-        """Fetch public Riot Games connections from Discord's profile API."""
+    async def _fetch_riot_connections(self, guild_id: int, user_id: int):
+        """Fetch Riot Games connections from Discord's profile API.
+        Returns (connections, error_msg) where error_msg is set on failure."""
         url = f"https://discord.com/api/v10/users/{user_id}/profile"
         params = {"guild_id": str(guild_id), "with_mutual_guilds": "false"}
         headers = {"Authorization": f"Bot {self.bot.http.token}"}
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers, params=params) as resp:
+                    if resp.status == 401:
+                        logger.error("Discord profile API: 401 Unauthorized — bot token rejected for user %s", user_id)
+                        return [], "API_401"
+                    if resp.status == 403:
+                        logger.error("Discord profile API: 403 Forbidden — missing permissions for user %s", user_id)
+                        return [], "API_403"
                     if resp.status != 200:
                         logger.warning("Discord profile API returned %s for user %s", resp.status, user_id)
-                        return []
+                        return [], f"API_{resp.status}"
                     data = await resp.json()
-                    return [
-                        c for c in data.get("connected_accounts", [])
-                        if c.get("type") == "riotgames" and c.get("visibility") == 1
-                    ]
+                    all_connections = data.get("connected_accounts", [])
+                    types_found = [c.get("type") for c in all_connections]
+                    logger.info("Discord connections for %s: %s", user_id, types_found)
+                    # Accept all Riot connections regardless of visibility setting
+                    riot = [c for c in all_connections if c.get("type") == "riotgames"]
+                    logger.info("Riot connections found: %s", [c.get("name") for c in riot])
+                    return riot, None
         except Exception as e:
             logger.error("Failed to fetch Discord connections: %s", e)
-            return []
+            return [], f"EXCEPTION: {e}"
 
     @app_commands.command(name="autolink", description="Link your Riot account using your Discord Connections")
     async def autolink(self, interaction: discord.Interaction):
@@ -949,19 +959,31 @@ class ProfileCommands(commands.Cog):
             )
             return
 
-        connections = await self._fetch_riot_connections(interaction.guild.id, interaction.user.id)
+        connections, err = await self._fetch_riot_connections(interaction.guild.id, interaction.user.id)
+
+        if err:
+            if err in ("API_401", "API_403"):
+                await interaction.followup.send(
+                    "❌ Bot couldn't read your Discord Connections (API error). Use `/link` instead.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f"❌ Unexpected error while reading Discord Connections (`{err}`). Use `/link` instead.",
+                    ephemeral=True,
+                )
+            return
 
         if not connections:
             embed = discord.Embed(
                 title="❌ No Riot Connection Found",
                 description=(
-                    "Your Discord account has no visible **Riot Games** connection in this server.\n\n"
+                    "Your Discord account has no **Riot Games** connection linked in this server.\n\n"
                     "**How to connect:**\n"
                     "1. Open **Discord Settings → Connections**\n"
                     "2. Click **Riot Games** and log in\n"
-                    "3. Make sure visibility is set to **Everyone**\n"
-                    "4. Run `/autolink` again\n\n"
-                    "If you'd rather verify manually, use `/link`."
+                    "3. Come back and run `/autolink` again\n\n"
+                    "Alternatively, use `/link` to verify manually via profile icon."
                 ),
                 color=0xFF4444,
             )
