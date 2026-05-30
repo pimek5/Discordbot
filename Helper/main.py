@@ -251,7 +251,7 @@ class HelperView(discord.ui.View):
 # ==================== KO-FI WEBHOOK SERVER ====================
 
 KOFI_PAGE_URL = "https://ko-fi.com/pimek"
-KOFI_AVATAR_URL = "https://storage.ko-fi.com/cdn/useruploads/a6697c9b-6cef-422b-8e1a-64b512be9b16_c8288cbe-1098-4bcc-8352-3450fdf766d9.png"
+KOFI_AVATAR_URL = "https://i.imgur.com/2gmnuzl.png"
 
 
 class KofiSupportView(discord.ui.View):
