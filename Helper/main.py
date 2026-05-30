@@ -250,7 +250,8 @@ class HelperView(discord.ui.View):
 
 # ==================== KO-FI WEBHOOK SERVER ====================
 
-KOFI_PAGE_URL = "https://ko-fi.com/p1mek"
+KOFI_PAGE_URL = "https://ko-fi.com/pimek"
+KOFI_AVATAR_URL = "https://storage.ko-fi.com/cdn/useruploads/a6697c9b-6cef-422b-8e1a-64b512be9b16_c8288cbe-1098-4bcc-8352-3450fdf766d9.png"
 
 
 class KofiSupportView(discord.ui.View):
@@ -294,9 +295,9 @@ def build_kofi_embed(data: dict) -> tuple[discord.Embed, KofiSupportView]:
     embed = discord.Embed(title=title, description=description, color=color, url=kofi_url)
     embed.set_author(
         name=from_name,
-        url=f"https://ko-fi.com/{from_name.replace(' ', '_')}",
         icon_url="https://storage.ko-fi.com/cdn/kofi_stroke_cup.png",
     )
+    embed.set_thumbnail(url=KOFI_AVATAR_URL)
 
     if message:
         embed.add_field(name="💬 Message", value=message[:1024], inline=False)
