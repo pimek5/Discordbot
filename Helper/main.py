@@ -1,9 +1,11 @@
 import os
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 import aiohttp
+from aiohttp import web
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -36,6 +38,10 @@ GUILD_ID = os.getenv("HELPER_GUILD_ID")
 TOKEN = os.getenv("HELPER_TOKEN")
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
+
+# Ko-fi webhook
+KOFI_VERIFICATION_TOKEN = os.getenv("KOFI_TOKEN", "95fcdc17-9c1e-4f7a-b66b-7c70723b3fcc")
+KOFI_CHANNEL_ID = 1510163510355562566
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("helper")
@@ -239,6 +245,111 @@ class HelperView(discord.ui.View):
             "mods in use, and a screenshot if possible."
         )
         await interaction.response.send_message(msg, ephemeral=True)
+
+
+
+# ==================== KO-FI WEBHOOK SERVER ====================
+
+def build_kofi_embed(data: dict) -> discord.Embed:
+    """Build a Discord embed for a Ko-fi event."""
+    event_type = data.get("type", "Donation")
+    from_name = data.get("from_name") or "Anonymous"
+    amount = data.get("amount", "?")
+    currency = data.get("currency", "USD")
+    message = data.get("message") or ""
+    kofi_url = data.get("url", "https://ko-fi.com")
+    tier_name = data.get("tier_name")
+    is_first_sub = data.get("is_first_subscription_payment", False)
+
+    if event_type == "Subscription":
+        if is_first_sub:
+            title = f"🎉 New Supporter — {from_name}"
+            color = 0x29ABE0  # Ko-fi blue
+        else:
+            title = f"🔄 Renewed Support — {from_name}"
+            color = 0x1E90FF
+        description = f"**{from_name}** subscribed" + (f" · **{tier_name}**" if tier_name else "") + f"\n**{amount} {currency}/month**"
+    elif event_type == "Shop Order":
+        title = f"🛍️ Shop Order — {from_name}"
+        color = 0xF6A623
+        description = f"**{from_name}** placed an order · **{amount} {currency}**"
+    else:
+        title = f"☕ New Donation — {from_name}"
+        color = 0xFF5E5B
+        description = f"**{from_name}** donated **{amount} {currency}**"
+
+    embed = discord.Embed(title=title, description=description, color=color, url=kofi_url)
+
+    if message:
+        embed.add_field(name="💬 Message", value=message[:1024], inline=False)
+
+    embed.set_footer(
+        text="Ko-fi Support",
+        icon_url="https://storage.ko-fi.com/cdn/kofi_stroke_cup.png",
+    )
+    embed.timestamp = datetime.now(timezone.utc)
+    return embed
+
+
+async def handle_kofi_webhook(request: web.Request) -> web.Response:
+    """Handle incoming Ko-fi webhook POST requests."""
+    bot = request.app["bot"]
+    try:
+        post = await request.post()
+        raw = post.get("data")
+        if not raw:
+            # Also accept raw JSON body
+            try:
+                raw_bytes = await request.read()
+                raw = raw_bytes.decode()
+            except Exception:
+                logger.warning("Ko-fi webhook: no data field and no body")
+                return web.Response(status=400, text="Missing data")
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("Ko-fi webhook: invalid JSON")
+            return web.Response(status=400, text="Invalid JSON")
+
+        # Verify token
+        if data.get("verification_token") != KOFI_VERIFICATION_TOKEN:
+            logger.warning("Ko-fi webhook: invalid verification token")
+            return web.Response(status=403, text="Forbidden")
+
+        logger.info("Ko-fi event received: type=%s from=%s amount=%s %s",
+                    data.get("type"), data.get("from_name"), data.get("amount"), data.get("currency"))
+
+        channel = bot.get_channel(KOFI_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(KOFI_CHANNEL_ID)
+            except Exception as e:
+                logger.error("Ko-fi: cannot find channel %s: %s", KOFI_CHANNEL_ID, e)
+                return web.Response(status=200, text="OK")  # Return 200 so Ko-fi doesn't retry
+
+        embed = build_kofi_embed(data)
+        await channel.send(embed=embed)
+        logger.info("Ko-fi embed sent to channel %s", KOFI_CHANNEL_ID)
+
+    except Exception as e:
+        logger.error("Ko-fi webhook handler error: %s", e)
+
+    return web.Response(status=200, text="OK")
+
+
+async def start_kofi_server(bot: commands.Bot):
+    """Start the aiohttp web server to receive Ko-fi webhooks."""
+    app = web.Application()
+    app["bot"] = bot
+    app.router.add_post("/kofi", handle_kofi_webhook)
+
+    port = int(os.getenv("PORT", 8080))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info("Ko-fi webhook server listening on port %s at POST /kofi", port)
 
 
 def create_bot():
@@ -570,6 +681,9 @@ def create_bot():
             guild = bot.get_guild(int(GUILD_ID))
             if guild:
                 await sync_streaming_roles(guild)
+        if not getattr(bot, "_kofi_server_started", False):
+            bot._kofi_server_started = True
+            await start_kofi_server(bot)
 
     @tasks.loop(minutes=5)
     async def change_status():
