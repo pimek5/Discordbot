@@ -270,7 +270,6 @@ def build_kofi_embed(data: dict) -> tuple[discord.Embed, KofiSupportView]:
     from_name = data.get("from_name") or "Anonymous"
     amount = data.get("amount", "?")
     currency = data.get("currency", "USD")
-    message = data.get("message") or ""
     kofi_url = data.get("url", "https://ko-fi.com")
     tier_name = data.get("tier_name")
     is_first_sub = data.get("is_first_subscription_payment", False)
@@ -298,9 +297,6 @@ def build_kofi_embed(data: dict) -> tuple[discord.Embed, KofiSupportView]:
         icon_url="https://storage.ko-fi.com/cdn/kofi_stroke_cup.png",
     )
     embed.set_thumbnail(url=KOFI_AVATAR_URL)
-
-    if message:
-        embed.add_field(name="💬 Message", value=message[:1024], inline=False)
 
     embed.set_footer(
         text="Ko-fi · Thank you for your support!",
