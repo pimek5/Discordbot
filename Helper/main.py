@@ -250,7 +250,20 @@ class HelperView(discord.ui.View):
 
 # ==================== KO-FI WEBHOOK SERVER ====================
 
-def build_kofi_embed(data: dict) -> discord.Embed:
+KOFI_PAGE_URL = "https://ko-fi.com/p1mek"
+
+
+class KofiSupportView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(
+            label="☕ Support on Ko-fi",
+            url=KOFI_PAGE_URL,
+            style=discord.ButtonStyle.link,
+        ))
+
+
+def build_kofi_embed(data: dict) -> tuple[discord.Embed, KofiSupportView]:
     """Build a Discord embed for a Ko-fi event."""
     event_type = data.get("type", "Donation")
     from_name = data.get("from_name") or "Anonymous"
@@ -263,32 +276,37 @@ def build_kofi_embed(data: dict) -> discord.Embed:
 
     if event_type == "Subscription":
         if is_first_sub:
-            title = f"🎉 New Supporter — {from_name}"
+            title = "🎉 New Supporter!"
             color = 0x29ABE0  # Ko-fi blue
         else:
-            title = f"🔄 Renewed Support — {from_name}"
+            title = "🔄 Support Renewed!"
             color = 0x1E90FF
         description = f"**{from_name}** subscribed" + (f" · **{tier_name}**" if tier_name else "") + f"\n**{amount} {currency}/month**"
     elif event_type == "Shop Order":
-        title = f"🛍️ Shop Order — {from_name}"
+        title = "🛍️ New Shop Order!"
         color = 0xF6A623
         description = f"**{from_name}** placed an order · **{amount} {currency}**"
     else:
-        title = f"☕ New Donation — {from_name}"
+        title = "☕ New Donation!"
         color = 0xFF5E5B
         description = f"**{from_name}** donated **{amount} {currency}**"
 
     embed = discord.Embed(title=title, description=description, color=color, url=kofi_url)
+    embed.set_author(
+        name=from_name,
+        url=f"https://ko-fi.com/{from_name.replace(' ', '_')}",
+        icon_url="https://storage.ko-fi.com/cdn/kofi_stroke_cup.png",
+    )
 
     if message:
         embed.add_field(name="💬 Message", value=message[:1024], inline=False)
 
     embed.set_footer(
-        text="Ko-fi Support",
+        text="Ko-fi · Thank you for your support!",
         icon_url="https://storage.ko-fi.com/cdn/kofi_stroke_cup.png",
     )
     embed.timestamp = datetime.now(timezone.utc)
-    return embed
+    return embed, KofiSupportView()
 
 
 async def handle_kofi_webhook(request: web.Request) -> web.Response:
@@ -328,8 +346,8 @@ async def handle_kofi_webhook(request: web.Request) -> web.Response:
                 logger.error("Ko-fi: cannot find channel %s: %s", KOFI_CHANNEL_ID, e)
                 return web.Response(status=200, text="OK")  # Return 200 so Ko-fi doesn't retry
 
-        embed = build_kofi_embed(data)
-        await channel.send(embed=embed)
+        embed, view = build_kofi_embed(data)
+        await channel.send(embed=embed, view=view)
         logger.info("Ko-fi embed sent to channel %s", KOFI_CHANNEL_ID)
 
     except Exception as e:
