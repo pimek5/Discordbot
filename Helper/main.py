@@ -296,7 +296,7 @@ def build_kofi_embed(data: dict) -> tuple[discord.Embed, KofiSupportView]:
         name=from_name,
         icon_url="https://storage.ko-fi.com/cdn/kofi_stroke_cup.png",
     )
-    embed.set_thumbnail(url=KOFI_AVATAR_URL)
+    embed.set_image(url=KOFI_AVATAR_URL)
 
     embed.set_footer(
         text="Ko-fi · Thank you for your support!",
