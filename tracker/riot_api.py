@@ -512,10 +512,10 @@ class RiotAPI:
                     continue
                 except Exception as e:
                     logger.error(f"❌ Error getting ranked stats: {e}")
-                    return []
+                    return None
 
         logger.warning(f"⚠️ Failed to get ranked stats after trying platforms: {', '.join(platforms_to_try)}")
-        return []
+        return None
     
     async def get_ranked_stats(self, summoner_id: str, region: str, 
                               retries: int = 5) -> Optional[List[Dict]]:
