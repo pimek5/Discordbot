@@ -963,6 +963,20 @@ def create_bot():
 
         await update_streaming_embed(after.guild)
 
+    # TODO: remove test command
+    @bot.tree.command(name="testkofi", description="Test Ko-fi embed")
+    async def testkofi(interaction: discord.Interaction):
+        fake_data = {
+            "type": "Donation",
+            "from_name": "TestUser",
+            "amount": "5.00",
+            "currency": "USD",
+            "message": "Test donation message!",
+            "url": "https://ko-fi.com/pimek",
+        }
+        embed, view = build_kofi_embed(fake_data)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
     @bot.event
     async def setup_hook():
         bot.add_view(HelperView())
