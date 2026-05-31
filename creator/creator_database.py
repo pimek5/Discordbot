@@ -241,7 +241,6 @@ class CreatorDatabase:
                         total_views = EXCLUDED.total_views,
                         followers = EXCLUDED.followers,
                         following = EXCLUDED.following,
-                        avatar_url = COALESCE(EXCLUDED.avatar_url, creators.avatar_url),
                         last_updated = CURRENT_TIMESTAMP
                     RETURNING id
                     """,
@@ -258,7 +257,6 @@ class CreatorDatabase:
                         profile_data.get('followers', 0),
                         profile_data.get('following', 0),
                         profile_data.get('joined_date'),
-                        profile_data.get('avatar_url'),
                     ),
                 )
                 creator_id = cur.fetchone()[0]
