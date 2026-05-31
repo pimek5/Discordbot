@@ -499,8 +499,9 @@ class DivineSkinsScraper:
             parts = mod_url.rstrip('/').split('/')
             slug = parts[-1] if len(parts) >= 2 else ''
             artist = parts[-2] if len(parts) >= 4 else ''
-            if slug:
-                url = f"{self.CATALOG_API}/api/catalog/skins/search/{slug}?size=10"
+            if artist and slug:
+                # Search by artist username, then filter by slug
+                url = f"{self.CATALOG_API}/api/catalog/skins/search/{artist}?size=100"
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, headers=self._API_HEADERS) as resp:
                         if resp.status == 200:
@@ -544,8 +545,10 @@ class DivineSkinsScraper:
         try:
             parts = mod_url.rstrip('/').split('/')
             slug = parts[-1] if parts else ''
-            if slug:
-                url = f"{self.CATALOG_API}/api/catalog/skins/search/{slug}?size=10"
+            artist = parts[-2] if len(parts) >= 4 else ''
+            if artist and slug:
+                # Search by artist username, then filter by slug
+                url = f"{self.CATALOG_API}/api/catalog/skins/search/{artist}?size=100"
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, headers=self._API_HEADERS) as resp:
                         if resp.status == 200:
