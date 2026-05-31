@@ -27,8 +27,8 @@ THREAD_UPDATE_IGNORED_PARENT_IDS = {
 THREAD_UPDATE_LOG_CHANNEL_ID = 1372734313594093638
 THREAD_UPDATE_NOTIFY_ROLE_ID = 1173564965152637018
 MAIN_GUILD_ID = 1153027935553454191  # Main server — forum announcements only fire here
-ORDER_BUTTON_URL = "https://ptb.discord.com/channels/1153027935553454191/1245400205063618570"
-REPORT_ISSUES_BUTTON_URL = "https://ptb.discord.com/channels/1153027935553454191/1264484659765448804"
+ORDER_BUTTON_URL = "https://discord.com/channels/1153027935553454191/1245400205063618570"
+REPORT_ISSUES_BUTTON_URL = "https://discord.com/channels/1153027935553454191/1264484659765448804"
 AUTO_TRIAGE_KEYWORDS = {
     "bug": ["bug", "error", "crash", "exception", "failed", "traceback"],
     "install": ["install", "setup", "launcher", "open", "start", "cannot launch"],
