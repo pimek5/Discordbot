@@ -1836,11 +1836,11 @@ class Hexbet(commands.Cog):
         start_idx = (page - 1) * per_page
         page_players = all_players[start_idx:start_idx + per_page]
 
-        sort_titles = {'rank': 'Ranga 🏆', 'balance': 'Balance 💰', 'total_won': 'Wygrana 🏅'}
-        sort_title = sort_titles.get(sort_by, 'Ranga 🏆')
+        sort_titles = {'rank': 'Rank 🏆', 'balance': 'Balance 💰', 'total_won': 'Won 🏅'}
+        sort_title = sort_titles.get(sort_by, 'Rank 🏆')
 
         embed = discord.Embed(
-            title=f"🏆 HEXBET Leaderboard ({sort_title}) — Strona {page}/{total_pages}",
+            title=f"🏆 HEXBET Leaderboard ({sort_title}) — Page {page}/{total_pages}",
             color=0xF1C40F,
         )
 
@@ -1859,18 +1859,18 @@ class Hexbet(commands.Cog):
                 )
             embed.description = '\n'.join(lines)
             embed.set_footer(text=(
-                f"Gracze: {total_players} | "
-                f"Pokazano {start_idx + 1}–{min(start_idx + per_page, total_players)} | "
-                "200 tokenów = 100 LP"
+                f"Players: {total_players} | "
+                f"Showing {start_idx + 1}–{min(start_idx + per_page, total_players)} | "
+                "200 tokens = 100 LP"
             ))
             embed.add_field(
-                name="📋 Komendy",
+                name="📋 Commands",
                 value=(
-                    "`/hxbalance` - Twój profil rangi\n"
-                    "`/hxdaily` - Darmowe 100 tokenów\n"
-                    "`/hxstats` - Statystyki betowania\n"
-                    "`/hxcrash` - Zagraj Crash!\n"
-                    "`/hexbet` - Otwieraj zakłady"
+                    "`/hxbalance` - Your rank profile\n"
+                    "`/hxdaily` - Free 100 tokens\n"
+                    "`/hxstats` - Betting stats\n"
+                    "`/hxcrash` - Play Crash!\n"
+                    "`/hexbet` - Open bets"
                 ),
                 inline=False,
             )
@@ -6663,9 +6663,9 @@ class LeaderboardView(discord.ui.View):
     @discord.ui.select(
         placeholder="📊 Sort by...",
         options=[
-            discord.SelectOption(label="Ranga 🏆", value="rank", description="Sort by betting rank (LP)", emoji="🏆"),
+            discord.SelectOption(label="Rank 🏆", value="rank", description="Sort by betting rank (LP)", emoji="🏆"),
             discord.SelectOption(label="Balance 💰", value="balance", description="Sort by token balance", emoji="💰"),
-            discord.SelectOption(label="Wygrana 🏅", value="total_won", description="Sort by total tokens won", emoji="🏅"),
+            discord.SelectOption(label="Won 🏅", value="total_won", description="Sort by total tokens won", emoji="🏅"),
         ],
         custom_id="hexbet_leaderboard_sort"
     )

@@ -403,10 +403,10 @@ class CrashCog(commands.Cog):
         embed = discord.Embed(
             title="🚀 CRASH — Betting Phase",
             description=(
-                f"⏳ Zamknięcie o <t:{closes_at}:T> (<t:{closes_at}:R>)\n\n"
-                f"Kliknij **🚀 Join Round** żeby dołączyć.\n"
-                f"Możesz ustawić **auto-cashout** lub wychodzić ręcznie.\n\n"
-                f"Min: **{MIN_BET}** | Max: **{MAX_BET:,}** tokenów"
+                f"⏳ Betting closes at <t:{closes_at}:T> (<t:{closes_at}:R>)\n\n"
+                f"Press **🚀 Join Round** to place your bet.\n"
+                f"You can set an **auto-cashout** multiplier or cash out manually.\n\n"
+                f"Min: **{MIN_BET}** | Max: **{MAX_BET:,}** tokens"
             ),
             color=0x2ecc71,
         )
