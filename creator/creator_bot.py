@@ -824,7 +824,6 @@ class CreatorBot(commands.Bot):
 
             # Use detailed data if available, fallback to basic data
             final_name = mod_details.get('name', mod_name)
-            final_description = mod_details.get('description', f"Check out this {'updated' if is_update else 'new'} {'mod' if platform == 'runeforge' else 'skin'}!")
             final_views = mod_details.get('views', views)
             final_downloads = mod_details.get('downloads', downloads)
             final_likes = mod_details.get('likes', 0)
@@ -832,55 +831,63 @@ class CreatorBot(commands.Bot):
             final_tags = mod_details.get('tags', [])
             final_image = mod_details.get('image_url', None)
 
-            # Create rich embed with clear update/new distinction
-            embed = discord.Embed(
-                title=f"{status_emoji} {platform_emoji} {title_prefix} {'Mod' if platform == 'runeforge' else 'Skin'} {'Updated' if is_update else 'Released'}!",
-                description=f"**{final_name}**\n{final_description[:200]}{'...' if len(final_description) > 200 else ''}",
-                color=color,
-                url=mod_url,
-                timestamp=datetime.now()
-            )
+            view = None
 
-            # Set main image
-            if final_image:
-                embed.set_image(url=final_image)
-            
-            # Set thumbnail to creator's avatar
-            if creator_avatar:
-                embed.set_thumbnail(url=creator_avatar)
+            if platform == 'divineskins':
+                # Clean DivineSkins embed
+                embed = discord.Embed(
+                    title=f"New Skin Released: {final_name}",
+                    description=f"Made by **{username}**",
+                    color=0x9B59B6,
+                    url=mod_url,
+                )
+                if final_image:
+                    embed.set_image(url=final_image)
+                if creator_avatar:
+                    embed.set_thumbnail(url=creator_avatar)
+                embed.set_footer(text="Check out this amazing mod and support the creator!")
 
-            # Author info
-            embed.set_author(
-                name=f"By {username}"
-            )
+                class _DownloadView(discord.ui.View):
+                    def __init__(self, url):
+                        super().__init__()
+                        self.add_item(discord.ui.Button(
+                            label="Download Skin",
+                            url=url,
+                            style=discord.ButtonStyle.link,
+                            emoji="🔗",
+                        ))
 
-            # Stats fields (show views/likes only)
-            if final_views or final_likes:
-                stats_line = []
-                if final_views:
-                    stats_line.append(f"👁️ **{final_views:,}** views")
-                if final_likes:
-                    stats_line.append(f"❤️ **{final_likes:,}** likes")
-                if stats_line:
+                view = _DownloadView(mod_url)
+            else:
+                # RuneForge embed
+                final_description = mod_details.get('description', f"Check out this {'updated' if is_update else 'new'} mod!")
+                embed = discord.Embed(
+                    title=f"{status_emoji} {platform_emoji} {title_prefix} Mod {'Updated' if is_update else 'Released'}!",
+                    description=f"**{final_name}**\n{final_description[:200]}{'...' if len(final_description) > 200 else ''}",
+                    color=color,
+                    url=mod_url,
+                    timestamp=datetime.now()
+                )
+                if final_image:
+                    embed.set_image(url=final_image)
+                if creator_avatar:
+                    embed.set_thumbnail(url=creator_avatar)
+                embed.set_author(name=f"By {username}")
+                if final_views or final_likes:
+                    stats_line = []
+                    if final_views:
+                        stats_line.append(f"👁️ **{final_views:,}** views")
+                    if final_likes:
+                        stats_line.append(f"❤️ **{final_likes:,}** likes")
                     embed.add_field(name="📊 Stats", value=" • ".join(stats_line), inline=False)
-
-            # Version info
-            if final_version:
-                embed.add_field(name="🔖 Version", value=f"`{final_version}`", inline=True)
-
-            # Platform info
-            embed.add_field(name="🌐 Platform", value=platform_name, inline=True)
-
-            # Tags
-            if final_tags:
-                tags_str = " • ".join([f"`{tag}`" for tag in final_tags[:5]])
-                embed.add_field(name="🏷️ Tags", value=tags_str, inline=False)
-
-            # Footer
-            embed.set_footer(
-                text=f"Posted on {platform_name}",
-                icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png" if platform == 'runeforge' else "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png"
-            )
+                if final_version:
+                    embed.add_field(name="🔖 Version", value=f"`{final_version}`", inline=True)
+                if final_tags:
+                    embed.add_field(name="🏷️ Tags", value=" • ".join([f"`{t}`" for t in final_tags[:5]]), inline=False)
+                embed.set_footer(
+                    text=f"Posted on {platform_name}",
+                    icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png"
+                )
 
             channels = []
             added_channel_ids = set()
@@ -934,7 +941,7 @@ class CreatorBot(commands.Bot):
                 return
 
             for channel in channels:
-                await channel.send(embed=embed)
+                await channel.send(embed=embed, view=view)
             logger.info("✅ Rich notification sent: %s - %s - %s", username, action, mod_name)
         except Exception as e:
             logger.error("❌ Error sending notification: %s", e)
