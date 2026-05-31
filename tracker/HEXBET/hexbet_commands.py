@@ -773,14 +773,14 @@ class Hexbet(commands.Cog):
         chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
         chance_red = round(100 - chance_blue, 1)
 
-        # Special bet if lobby avg LP reaches Challenger cutoff
+        # Special bet if avg tier of all ranked players in lobby is >= Grandmaster
         all_players = blue_ordered + red_ordered
-        avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
-        chall_cutoff_lp = await self._get_challenger_cutoff_lp(region)
-        meets_special_requirements = chall_cutoff_lp is not None and avg_lp >= chall_cutoff_lp
+        ranked_sp = [p for p in all_players if not p.get('streamer_mode', False)]
+        avg_tier_sp = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) for p in ranked_sp) / len(ranked_sp) if ranked_sp else 0
+        GM_SCORE = TIER_SCORE['GRANDMASTER']  # 9
+        meets_special_requirements = avg_tier_sp >= GM_SCORE
         is_special_bet = (not force_non_special) and meets_special_requirements
-        if chall_cutoff_lp is not None:
-            logger.info(f"📈 Avg LP: {avg_lp:.0f} | Challenger cutoff ({region.upper()}): {chall_cutoff_lp} | Special bet: {is_special_bet}")
+        logger.info(f"📈 Avg tier score: {avg_tier_sp:.2f} | GM threshold: {GM_SCORE} | Special bet: {is_special_bet}")
 
         match_id = self.db.create_hexbet_match(
             game_id,
@@ -1234,16 +1234,13 @@ class Hexbet(commands.Cog):
                     score_red = self._team_score(red_ordered)
                     logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
 
-                    # Special bet if lobby avg LP reaches Challenger cutoff for region
+                    # Special bet if avg tier of all ranked players in lobby is >= Grandmaster
                     all_players_sp = blue_ordered + red_ordered
-                    avg_lp = sum(p.get('lp', 0) for p in all_players_sp) / len(all_players_sp) if all_players_sp else 0
-                    chall_cutoff_lp = await self._get_challenger_cutoff_lp(region)
-                    if chall_cutoff_lp is None:
-                        is_special_bet = False
-                        logger.warning(f"⚠️ Could not fetch Challenger cutoff for {region.upper()} - disabling special bet for game {game_id}")
-                    else:
-                        is_special_bet = avg_lp >= chall_cutoff_lp
-                        logger.info(f"📈 Avg LP: {avg_lp:.0f} | Challenger cutoff ({region.upper()}): {chall_cutoff_lp} | Special bet: {is_special_bet}")
+                    ranked_sp = [p for p in all_players_sp if not p.get('streamer_mode', False)]
+                    avg_tier_sp = sum(TIER_SCORE.get(p.get('tier', 'UNRANKED'), 1) for p in ranked_sp) / len(ranked_sp) if ranked_sp else 0
+                    GM_SCORE = TIER_SCORE['GRANDMASTER']  # 9
+                    is_special_bet = avg_tier_sp >= GM_SCORE
+                    logger.info(f"📈 Avg tier score: {avg_tier_sp:.2f} | GM threshold: {GM_SCORE} | Special bet: {is_special_bet}")
 
                     odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
