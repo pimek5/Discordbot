@@ -493,6 +493,27 @@ class CreatorDatabase:
             self.conn.rollback()
             return False
     
+    def set_new_mod_channel(self, guild_id: int, channel_id):
+        """Explicitly set (or clear with None) the new-releases channel for a guild."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO guild_config (guild_id, new_mod_channel_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (guild_id) DO UPDATE SET
+                        new_mod_channel_id = EXCLUDED.new_mod_channel_id,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (guild_id, channel_id),
+                )
+                self.conn.commit()
+                return True
+        except Exception as e:
+            logger.error("❌ Error setting new_mod_channel: %s", e)
+            self.conn.rollback()
+            return False
+
     def get_guild_config(self, guild_id: int):
         """Get guild configuration"""
         try:

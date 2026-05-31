@@ -1588,6 +1588,236 @@ class CreatorCommands(commands.Cog):
             )
 
 
+    # ==================== EDIT COMMAND ====================
+
+    @creator_group.command(name="edit", description="Edit your tracked creator profiles and subscription settings")
+    async def edit_creator(self, interaction: discord.Interaction):
+        """Show an interactive panel to add/remove creator profiles and toggle new-releases subscription."""
+        await interaction.response.defer(ephemeral=True)
+        try:
+            db = self._get_db(interaction)
+            guild_id = self._get_guild_id(interaction)
+            user_id = interaction.user.id
+
+            rf_creator = db.get_creator(user_id, 'runeforge')
+            ds_creator = db.get_creator(user_id, 'divineskins')
+            config = db.get_guild_config(guild_id) or {}
+            subscribed = bool(config.get('new_mod_channel_id'))
+
+            embed = _build_edit_embed(rf_creator, ds_creator, subscribed)
+
+            view = _EditView(
+                cog=self,
+                db=db,
+                guild_id=guild_id,
+                user_id=user_id,
+                rf_creator=rf_creator,
+                ds_creator=ds_creator,
+                subscribed=subscribed,
+            )
+
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            logger.error("❌ Error in /creator edit: %s", e)
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+
+def _build_edit_embed(rf_creator, ds_creator, subscribed: bool) -> discord.Embed:
+    embed = discord.Embed(
+        title="✏️ Edit Creator Profiles",
+        description="Manage your tracked platforms and new-releases subscription.",
+        color=discord.Color.blurple(),
+    )
+    rf_val = f"[{rf_creator['username']}]({rf_creator['profile_url']})" if rf_creator else "❌ Not tracked"
+    ds_val = f"[{ds_creator['username']}]({ds_creator['profile_url']})" if ds_creator else "❌ Not tracked"
+    sub_val = "✅ Subscribed — new mods/skins are posted in this server" if subscribed else "❌ Not subscribed"
+    embed.add_field(name="🔧 RuneForge", value=rf_val, inline=False)
+    embed.add_field(name="✨ Divine Skins", value=ds_val, inline=False)
+    embed.add_field(name="🔔 New Releases", value=sub_val, inline=False)
+    return embed
+
+
+class _AddRuneForgeModal(discord.ui.Modal, title="Add RuneForge Profile"):
+    url = discord.ui.TextInput(
+        label="RuneForge Profile URL",
+        placeholder="https://runeforge.dev/users/username",
+        required=True,
+    )
+
+    def __init__(self, cog, db, guild_id, user_id):
+        super().__init__()
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        url_val = self.url.value.strip()
+        if 'runeforge.dev' not in url_val or '/users/' not in url_val:
+            await interaction.followup.send(
+                "❌ Invalid URL. Format: `https://runeforge.dev/users/username`", ephemeral=True
+            )
+            return
+        username = url_val.split('/users/')[-1].strip('/')
+        profile_data = await self.cog.runeforge_scraper.get_profile_data(username)
+        if not profile_data:
+            await interaction.followup.send("❌ Couldn't fetch RuneForge profile. Check the URL!", ephemeral=True)
+            return
+        creator_id = self.db.add_creator(self.user_id, 'runeforge', url_val, profile_data, self.guild_id)
+        if not creator_id:
+            await interaction.followup.send("❌ Failed to save to database!", ephemeral=True)
+            return
+        mods = await self.cog.runeforge_scraper.get_user_mods(username)
+        for m in mods:
+            self.db.add_mod(creator_id, m.get('id', ''), m.get('name', ''), m.get('url', url_val), m.get('updated_at', ''), 'runeforge')
+        await interaction.followup.send(
+            f"✅ Now tracking **{username}** on RuneForge! Seeded {len(mods)} mods.", ephemeral=True
+        )
+
+
+class _AddDivineSkinsModal(discord.ui.Modal, title="Add Divine Skins Profile"):
+    url = discord.ui.TextInput(
+        label="Divine Skins Profile URL",
+        placeholder="https://divineskins.gg/username",
+        required=True,
+    )
+
+    def __init__(self, cog, db, guild_id, user_id):
+        super().__init__()
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        url_val = self.url.value.strip()
+        if 'divineskins.gg' not in url_val:
+            await interaction.followup.send(
+                "❌ Invalid URL. Format: `https://divineskins.gg/username`", ephemeral=True
+            )
+            return
+        parts = url_val.rstrip('/').split('/')
+        try:
+            domain_idx = next(i for i, p in enumerate(parts) if 'divineskins.gg' in p)
+            remainder = parts[domain_idx + 1:]
+            username = remainder[0] if remainder else ''
+        except StopIteration:
+            username = parts[-1]
+        if not username or any(s in username.lower() for s in ['mods', 'explore-mods', 'users', 'skins']):
+            username = url_val.rstrip('/').split('/')[-1]
+        profile_data = await self.cog.divineskins_scraper.get_profile_data(username)
+        if not profile_data:
+            await interaction.followup.send("❌ Couldn't fetch Divine Skins profile. Check the URL!", ephemeral=True)
+            return
+        creator_id = self.db.add_creator(self.user_id, 'divineskins', url_val, profile_data, self.guild_id)
+        if not creator_id:
+            await interaction.followup.send("❌ Failed to save to database!", ephemeral=True)
+            return
+        skins = await self.cog.divineskins_scraper.get_user_skins(username)
+        for s in skins:
+            self.db.add_mod(creator_id, s.get('id', ''), s.get('name', ''), s.get('url', url_val), s.get('updated_at', ''), 'divineskins')
+        await interaction.followup.send(
+            f"✅ Now tracking **{username}** on Divine Skins! Seeded {len(skins)} skins.", ephemeral=True
+        )
+
+
+class _SubscribeChannelModal(discord.ui.Modal, title="Set New Releases Channel"):
+    channel_id = discord.ui.TextInput(
+        label="Channel ID",
+        placeholder="Right-click a channel → Copy ID",
+        required=True,
+    )
+
+    def __init__(self, db, guild_id):
+        super().__init__()
+        self.db = db
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            ch_id = int(self.channel_id.value.strip())
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid channel ID — must be a number.", ephemeral=True)
+            return
+        self.db.set_guild_config(self.guild_id, new_mod_channel_id=ch_id)
+        await interaction.response.send_message(
+            f"✅ New releases will be posted to <#{ch_id}>.", ephemeral=True
+        )
+
+
+class _EditView(discord.ui.View):
+    def __init__(self, cog, db, guild_id, user_id, rf_creator, ds_creator, subscribed):
+        super().__init__(timeout=120)
+        self.cog = cog
+        self.db = db
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.subscribed = subscribed
+
+        # Dynamically show Add or Remove buttons for each platform
+        if rf_creator:
+            self.remove_runeforge_btn.label = "🗑️ Remove RuneForge"
+            self.add_runeforge_btn.disabled = True
+        else:
+            self.add_runeforge_btn.disabled = False
+            self.remove_runeforge_btn.disabled = True
+
+        if ds_creator:
+            self.remove_divineskins_btn.label = "🗑️ Remove Divine Skins"
+            self.add_divineskins_btn.disabled = True
+        else:
+            self.add_divineskins_btn.disabled = False
+            self.remove_divineskins_btn.disabled = True
+
+        if subscribed:
+            self.subscribe_btn.label = "🔕 Unsubscribe"
+            self.subscribe_btn.style = discord.ButtonStyle.danger
+        else:
+            self.subscribe_btn.label = "🔔 Subscribe"
+            self.subscribe_btn.style = discord.ButtonStyle.success
+
+    @discord.ui.button(label="➕ Add RuneForge", style=discord.ButtonStyle.primary, row=0)
+    async def add_runeforge_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = _AddRuneForgeModal(self.cog, self.db, self.guild_id, self.user_id)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="🗑️ Remove RuneForge", style=discord.ButtonStyle.danger, row=0)
+    async def remove_runeforge_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        success = self.db.remove_creator(self.user_id, 'runeforge')
+        if success:
+            await interaction.response.send_message("✅ RuneForge profile removed.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ No RuneForge profile found.", ephemeral=True)
+
+    @discord.ui.button(label="➕ Add Divine Skins", style=discord.ButtonStyle.primary, row=1)
+    async def add_divineskins_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = _AddDivineSkinsModal(self.cog, self.db, self.guild_id, self.user_id)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="🗑️ Remove Divine Skins", style=discord.ButtonStyle.danger, row=1)
+    async def remove_divineskins_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        success = self.db.remove_creator(self.user_id, 'divineskins')
+        if success:
+            await interaction.response.send_message("✅ Divine Skins profile removed.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ No Divine Skins profile found.", ephemeral=True)
+
+    @discord.ui.button(label="🔔 Subscribe", style=discord.ButtonStyle.success, row=2)
+    async def subscribe_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.subscribed:
+            # Unsubscribe: clear new_mod_channel_id
+            self.db.set_new_mod_channel(self.guild_id, None)
+            await interaction.response.send_message(
+                "🔕 Unsubscribed — new releases will no longer be posted in this server.", ephemeral=True
+            )
+        else:
+            # Subscribe: ask for channel
+            modal = _SubscribeChannelModal(self.db, self.guild_id)
+            await interaction.response.send_modal(modal)
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(CreatorCommands(bot))
     logger.info("✅ Creator commands loaded")
