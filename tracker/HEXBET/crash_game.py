@@ -10,7 +10,7 @@ Flow:
 
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 import asyncio
 import random
 import logging
@@ -244,7 +244,7 @@ COOLDOWN_SECONDS = 120   # break between rounds
 
 
 class CrashCog(commands.Cog):
-    """Crash game cog. Runs automatic rounds in the configured channel."""
+    """Crash game cog. Rounds are started manually via /crashstart."""
 
     def __init__(self, bot: commands.Bot, db):
         self.bot = bot
@@ -252,75 +252,48 @@ class CrashCog(commands.Cog):
         self.current_round: Optional[dict] = None
         self._round_task: Optional[asyncio.Task] = None
         self._last_result_msg: Optional[discord.Message] = None
-        self._auto_runner.start()
+        self._running: bool = False
 
     def cog_unload(self):
-        self._auto_runner.cancel()
         if self._round_task:
             self._round_task.cancel()
 
     # ------------------------------------------------------------------
-    # Auto runner — spawns the persistent round loop once
+    # /crashstart command
     # ------------------------------------------------------------------
 
-    @tasks.loop(seconds=10)
-    async def _auto_runner(self):
-        """Ensure the round loop is running."""
-        if self._round_task is not None and not self._round_task.done():
+    @app_commands.command(name='crashstart', description='Start a Crash betting round')
+    async def crashstart(self, interaction: discord.Interaction):
+        """Manually start one Crash round."""
+        if self._running:
+            await interaction.response.send_message(
+                '❌ A Crash round is already in progress!', ephemeral=True
+            )
             return
+
         channel = self.bot.get_channel(CRASH_CHANNEL_ID)
         if not channel:
+            await interaction.response.send_message(
+                '❌ Crash channel not found.', ephemeral=True
+            )
             return
-        self._round_task = asyncio.create_task(self._round_loop(channel))
 
-    @_auto_runner.before_loop
-    async def _before_auto(self):
-        await self.bot.wait_until_ready()
-        await asyncio.sleep(10)  # small startup delay
+        await interaction.response.send_message(
+            f'🚀 Starting Crash round in <#{CRASH_CHANNEL_ID}>!', ephemeral=True
+        )
+        self._running = True
 
-    # ------------------------------------------------------------------
-    # Persistent round loop
-    # ------------------------------------------------------------------
-
-    async def _round_loop(self, channel: discord.TextChannel):
-        """Loop forever: run a round, then 2-minute cooldown, repeat."""
-        while True:
+        async def _run():
             try:
-                played = await self._start_round(channel)
-                if played:
-                    await self._run_cooldown(channel)
-                else:
-                    # No players joined — short pause before retry
-                    await asyncio.sleep(15)
+                await self._start_round(channel)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.error(f"Error in round loop: {e}", exc_info=True)
-                await asyncio.sleep(30)
+                logger.error(f'Error in crash round: {e}', exc_info=True)
+            finally:
+                self._running = False
 
-    async def _run_cooldown(self, channel: discord.TextChannel):
-        """Show a 2-minute countdown between rounds."""
-        remaining = COOLDOWN_SECONDS
-        try:
-            countdown_msg = await channel.send(embed=self._build_countdown_embed(remaining))
-        except Exception:
-            await asyncio.sleep(COOLDOWN_SECONDS)
-            return
-
-        while remaining > 0:
-            await asyncio.sleep(10)
-            remaining -= 10
-            if remaining <= 0:
-                break
-            try:
-                await countdown_msg.edit(embed=self._build_countdown_embed(remaining))
-            except Exception:
-                pass
-
-        try:
-            await countdown_msg.delete()
-        except Exception:
-            pass
+        self._round_task = asyncio.create_task(_run())
 
     async def _start_round(self, channel: discord.TextChannel) -> bool:
         """Run one full crash round. Returns True if round was played, False if skipped (no players)."""
