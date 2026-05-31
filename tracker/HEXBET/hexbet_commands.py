@@ -225,6 +225,7 @@ class Hexbet(commands.Cog):
         self.webhook_manager = get_webhook_manager()
         self._gm_cutoff_cache: dict[str, tuple[int, float]] = {}
         self._gm_cutoff_ttl_seconds = 300
+        self._challenger_cutoff_cache: dict[str, tuple[int, float]] = {}
         self.primary_guild_id = int(os.getenv('DISCORD_GUILD_ID', '0') or 0)
         self.spectate_targets = {}
         self.spectate_seen_games = set()
@@ -271,7 +272,37 @@ class Hexbet(commands.Cog):
         cutoff_lp = min(lp_values)
         self._gm_cutoff_cache[region_key] = (cutoff_lp, now_ts)
         return cutoff_lp
-    
+
+    async def _get_challenger_cutoff_lp(self, region: str) -> Optional[int]:
+        """Return current Challenger cutoff LP (minimum LP in Challenger) for a region."""
+        region_key = (region or '').lower()
+        if not region_key:
+            return None
+
+        now_ts = time.time()
+        cached = self._challenger_cutoff_cache.get(region_key)
+        if cached:
+            cached_cutoff, cached_at = cached
+            if (now_ts - cached_at) < self._gm_cutoff_ttl_seconds:
+                return cached_cutoff
+
+        chall_data = await self.riot_api.get_challenger_league(region_key)
+        entries = chall_data.get('entries', []) if chall_data else []
+        lp_values = []
+
+        for entry in entries:
+            try:
+                lp_values.append(int(entry.get('leaguePoints', 0)))
+            except (TypeError, ValueError):
+                continue
+
+        if not lp_values:
+            return None
+
+        cutoff_lp = min(lp_values)
+        self._challenger_cutoff_cache[region_key] = (cutoff_lp, now_ts)
+        return cutoff_lp
+
     async def _restore_persistent_views(self):
         """Restore persistent views for open matches after bot restart"""
         await self.bot.wait_until_ready()
@@ -686,8 +717,14 @@ class Hexbet(commands.Cog):
         chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
         chance_red = round(100 - chance_blue, 1)
 
-        # Special bets are only created via /hxfind nickname: - not automatically
-        is_special_bet = False
+        # Special bet if lobby avg LP reaches Challenger cutoff
+        all_players = blue_ordered + red_ordered
+        avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
+        chall_cutoff_lp = await self._get_challenger_cutoff_lp(region)
+        meets_special_requirements = chall_cutoff_lp is not None and avg_lp >= chall_cutoff_lp
+        is_special_bet = (not force_non_special) and meets_special_requirements
+        if chall_cutoff_lp is not None:
+            logger.info(f"📈 Avg LP: {avg_lp:.0f} | Challenger cutoff ({region.upper()}): {chall_cutoff_lp} | Special bet: {is_special_bet}")
 
         match_id = self.db.create_hexbet_match(
             game_id,
@@ -1140,10 +1177,18 @@ class Hexbet(commands.Cog):
                     score_blue = self._team_score(blue_ordered)
                     score_red = self._team_score(red_ordered)
                     logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
-                    
-                    # Special bets are only created via /hxfind nickname: - not automatically
-                    is_special_bet = False
-                    
+
+                    # Special bet if lobby avg LP reaches Challenger cutoff for region
+                    all_players_sp = blue_ordered + red_ordered
+                    avg_lp = sum(p.get('lp', 0) for p in all_players_sp) / len(all_players_sp) if all_players_sp else 0
+                    chall_cutoff_lp = await self._get_challenger_cutoff_lp(region)
+                    if chall_cutoff_lp is None:
+                        is_special_bet = False
+                        logger.warning(f"⚠️ Could not fetch Challenger cutoff for {region.upper()} - disabling special bet for game {game_id}")
+                    else:
+                        is_special_bet = avg_lp >= chall_cutoff_lp
+                        logger.info(f"📈 Avg LP: {avg_lp:.0f} | Challenger cutoff ({region.upper()}): {chall_cutoff_lp} | Special bet: {is_special_bet}")
+
                     odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
                     chance_red = round(100 - chance_blue, 1)
