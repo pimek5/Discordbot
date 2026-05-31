@@ -295,8 +295,6 @@ class CrashCog(commands.Cog):
                     pass
             asyncio.create_task(_delayed_delete(prev))
 
-        closes_at = int(time.time()) + BETTING_PHASE_SECONDS
-
         self.current_round = {
             'phase': 'betting',
             'bets': {},
@@ -304,24 +302,24 @@ class CrashCog(commands.Cog):
             'crash_point': crash_point,
             'message': None,
             'history': [],  # list of mult snapshots for chart
-            'closes_at': closes_at,
         }
 
         # ── BETTING PHASE ──────────────────────────────────────────────
-        embed = self._build_betting_embed(closes_at)
+        embed = self._build_betting_embed(BETTING_PHASE_SECONDS)
         view = BettingPhaseView(self)
         msg = await channel.send(embed=embed, view=view)
         self.current_round['message'] = msg
 
-        # Refresh player list every 5 seconds (timestamp updates client-side automatically)
+        # Countdown: update embed every 5 seconds
         elapsed = 0
         while elapsed < BETTING_PHASE_SECONDS:
             await asyncio.sleep(5)
             elapsed += 5
-            if elapsed >= BETTING_PHASE_SECONDS:
+            remaining = BETTING_PHASE_SECONDS - elapsed
+            if remaining <= 0:
                 break
             try:
-                await msg.edit(embed=self._build_betting_embed(closes_at), view=view)
+                await msg.edit(embed=self._build_betting_embed(remaining), view=view)
             except Exception:
                 pass
 
@@ -399,11 +397,11 @@ class CrashCog(commands.Cog):
     # Embed builders
     # ------------------------------------------------------------------
 
-    def _build_betting_embed(self, closes_at: int) -> discord.Embed:
+    def _build_betting_embed(self, seconds_left: int) -> discord.Embed:
         embed = discord.Embed(
             title="🚀 CRASH — Betting Phase",
             description=(
-                f"⏳ Betting closes at <t:{closes_at}:T> (<t:{closes_at}:R>)\n\n"
+                f"⏳ **{seconds_left}s** left to join!\n\n"
                 f"Press **🚀 Join Round** to place your bet.\n"
                 f"You can set an **auto-cashout** multiplier or cash out manually.\n\n"
                 f"Min: **{MIN_BET}** | Max: **{MAX_BET:,}** tokens"
