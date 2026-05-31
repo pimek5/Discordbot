@@ -1855,7 +1855,7 @@ class Hexbet(commands.Cog):
                 rank_display = f"{row['rank_name']} {row['division']}".strip()
                 lines.append(
                     f"{medal}**{i}.** <@{row['discord_id']}> {r_emoji} **{rank_display}**"
-                    f" — {round(row['balance'] / 200, 1)} LP • {row['balance']:,} 💰 • WR {row['win_rate']:.1f}%"
+                    f" — {row['lp_total']:,} LP • {row['balance']:,} 💰 • WR {row['win_rate']:.1f}%"
                 )
             embed.description = '\n'.join(lines)
             embed.set_footer(text=(
