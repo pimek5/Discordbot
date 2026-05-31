@@ -3,7 +3,7 @@ HEXBET Crash Game
 A multiplier-based crash betting minigame using the shared token balance.
 
 Flow:
-  1. BETTING PHASE (30s) - players join with /hxcrash <amount> or by pressing the Join button
+  1. BETTING PHASE (30s) - players join by pressing the Join Round button
   2. LIVE PHASE - multiplier ticks up every second; players can cashout via button
   3. CRASH - round ends, remaining bets are lost, cashed-out players win bet * multiplier
 """
@@ -262,8 +262,8 @@ class CrashCog(commands.Cog):
     # /crashstart command
     # ------------------------------------------------------------------
 
-    @app_commands.command(name='crashstart', description='Start a Crash betting round')
-    async def crashstart(self, interaction: discord.Interaction):
+    @app_commands.command(name='hxcrashstart', description='Start a Crash betting round')
+    async def hxcrashstart(self, interaction: discord.Interaction):
         """Manually start one Crash round."""
         if self._running:
             await interaction.response.send_message(

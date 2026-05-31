@@ -1869,7 +1869,7 @@ class Hexbet(commands.Cog):
                     "`/hxbalance` - Your rank profile\n"
                     "`/hxdaily` - Free 100 tokens\n"
                     "`/hxstats` - Betting stats\n"
-                    "`/hxcrash` - Play Crash!\n"
+                    "`/hxcrashstart` - Start a Crash round!\n"
                     "`/hexbet` - Open bets"
                 ),
                 inline=False,
