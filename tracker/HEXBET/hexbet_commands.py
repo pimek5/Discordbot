@@ -5195,7 +5195,7 @@ These players will now appear more frequently in betting matches!"""
             embed.set_footer(text="200 tokens = 100 LP")
 
         embed.set_thumbnail(url=target.display_avatar.url)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="hxbalanceconfig", description="(Staff) Manage user balances")
     @app_commands.describe(
