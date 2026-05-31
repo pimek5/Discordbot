@@ -420,7 +420,7 @@ class RuneForgeScraper:
 class DivineSkinsScraper:
     BASE_URL = "https://divineskins.gg"
     CATALOG_API = "https://api.divineskins.gg"
-    CDN_URL = "https://images.divine-cdn.com"
+    CDN_URL = "https://lol-assets.divine-cdn.com"
 
     _API_HEADERS = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
