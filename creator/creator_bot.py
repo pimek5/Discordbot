@@ -616,33 +616,7 @@ class CreatorBot(commands.Bot):
                         downloads
                     )
                 elif existing['updated_at'] != updated_at:
-                    await self.send_notification(
-                        db,
-                        guild_id,
-                        discord_user_id,
-                        username,
-                        'Updated mod',
-                        mod_name,
-                        mod_url,
-                        'runeforge',
-                        views,
-                        downloads
-                    )
                     db.update_mod(creator_id, mod_id, updated_at, 'runeforge')
-                    
-                    # Send webhook notification for updated mod
-                    await self.send_webhook_notification(
-                        db,
-                        guild_id,
-                        creator_id,
-                        username,
-                        'updated_mod',
-                        mod_name,
-                        mod_url,
-                        'runeforge',
-                        views,
-                        downloads
-                    )
                     
         except Exception as e:
             logger.error("❌ Error checking RuneForge for %s: %s", profile_url, e)
@@ -709,34 +683,8 @@ class CreatorBot(commands.Bot):
                         downloads
                     )
                 elif existing['updated_at'] != updated_at:
-                    await self.send_notification(
-                        db,
-                        guild_id,
-                        discord_user_id,
-                        username,
-                        'Updated skin',
-                        skin_name,
-                        skin_url,
-                        'divineskins',
-                        views,
-                        downloads
-                    )
                     db.update_mod(creator_id, skin_id, updated_at, 'divineskins')
-                    
-                    # Send webhook notification for updated skin
-                    await self.send_webhook_notification(
-                        db,
-                        guild_id,
-                        creator_id,
-                        username,
-                        'updated_skin',
-                        skin_name,
-                        skin_url,
-                        'divineskins',
-                        views,
-                        downloads
-                    )
-                    
+
         except Exception as e:
             logger.error("❌ Error checking Divine Skins for %s: %s", profile_url, e)
     
