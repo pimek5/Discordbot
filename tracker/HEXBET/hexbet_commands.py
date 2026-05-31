@@ -686,11 +686,8 @@ class Hexbet(commands.Cog):
         chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
         chance_red = round(100 - chance_blue, 1)
 
-        all_players = blue_ordered + red_ordered
-        avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
-        gm_cutoff_lp = await self._get_grandmaster_cutoff_lp(region)
-        meets_special_requirements = gm_cutoff_lp is not None and avg_lp >= gm_cutoff_lp
-        is_special_bet = (not force_non_special) and meets_special_requirements
+        # Special bets are only created via /hxfind nickname: - not automatically
+        is_special_bet = False
 
         match_id = self.db.create_hexbet_match(
             game_id,
@@ -1144,20 +1141,8 @@ class Hexbet(commands.Cog):
                     score_red = self._team_score(red_ordered)
                     logger.info(f"📊 Team scores: Blue {score_blue} vs Red {score_red}")
                     
-                    # Special bet requirement: lobby avg LP must reach current GM cutoff for region
-                    all_players = blue_ordered + red_ordered
-                    avg_lp = sum(p.get('lp', 0) for p in all_players) / len(all_players) if all_players else 0
-                    gm_cutoff_lp = await self._get_grandmaster_cutoff_lp(region)
-                    if gm_cutoff_lp is None:
-                        is_special_bet = False
-                        logger.warning(
-                            f"⚠️ Could not fetch Grandmaster cutoff for {region.upper()} - disabling special bet for game {game_id}"
-                        )
-                    else:
-                        is_special_bet = avg_lp >= gm_cutoff_lp
-                        logger.info(
-                            f"📈 Avg LP: {avg_lp:.0f} | GM cutoff ({region.upper()}): {gm_cutoff_lp} | Special bet: {is_special_bet}"
-                        )
+                    # Special bets are only created via /hxfind nickname: - not automatically
+                    is_special_bet = False
                     
                     odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
                     chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
