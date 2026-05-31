@@ -240,6 +240,9 @@ class CrashBetModal(discord.ui.Modal, title='🚀 Join Crash Round'):
 CHART_BARS = ' ▁▂▃▄▅▆▇█'
 
 
+COOLDOWN_SECONDS = 120   # break between rounds
+
+
 class CrashCog(commands.Cog):
     """Crash game cog. Runs automatic rounds in the configured channel."""
 
@@ -257,18 +260,18 @@ class CrashCog(commands.Cog):
             self._round_task.cancel()
 
     # ------------------------------------------------------------------
-    # Auto runner - starts a new round every ~60s when none is active
+    # Auto runner — spawns the persistent round loop once
     # ------------------------------------------------------------------
 
-    @tasks.loop(seconds=60)
+    @tasks.loop(seconds=10)
     async def _auto_runner(self):
-        """Automatically start a new crash round when channel is idle."""
-        if self.current_round is not None:
-            return  # round already running
+        """Ensure the round loop is running."""
+        if self._round_task is not None and not self._round_task.done():
+            return
         channel = self.bot.get_channel(CRASH_CHANNEL_ID)
         if not channel:
             return
-        await self._start_round(channel)
+        self._round_task = asyncio.create_task(self._round_loop(channel))
 
     @_auto_runner.before_loop
     async def _before_auto(self):
@@ -276,11 +279,51 @@ class CrashCog(commands.Cog):
         await asyncio.sleep(10)  # small startup delay
 
     # ------------------------------------------------------------------
-    # Round logic
+    # Persistent round loop
     # ------------------------------------------------------------------
 
-    async def _start_round(self, channel: discord.TextChannel):
-        """Run one full crash round (betting → live → result)."""
+    async def _round_loop(self, channel: discord.TextChannel):
+        """Loop forever: run a round, then 2-minute cooldown, repeat."""
+        while True:
+            try:
+                played = await self._start_round(channel)
+                if played:
+                    await self._run_cooldown(channel)
+                else:
+                    # No players joined — short pause before retry
+                    await asyncio.sleep(15)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Error in round loop: {e}", exc_info=True)
+                await asyncio.sleep(30)
+
+    async def _run_cooldown(self, channel: discord.TextChannel):
+        """Show a 2-minute countdown between rounds."""
+        remaining = COOLDOWN_SECONDS
+        try:
+            countdown_msg = await channel.send(embed=self._build_countdown_embed(remaining))
+        except Exception:
+            await asyncio.sleep(COOLDOWN_SECONDS)
+            return
+
+        while remaining > 0:
+            await asyncio.sleep(10)
+            remaining -= 10
+            if remaining <= 0:
+                break
+            try:
+                await countdown_msg.edit(embed=self._build_countdown_embed(remaining))
+            except Exception:
+                pass
+
+        try:
+            await countdown_msg.delete()
+        except Exception:
+            pass
+
+    async def _start_round(self, channel: discord.TextChannel) -> bool:
+        """Run one full crash round. Returns True if round was played, False if skipped (no players)."""
         crash_point = generate_crash_point()
 
         # Delete previous result message after 5 seconds
@@ -335,7 +378,7 @@ class CrashCog(commands.Cog):
             except Exception:
                 pass
             self.current_round = None
-            return
+            return False
 
         start_ts = time.time()
         try:
@@ -392,10 +435,22 @@ class CrashCog(commands.Cog):
 
         self._last_result_msg = msg  # store so next round can delete it
         self.current_round = None
+        return True
 
     # ------------------------------------------------------------------
     # Embed builders
     # ------------------------------------------------------------------
+
+    def _build_countdown_embed(self, seconds_left: int) -> discord.Embed:
+        bar_filled = (COOLDOWN_SECONDS - seconds_left) * 10 // COOLDOWN_SECONDS
+        bar = '█' * bar_filled + '░' * (10 - bar_filled)
+        mins, secs = divmod(seconds_left, 60)
+        time_str = f"{mins}:{secs:02d}"
+        return discord.Embed(
+            title=f"⏰ Next round in **{time_str}**",
+            description=f"`{bar}` {COOLDOWN_SECONDS - seconds_left}/{COOLDOWN_SECONDS}s",
+            color=0x95a5a6,
+        )
 
     def _build_betting_embed(self, seconds_left: int) -> discord.Embed:
         embed = discord.Embed(
