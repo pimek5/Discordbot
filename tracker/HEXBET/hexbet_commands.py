@@ -5083,13 +5083,118 @@ These players will now appear more frequently in betting matches!"""
             logger.error(f"Error adding verified players: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
 
-    @app_commands.command(name="hxbalance", description="(Staff) Manage user balances")
+    @app_commands.command(name="hxbalance", description="Check your HEXBET balance and betting rank")
+    @app_commands.describe(user="User to check (leave empty for yourself)")
+    async def hxbalance(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        """Show betting rank profile based on balance"""
+        target = user or interaction.user
+        balance = self.db.get_balance(target.id)
+
+        # Rank calculation: LP = balance // 2
+        # Iron IV..Diamond I: 100 LP per division (4 div per tier x 8 tiers = 3200 LP, 2800 needed for Master)
+        # Master: 0 LP inside Master tier, needs 600 LP to reach Grandmaster
+        # Grandmaster: needs 1200 LP to reach Challenger
+        lp_total = balance // 2
+
+        TIER_ORDER = [
+            ('IRON', 4), ('BRONZE', 4), ('SILVER', 4), ('GOLD', 4),
+            ('PLATINUM', 4), ('EMERALD', 4), ('DIAMOND', 4),
+        ]
+        MASTER_THRESHOLD = 2800      # total LP to enter Master
+        GM_THRESHOLD = 3400          # total LP to enter Grandmaster (600 LP in Master)
+        CHALLENGER_THRESHOLD = 4600  # total LP to enter Challenger (1200 LP in GM)
+
+        if lp_total >= CHALLENGER_THRESHOLD:
+            rank_name = 'CHALLENGER'
+            division = ''
+            rank_lp = lp_total - CHALLENGER_THRESHOLD
+            next_rank = None
+            lp_for_next = None
+            progress_pct = 100
+        elif lp_total >= GM_THRESHOLD:
+            rank_name = 'GRANDMASTER'
+            division = ''
+            rank_lp = lp_total - GM_THRESHOLD
+            next_rank = 'CHALLENGER'
+            lp_for_next = 1200
+            progress_pct = min(100, int(rank_lp / 1200 * 100))
+        elif lp_total >= MASTER_THRESHOLD:
+            rank_name = 'MASTER'
+            division = ''
+            rank_lp = lp_total - MASTER_THRESHOLD
+            next_rank = 'GRANDMASTER'
+            lp_for_next = 600
+            progress_pct = min(100, int(rank_lp / 600 * 100))
+        else:
+            # Calculate which division in Iron-Diamond
+            tier_idx = lp_total // 400          # 4 divisions * 100 LP each = 400 LP per tier
+            div_idx = (lp_total % 400) // 100   # 0=IV, 1=III, 2=II, 3=I
+            tier_idx = min(tier_idx, len(TIER_ORDER) - 1)
+            rank_name = TIER_ORDER[tier_idx][0]
+            divisions = ['IV', 'III', 'II', 'I']
+            division = divisions[div_idx]
+            rank_lp = lp_total % 100
+
+            # Next division
+            if div_idx < 3:
+                next_div = divisions[div_idx + 1]
+                next_rank = f"{rank_name} {next_div}"
+            elif tier_idx < len(TIER_ORDER) - 1:
+                next_rank = f"{TIER_ORDER[tier_idx + 1][0]} IV"
+            else:
+                next_rank = "MASTER"
+            lp_for_next = 100
+            progress_pct = rank_lp
+
+        rank_emoji_str = CFG_RANK_EMOJIS.get(rank_name, '🎖️')
+        rank_display = f"{rank_name} {division}".strip()
+
+        # Progress bar (10 segments)
+        filled = progress_pct // 10
+        bar = '█' * filled + '░' * (10 - filled)
+
+        RANK_COLORS = {
+            'IRON': 0x6b6b6b, 'BRONZE': 0xad6434, 'SILVER': 0xb0bec5,
+            'GOLD': 0xf9c74f, 'PLATINUM': 0x4ecca3, 'EMERALD': 0x2d9b4e,
+            'DIAMOND': 0x4a90d9, 'MASTER': 0x9b59b6, 'GRANDMASTER': 0xe74c3c,
+            'CHALLENGER': 0xf1c40f,
+        }
+        color = RANK_COLORS.get(rank_name, 0x95a5a6)
+
+        embed = discord.Embed(
+            title=f"{rank_emoji_str} {target.display_name}'s HEXBET Profile",
+            color=color,
+        )
+        embed.add_field(name="💰 Balance", value=f"**{balance:,}** tokens", inline=True)
+        embed.add_field(name="⚡ Total LP", value=f"**{lp_total:,}** LP", inline=True)
+        embed.add_field(name="🏆 Rank", value=f"{rank_emoji_str} **{rank_display}** • {rank_lp} LP", inline=False)
+
+        if next_rank and lp_for_next:
+            embed.add_field(
+                name=f"📈 Progress to {next_rank}",
+                value=f"`{bar}` {rank_lp}/{lp_for_next} LP ({progress_pct}%)",
+                inline=False,
+            )
+        else:
+            embed.add_field(name="👑 Status", value="You've reached the top!", inline=False)
+
+        # Tokens needed for next rank
+        if lp_for_next and rank_lp < lp_for_next:
+            tokens_needed = (lp_for_next - rank_lp) * 2
+            embed.set_footer(text=f"Need {tokens_needed:,} more tokens to rank up • 200 tokens = 100 LP")
+        else:
+            embed.set_footer(text="200 tokens = 100 LP")
+
+        embed.set_thumbnail(url=target.display_avatar.url)
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="hxbalanceconfig", description="(Staff) Manage user balances")
     @app_commands.describe(
         action="Action: add, remove, set, check",
         user="User to manage",
         amount="Amount (not needed for check)"
     )
-    async def hxbalance(self, interaction: discord.Interaction, action: str, user: discord.Member, amount: Optional[int] = None):
+    async def hxbalanceconfig(self, interaction: discord.Interaction, action: str, user: discord.Member, amount: Optional[int] = None):
         """Manage user balances - Staff only"""
         # Check if user has required roles
         staff_role_id = 1153030265782927501
