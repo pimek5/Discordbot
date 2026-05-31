@@ -236,6 +236,10 @@ class CrashBetModal(discord.ui.Modal, title='🚀 Join Crash Round'):
 # CrashCog
 # ---------------------------------------------------------------------------
 
+# Bar chart characters (8 levels + empty)
+CHART_BARS = ' ▁▂▃▄▅▆▇█'
+
+
 class CrashCog(commands.Cog):
     """Crash game cog. Runs automatic rounds in the configured channel."""
 
@@ -244,6 +248,7 @@ class CrashCog(commands.Cog):
         self.db = db
         self.current_round: Optional[dict] = None
         self._round_task: Optional[asyncio.Task] = None
+        self._last_result_msg: Optional[discord.Message] = None
         self._auto_runner.start()
 
     def cog_unload(self):
@@ -278,12 +283,25 @@ class CrashCog(commands.Cog):
         """Run one full crash round (betting → live → result)."""
         crash_point = generate_crash_point()
 
+        # Delete previous result message after 5 seconds
+        if self._last_result_msg is not None:
+            prev = self._last_result_msg
+            self._last_result_msg = None
+            async def _delayed_delete(m: discord.Message):
+                await asyncio.sleep(5)
+                try:
+                    await m.delete()
+                except Exception:
+                    pass
+            asyncio.create_task(_delayed_delete(prev))
+
         self.current_round = {
             'phase': 'betting',
             'bets': {},
             'multiplier': 1.00,
             'crash_point': crash_point,
             'message': None,
+            'history': [],  # list of (elapsed_s, mult) snapshots for chart
         }
 
         # ── BETTING PHASE ──────────────────────────────────────────────
@@ -326,12 +344,19 @@ class CrashCog(commands.Cog):
             pass
 
         # Tick loop
+        tick_count = 0
         while True:
             await asyncio.sleep(TICK_INTERVAL)
             elapsed_live = time.time() - start_ts
             # Multiplier grows exponentially: 1.00 * e^(0.06 * t)
             mult = round(1.00 * math.exp(0.06 * elapsed_live), 2)
             self.current_round['multiplier'] = mult
+
+            # Record snapshot for chart (max 20 points)
+            history = self.current_round['history']
+            history.append(mult)
+            if len(history) > 20:
+                history.pop(0)
 
             # Process auto-cashouts
             for user_id, bet_info in self.current_round['bets'].items():
@@ -345,12 +370,12 @@ class CrashCog(commands.Cog):
                     bet_info['payout'] = payout
                     self.db.update_balance(user_id, payout)
 
-            # Update embed every 2 ticks
-            if int(elapsed_live) % 2 == 0:
-                try:
-                    await msg.edit(embed=self._build_live_embed(), view=live_view)
-                except Exception:
-                    pass
+            # Update embed every tick
+            tick_count += 1
+            try:
+                await msg.edit(embed=self._build_live_embed(), view=live_view)
+            except Exception:
+                pass
 
             if mult >= crash_point:
                 self.current_round['multiplier'] = crash_point
@@ -361,10 +386,11 @@ class CrashCog(commands.Cog):
         # No payout for players who didn't cash out (tokens already deducted)
 
         try:
-            await msg.edit(embed=self._build_result_embed(), view=None)
+            result_msg = await msg.edit(embed=self._build_result_embed(), view=None)
         except Exception:
-            pass
+            result_msg = msg
 
+        self._last_result_msg = msg  # store so next round can delete it
         self.current_round = None
 
     # ------------------------------------------------------------------
@@ -395,9 +421,32 @@ class CrashCog(commands.Cog):
         embed.set_footer(text="💡 The multiplier starts at 1.00x and can crash at any moment!")
         return embed
 
+    @staticmethod
+    def _build_chart(history: list) -> str:
+        """Build a text-based bar chart from multiplier history.
+        Returns a string like: `▁▂▃▄▅▆▇██` padded to 20 chars.
+        """
+        if not history:
+            return '`' + '░' * 20 + '`'
+        # Normalize: min is always 1.00, max is current (last in history)
+        max_val = max(history)
+        min_val = 1.00
+        span = max(max_val - min_val, 0.01)
+
+        bars = []
+        for v in history:
+            level = int((v - min_val) / span * 8)
+            level = max(0, min(8, level))
+            bars.append(CHART_BARS[level])
+
+        # Pad left side with empty if less than 20
+        padded = '░' * (20 - len(bars)) + ''.join(bars)
+        return f'`{padded}`'
+
     def _build_live_embed(self) -> discord.Embed:
         mult = self.current_round['multiplier']
         bets = self.current_round['bets']
+        history = self.current_round.get('history', [])
 
         # Color gradient: green → yellow → red
         if mult < 2.0:
@@ -407,10 +456,15 @@ class CrashCog(commands.Cog):
         else:
             color = 0xe74c3c
 
-        # Big multiplier display
+        chart = self._build_chart(history)
+
+        # Big multiplier display with chart
         embed = discord.Embed(
-            title=f"🚀 CRASH — **{mult:.2f}x** 🔥",
-            description="Press **💸 CASHOUT** now to secure your winnings!",
+            title=f"📈 CRASH — **{mult:.2f}x**",
+            description=(
+                f"{chart}\n"
+                f"Press **💸 CASHOUT** now to secure your winnings!"
+            ),
             color=color,
         )
 

@@ -1741,75 +1741,19 @@ class Hexbet(commands.Cog):
         except Exception as e:
             logger.warning(f"Error updating live odds: {e}")
 
-    async def refresh_leaderboard_embed(self, page: int = 1, sort_by: str = 'balance'):
+    async def refresh_leaderboard_embed(self, page: int = 1, sort_by: str = 'rank'):
         try:
-            # Use first guild for default behavior
             guild_id = self.bot.guilds[0].id if self.bot.guilds else None
             leaderboard_channel_id = self._get_channel_id(guild_id, 'leaderboard') if guild_id else DEFAULT_LEADERBOARD_CHANNEL_ID
-            
+
             channel = self.bot.get_channel(leaderboard_channel_id)
             if not channel:
                 return
-            
-            # Get all players for pagination
-            all_players = self._compute_leaderboard(limit=None, sort_by=sort_by)  # Get all
-            total_players = len(all_players)
-            
-            # Pagination settings
-            per_page = 10
-            total_pages = max(1, (total_players + per_page - 1) // per_page)  # Ceiling division
-            page = max(1, min(page, total_pages))  # Clamp page number
-            
-            start_idx = (page - 1) * per_page
-            end_idx = start_idx + per_page
-            page_players = all_players[start_idx:end_idx]
-            
-            # Determine title based on sort
-            sort_title = "Balance 💰" if sort_by == 'balance' else "Wygrana 🏆"
-            embed = discord.Embed(
-                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {page}/{total_pages}",
-                color=0xF1C40F
-            )
-            
-            if not page_players:
-                embed.description = "No bets yet."
-            else:
-                lines = []
-                for i, row in enumerate(page_players, start=start_idx + 1):
-                    # Medal emojis for top 3
-                    medal = ""
-                    if i == 1:
-                        medal = "🥇 "
-                    elif i == 2:
-                        medal = "🥈 "
-                    elif i == 3:
-                        medal = "🥉 "
-                    
-                    lines.append(
-                        f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
-                    )
-                embed.description = "\n".join(lines)
-                
-                # Add stats footer
-                embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
-                
-                # Add useful commands at the bottom
-                embed.add_field(
-                    name="📋 Useful Commands",
-                    value=(
-                        "`/hxbalance` - Check your balance\n"
-                        "`/hxdaily` - Claim 100 daily tokens\n"
-                        "`/hxstats` - View your betting stats\n"
-                        "`/hxspecial` - Create special bet (1000 tokens)\n"
-                        "`/hxplayer` - Search for a player\n"
-                        "`/hxfind` - Find high-elo games"
-                    ),
-                    inline=False
-                )
-            
-            # Create view with pagination buttons
+
+            all_players = self._compute_leaderboard(limit=None, sort_by=sort_by)
+            embed, total_pages = self._make_leaderboard_embed(all_players, page, sort_by)
             view = LeaderboardView(self, page=page, total_pages=total_pages, sort_by=sort_by)
-            
+
             existing = await self._find_leaderboard_message(channel)
             if existing:
                 await existing.edit(embed=embed, view=view)
@@ -1828,44 +1772,109 @@ class Hexbet(commands.Cog):
                     return msg
         return None
 
-    def _compute_leaderboard(self, limit: Optional[int] = 10, sort_by: str = 'balance'):
+    def _compute_leaderboard(self, limit: Optional[int] = 10, sort_by: str = 'rank'):
         conn = self.db.get_connection()
         try:
             with conn.cursor() as cur:
-                # Base query
                 base_query = """
                     SELECT discord_id, balance, total_won, bets_won, bets_placed,
                            CASE WHEN bets_placed>0 THEN ROUND((bets_won::decimal/bets_placed)*100,2) ELSE 0 END as win_rate
                     FROM user_balances
                 """
-                
-                # Choose sort order
-                if sort_by == 'total_won':
-                    # Sort by total won, then balance
-                    order_clause = "ORDER BY total_won DESC, balance DESC"
-                else:  # default: balance
-                    order_clause = "ORDER BY balance DESC"
-                
-                query = base_query + order_clause
-                
-                if limit:
-                    query += f" LIMIT {limit}"
-                
-                cur.execute(query)
+                # Always fetch all rows and sort in Python (rank sort requires it)
+                cur.execute(base_query)
                 rows = cur.fetchall()
                 res = []
                 for r in rows:
+                    balance = r[1] or 0
+                    lp_total, rank_name, division = self._balance_to_rank(balance)
                     res.append({
                         'discord_id': r[0],
-                        'balance': r[1],
-                        'total_won': r[2],
-                        'bets_won': r[3],
-                        'bets_placed': r[4],
-                        'win_rate': float(r[5] or 0)
+                        'balance': balance,
+                        'total_won': r[2] or 0,
+                        'bets_won': r[3] or 0,
+                        'bets_placed': r[4] or 0,
+                        'win_rate': float(r[5] or 0),
+                        'lp_total': lp_total,
+                        'rank_name': rank_name,
+                        'division': division,
                     })
+                if sort_by == 'total_won':
+                    res.sort(key=lambda x: (x['total_won'], x['lp_total']), reverse=True)
+                elif sort_by == 'balance':
+                    res.sort(key=lambda x: x['balance'], reverse=True)
+                else:  # default: rank (LP)
+                    res.sort(key=lambda x: x['lp_total'], reverse=True)
+                if limit:
+                    res = res[:limit]
                 return res
         finally:
             self.db.return_connection(conn)
+
+    @staticmethod
+    def _balance_to_rank(balance: int):
+        """Return (lp_total, rank_name, division) for a given balance."""
+        TIER_ORDER = ['IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'EMERALD', 'DIAMOND']
+        lp = balance // 2
+        if lp >= 4600:
+            return lp, 'CHALLENGER', ''
+        elif lp >= 3400:
+            return lp, 'GRANDMASTER', ''
+        elif lp >= 2800:
+            return lp, 'MASTER', ''
+        tier_idx = min(lp // 400, 6)
+        div_idx = min((lp % 400) // 100, 3)
+        divisions = ['IV', 'III', 'II', 'I']
+        return lp, TIER_ORDER[tier_idx], divisions[div_idx]
+
+    def _make_leaderboard_embed(self, all_players: list, page: int, sort_by: str) -> tuple:
+        """Build a leaderboard embed for the given page. Returns (embed, total_pages)."""
+        total_players = len(all_players)
+        per_page = 10
+        total_pages = max(1, (total_players + per_page - 1) // per_page)
+        page = max(1, min(page, total_pages))
+        start_idx = (page - 1) * per_page
+        page_players = all_players[start_idx:start_idx + per_page]
+
+        sort_titles = {'rank': 'Ranga 🏆', 'balance': 'Balance 💰', 'total_won': 'Wygrana 🏅'}
+        sort_title = sort_titles.get(sort_by, 'Ranga 🏆')
+
+        embed = discord.Embed(
+            title=f"🏆 HEXBET Leaderboard ({sort_title}) — Strona {page}/{total_pages}",
+            color=0xF1C40F,
+        )
+
+        if not page_players:
+            embed.description = "Brak graczy."
+        else:
+            lines = []
+            medals = {1: '🥇 ', 2: '🥈 ', 3: '🥉 '}
+            for i, row in enumerate(page_players, start=start_idx + 1):
+                medal = medals.get(i, '')
+                r_emoji = CFG_RANK_EMOJIS.get(row['rank_name'], '🎖️')
+                rank_display = f"{row['rank_name']} {row['division']}".strip()
+                lines.append(
+                    f"{medal}**{i}.** <@{row['discord_id']}> {r_emoji} **{rank_display}**"
+                    f" — {row['lp_total']:,} LP • {row['balance']:,} 💰 • WR {row['win_rate']:.1f}%"
+                )
+            embed.description = '\n'.join(lines)
+            embed.set_footer(text=(
+                f"Gracze: {total_players} | "
+                f"Pokazano {start_idx + 1}–{min(start_idx + per_page, total_players)} | "
+                "200 tokenów = 100 LP"
+            ))
+            embed.add_field(
+                name="📋 Komendy",
+                value=(
+                    "`/hxbalance` - Twój profil rangi\n"
+                    "`/hxdaily` - Darmowe 100 tokenów\n"
+                    "`/hxstats` - Statystyki betowania\n"
+                    "`/hxcrash` - Zagraj Crash!\n"
+                    "`/hexbet` - Otwieraj zakłady"
+                ),
+                inline=False,
+            )
+        return embed, total_pages
 
     def _assign_roles(self, players: List[dict]) -> List[dict]:
         """
@@ -6640,256 +6649,67 @@ class BetOUModal(discord.ui.Modal, title='Game Length: Over/Under 22.5 min'):
 
 
 class LeaderboardView(discord.ui.View):
-    def __init__(self, cog: 'Hexbet', page: int = 1, total_pages: int = 1, sort_by: str = 'balance'):
+    def __init__(self, cog: 'Hexbet', page: int = 1, total_pages: int = 1, sort_by: str = 'rank'):
         super().__init__(timeout=None)
         self.cog = cog
         self.page = page
         self.total_pages = total_pages
         self.sort_by = sort_by
-        
+
         # Disable navigation buttons if on first/last page
-        self.children[1].disabled = (page == 1)  # Previous button (index 1 after dropdown)
-        self.children[3].disabled = (page >= total_pages)  # Next button (index 3 after dropdown)
-    
+        self.children[1].disabled = (page == 1)           # Previous (index 1 after dropdown)
+        self.children[3].disabled = (page >= total_pages)  # Next (index 3 after dropdown)
+
     @discord.ui.select(
         placeholder="📊 Sort by...",
         options=[
+            discord.SelectOption(label="Ranga 🏆", value="rank", description="Sort by betting rank (LP)", emoji="🏆"),
             discord.SelectOption(label="Balance 💰", value="balance", description="Sort by token balance", emoji="💰"),
-            discord.SelectOption(label="Wygrana 🏆", value="total_won", description="Sort by total tokens won", emoji="🏆")
+            discord.SelectOption(label="Wygrana 🏅", value="total_won", description="Sort by total tokens won", emoji="🏅"),
         ],
         custom_id="hexbet_leaderboard_sort"
     )
     async def sort_select(self, interaction: discord.Interaction, select: discord.ui.Select):
         try:
             new_sort = select.values[0]
-            
-            # Get leaderboard data with new sort
             all_players = self.cog._compute_leaderboard(limit=None, sort_by=new_sort)
-            total_players = len(all_players)
-            per_page = 10
-            total_pages = max(1, (total_players + per_page - 1) // per_page)
-            current_page = 1  # Reset to page 1 when changing sort
-            
-            start_idx = (current_page - 1) * per_page
-            end_idx = start_idx + per_page
-            page_players = all_players[start_idx:end_idx]
-            
-            # Determine title
-            sort_title = "Balance 💰" if new_sort == 'balance' else "Wygrana 🏆"
-            embed = discord.Embed(
-                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {current_page}/{total_pages}",
-                color=0xF1C40F
-            )
-            
-            lines = []
-            for i, row in enumerate(page_players, start=start_idx + 1):
-                medal = ""
-                if i == 1:
-                    medal = "🥇 "
-                elif i == 2:
-                    medal = "🥈 "
-                elif i == 3:
-                    medal = "🥉 "
-                
-                lines.append(
-                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
-                )
-            embed.description = "\n".join(lines)
-            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
-            embed.add_field(
-                name="📋 Useful Commands",
-                value=(
-                    "`/hxbalance` - Check your balance\n"
-                    "`/hxdaily` - Claim 100 daily tokens\n"
-                    "`/hxstats` - View your betting stats\n"
-                    "`/hxspecial` - Create special bet (1000 tokens)\n"
-                    "`/hxplayer` - Search for a player\n"
-                    "`/hxfind` - Find high-elo games"
-                ),
-                inline=False
-            )
-            
-            # Create new view with updated sort
-            new_view = LeaderboardView(self.cog, page=current_page, total_pages=total_pages, sort_by=new_sort)
-            
+            embed, total_pages = self.cog._make_leaderboard_embed(all_players, 1, new_sort)
+            new_view = LeaderboardView(self.cog, page=1, total_pages=total_pages, sort_by=new_sort)
             await interaction.response.edit_message(embed=embed, view=new_view)
         except Exception as e:
             logger.error(f"Failed to change sort: {e}")
             await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
-    
+
     @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary, custom_id="hexbet_leaderboard_prev")
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            new_page = max(1, self.page - 1)
-            
-            # Get leaderboard data for new page
             all_players = self.cog._compute_leaderboard(limit=None, sort_by=self.sort_by)
-            total_players = len(all_players)
-            per_page = 10
-            total_pages = max(1, (total_players + per_page - 1) // per_page)
-            new_page = max(1, min(new_page, total_pages))
-            
-            start_idx = (new_page - 1) * per_page
-            end_idx = start_idx + per_page
-            page_players = all_players[start_idx:end_idx]
-            
-            # Build embed
-            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Wygrana 🎯"
-            embed = discord.Embed(
-                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {new_page}/{total_pages}",
-                color=0xF1C40F
-            )
-            
-            lines = []
-            for i, row in enumerate(page_players, start=start_idx + 1):
-                medal = ""
-                if i == 1:
-                    medal = "🥇 "
-                elif i == 2:
-                    medal = "🥈 "
-                elif i == 3:
-                    medal = "🥉 "
-                
-                lines.append(
-                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
-                )
-            embed.description = "\n".join(lines)
-            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
-            embed.add_field(
-                name="📋 Useful Commands",
-                value=(
-                    "`/hxbalance` - Check your balance\n"
-                    "`/hxdaily` - Claim 100 daily tokens\n"
-                    "`/hxstats` - View your betting stats\n"
-                    "`/hxspecial` - Create special bet (1000 tokens)\n"
-                    "`/hxplayer` - Search for a player\n"
-                    "`/hxfind` - Find high-elo games"
-                ),
-                inline=False
-            )
-            
-            # Create new view with updated page
-            new_view = LeaderboardView(self.cog, page=new_page, total_pages=total_pages)
-            
-            # Edit the message instead of sending new one
+            new_page = max(1, self.page - 1)
+            embed, total_pages = self.cog._make_leaderboard_embed(all_players, new_page, self.sort_by)
+            new_view = LeaderboardView(self.cog, page=new_page, total_pages=total_pages, sort_by=self.sort_by)
             await interaction.response.edit_message(embed=embed, view=new_view)
         except Exception as e:
             logger.error(f"Failed to go to previous page: {e}")
             await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
-    
+
     @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.primary, custom_id="hexbet_leaderboard_refresh")
     async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            # Get leaderboard data for current page
             all_players = self.cog._compute_leaderboard(limit=None, sort_by=self.sort_by)
-            total_players = len(all_players)
-            per_page = 10
-            total_pages = max(1, (total_players + per_page - 1) // per_page)
-            current_page = max(1, min(self.page, total_pages))
-            
-            start_idx = (current_page - 1) * per_page
-            end_idx = start_idx + per_page
-            page_players = all_players[start_idx:end_idx]
-            
-            # Build embed
-            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Wygrana 🏆"
-            embed = discord.Embed(
-                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {current_page}/{total_pages}",
-                color=0xF1C40F
-            )
-            
-            lines = []
-            for i, row in enumerate(page_players, start=start_idx + 1):
-                medal = ""
-                if i == 1:
-                    medal = "🥇 "
-                elif i == 2:
-                    medal = "🥈 "
-                elif i == 3:
-                    medal = "🥉 "
-                
-                lines.append(
-                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
-                )
-            embed.description = "\n".join(lines)
-            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
-            embed.add_field(
-                name="📋 Useful Commands",
-                value=(
-                    "`/hxbalance` - Check your balance\n"
-                    "`/hxdaily` - Claim 100 daily tokens\n"
-                    "`/hxstats` - View your betting stats\n"
-                    "`/hxspecial` - Create special bet (1000 tokens)\n"
-                    "`/hxplayer` - Search for a player\n"
-                    "`/hxfind` - Find high-elo games"
-                ),
-                inline=False
-            )
-            
-            # Create new view with updated page
-            new_view = LeaderboardView(self.cog, page=current_page, total_pages=total_pages, sort_by=self.sort_by)
-            
-            # Edit the message instead of sending new one
+            embed, total_pages = self.cog._make_leaderboard_embed(all_players, self.page, self.sort_by)
+            new_view = LeaderboardView(self.cog, page=self.page, total_pages=total_pages, sort_by=self.sort_by)
             await interaction.response.edit_message(embed=embed, view=new_view)
         except Exception as e:
             logger.error(f"Failed to refresh leaderboard: {e}")
             await interaction.response.send_message("❌ Error updating leaderboard", ephemeral=True)
-    
+
     @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary, custom_id="hexbet_leaderboard_next")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            new_page = min(self.total_pages, self.page + 1)
-            
-            # Get leaderboard data for new page
             all_players = self.cog._compute_leaderboard(limit=None, sort_by=self.sort_by)
-            total_players = len(all_players)
-            per_page = 10
-            total_pages = max(1, (total_players + per_page - 1) // per_page)
-            new_page = max(1, min(new_page, total_pages))
-            
-            start_idx = (new_page - 1) * per_page
-            end_idx = start_idx + per_page
-            page_players = all_players[start_idx:end_idx]
-            
-            # Build embed
-            sort_title = "Balance 💰" if self.sort_by == 'balance' else "Wygrana 🎯"
-            embed = discord.Embed(
-                title=f"🏆 HEXBET Leaderboard ({sort_title}) - Page {new_page}/{total_pages}",
-                color=0xF1C40F
-            )
-            
-            lines = []
-            for i, row in enumerate(page_players, start=start_idx + 1):
-                medal = ""
-                if i == 1:
-                    medal = "🥇 "
-                elif i == 2:
-                    medal = "🥈 "
-                elif i == 3:
-                    medal = "🥉 "
-                
-                lines.append(
-                    f"{medal}**{i}. <@{row['discord_id']}>** — bal {row['balance']} • won {row['total_won']} • WR {row['win_rate']}%"
-                )
-            embed.description = "\n".join(lines)
-            embed.set_footer(text=f"Total Players: {total_players} | Showing {start_idx + 1}-{min(end_idx, total_players)}")
-            embed.add_field(
-                name="📋 Useful Commands",
-                value=(
-                    "`/hxbalance` - Check your balance\n"
-                    "`/hxdaily` - Claim 100 daily tokens\n"
-                    "`/hxstats` - View your betting stats\n"
-                    "`/hxspecial` - Create special bet (1000 tokens)\n"
-                    "`/hxplayer` - Search for a player\n"
-                    "`/hxfind` - Find high-elo games"
-                ),
-                inline=False
-            )
-            
-            # Create new view with updated page
+            new_page = min(self.total_pages, self.page + 1)
+            embed, total_pages = self.cog._make_leaderboard_embed(all_players, new_page, self.sort_by)
             new_view = LeaderboardView(self.cog, page=new_page, total_pages=total_pages, sort_by=self.sort_by)
-            
-            # Edit the message instead of sending new one
             await interaction.response.edit_message(embed=embed, view=new_view)
         except Exception as e:
             logger.error(f"Failed to go to next page: {e}")
