@@ -853,18 +853,20 @@ class CreatorBot(commands.Bot):
             view = None
 
             if platform == 'divineskins':
-                # Clean DivineSkins embed
+                # Clean DivineSkins new-release embed
                 embed = discord.Embed(
                     title=f"New Skin Released: {final_name}",
-                    description=f"Made by **{username}**",
                     color=0x9B59B6,
                     url=mod_url,
+                    timestamp=datetime.now(),
                 )
+                embed.set_author(name=f"By {username}")
                 if final_image:
                     embed.set_image(url=final_image)
                 if creator_avatar:
                     embed.set_thumbnail(url=creator_avatar)
-                embed.set_footer(text="Check out this amazing mod and support the creator!")
+                embed.add_field(name="✨ Platform", value="DivineSkins", inline=True)
+                embed.set_footer(text="Posted on DivineSkins")
 
                 class _DownloadView(discord.ui.View):
                     def __init__(self, url):
@@ -878,33 +880,25 @@ class CreatorBot(commands.Bot):
 
                 view = _DownloadView(mod_url)
             else:
-                # RuneForge embed
-                final_description = mod_details.get('description', f"Check out this {'updated' if is_update else 'new'} mod!")
+                # RuneForge new-release embed
+                final_description = mod_details.get('description', '')
                 embed = discord.Embed(
-                    title=f"{status_emoji} {platform_emoji} {title_prefix} Mod {'Updated' if is_update else 'Released'}!",
-                    description=f"**{final_name}**\n{final_description[:200]}{'...' if len(final_description) > 200 else ''}",
+                    title=f"{status_emoji} New Mod Released: {final_name}",
+                    description=final_description[:300] if final_description else None,
                     color=color,
                     url=mod_url,
-                    timestamp=datetime.now()
+                    timestamp=datetime.now(),
                 )
+                embed.set_author(name=f"By {username}")
                 if final_image:
                     embed.set_image(url=final_image)
                 if creator_avatar:
                     embed.set_thumbnail(url=creator_avatar)
-                embed.set_author(name=f"By {username}")
-                if final_views or final_likes:
-                    stats_line = []
-                    if final_views:
-                        stats_line.append(f"👁️ **{final_views:,}** views")
-                    if final_likes:
-                        stats_line.append(f"❤️ **{final_likes:,}** likes")
-                    embed.add_field(name="📊 Stats", value=" • ".join(stats_line), inline=False)
                 if final_version:
                     embed.add_field(name="🔖 Version", value=f"`{final_version}`", inline=True)
-                if final_tags:
-                    embed.add_field(name="🏷️ Tags", value=" • ".join([f"`{t}`" for t in final_tags[:5]]), inline=False)
+                embed.add_field(name="🌐 Platform", value="RuneForge", inline=True)
                 embed.set_footer(
-                    text=f"Posted on {platform_name}",
+                    text="Posted on RuneForge",
                     icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png"
                 )
 

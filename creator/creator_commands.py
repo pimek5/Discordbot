@@ -1011,46 +1011,35 @@ class CreatorCommands(commands.Cog):
                     if mod_details.get('author'):
                         author_name = mod_details['author']
                     
+                    _name = mod_details.get('name', mod_name)
+                    _desc = mod_details.get('description', '')
+
                     # Build embed
                     embed = discord.Embed(
-                        title=f"🎲 Random Mod: {mod_details.get('name', mod_name)}",
-                        description=mod_details.get('description', 'No description available')[:500],
+                        title=f"🎲 Random Mod: {_name} | RuneForge",
+                        description=_desc[:300] if _desc else None,
                         color=0xFF6B35,
                         url=mod_url,
                         timestamp=datetime.now()
                     )
-                    
-                    # Set image
-                    if mod_details.get('image_url'):
-                        embed.set_image(url=mod_details['image_url'])
-                    
-                    # Author (moved to top for visibility)
+
                     embed.set_author(
                         name=f"By {author_name}",
                         url=f"https://runeforge.dev/users/{author_name}" if author_name != 'Unknown' else None
                     )
-                    
-                    # Stats
-                    stats = []
-                    if mod_details.get('views'):
-                        stats.append(f"👁️ {mod_details['views']:,} views")
-                    if mod_details.get('likes'):
-                        stats.append(f"❤️ {mod_details['likes']:,} likes")
-                    if stats:
-                        embed.add_field(name="📊 Stats", value=" • ".join(stats), inline=False)
-                    
-                    # Version
+
+                    if mod_details.get('image_url'):
+                        embed.set_image(url=mod_details['image_url'])
+
                     if mod_details.get('version'):
                         embed.add_field(name="🔖 Version", value=f"`{mod_details['version']}`", inline=True)
-                    
+
                     embed.add_field(name="🌐 Platform", value="RuneForge", inline=True)
-                    
-                    # Tags
-                    if mod_details.get('tags'):
-                        tags_str = " • ".join([f"`{tag}`" for tag in mod_details['tags'][:5]])
-                        embed.add_field(name="🏷️ Tags", value=tags_str, inline=False)
-                    
-                    embed.set_footer(text="🎲 Random mod from RuneForge", icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f3b2.png")
+
+                    embed.set_footer(
+                        text="🎲 🔧 Random mod from RuneForge (every 2 hours)",
+                        icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f3b2.png"
+                    )
                     
                     await interaction.followup.send(embed=embed)
                     logger.info("🎲 Random mod sent to %s: %s by %s (from %d total mods)", interaction.user, mod_name, author_name, total_mods)
