@@ -902,6 +902,18 @@ class CreatorBot(commands.Bot):
                     icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png"
                 )
 
+                class _DownloadModView(discord.ui.View):
+                    def __init__(self, url):
+                        super().__init__()
+                        self.add_item(discord.ui.Button(
+                            label="Download Mod",
+                            url=url,
+                            style=discord.ButtonStyle.link,
+                            emoji="🔗",
+                        ))
+
+                view = _DownloadModView(mod_url)
+
             channels = []
             added_channel_ids = set()
 
