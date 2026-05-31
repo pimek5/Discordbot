@@ -646,8 +646,27 @@ class CreatorBot(commands.Bot):
                 downloads = skin.get('downloads', 0)
                 
                 existing = db.get_mod(creator_id, skin_id, 'divineskins')
-                
+
+                # Determine whether this skin was published before the cutoff
+                _DIVINESKINS_CUTOFF = datetime(2026, 5, 30)
+                _is_old = False
+                if updated_at:
+                    try:
+                        _skin_date = datetime.fromisoformat(updated_at[:10])
+                        _is_old = _skin_date < _DIVINESKINS_CUTOFF
+                    except Exception:
+                        _is_old = False
+
                 if not existing:
+                    if _is_old:
+                        # Seed silently — skin existed before cutoff, no notification
+                        db.add_mod(creator_id, skin_id, skin_name, skin_url, updated_at, 'divineskins')
+                        for seed_db in get_all_creator_dbs():
+                            for other_creator in seed_db.get_creators_by_user(discord_user_id, 'divineskins'):
+                                if other_creator['id'] == creator_id:
+                                    continue
+                                seed_db.add_mod(other_creator['id'], skin_id, skin_name, skin_url, updated_at, 'divineskins')
+                        continue
                     await self.send_notification(
                         db,
                         guild_id,
