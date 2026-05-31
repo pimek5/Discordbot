@@ -259,6 +259,21 @@ class CrashCog(commands.Cog):
             self._round_task.cancel()
 
     # ------------------------------------------------------------------
+    # Channel guard — delete any normal message in the crash channel
+    # ------------------------------------------------------------------
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.channel.id != CRASH_CHANNEL_ID:
+            return
+        if message.author.bot:
+            return
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # /crashstart command
     # ------------------------------------------------------------------
 
