@@ -274,7 +274,13 @@ class Hexbet(commands.Cog):
         return cutoff_lp
 
     async def _get_challenger_cutoff_lp(self, region: str) -> Optional[int]:
-        """Return current Challenger cutoff LP (minimum LP in Challenger) for a region."""
+        """Return current Challenger cutoff LP by scraping OP.GG (EUW/EUNE/KR/NA) with Riot API fallback."""
+        OPGG_REGION_MAP = {
+            'euw': 'euw', 'euw1': 'euw',
+            'eune': 'eune', 'eun1': 'eune',
+            'kr': 'kr',
+            'na': 'na', 'na1': 'na',
+        }
         region_key = (region or '').lower()
         if not region_key:
             return None
@@ -286,21 +292,71 @@ class Hexbet(commands.Cog):
             if (now_ts - cached_at) < self._gm_cutoff_ttl_seconds:
                 return cached_cutoff
 
-        chall_data = await self.riot_api.get_challenger_league(region_key)
-        entries = chall_data.get('entries', []) if chall_data else []
-        lp_values = []
-
-        for entry in entries:
+        cutoff_lp = None
+        opgg_region = OPGG_REGION_MAP.get(region_key)
+        if opgg_region:
             try:
-                lp_values.append(int(entry.get('leaguePoints', 0)))
-            except (TypeError, ValueError):
-                continue
+                import re as _re, json as _json
+                url = f"https://op.gg/lol/leaderboards/tier?region={opgg_region}"
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                }
+                timeout = aiohttp.ClientTimeout(total=15)
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers, timeout=timeout) as resp:
+                        if resp.status == 200:
+                            html = await resp.text()
+                            # Try __NEXT_DATA__ JSON first
+                            m = _re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, _re.DOTALL)
+                            if m:
+                                try:
+                                    data = _json.loads(m.group(1))
+                                    data_str = _json.dumps(data)
+                                    # Search for challenger threshold (minLp near CHALLENGER tier)
+                                    lp_m = (
+                                        _re.search(r'"CHALLENGER"[^}]{0,200}?"minLp"\s*:\s*(\d+)', data_str)
+                                        or _re.search(r'"minLp"\s*:\s*(\d+)[^}]{0,200}?"CHALLENGER"', data_str)
+                                        or _re.search(r'"challengerCutoff"\s*:\s*(\d+)', data_str)
+                                        or _re.search(r'"cutoff"\s*:\s*(\d+)', data_str)
+                                    )
+                                    if lp_m:
+                                        cutoff_lp = int(lp_m.group(1))
+                                        logger.info(f"✅ op.gg __NEXT_DATA__ Challenger cutoff {opgg_region}: {cutoff_lp} LP")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ op.gg __NEXT_DATA__ parse failed: {e}")
+                            # HTML regex fallback — matches the LP number right after challenger badge
+                            if cutoff_lp is None:
+                                lp_m = _re.search(
+                                    r'challenger[^"]{0,80}"[^>]*>[\s\S]{0,300}?([\d,]+)\s*LP',
+                                    html, _re.IGNORECASE
+                                )
+                                if lp_m:
+                                    try:
+                                        cutoff_lp = int(lp_m.group(1).replace(',', ''))
+                                        logger.info(f"✅ op.gg HTML Challenger cutoff {opgg_region}: {cutoff_lp} LP")
+                                    except ValueError:
+                                        pass
+            except Exception as e:
+                logger.warning(f"⚠️ op.gg scrape failed for {region}: {e}")
 
-        if not lp_values:
-            return None
+        # Fallback: Riot API
+        if cutoff_lp is None:
+            chall_data = await self.riot_api.get_challenger_league(region_key)
+            entries = chall_data.get('entries', []) if chall_data else []
+            lp_values = []
+            for entry in entries:
+                try:
+                    lp_values.append(int(entry.get('leaguePoints', 0)))
+                except (TypeError, ValueError):
+                    continue
+            if lp_values:
+                cutoff_lp = min(lp_values)
+                logger.info(f"✅ Riot API Challenger cutoff {region}: {cutoff_lp} LP")
 
-        cutoff_lp = min(lp_values)
-        self._challenger_cutoff_cache[region_key] = (cutoff_lp, now_ts)
+        if cutoff_lp is not None:
+            self._challenger_cutoff_cache[region_key] = (cutoff_lp, now_ts)
         return cutoff_lp
 
     async def _restore_persistent_views(self):
