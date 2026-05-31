@@ -1590,21 +1590,49 @@ class CreatorCommands(commands.Cog):
 
     # ==================== EDIT COMMAND ====================
 
+    _EDITOR_ROLE_ID = 1153030265782927501
+
     @creator_group.command(name="edit", description="Edit your tracked creator profiles and subscription settings")
-    async def edit_creator(self, interaction: discord.Interaction):
+    @app_commands.describe(user="User to edit (requires special role)")
+    async def edit_creator(self, interaction: discord.Interaction, user: str = None):
         """Show an interactive panel to add/remove creator profiles and toggle new-releases subscription."""
         await interaction.response.defer(ephemeral=True)
         try:
             db = self._get_db(interaction)
             guild_id = self._get_guild_id(interaction)
-            user_id = interaction.user.id
+
+            # Resolve target user
+            if user:
+                has_editor_role = any(
+                    r.id == self._EDITOR_ROLE_ID
+                    for r in getattr(interaction.user, 'roles', [])
+                )
+                if not has_editor_role:
+                    await interaction.followup.send(
+                        "❌ You don't have permission to edit other users.",
+                        ephemeral=True
+                    )
+                    return
+                target_user = await self._resolve_target_user(interaction, user)
+                if not target_user:
+                    await interaction.followup.send(
+                        "❌ Couldn't find that user. Use a mention or user ID.",
+                        ephemeral=True
+                    )
+                    return
+                user_id = target_user.id
+                editing_other = True
+            else:
+                user_id = interaction.user.id
+                target_user = interaction.user
+                editing_other = False
 
             rf_creator = db.get_creator(user_id, 'runeforge')
             ds_creator = db.get_creator(user_id, 'divineskins')
             config = db.get_guild_config(guild_id) or {}
             subscribed = bool(config.get('new_mod_channel_id'))
 
-            embed = _build_edit_embed(rf_creator, ds_creator, subscribed)
+            embed = _build_edit_embed(rf_creator, ds_creator, subscribed, target_user if editing_other else None)
 
             view = _EditView(
                 cog=self,
@@ -1622,10 +1650,11 @@ class CreatorCommands(commands.Cog):
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
 
-def _build_edit_embed(rf_creator, ds_creator, subscribed: bool) -> discord.Embed:
+def _build_edit_embed(rf_creator, ds_creator, subscribed: bool, target_user=None) -> discord.Embed:
+    desc = f"Editing profile of **{target_user.display_name}**" if target_user else "Manage your tracked platforms and new-releases subscription."
     embed = discord.Embed(
         title="✏️ Edit Creator Profiles",
-        description="Manage your tracked platforms and new-releases subscription.",
+        description=desc,
         color=discord.Color.blurple(),
     )
     rf_val = f"[{rf_creator['username']}]({rf_creator['profile_url']})" if rf_creator else "❌ Not tracked"
