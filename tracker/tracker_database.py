@@ -724,7 +724,23 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def add_bet(self, match_id: int, user_id: int, side: str, amount: int, odds: float, potential: int) -> bool:
+    def get_open_scouting_matches(self) -> List[dict]:
+        """Get all open scouting-channel matches (request_source='scouting')."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM hexbet_matches WHERE status = 'open' AND request_source = 'scouting' ORDER BY created_at DESC"
+                )
+                rows = cur.fetchall()
+                if not rows:
+                    return []
+                cols = [desc[0] for desc in cur.description]
+                return [dict(zip(cols, row)) for row in rows]
+        finally:
+            self.return_connection(conn)
+
+
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:

@@ -673,6 +673,7 @@ class Hexbet(commands.Cog):
         self.live_score_update_task.cancel()
         self.pool_update_task.cancel()
         self.spectate_task.cancel()
+        self.scouting_task.cancel()
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
@@ -1007,6 +1008,7 @@ class Hexbet(commands.Cog):
             game_data.get('gameStartTime', 0),
             special_bet=False,
             guild_id=guild_id,
+            requested_by_name=scouted_player_name,
             request_source='scouting',
         )
         if not match_id:
@@ -1154,11 +1156,17 @@ class Hexbet(commands.Cog):
                                     is_special_bet = match.get('special_bet', False)
                                     featured = "special" if is_special_bet else ""
                                     game_start_at = match.get('game_start_at')
-                                    
+                                    # Preserve scouting header if this match was from the scouting system
+                                    scouted_name = ""
+                                    if match.get('request_source') == 'scouting':
+                                        # Best-effort: show generic label; the full name is not stored in the match
+                                        scouted_name = match.get('requested_by_name') or "Scouted Player"
+
                                     new_embed = self._build_embed(
                                         game_id, platform, blue_players, red_players,
                                         odds_blue, odds_red, chance_blue, chance_red,
-                                        featured, match['id'], game_start_at
+                                        featured, match['id'], game_start_at,
+                                        scouted_player_name=scouted_name,
                                     )
                                     
                                     await msg.edit(embed=new_embed)
@@ -1210,6 +1218,44 @@ class Hexbet(commands.Cog):
                                 await self.post_random_featured_game(force=False)
                         except Exception as e:
                             logger.error(f"❌ Error checking message {message_id}: {e}")
+
+            # ── Update scouting embeds (game time refresh only) ───────
+            try:
+                scouting_matches = self.db.get_open_scouting_matches()
+                for smatch in scouting_matches:
+                    smatch_messages = self.db.get_match_messages(smatch['id'])
+                    if not smatch_messages:
+                        continue
+                    s_blue = smatch.get('blue_team', {})
+                    s_red = smatch.get('red_team', {})
+                    if not (isinstance(s_blue, dict) and isinstance(s_red, dict)):
+                        continue
+                    s_blue_p = s_blue.get('players', [])
+                    s_red_p = s_red.get('players', [])
+                    s_odds_b = s_blue.get('odds', 1.5)
+                    s_odds_r = s_red.get('odds', 1.5)
+                    s_chance_b = round((1 / s_odds_b) / ((1 / s_odds_b) + (1 / s_odds_r)) * 100, 1)
+                    s_chance_r = round(100 - s_chance_b, 1)
+                    scouted_name = smatch.get('requested_by_name') or 'Scouted Player'
+                    s_embed = self._build_embed(
+                        smatch['game_id'], smatch['platform'], s_blue_p, s_red_p,
+                        s_odds_b, s_odds_r, s_chance_b, s_chance_r,
+                        '', smatch['id'], smatch.get('game_start_at'),
+                        scouted_player_name=scouted_name,
+                    )
+                    for _, s_channel_id, s_msg_id in smatch_messages:
+                        try:
+                            s_channel = self.bot.get_channel(s_channel_id)
+                            if s_channel:
+                                s_msg = await s_channel.fetch_message(s_msg_id)
+                                await s_msg.edit(embed=s_embed)
+                        except discord.NotFound:
+                            pass
+                        except Exception as se:
+                            logger.warning(f"⚠️ Error updating scouting embed {s_msg_id}: {se}")
+            except Exception as se:
+                logger.warning(f"⚠️ Error refreshing scouting embeds: {se}")
+
         except Exception as e:
             logger.error(f"❌ Error in check_embed_task: {e}", exc_info=True)
 
