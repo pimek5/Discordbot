@@ -5598,122 +5598,6 @@ These players will now appear more frequently in betting matches!"""
     def _is_staff_or_admin(self, interaction: discord.Interaction) -> bool:
         return self._has_staff_access(interaction)
 
-    @app_commands.command(name="hxspectate", description="Start monitoring a player and prioritize posting their live game")
-    @app_commands.describe(
-        name="Player display name or RiotID (gameName#tagLine)",
-        platform="Platform shard (euw1, eun1, na1, kr...)"
-    )
-    @app_commands.choices(
-        platform=[
-            app_commands.Choice(name="EUW", value="euw1"),
-            app_commands.Choice(name="EUNE", value="eun1"),
-            app_commands.Choice(name="NA", value="na1"),
-            app_commands.Choice(name="KR", value="kr"),
-            app_commands.Choice(name="BR", value="br1"),
-            app_commands.Choice(name="LAN", value="la1"),
-            app_commands.Choice(name="LAS", value="la2"),
-            app_commands.Choice(name="OCE", value="oc1"),
-            app_commands.Choice(name="TR", value="tr1"),
-            app_commands.Choice(name="RU", value="ru"),
-            app_commands.Choice(name="JP", value="jp1"),
-        ],
-    )
-    async def hxspectate(self, interaction: discord.Interaction, name: str, platform: str = "euw1"):
-        if not self._is_staff_or_admin(interaction):
-            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        guild_id = interaction.guild_id
-        if not guild_id:
-            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
-            return
-
-        key = (guild_id, name.lower().strip(), platform.lower().strip())
-        self.spectate_targets[key] = {
-            'guild_id': guild_id,
-            'name': name.strip(),
-            'platform': platform.lower().strip(),
-            # If special requirements (GM cutoff average) are not met, the posted match is regular.
-            'force_non_special': False,
-            'requested_by': interaction.user.id,
-        }
-        await interaction.followup.send(
-            f"✅ Monitoring **{name}** on `{platform}`. If they are in game, HEXBET will prioritize posting that match.",
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="hxspectatestop", description="Stop monitoring a player")
-    @app_commands.describe(
-        name="Player display name or RiotID (gameName#tagLine)",
-        platform="Optional: stop only this platform (default: stop all platforms for that name)"
-    )
-    @app_commands.choices(
-        platform=[
-            app_commands.Choice(name="EUW", value="euw1"),
-            app_commands.Choice(name="EUNE", value="eun1"),
-            app_commands.Choice(name="NA", value="na1"),
-            app_commands.Choice(name="KR", value="kr"),
-            app_commands.Choice(name="BR", value="br1"),
-            app_commands.Choice(name="LAN", value="la1"),
-            app_commands.Choice(name="LAS", value="la2"),
-            app_commands.Choice(name="OCE", value="oc1"),
-            app_commands.Choice(name="TR", value="tr1"),
-            app_commands.Choice(name="RU", value="ru"),
-            app_commands.Choice(name="JP", value="jp1"),
-        ],
-    )
-    async def hxspectatestop(self, interaction: discord.Interaction, name: str, platform: Optional[str] = None):
-        if not self._is_staff_or_admin(interaction):
-            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        guild_id = interaction.guild_id
-        if not guild_id:
-            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
-            return
-
-        removed = 0
-        if platform:
-            key = (guild_id, name.lower().strip(), platform.lower().strip())
-            if self.spectate_targets.pop(key, None):
-                removed = 1
-        else:
-            keys_to_remove = [
-                key for key, target in self.spectate_targets.items()
-                if target.get('guild_id') == guild_id and target.get('name', '').lower().strip() == name.lower().strip()
-            ]
-            for key in keys_to_remove:
-                self.spectate_targets.pop(key, None)
-            removed = len(keys_to_remove)
-
-        if removed:
-            scope = f" on `{platform}`" if platform else " on all platforms"
-            await interaction.followup.send(f"🛑 Stopped monitoring **{name}**{scope}.", ephemeral=True)
-        else:
-            await interaction.followup.send(f"ℹ️ Monitor not found for **{name}**.", ephemeral=True)
-
-    @app_commands.command(name="hxspectatelist", description="List active spectate monitors")
-    async def hxspectatelist(self, interaction: discord.Interaction):
-        if not self._is_staff_or_admin(interaction):
-            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        guild_id = interaction.guild_id
-        if not guild_id:
-            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
-            return
-
-        targets = [t for t in self.spectate_targets.values() if t.get('guild_id') == guild_id]
-        if not targets:
-            await interaction.followup.send("ℹ️ No active spectate monitors in this server.", ephemeral=True)
-            return
-
-        lines = [f"• **{t['name']}** on `{t['platform']}`" for t in targets]
-        await interaction.followup.send("📡 Active hxspectate monitors:\n" + "\n".join(lines), ephemeral=True)
-
     @hxpost.error
     async def hxpost_error(self, interaction: discord.Interaction, error):
         if isinstance(error, app_commands.errors.MissingPermissions):
@@ -5722,10 +5606,10 @@ These players will now appear more frequently in betting matches!"""
             await interaction.response.send_message(f"❌ Error: {error}", ephemeral=True)
 
     # ------------------------------------------------------------------
-    # /hexfocus — scouted players management
+    # /hxspectate — scouted players management
     # ------------------------------------------------------------------
 
-    @app_commands.command(name="hexfocus", description="Manage the scouting list (add/edit/remove)")
+    @app_commands.command(name="hxspectate", description="Manage the scouting list (add/edit/remove)")
     @app_commands.describe(
         action="Action: add, edit, remove, list",
         user="Discord user to scout",
@@ -5753,7 +5637,7 @@ These players will now appear more frequently in betting matches!"""
             app_commands.Choice(name="JP",   value="jp1"),
         ],
     )
-    async def hexfocus(
+    async def hxspectate(
         self,
         interaction: discord.Interaction,
         action: str,
