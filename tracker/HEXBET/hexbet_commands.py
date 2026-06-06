@@ -80,6 +80,9 @@ DEFAULT_BET_CHANNEL_ID = 1398977064261910580
 DEFAULT_LEADERBOARD_CHANNEL_ID = 1398985421014306856
 DEFAULT_BET_LOGS_CHANNEL_ID = 1398986567988674704
 
+# Scouting channel — receives game embeds for /hexfocus players only
+SCOUTING_CHANNEL_ID = 1512823945014018108
+
 # Task intervals
 FEATURED_INTERVAL = 5  # minutes - how often to check for and post new matches (faster to maintain 3 slots)
 LEADERBOARD_INTERVAL = 10  # minutes - how often to refresh leaderboard
@@ -229,6 +232,7 @@ class Hexbet(commands.Cog):
         self.primary_guild_id = int(os.getenv('DISCORD_GUILD_ID', '0') or 0)
         self.spectate_targets = {}
         self.spectate_seen_games = set()
+        self.scouting_seen_games = set()
         self.db.ensure_hexbet_tables()
         self.featured_task.start()
         self.leaderboard_task.start()
@@ -238,6 +242,7 @@ class Hexbet(commands.Cog):
         self.live_score_update_task.start()  # Update live odds every 5 minutes
         self.pool_update_task.start()  # Auto-update player pool every hour
         self.spectate_task.start()  # Monitor watched players and prioritize their games
+        self.scouting_task.start()  # Monitor /hexfocus scouted players
         self.bot.loop.create_task(self._ensure_champions())
         self.bot.loop.create_task(self._restore_persistent_views())
         self.bot.loop.create_task(self._load_pro_players())
@@ -885,6 +890,148 @@ class Hexbet(commands.Cog):
     @spectate_task.before_loop
     async def before_spectate(self):
         await self.bot.wait_until_ready()
+
+    # ------------------------------------------------------------------
+    # Scouting task — monitor /hexfocus players, post to scouting channel
+    # ------------------------------------------------------------------
+
+    @tasks.loop(minutes=1)
+    async def scouting_task(self):
+        """Poll scouted players' active games and post to the scouting channel."""
+        try:
+            scouted = self.db.get_scouted_players()
+        except Exception as exc:
+            logger.warning(f"⚠️ scouting_task: failed to fetch scouted players: {exc}")
+            return
+
+        if not scouted:
+            return
+
+        region_map = {
+            'euw1': 'euw', 'eun1': 'eune', 'na1': 'na', 'kr': 'kr',
+            'br1': 'br', 'la1': 'lan', 'la2': 'las', 'oc1': 'oce',
+            'tr1': 'tr', 'ru': 'ru', 'jp1': 'jp',
+        }
+
+        for player in scouted:
+            riot_id = player['riot_id']
+            platform = player['region']
+            region = region_map.get(platform, 'euw')
+            discord_name = player['discord_name'] or riot_id
+
+            try:
+                if '#' in riot_id:
+                    game_name, tag_line = riot_id.split('#', 1)
+                    puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line, platform)
+                else:
+                    summoner = await self.riot_api.get_summoner_by_name(riot_id, region)
+                    puuid = summoner.get('puuid') if summoner else None
+
+                if not puuid:
+                    continue
+
+                game_data = await self.riot_api.get_active_game(puuid, region)
+                if not game_data:
+                    continue
+
+                game_id = game_data.get('gameId')
+                if not game_id or game_id in self.scouting_seen_games:
+                    continue
+
+                posted = await self._post_scouting_game(
+                    platform=platform,
+                    region=region,
+                    game_data=game_data,
+                    scouted_player_name=discord_name,
+                    riot_id=riot_id,
+                )
+
+                if posted:
+                    self.scouting_seen_games.add(game_id)
+                    if len(self.scouting_seen_games) > 200:
+                        self.scouting_seen_games = set(list(self.scouting_seen_games)[-100:])
+
+            except Exception as exc:
+                logger.warning(f"⚠️ scouting_task error for {riot_id}: {exc}")
+
+    @scouting_task.before_loop
+    async def before_scouting(self):
+        await self.bot.wait_until_ready()
+
+    async def _post_scouting_game(
+        self,
+        platform: str,
+        region: str,
+        game_data: dict,
+        scouted_player_name: str,
+        riot_id: str,
+    ) -> bool:
+        """Post a scouted player's live game to the scouting channel."""
+        channel = self.bot.get_channel(SCOUTING_CHANNEL_ID)
+        if not channel:
+            logger.error(f"❌ Scouting channel {SCOUTING_CHANNEL_ID} not found")
+            return False
+
+        game_id = game_data.get('gameId')
+        if not game_id:
+            return False
+
+        # Skip if game already posted to scouting channel
+        open_matches = self.db.get_open_matches()
+        if any(m.get('game_id') == game_id and m.get('channel_id') == SCOUTING_CHANNEL_ID for m in open_matches):
+            logger.info(f"ℹ️ Scouting game {game_id} already posted")
+            return False
+
+        blue_team = [p for p in game_data['participants'] if p['teamId'] == 100]
+        red_team = [p for p in game_data['participants'] if p['teamId'] == 200]
+
+        blue_ordered = self._assign_roles(blue_team)
+        red_ordered = self._assign_roles(red_team)
+
+        await self._enrich_players(blue_ordered, region)
+        await self._enrich_players(red_ordered, region)
+        self._apply_lobby_average(blue_ordered + red_ordered)
+
+        odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
+        chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
+        chance_red = round(100 - chance_blue, 1)
+
+        guild_id = self.primary_guild_id
+
+        match_id = self.db.create_hexbet_match(
+            game_id,
+            platform,
+            SCOUTING_CHANNEL_ID,
+            {'players': blue_ordered, 'odds': odds_blue},
+            {'players': red_ordered, 'odds': odds_red},
+            game_data.get('gameStartTime', 0),
+            special_bet=False,
+            guild_id=guild_id,
+            request_source='scouting',
+        )
+        if not match_id:
+            logger.info(f"ℹ️ Scouting game {game_id} already exists in DB (conflict)")
+            return False
+
+        embed = self._build_embed(
+            game_id,
+            platform,
+            blue_ordered,
+            red_ordered,
+            odds_blue,
+            odds_red,
+            chance_blue,
+            chance_red,
+            match_id=match_id,
+            game_start_at=game_data.get('gameStartTime'),
+            scouted_player_name=scouted_player_name,
+        )
+        msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
+        self.db.set_match_message(match_id, msg.id)
+        self.db.add_match_message(match_id, guild_id, SCOUTING_CHANNEL_ID, msg.id)
+
+        logger.info(f"✅ Scouting posted game {game_id} for {scouted_player_name} ({riot_id})")
+        return True
 
     @tasks.loop(minutes=FEATURED_INTERVAL)
     async def featured_task(self):
@@ -2797,7 +2944,7 @@ class Hexbet(commands.Cog):
     def _smurf_summary(self, team: List[dict]) -> int:
         return sum(1 for p in team if p.get('smurf_risk'))
 
-    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None, game_start_at: Optional[str] = None) -> discord.Embed:
+    def _build_embed(self, game_id: int, platform: str, blue: List[dict], red: List[dict], odds_blue: float, odds_red: float, chance_blue: float, chance_red: float, featured_player: str = "", match_id: Optional[int] = None, game_start_at: Optional[str] = None, scouted_player_name: str = "") -> discord.Embed:
         # Calculate team statistics (only from ranked players, not streamer mode)
         blue_ranked = [p for p in blue if not p.get('streamer_mode', False)]
         red_ranked = [p for p in red if not p.get('streamer_mode', False)]
@@ -2837,7 +2984,10 @@ class Hexbet(commands.Cog):
         region_display = region_names.get(platform.lower(), platform.upper())
         
         # Build description
-        desc = f"**Region:** {region_display}"
+        if scouted_player_name:
+            desc = f"🔍 **SCOUTING:** {scouted_player_name}\n━━━━━━━━━━━━━━━━━━━━━\n**Region:** {region_display}"
+        else:
+            desc = f"**Region:** {region_display}"
         if featured_player:
             # Priority game - SOLO/DUO QUEUE special bet
             desc += f"\n━━━━━━━━━━━━━━━━━━━━━\n🎯 **SOLO/DUO QUEUE**\n⭐ **SPECIAL BET** - 1.5x bonus on winnings!\n━━━━━━━━━━━━━━━━━━━━━"
@@ -2917,11 +3067,13 @@ class Hexbet(commands.Cog):
         else:
             desc += f"\n\n⏱️ **Game Duration:** ~25-35 minutes (estimated)"
         
-        # Use distinct colors for special vs normal bets
-        embed_color = 0xE74C3C if featured_player else 0x3498DB  # Red for special, blue for normal
+        # Use distinct colors: red for special/featured bets, blue for normal and scouting
+        embed_color = 0xE74C3C if featured_player else 0x3498DB
         embed_title = f"⚔️ HEXBET Match #{game_id}"
         if featured_player:
             embed_title += " - 🎯 SOLO/DUO QUEUE"
+        elif scouted_player_name:
+            embed_title += " - 🔍 SCOUTING"
         
         embed = discord.Embed(
             title=embed_title,
@@ -5522,6 +5674,140 @@ These players will now appear more frequently in betting matches!"""
             await interaction.response.send_message("❌ You need Manage Server to use this.", ephemeral=True)
         else:
             await interaction.response.send_message(f"❌ Error: {error}", ephemeral=True)
+
+    # ------------------------------------------------------------------
+    # /hexfocus — scouted players management
+    # ------------------------------------------------------------------
+
+    @app_commands.command(name="hexfocus", description="Manage the scouting list (add/edit/remove)")
+    @app_commands.describe(
+        action="Action: add, edit, remove, list",
+        user="Discord user to scout",
+        riot_id="Riot ID (gameName#tagLine)",
+        region="Platform shard (euw1, eun1, na1, kr…)",
+    )
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="add",    value="add"),
+            app_commands.Choice(name="edit",   value="edit"),
+            app_commands.Choice(name="remove", value="remove"),
+            app_commands.Choice(name="list",   value="list"),
+        ],
+        region=[
+            app_commands.Choice(name="EUW",  value="euw1"),
+            app_commands.Choice(name="EUNE", value="eun1"),
+            app_commands.Choice(name="NA",   value="na1"),
+            app_commands.Choice(name="KR",   value="kr"),
+            app_commands.Choice(name="BR",   value="br1"),
+            app_commands.Choice(name="LAN",  value="la1"),
+            app_commands.Choice(name="LAS",  value="la2"),
+            app_commands.Choice(name="OCE",  value="oc1"),
+            app_commands.Choice(name="TR",   value="tr1"),
+            app_commands.Choice(name="RU",   value="ru"),
+            app_commands.Choice(name="JP",   value="jp1"),
+        ],
+    )
+    async def hexfocus(
+        self,
+        interaction: discord.Interaction,
+        action: str,
+        user: Optional[discord.Member] = None,
+        riot_id: Optional[str] = None,
+        region: Optional[str] = None,
+    ):
+        if not self._has_staff_access(interaction):
+            await interaction.response.send_message("❌ You need Staff or Admin role to use this.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if action == "list":
+            players = self.db.get_scouted_players()
+            if not players:
+                await interaction.followup.send("ℹ️ Scouting list is empty.", ephemeral=True)
+                return
+            lines = [
+                f"• **{p['discord_name'] or p['discord_id']}** — `{p['riot_id']}` ({p['region']})"
+                for p in players
+            ]
+            embed = discord.Embed(
+                title=f"🔍 Scouting List ({len(players)} players)",
+                description="\n".join(lines),
+                color=0x3498DB,
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        if action == "add":
+            if not user or not riot_id or not region:
+                await interaction.followup.send("❌ `add` requires: user, riot_id, region.", ephemeral=True)
+                return
+            ok = self.db.add_scouted_player(
+                discord_id=user.id,
+                discord_name=user.display_name,
+                riot_id=riot_id.strip(),
+                region=region,
+                added_by=interaction.user.id,
+            )
+            if ok:
+                await interaction.followup.send(
+                    f"✅ Added **{user.display_name}** (`{riot_id}` · {region}) to scouting list.\n"
+                    f"Their games will be posted in <#{SCOUTING_CHANNEL_ID}>.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f"⚠️ **{user.display_name}** is already on the scouting list. Use `edit` to update.",
+                    ephemeral=True,
+                )
+            return
+
+        if action == "edit":
+            if not user:
+                await interaction.followup.send("❌ `edit` requires: user.", ephemeral=True)
+                return
+            if not riot_id and not region:
+                await interaction.followup.send("❌ `edit` requires at least riot_id or region.", ephemeral=True)
+                return
+            ok = self.db.edit_scouted_player(
+                discord_id=user.id,
+                riot_id=riot_id.strip() if riot_id else None,
+                region=region,
+                discord_name=user.display_name,
+            )
+            if ok:
+                changes = []
+                if riot_id:
+                    changes.append(f"Riot ID → `{riot_id}`")
+                if region:
+                    changes.append(f"Region → `{region}`")
+                await interaction.followup.send(
+                    f"✅ Updated **{user.display_name}**: {', '.join(changes)}.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f"❌ **{user.display_name}** not found in scouting list. Use `add` first.",
+                    ephemeral=True,
+                )
+            return
+
+        if action == "remove":
+            if not user:
+                await interaction.followup.send("❌ `remove` requires: user.", ephemeral=True)
+                return
+            ok = self.db.remove_scouted_player(user.id)
+            if ok:
+                await interaction.followup.send(
+                    f"🗑️ Removed **{user.display_name}** from scouting list.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f"❌ **{user.display_name}** not found in scouting list.",
+                    ephemeral=True,
+                )
+            return
 
     @app_commands.command(name="hxsync", description="(Admin) Force sync slash commands")
     async def force_sync(self, interaction: discord.Interaction):

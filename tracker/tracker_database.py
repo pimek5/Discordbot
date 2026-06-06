@@ -285,7 +285,105 @@ class TrackerDatabase:
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_verified_riot_id ON hexbet_verified_players(riot_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_verified_type ON hexbet_verified_players(player_type)")
+
+                # Scouting list — Discord members whose LoL games should be posted to the scouting channel
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS hexbet_scouted_players (
+                        id SERIAL PRIMARY KEY,
+                        discord_id BIGINT UNIQUE NOT NULL,
+                        discord_name TEXT,
+                        riot_id TEXT NOT NULL,
+                        region TEXT NOT NULL,
+                        added_by BIGINT,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW()
+                    );
+                """)
                 conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    # ------------------------------------------------------------------
+    # Scouted players CRUD
+    # ------------------------------------------------------------------
+
+    def add_scouted_player(self, discord_id: int, discord_name: str, riot_id: str, region: str, added_by: int = None) -> bool:
+        """Add a player to the scouting list. Returns True if inserted, False if already exists."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO hexbet_scouted_players (discord_id, discord_name, riot_id, region, added_by)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (discord_id) DO NOTHING
+                    RETURNING id
+                """, (discord_id, discord_name, riot_id, region, added_by))
+                row = cur.fetchone()
+                conn.commit()
+                return row is not None
+        finally:
+            self.return_connection(conn)
+
+    def edit_scouted_player(self, discord_id: int, riot_id: str = None, region: str = None, discord_name: str = None) -> bool:
+        """Update riot_id / region for a scouted player. Returns True if row was updated."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                updates = []
+                values = []
+                if riot_id is not None:
+                    updates.append("riot_id = %s")
+                    values.append(riot_id)
+                if region is not None:
+                    updates.append("region = %s")
+                    values.append(region)
+                if discord_name is not None:
+                    updates.append("discord_name = %s")
+                    values.append(discord_name)
+                if not updates:
+                    return False
+                updates.append("updated_at = NOW()")
+                values.append(discord_id)
+                cur.execute(
+                    f"UPDATE hexbet_scouted_players SET {', '.join(updates)} WHERE discord_id = %s RETURNING id",
+                    values,
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return row is not None
+        finally:
+            self.return_connection(conn)
+
+    def remove_scouted_player(self, discord_id: int) -> bool:
+        """Remove a player from the scouting list. Returns True if deleted."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM hexbet_scouted_players WHERE discord_id = %s RETURNING id",
+                    (discord_id,),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return row is not None
+        finally:
+            self.return_connection(conn)
+
+    def get_scouted_players(self) -> list:
+        """Return all scouted players as list of dicts."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT discord_id, discord_name, riot_id, region
+                    FROM hexbet_scouted_players
+                    ORDER BY created_at ASC
+                """)
+                rows = cur.fetchall()
+                return [
+                    {'discord_id': r[0], 'discord_name': r[1], 'riot_id': r[2], 'region': r[3]}
+                    for r in rows
+                ]
         finally:
             self.return_connection(conn)
 
@@ -598,11 +696,14 @@ class TrackerDatabase:
         return matches[0] if matches else None
     
     def get_open_matches(self, limit: int = 3) -> List[dict]:
-        """Get all open matches up to limit"""
+        """Get all open matches up to limit — excludes scouting-channel games."""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM hexbet_matches WHERE status = 'open' ORDER BY created_at DESC LIMIT %s", (limit,))
+                cur.execute(
+                    "SELECT * FROM hexbet_matches WHERE status = 'open' AND (request_source IS NULL OR request_source != 'scouting') ORDER BY created_at DESC LIMIT %s",
+                    (limit,)
+                )
                 rows = cur.fetchall()
                 if not rows:
                     return []
@@ -610,13 +711,15 @@ class TrackerDatabase:
                 return [dict(zip(cols, row)) for row in rows]
         finally:
             self.return_connection(conn)
-    
+
     def count_open_matches(self) -> int:
-        """Count number of open matches"""
+        """Count open matches — excludes scouting-channel games."""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM hexbet_matches WHERE status = 'open'")
+                cur.execute(
+                    "SELECT COUNT(*) FROM hexbet_matches WHERE status = 'open' AND (request_source IS NULL OR request_source != 'scouting')"
+                )
                 return cur.fetchone()[0]
         finally:
             self.return_connection(conn)
