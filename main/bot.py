@@ -2202,22 +2202,28 @@ async def process_skin_idea_thread(thread: discord.Thread):
     
     return idea_message, mod_message
 
-@bot.tree.command(name="addthread", description="Manually process a skin idea thread by providing its link", guild=discord.Object(id=GUILD_ID))
-@app_commands.describe(thread_link="Discord thread URL (e.g. https://discord.com/channels/...)")
+@bot.tree.command(name="addthread", description="Manually process a skin idea thread by link or thread ID", guild=discord.Object(id=GUILD_ID))
+@app_commands.describe(thread_link="Discord thread URL or plain thread ID (e.g. 1234567890)")
 async def addthread(interaction: discord.Interaction, thread_link: str):
-    """Manually process a skin idea thread by link"""
+    """Manually process a skin idea thread by link or ID"""
     await interaction.response.defer()
     
     try:
-        # Extract thread ID from URL
-        # URL format: https://discord.com/channels/server_id/channel_id/thread_id
-        parts = thread_link.rstrip('/').split('/')
-        
-        if len(parts) < 3:
-            await interaction.edit_original_response(content="❌ Invalid thread link format. Please provide a valid Discord thread URL.")
-            return
-        
-        thread_id = int(parts[-1])
+        # Accept plain numeric ID or full Discord URL
+        stripped = thread_link.strip()
+        if stripped.isdigit():
+            thread_id = int(stripped)
+        else:
+            # URL format: https://discord.com/channels/server_id/channel_id/thread_id
+            parts = stripped.rstrip('/').split('/')
+            if len(parts) < 3:
+                await interaction.edit_original_response(content="❌ Invalid input. Provide a Discord thread URL or a plain thread ID.")
+                return
+            try:
+                thread_id = int(parts[-1])
+            except ValueError:
+                await interaction.edit_original_response(content="❌ Could not extract thread ID from the provided link.")
+                return
         
         print(f"🔧 Manual skin idea add requested by {interaction.user.name}: Thread ID {thread_id}")
         
@@ -2252,9 +2258,6 @@ async def addthread(interaction: discord.Interaction, thread_link: str):
         await interaction.edit_original_response(content="🧵 Skin idea thread processed manually:", embed=success_embed)
         print(f"✅ Manually processed skin idea thread: {thread.name}")
         
-    except ValueError:
-        await interaction.edit_original_response(content="❌ Invalid thread link. Could not extract thread ID.")
-        print(f"❌ Invalid thread link provided")
     except Exception as e:
         await interaction.edit_original_response(content=f"❌ Error processing thread: {str(e)}")
         print(f"❌ Error processing manual thread: {e}")
