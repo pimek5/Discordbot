@@ -1013,21 +1013,26 @@ def create_bot():
             status = "🔒" if t.locked else ("📁" if t.archived else "✅")
             lines.append(f"{status} {t.name} (`{t.id}`)")
 
-        # Split into chunks of 40 to stay under Discord's 2000 char limit
-        chunks = []
-        chunk = []
-        for line in lines:
-            chunk.append(line)
-            if len(chunk) == 40:
-                chunks.append(chunk)
-                chunk = []
-        if chunk:
-            chunks.append(chunk)
-
         header = f"**Threads in <#{BOOSTER_CHANNEL_ID}> ({len(unique)} total):**\n✅ open  📁 archived  🔒 locked\n\n"
-        for i, c in enumerate(chunks):
-            content = (header if i == 0 else "") + "\n".join(c)
-            await interaction.followup.send(content, ephemeral=True)
+
+        # Split into messages under 2000 chars
+        chunks = []
+        current = ""
+        for i, line in enumerate(lines):
+            separator = "\n" if current else ""
+            prefix = header if not chunks and not current else ""
+            candidate = prefix + current + separator + line
+            if len(candidate) > 1950:
+                # flush current chunk
+                chunks.append((header if not chunks else "") + current)
+                current = line
+            else:
+                current = (prefix + current + separator + line) if not current else (current + "\n" + line)
+        if current:
+            chunks.append((header if not chunks else "") + current)
+
+        for msg in chunks:
+            await interaction.followup.send(msg, ephemeral=True)
 
     @bot.event
     async def setup_hook():
