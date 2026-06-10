@@ -1015,23 +1015,31 @@ def create_bot():
 
         header = f"**Threads in <#{BOOSTER_CHANNEL_ID}> ({len(unique)} total):**\n✅ open  📁 archived  🔒 locked\n\n"
 
-        # Split into messages under 2000 chars
-        chunks = []
-        current = ""
-        for i, line in enumerate(lines):
-            separator = "\n" if current else ""
-            prefix = header if not chunks and not current else ""
-            candidate = prefix + current + separator + line
-            if len(candidate) > 1950:
-                # flush current chunk
-                chunks.append((header if not chunks else "") + current)
-                current = line
-            else:
-                current = (prefix + current + separator + line) if not current else (current + "\n" + line)
-        if current:
-            chunks.append((header if not chunks else "") + current)
+        # Build messages, each strictly under 1900 chars
+        messages = []
+        current_lines = []
+        current_len = len(header)  # first message starts with header
+        is_first = True
 
-        for msg in chunks:
+        for line in lines:
+            # +1 for the newline separator
+            add_len = len(line) + (1 if current_lines else 0)
+            if current_len + add_len > 1900 and current_lines:
+                # flush
+                prefix = header if is_first else ""
+                messages.append(prefix + "\n".join(current_lines))
+                is_first = False
+                current_lines = [line]
+                current_len = len(line)
+            else:
+                current_lines.append(line)
+                current_len += add_len
+
+        if current_lines:
+            prefix = header if is_first else ""
+            messages.append(prefix + "\n".join(current_lines))
+
+        for msg in messages:
             await interaction.followup.send(msg, ephemeral=True)
 
     @bot.event
