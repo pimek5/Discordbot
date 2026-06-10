@@ -959,6 +959,76 @@ def create_bot():
 
         await update_streaming_embed(after.guild)
 
+    # ------------------------------------------------------------------
+    # /boosternames — list all threads in a given channel
+    # ------------------------------------------------------------------
+
+    @bot.tree.command(name="boosternames", description="List all thread names in the booster channel")
+    async def boosternames(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        BOOSTER_CHANNEL_ID = 1293876585132458056
+        channel = bot.get_channel(BOOSTER_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(BOOSTER_CHANNEL_ID)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Could not fetch channel: {e}", ephemeral=True)
+                return
+
+        threads = []
+
+        # Active (open) threads
+        if hasattr(channel, 'threads'):
+            threads.extend(channel.threads)
+
+        # Archived threads (both public and private)
+        try:
+            async for t in channel.archived_threads(limit=None):
+                threads.append(t)
+        except Exception:
+            pass
+        try:
+            async for t in channel.archived_threads(limit=None, private=True):
+                threads.append(t)
+        except Exception:
+            pass
+
+        if not threads:
+            await interaction.followup.send("ℹ️ No threads found in that channel.", ephemeral=True)
+            return
+
+        # Deduplicate by ID
+        seen = set()
+        unique = []
+        for t in threads:
+            if t.id not in seen:
+                seen.add(t.id)
+                unique.append(t)
+
+        unique.sort(key=lambda t: t.name.lower())
+
+        lines = []
+        for t in unique:
+            status = "🔒" if t.locked else ("📁" if t.archived else "✅")
+            lines.append(f"{status} {t.name} (`{t.id}`)")
+
+        # Split into chunks of 40 to stay under Discord's 2000 char limit
+        chunks = []
+        chunk = []
+        for line in lines:
+            chunk.append(line)
+            if len(chunk) == 40:
+                chunks.append(chunk)
+                chunk = []
+        if chunk:
+            chunks.append(chunk)
+
+        header = f"**Threads in <#{BOOSTER_CHANNEL_ID}> ({len(unique)} total):**\n✅ open  📁 archived  🔒 locked\n\n"
+        for i, c in enumerate(chunks):
+            content = (header if i == 0 else "") + "\n".join(c)
+            await interaction.followup.send(content, ephemeral=True)
+
     @bot.event
     async def setup_hook():
         bot.add_view(HelperView())
