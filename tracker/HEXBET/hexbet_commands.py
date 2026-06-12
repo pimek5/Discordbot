@@ -1499,8 +1499,8 @@ class Hexbet(commands.Cog):
             logger.error(f"Error posting featured game: {e}", exc_info=True)
 
     async def try_settle_match(self):
-        """Check and settle all open matches that are ready"""
-        matches = self.db.get_open_matches()
+        """Check and settle all open matches that are ready (including scouting matches)"""
+        matches = self.db.get_open_matches() + self.db.get_open_scouting_matches()
         if not matches:
             return
         
