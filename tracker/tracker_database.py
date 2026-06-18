@@ -299,15 +299,6 @@ class TrackerDatabase:
                         updated_at TIMESTAMP DEFAULT NOW()
                     );
                 """)
-                # Migration: drop old single-column unique constraint (MUST run before adding composite)
-                try:
-                    cur.execute("""
-                        ALTER TABLE hexbet_scouted_players
-                        DROP CONSTRAINT IF EXISTS hexbet_scouted_players_discord_id_key
-                    """)
-                    conn.commit()
-                except Exception:
-                    conn.rollback()
                 # Migration: add composite unique constraint (discord_id + riot_id)
                 try:
                     cur.execute("""
