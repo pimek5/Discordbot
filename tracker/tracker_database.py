@@ -290,15 +290,24 @@ class TrackerDatabase:
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS hexbet_scouted_players (
                         id SERIAL PRIMARY KEY,
-                        discord_id BIGINT UNIQUE NOT NULL,
+                        discord_id BIGINT NOT NULL,
                         discord_name TEXT,
                         riot_id TEXT NOT NULL,
                         region TEXT NOT NULL,
                         added_by BIGINT,
                         created_at TIMESTAMP DEFAULT NOW(),
-                        updated_at TIMESTAMP DEFAULT NOW()
+                        updated_at TIMESTAMP DEFAULT NOW(),
+                        UNIQUE (discord_id, riot_id)
                     );
                 """)
+                # Migration: drop old single-column unique constraint if it still exists
+                try:
+                    cur.execute("""
+                        ALTER TABLE hexbet_scouted_players
+                        DROP CONSTRAINT IF EXISTS hexbet_scouted_players_discord_id_key
+                    """)
+                except Exception:
+                    conn.rollback()
                 conn.commit()
         finally:
             self.return_connection(conn)
@@ -308,14 +317,14 @@ class TrackerDatabase:
     # ------------------------------------------------------------------
 
     def add_scouted_player(self, discord_id: int, discord_name: str, riot_id: str, region: str, added_by: int = None) -> bool:
-        """Add a player to the scouting list. Returns True if inserted, False if already exists."""
+        """Add a Riot account to the scouting list. Returns True if inserted, False if (discord_id, riot_id) already exists."""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO hexbet_scouted_players (discord_id, discord_name, riot_id, region, added_by)
                     VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (discord_id) DO NOTHING
+                    ON CONFLICT (discord_id, riot_id) DO NOTHING
                     RETURNING id
                 """, (discord_id, discord_name, riot_id, region, added_by))
                 row = cur.fetchone()
@@ -324,8 +333,8 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def edit_scouted_player(self, discord_id: int, riot_id: str = None, region: str = None, discord_name: str = None) -> bool:
-        """Update riot_id / region for a scouted player. Returns True if row was updated."""
+    def edit_scouted_player(self, discord_id: int, old_riot_id: str, riot_id: str = None, region: str = None, discord_name: str = None) -> bool:
+        """Update a specific Riot account entry for a scouted player. old_riot_id identifies the row."""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
@@ -343,9 +352,9 @@ class TrackerDatabase:
                 if not updates:
                     return False
                 updates.append("updated_at = NOW()")
-                values.append(discord_id)
+                values.extend([discord_id, old_riot_id])
                 cur.execute(
-                    f"UPDATE hexbet_scouted_players SET {', '.join(updates)} WHERE discord_id = %s RETURNING id",
+                    f"UPDATE hexbet_scouted_players SET {', '.join(updates)} WHERE discord_id = %s AND LOWER(riot_id) = LOWER(%s) RETURNING id",
                     values,
                 )
                 row = cur.fetchone()
@@ -354,18 +363,24 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def remove_scouted_player(self, discord_id: int) -> bool:
-        """Remove a player from the scouting list. Returns True if deleted."""
+    def remove_scouted_player(self, discord_id: int, riot_id: str = None) -> int:
+        """Remove scouting entries. If riot_id given, removes that specific account; otherwise removes all accounts for the user. Returns count deleted."""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM hexbet_scouted_players WHERE discord_id = %s RETURNING id",
-                    (discord_id,),
-                )
-                row = cur.fetchone()
+                if riot_id:
+                    cur.execute(
+                        "DELETE FROM hexbet_scouted_players WHERE discord_id = %s AND LOWER(riot_id) = LOWER(%s) RETURNING id",
+                        (discord_id, riot_id),
+                    )
+                else:
+                    cur.execute(
+                        "DELETE FROM hexbet_scouted_players WHERE discord_id = %s RETURNING id",
+                        (discord_id,),
+                    )
+                count = len(cur.fetchall())
                 conn.commit()
-                return row is not None
+                return count
         finally:
             self.return_connection(conn)
 
