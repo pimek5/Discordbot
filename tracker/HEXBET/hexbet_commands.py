@@ -5639,8 +5639,7 @@ These players will now appear more frequently in betting matches!"""
     @app_commands.describe(
         action="Action: add, edit, remove, list",
         user_id="Discord User ID or @mention (works for users outside the server)",
-        riot_id="Riot ID (gameName#tagLine) — for add/remove, or NEW riot_id for edit",
-        old_riot_id="(edit only) Current Riot ID to replace",
+        riot_id="Riot ID (gameName#tagLine)",
         region="Platform shard (euw1, eun1, na1, kr…)",
     )
     @app_commands.choices(
@@ -5670,7 +5669,6 @@ These players will now appear more frequently in betting matches!"""
         action: str,
         user_id: Optional[str] = None,
         riot_id: Optional[str] = None,
-        old_riot_id: Optional[str] = None,
         region: Optional[str] = None,
     ):
         if not self._has_staff_access(interaction):
@@ -5743,36 +5741,27 @@ These players will now appear more frequently in betting matches!"""
             return
 
         if action == "edit":
-            if not user_id or not old_riot_id:
-                await interaction.followup.send("\u274c `edit` requires: user_id and old_riot_id (current account to edit).", ephemeral=True)
-                return
-            if not riot_id and not region:
-                await interaction.followup.send("\u274c `edit` requires at least riot_id (new) or region.", ephemeral=True)
+            if not user_id or not riot_id or not region:
+                await interaction.followup.send("❌ `edit` requires: user_id, riot_id (which account), region (new region).", ephemeral=True)
                 return
             discord_id, display_name = await _resolve_user(user_id)
             if not discord_id:
-                await interaction.followup.send("\u274c Invalid user ID or mention.", ephemeral=True)
+                await interaction.followup.send("❌ Invalid user ID or mention.", ephemeral=True)
                 return
             ok = self.db.edit_scouted_player(
                 discord_id=discord_id,
-                old_riot_id=old_riot_id.strip(),
-                riot_id=riot_id.strip() if riot_id else None,
+                riot_id=riot_id.strip(),
                 region=region,
                 discord_name=display_name,
             )
             if ok:
-                changes = []
-                if riot_id:
-                    changes.append(f"Riot ID \u2192 `{riot_id}`")
-                if region:
-                    changes.append(f"Region \u2192 `{region}`")
                 await interaction.followup.send(
-                    f"\u2705 Updated **{display_name}** (`{old_riot_id}`): {', '.join(changes)}.",
+                    f"✅ Updated **{display_name}** (`{riot_id}`): Region → `{region}`.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    f"\u274c Account `{old_riot_id}` not found for **{display_name}**. Check `/hxspectate list`.",
+                    f"❌ Account `{riot_id}` not found for **{display_name}**. Check `/hxspectate list`.",
                     ephemeral=True,
                 )
             return

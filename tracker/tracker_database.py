@@ -296,18 +296,28 @@ class TrackerDatabase:
                         region TEXT NOT NULL,
                         added_by BIGINT,
                         created_at TIMESTAMP DEFAULT NOW(),
-                        updated_at TIMESTAMP DEFAULT NOW(),
-                        UNIQUE (discord_id, riot_id)
+                        updated_at TIMESTAMP DEFAULT NOW()
                     );
                 """)
-                # Migration: drop old single-column unique constraint if it still exists
+                # Migration: drop old single-column unique constraint (MUST run before adding composite)
                 try:
                     cur.execute("""
                         ALTER TABLE hexbet_scouted_players
                         DROP CONSTRAINT IF EXISTS hexbet_scouted_players_discord_id_key
                     """)
+                    conn.commit()
                 except Exception:
                     conn.rollback()
+                # Migration: add composite unique constraint (discord_id + riot_id)
+                try:
+                    cur.execute("""
+                        ALTER TABLE hexbet_scouted_players
+                        ADD CONSTRAINT hexbet_scouted_players_discord_riot_key
+                        UNIQUE (discord_id, riot_id)
+                    """)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()  # constraint already exists — fine
                 conn.commit()
         finally:
             self.return_connection(conn)
@@ -333,16 +343,13 @@ class TrackerDatabase:
         finally:
             self.return_connection(conn)
 
-    def edit_scouted_player(self, discord_id: int, old_riot_id: str, riot_id: str = None, region: str = None, discord_name: str = None) -> bool:
-        """Update a specific Riot account entry for a scouted player. old_riot_id identifies the row."""
+    def edit_scouted_player(self, discord_id: int, riot_id: str, region: str = None, discord_name: str = None) -> bool:
+        """Update region / discord_name for a specific (discord_id, riot_id) entry."""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
                 updates = []
                 values = []
-                if riot_id is not None:
-                    updates.append("riot_id = %s")
-                    values.append(riot_id)
                 if region is not None:
                     updates.append("region = %s")
                     values.append(region)
@@ -352,7 +359,7 @@ class TrackerDatabase:
                 if not updates:
                     return False
                 updates.append("updated_at = NOW()")
-                values.extend([discord_id, old_riot_id])
+                values.extend([discord_id, riot_id])
                 cur.execute(
                     f"UPDATE hexbet_scouted_players SET {', '.join(updates)} WHERE discord_id = %s AND LOWER(riot_id) = LOWER(%s) RETURNING id",
                     values,
