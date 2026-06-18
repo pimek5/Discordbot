@@ -993,6 +993,32 @@ class Hexbet(commands.Cog):
         await self._enrich_players(red_ordered, region)
         self._apply_lobby_average(blue_ordered + red_ordered)
 
+        # Find the scouted player in the enriched participants to show their real rank
+        all_enriched = blue_ordered + red_ordered
+        scouted_rank_str = ""
+        riot_id_lower = riot_id.lower().replace(' ', '')
+        for p in all_enriched:
+            gn = p.get('riotIdGameName', '').strip()
+            tl = p.get('riotIdTagline', '').strip()
+            if gn and tl:
+                p_riot = f"{gn}#{tl}".lower().replace(' ', '')
+            else:
+                p_riot = p.get('riotId', '').lower().replace(' ', '')
+            if p_riot and p_riot == riot_id_lower:
+                tier = p.get('tier', 'UNRANKED')
+                div  = p.get('division', '')
+                lp   = p.get('lp', 0)
+                t_emoji = CFG_RANK_EMOJIS.get(tier, '')
+                if tier in ('MASTER', 'GRANDMASTER', 'CHALLENGER'):
+                    scouted_rank_str = f"{t_emoji} {tier} • {lp} LP"
+                elif tier != 'UNRANKED':
+                    scouted_rank_str = f"{t_emoji} {tier} {div} • {lp} LP"
+                else:
+                    scouted_rank_str = "UNRANKED"
+                break
+
+        display_name = f"{scouted_player_name} — {scouted_rank_str}" if scouted_rank_str else scouted_player_name
+
         odds_blue, odds_red = self._balanced_odds(blue_ordered, red_ordered)
         chance_blue = round((1 / odds_blue) / ((1 / odds_blue) + (1 / odds_red)) * 100, 1)
         chance_red = round(100 - chance_blue, 1)
@@ -1008,7 +1034,7 @@ class Hexbet(commands.Cog):
             game_data.get('gameStartTime', 0),
             special_bet=False,
             guild_id=guild_id,
-            requested_by_name=scouted_player_name,
+            requested_by_name=display_name,
             request_source='scouting',
         )
         if not match_id:
@@ -1026,7 +1052,7 @@ class Hexbet(commands.Cog):
             chance_red,
             match_id=match_id,
             game_start_at=game_data.get('gameStartTime'),
-            scouted_player_name=scouted_player_name,
+            scouted_player_name=display_name,
         )
         msg = await channel.send(embed=embed, view=BetView(match_id, odds_blue, odds_red, self, platform, blue_ordered, red_ordered))
         self.db.set_match_message(match_id, msg.id)
