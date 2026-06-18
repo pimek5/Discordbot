@@ -918,7 +918,7 @@ class Hexbet(commands.Cog):
             riot_id = player['riot_id']
             platform = player['region']
             region = region_map.get(platform, 'euw')
-            discord_name = player['discord_name'] or riot_id
+            discord_name = player['riot_id']  # Show Riot account being scouted, not Discord name
 
             try:
                 if '#' in riot_id:
@@ -5638,7 +5638,7 @@ These players will now appear more frequently in betting matches!"""
     @app_commands.command(name="hxspectate", description="Manage the scouting list (add/edit/remove)")
     @app_commands.describe(
         action="Action: add, edit, remove, list",
-        user="Discord user to scout",
+        user_id="Discord User ID or @mention (works for users outside the server)",
         riot_id="Riot ID (gameName#tagLine)",
         region="Platform shard (euw1, eun1, na1, kr…)",
     )
@@ -5667,7 +5667,7 @@ These players will now appear more frequently in betting matches!"""
         self,
         interaction: discord.Interaction,
         action: str,
-        user: Optional[discord.Member] = None,
+        user_id: Optional[str] = None,
         riot_id: Optional[str] = None,
         region: Optional[str] = None,
     ):
@@ -5677,13 +5677,31 @@ These players will now appear more frequently in betting matches!"""
 
         await interaction.response.defer(ephemeral=True)
 
+        # Resolve user_id string to an integer Discord ID
+        async def _resolve_user(raw: str):
+            """Parse a Discord ID or mention and return (discord_id, display_name)."""
+            if raw is None:
+                return None, None
+            # Strip <@> mention syntax
+            clean = raw.strip().lstrip('<@').rstrip('>').replace('!', '')
+            try:
+                uid = int(clean)
+            except ValueError:
+                return None, None
+            # Try to fetch user for display name
+            try:
+                u = await self.bot.fetch_user(uid)
+                return uid, u.display_name
+            except Exception:
+                return uid, str(uid)
+
         if action == "list":
             players = self.db.get_scouted_players()
             if not players:
                 await interaction.followup.send("ℹ️ Scouting list is empty.", ephemeral=True)
                 return
             lines = [
-                f"• **{p['discord_name'] or p['discord_id']}** — `{p['riot_id']}` ({p['region']})"
+                f"• **{p['discord_name'] or p['discord_id']}** (`{p['discord_id']}`) — `{p['riot_id']}` ({p['region']})"
                 for p in players
             ]
             embed = discord.Embed(
@@ -5695,41 +5713,49 @@ These players will now appear more frequently in betting matches!"""
             return
 
         if action == "add":
-            if not user or not riot_id or not region:
-                await interaction.followup.send("❌ `add` requires: user, riot_id, region.", ephemeral=True)
+            if not user_id or not riot_id or not region:
+                await interaction.followup.send("❌ `add` requires: user_id, riot_id, region.", ephemeral=True)
+                return
+            discord_id, display_name = await _resolve_user(user_id)
+            if not discord_id:
+                await interaction.followup.send("❌ Invalid user ID or mention.", ephemeral=True)
                 return
             ok = self.db.add_scouted_player(
-                discord_id=user.id,
-                discord_name=user.display_name,
+                discord_id=discord_id,
+                discord_name=display_name,
                 riot_id=riot_id.strip(),
                 region=region,
                 added_by=interaction.user.id,
             )
             if ok:
                 await interaction.followup.send(
-                    f"✅ Added **{user.display_name}** (`{riot_id}` · {region}) to scouting list.\n"
+                    f"✅ Added **{display_name}** (`{riot_id}` · {region}) to scouting list.\n"
                     f"Their games will be posted in <#{SCOUTING_CHANNEL_ID}>.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    f"⚠️ **{user.display_name}** is already on the scouting list. Use `edit` to update.",
+                    f"⚠️ **{display_name}** is already on the scouting list. Use `edit` to update.",
                     ephemeral=True,
                 )
             return
 
         if action == "edit":
-            if not user:
-                await interaction.followup.send("❌ `edit` requires: user.", ephemeral=True)
+            if not user_id:
+                await interaction.followup.send("❌ `edit` requires: user_id.", ephemeral=True)
                 return
             if not riot_id and not region:
                 await interaction.followup.send("❌ `edit` requires at least riot_id or region.", ephemeral=True)
                 return
+            discord_id, display_name = await _resolve_user(user_id)
+            if not discord_id:
+                await interaction.followup.send("❌ Invalid user ID or mention.", ephemeral=True)
+                return
             ok = self.db.edit_scouted_player(
-                discord_id=user.id,
+                discord_id=discord_id,
                 riot_id=riot_id.strip() if riot_id else None,
                 region=region,
-                discord_name=user.display_name,
+                discord_name=display_name,
             )
             if ok:
                 changes = []
@@ -5738,29 +5764,33 @@ These players will now appear more frequently in betting matches!"""
                 if region:
                     changes.append(f"Region → `{region}`")
                 await interaction.followup.send(
-                    f"✅ Updated **{user.display_name}**: {', '.join(changes)}.",
+                    f"✅ Updated **{display_name}**: {', '.join(changes)}.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    f"❌ **{user.display_name}** not found in scouting list. Use `add` first.",
+                    f"❌ **{display_name}** not found in scouting list. Use `add` first.",
                     ephemeral=True,
                 )
             return
 
         if action == "remove":
-            if not user:
-                await interaction.followup.send("❌ `remove` requires: user.", ephemeral=True)
+            if not user_id:
+                await interaction.followup.send("❌ `remove` requires: user_id.", ephemeral=True)
                 return
-            ok = self.db.remove_scouted_player(user.id)
+            discord_id, display_name = await _resolve_user(user_id)
+            if not discord_id:
+                await interaction.followup.send("❌ Invalid user ID or mention.", ephemeral=True)
+                return
+            ok = self.db.remove_scouted_player(discord_id)
             if ok:
                 await interaction.followup.send(
-                    f"🗑️ Removed **{user.display_name}** from scouting list.",
+                    f"🗑️ Removed **{display_name}** from scouting list.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    f"❌ **{user.display_name}** not found in scouting list.",
+                    f"❌ **{display_name}** not found in scouting list.",
                     ephemeral=True,
                 )
             return
