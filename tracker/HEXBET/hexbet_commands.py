@@ -978,8 +978,8 @@ class Hexbet(commands.Cog):
             return False
 
         # Skip if game already posted to scouting channel
-        open_matches = self.db.get_open_matches()
-        if any(m.get('game_id') == game_id and m.get('channel_id') == SCOUTING_CHANNEL_ID for m in open_matches):
+        open_scouting = self.db.get_open_scouting_matches()
+        if any(m.get('game_id') == game_id for m in open_scouting):
             logger.info(f"ℹ️ Scouting game {game_id} already posted")
             return False
 
