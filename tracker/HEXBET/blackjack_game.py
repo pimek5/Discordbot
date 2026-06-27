@@ -39,6 +39,8 @@ logger = logging.getLogger("hexbet.blackjack")
 MIN_BET = 10
 MAX_BET = 50_000
 
+BJ_CHANNEL_ID = 1520475228323708978
+
 SUITS  = ["♠", "♥", "♦", "♣"]
 RANKS  = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 VALUES = {"A": 11, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7,
@@ -322,6 +324,48 @@ def build_result_embed(state: dict) -> tuple:
 # ---------------------------------------------------------------------------
 # Views
 # ---------------------------------------------------------------------------
+# Lobby view + bet modal (for /hxbjstart channel embed)
+# ---------------------------------------------------------------------------
+
+class BetModal(discord.ui.Modal, title="🃏 Place Your Bet"):
+    amount_input = discord.ui.TextInput(
+        label=f"Bet Amount (tokens)",
+        placeholder=f"Enter amount ({MIN_BET}–{MAX_BET:,})",
+        min_length=1,
+        max_length=10,
+    )
+
+    def __init__(self, cog: "BlackjackCog"):
+        super().__init__()
+        self.cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction):
+        raw = self.amount_input.value.replace(",", "").replace(" ", "")
+        try:
+            amount = int(raw)
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
+            return
+        await self.cog.start_game(interaction, amount, followup=False)
+
+
+class LobbyView(discord.ui.View):
+    """Persistent 'Play Blackjack' button posted in the BJ channel."""
+
+    def __init__(self, cog: "BlackjackCog"):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(
+        label="🃏 Play Blackjack",
+        style=discord.ButtonStyle.success,
+        custom_id="bj_lobby_play",
+    )
+    async def play(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(BetModal(self.cog))
+
+
+# ---------------------------------------------------------------------------
 
 class BlackjackPlayingView(discord.ui.View):
     def __init__(self, cog: "BlackjackCog", user_id: int, can_double: bool):
@@ -386,6 +430,52 @@ class BlackjackCog(commands.Cog):
         self.bot    = bot
         self.db     = db
         self.games: Dict[int, dict] = {}   # user_id → state
+        # Re-register persistent lobby view so buttons survive bot restart
+        self.bot.add_view(LobbyView(self))
+
+    # ------------------------------------------------------------------
+    # Channel guard — delete regular messages in BJ channel
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.channel.id != BJ_CHANNEL_ID:
+            return
+        if message.author.bot:
+            return
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # /hxbjstart — post the lobby embed in the BJ channel
+
+    @app_commands.command(name="hxbjstart", description="Post the Blackjack lobby in the BJ channel")
+    async def hxbjstart(self, interaction: discord.Interaction):
+        channel = self.bot.get_channel(BJ_CHANNEL_ID)
+        if not channel:
+            await interaction.response.send_message("❌ BJ channel not found.", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="🃏 HEXBET Blackjack",
+            description=(
+                "Press **🃏 Play Blackjack** to start a game against the dealer!\n\n"
+                f"**Min bet:** {MIN_BET:,} tokens  |  **Max bet:** {MAX_BET:,} tokens\n\n"
+                "**Rules:**\n"
+                "• Blackjack pays **3:2**\n"
+                "• Dealer stands on all 17s\n"
+                "• Double Down available on first two cards"
+            ),
+            color=COLOR_PLAYING,
+        )
+        embed.set_footer(text="Each player plays independently against the dealer.")
+
+        view = LobbyView(self)
+        await channel.send(embed=embed, view=view)
+        await interaction.response.send_message(
+            f"✅ Blackjack lobby posted in <#{BJ_CHANNEL_ID}>!", ephemeral=True
+        )
 
     # ------------------------------------------------------------------
     # Helpers
