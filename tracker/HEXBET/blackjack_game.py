@@ -488,11 +488,6 @@ class BlackjackCog(commands.Cog):
         buf = render_table(state["dealer"], state["player"], hide_dealer_second=False)
         return discord.File(buf, filename="table.png")
 
-    @app_commands.command(name="hxblackjack", description="Play Blackjack with your HEXBET tokens")
-    @app_commands.describe(amount="Bet amount in tokens")
-    async def hxblackjack(self, interaction: discord.Interaction, amount: int):
-        await self.start_game(interaction, amount, followup=False)
-
     # ------------------------------------------------------------------
 
     async def start_game(self, interaction: discord.Interaction, bet: int, followup: bool = False):
