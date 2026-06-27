@@ -21,6 +21,7 @@ from tracker_commands_v3 import TrackerCommandsV3
 from HEXBET.hexbet_commands import setup as setup_hexbet
 from HEXBET.hexbet_config_commands import setup as setup_hexbet_config
 from HEXBET.crash_game import setup as setup_crash
+from HEXBET.blackjack_game import setup as setup_blackjack
 import config_commands
 
 # Load environment variables
@@ -95,6 +96,10 @@ class TrackerBot(commands.Bot):
         # Add Crash game
         await setup_crash(self, self.db)
         logger.info("✅ Crash game loaded")
+
+        # Add Blackjack
+        await setup_blackjack(self, self.db)
+        logger.info("✅ Blackjack loaded")
         
         # Log available commands
         commands_list = [cmd.name for cmd in self.tree.get_commands()]
