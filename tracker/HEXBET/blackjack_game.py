@@ -21,6 +21,7 @@ Rules:
 
 import asyncio
 import io
+import math
 import random
 import logging
 from typing import Optional, Dict
@@ -82,62 +83,78 @@ def _get_font(size: int) -> ImageFont.ImageFont:
     return ImageFont.load_default(size=size)
 
 
+def _heart_poly(cx: float, cy: float, scale: float) -> list:
+    """Parametric heart: x=16sin³t, y=-(13cos t - 5cos2t - 2cos3t - cos4t)"""
+    pts = []
+    for deg in range(0, 362, 4):
+        t = math.radians(deg)
+        x = 16 * math.sin(t) ** 3
+        y = -(13 * math.cos(t) - 5 * math.cos(2*t) - 2 * math.cos(3*t) - math.cos(4*t))
+        pts.append((int(cx + x * scale), int(cy + y * scale)))
+    return pts
+
+
 def _draw_suit_shape(draw: ImageDraw.ImageDraw, cx: int, cy: int,
                      suit: str, color: tuple, size: int = 22):
-    """Draw a suit symbol as PIL shapes (font-independent)."""
-    s = size
+    """Draw a suit symbol using PIL geometry — no font required."""
+    # scale: heart parametric spans ~17 units wide, ~16 units tall
+    sc = size / 18.0
 
-    if suit in ("♥", "♥️"):   # Heart
-        r = s * 0.32
-        # Two circles top
-        draw.ellipse([cx - r*1.1 - r, cy - r, cx - r*1.1 + r, cy + r], fill=color)
-        draw.ellipse([cx + r*0.1 - r, cy - r, cx + r*0.1 + r, cy + r], fill=color)
-        # Bottom triangle
+    if suit in ("♥", "♥️"):
+        pts = _heart_poly(cx, cy - size * 0.02, sc * 0.92)
+        draw.polygon(pts, fill=color)
+
+    elif suit in ("♦", "♦️"):
+        hw = int(size * 0.52)
+        hh = int(size * 0.70)
         draw.polygon([
-            (int(cx - r*1.35), int(cy + r*0.5)),
-            (int(cx),           int(cy + r*2.1)),
-            (int(cx + r*1.35),  int(cy + r*0.5)),
+            (cx,       cy - hh),
+            (cx + hw,  cy),
+            (cx,       cy + hh),
+            (cx - hw,  cy),
         ], fill=color)
 
-    elif suit in ("♦", "♦️"):  # Diamond
-        hs = int(s * 0.55)
-        draw.polygon([
-            (cx,      cy - hs),
-            (cx + hs, cy),
-            (cx,      cy + hs),
-            (cx - hs, cy),
-        ], fill=color)
-
-    elif suit in ("♠", "♠️"):  # Spade (inverted heart + stem)
-        r = s * 0.30
-        # Two circles (top, mirrored = downward circles)
-        draw.ellipse([cx - r*1.1 - r, cy - r*0.9, cx - r*1.1 + r, cy + r*1.0], fill=color)
-        draw.ellipse([cx + r*0.1 - r, cy - r*0.9, cx + r*0.1 + r, cy + r*1.0], fill=color)
-        # Top point
-        draw.polygon([
-            (int(cx - r*1.35), int(cy + r*0.3)),
-            (int(cx),           int(cy - r*2.1)),
-            (int(cx + r*1.35),  int(cy + r*0.3)),
-        ], fill=color)
+    elif suit in ("♠", "♠️"):
+        # Inverted heart (mirror Y) forms the top of the spade
+        pts_raw = _heart_poly(0, 0, sc * 0.88)
+        # mirror vertically, shift up so the point faces up
+        offset_y = int(size * 0.10)
+        pts = [(int(cx + px), int(cy - offset_y - py)) for px, py in pts_raw]
+        draw.polygon(pts, fill=color)
         # Stem
-        sw = max(3, int(r * 0.55))
-        draw.rectangle([cx - sw, cy + int(r*0.9), cx + sw, cy + int(r*1.9)], fill=color)
-        draw.rectangle([cx - sw*2, cy + int(r*1.7), cx + sw*2, cy + int(r*2.1)], fill=color)
+        sw = max(2, int(size * 0.11))
+        sh = int(size * 0.44)
+        stem_y = cy + int(size * 0.52)
+        draw.rectangle([cx - sw, stem_y, cx + sw, stem_y + sh], fill=color)
+        # Base bar
+        bw = int(size * 0.38)
+        draw.rectangle([cx - bw, stem_y + sh - sw, cx + bw, stem_y + sh + sw * 2], fill=color)
 
-    elif suit in ("♣", "♣️"):  # Club (3 circles + stem)
-        r = int(s * 0.28)
+    elif suit in ("♣", "♣️"):
+        r  = int(size * 0.27)
+        dy = int(r * 0.85)
+        dx = int(r * 1.0)
         # Top circle
-        draw.ellipse([cx - r, cy - int(r*2.0), cx + r, cy - int(r*0.2)], fill=color)
+        draw.ellipse([cx - r, cy - r - dy, cx + r, cy + r - dy], fill=color)
         # Bottom-left circle
-        draw.ellipse([cx - int(r*2.0), cy - r, cx - int(r*0.0), cy + r], fill=color)
+        draw.ellipse([cx - dx - r, cy - r + dy // 3, cx - dx + r, cy + r + dy // 3], fill=color)
         # Bottom-right circle
-        draw.ellipse([cx,              cy - r, cx + int(r*2.0), cy + r], fill=color)
-        # Fill center gap
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
+        draw.ellipse([cx + dx - r, cy - r + dy // 3, cx + dx + r, cy + r + dy // 3], fill=color)
+        # Fill centre triangle gap
+        tri_top    = cy - dy + r
+        tri_bottom = cy + r + dy // 3
+        draw.polygon([
+            (cx - dx + r // 2, tri_bottom),
+            (cx,               tri_top),
+            (cx + dx - r // 2, tri_bottom),
+        ], fill=color)
         # Stem
-        sw = max(2, int(r * 0.5))
-        draw.rectangle([cx - sw, cy + r - 2, cx + sw, cy + int(r*2.0)], fill=color)
-        draw.rectangle([cx - sw*2, cy + int(r*1.7), cx + sw*2, cy + int(r*2.2)], fill=color)
+        sw = max(2, int(size * 0.11))
+        sh = int(size * 0.44)
+        stem_y = cy + r + dy // 3
+        draw.rectangle([cx - sw, stem_y, cx + sw, stem_y + sh], fill=color)
+        bw = int(size * 0.36)
+        draw.rectangle([cx - bw, stem_y + sh - sw, cx + bw, stem_y + sh + sw * 2], fill=color)
 
 
 def _draw_card(draw: ImageDraw.ImageDraw, x: int, y: int,
@@ -147,35 +164,38 @@ def _draw_card(draw: ImageDraw.ImageDraw, x: int, y: int,
     box = [x, y, x + CARD_W, y + CARD_H]
 
     if hidden:
-        draw.rounded_rectangle(box, radius=r, fill=(40, 60, 140), outline=(80, 100, 180), width=2)
-        for i in range(0, CARD_W, 8):
-            draw.line([(x+i, y), (x+i, y+CARD_H)], fill=(50, 75, 160), width=1)
-        for j in range(0, CARD_H, 8):
-            draw.line([(x, y+j), (x+CARD_W, y+j)], fill=(50, 75, 160), width=1)
-        draw.rounded_rectangle(box, radius=r, fill=None, outline=(120, 150, 220), width=2)
+        # Card back — dark pattern
+        draw.rounded_rectangle(box, radius=r, fill=(35, 55, 130), outline=(70, 95, 175), width=2)
+        inner = [x+5, y+5, x+CARD_W-5, y+CARD_H-5]
+        draw.rounded_rectangle(inner, radius=r-2, fill=None, outline=(70, 95, 175), width=1)
+        for i in range(6, CARD_W - 6, 7):
+            draw.line([(x+i, y+6), (x+i, y+CARD_H-6)], fill=(55, 80, 155), width=1)
+        for j in range(6, CARD_H - 6, 7):
+            draw.line([(x+6, y+j), (x+CARD_W-6, y+j)], fill=(55, 80, 155), width=1)
+        draw.rounded_rectangle(box, radius=r, fill=None, outline=(100, 135, 210), width=2)
         return
 
-    # Card face
-    draw.rounded_rectangle(box, radius=r, fill=(255, 255, 255), outline=(180, 180, 180), width=1)
+    # Card face — white with subtle shadow
+    draw.rounded_rectangle([x+2, y+2, x+CARD_W+2, y+CARD_H+2],
+                            radius=r, fill=(160, 160, 160))
+    draw.rounded_rectangle(box, radius=r, fill=(255, 255, 255), outline=(200, 200, 200), width=1)
+
     color = SUIT_COLOR.get(suit, (20, 20, 20))
+    f_rank = _get_font(17)
+    f_sm   = _get_font(11)
 
-    f_rank = _get_font(18)
-    f_br   = _get_font(13)
-
-    # Top-left rank
-    draw.text((x + 4, y + 2), rank, fill=color, font=f_rank)
-
-    # Small suit shape top-left under rank
-    _draw_suit_shape(draw, x + 10, y + 30, suit, color, size=14)
+    # Top-left corner: rank
+    draw.text((x + 5, y + 3), rank, fill=color, font=f_rank)
+    # Small suit icon below rank (top-left)
+    _draw_suit_shape(draw, x + 9, y + 30, suit, color, size=12)
 
     # Large centre suit
-    _draw_suit_shape(draw, x + CARD_W // 2, y + CARD_H // 2, suit, color, size=26)
+    _draw_suit_shape(draw, x + CARD_W // 2, y + CARD_H // 2 + 2, suit, color, size=28)
 
-    # Bottom-right rank (small)
-    br_w = int(draw.textlength(rank, font=f_br))
-    draw.text((x + CARD_W - br_w - 5, y + CARD_H - 18), rank, fill=color, font=f_br)
-    # Tiny suit bottom-right
-    _draw_suit_shape(draw, x + CARD_W - 9, y + CARD_H - 8, suit, color, size=10)
+    # Bottom-right: rank + tiny suit (rotated text trick — just draw inverted position)
+    rw = int(draw.textlength(rank, font=f_sm))
+    draw.text((x + CARD_W - rw - 5, y + CARD_H - 20), rank, fill=color, font=f_sm)
+    _draw_suit_shape(draw, x + CARD_W - 9, y + CARD_H - 9, suit, color, size=10)
 
 
 def render_table(dealer_hand: list, player_hand: list,
@@ -543,6 +563,15 @@ class BlackjackCog(commands.Cog):
         buf = render_table(state["dealer"], state["player"], hide_dealer_second=False)
         return discord.File(buf, filename="table.png")
 
+    @staticmethod
+    async def _schedule_delete(message: discord.Message, delay: int = 10):
+        """Delete a message after `delay` seconds."""
+        await asyncio.sleep(delay)
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
 
     async def start_game(self, interaction: discord.Interaction, bet: int, followup: bool = False):
@@ -606,9 +635,11 @@ class BlackjackCog(commands.Cog):
             view = BlackjackResultView(self, user_id, bet)
             f = self._result_file(state)
             if followup:
-                await interaction.followup.send(embed=embed, file=f, view=view)
+                msg = await interaction.followup.send(embed=embed, file=f, view=view)
             else:
                 await interaction.response.send_message(embed=embed, file=f, view=view)
+                msg = await interaction.original_response()
+            asyncio.create_task(self._schedule_delete(msg, 10))
             return
 
         can_double = balance_after >= bet
@@ -636,7 +667,6 @@ class BlackjackCog(commands.Cog):
         state["player"].append(state["deck"].pop())
 
         if is_bust(state["player"]):
-            # Player bust — game over
             dealer_play(state["dealer"], state["deck"])
             state["final_balance"] = self.db.get_balance(user_id)
             embed, outcome, payout, profit = build_result_embed(state)
@@ -644,6 +674,7 @@ class BlackjackCog(commands.Cog):
             view = BlackjackResultView(self, user_id, state["bet"])
             f = self._result_file(state)
             await interaction.response.edit_message(embed=embed, attachments=[f], view=view)
+            asyncio.create_task(self._schedule_delete(interaction.message, 10))
             return
 
         can_double = (
@@ -672,6 +703,7 @@ class BlackjackCog(commands.Cog):
         view = BlackjackResultView(self, user_id, state["bet"])
         f = self._result_file(state)
         await interaction.response.edit_message(embed=embed, attachments=[f], view=view)
+        asyncio.create_task(self._schedule_delete(interaction.message, 10))
 
     async def do_double(self, interaction: discord.Interaction):
         user_id = interaction.user.id
@@ -687,13 +719,11 @@ class BlackjackCog(commands.Cog):
             )
             return
 
-        # Double the bet
         self.db.update_balance(user_id, -state["bet"])
         state["balance_after_bet"] -= state["bet"]
         state["bet"] *= 2
         state["doubled"] = True
 
-        # Draw exactly one card, then dealer plays
         state["player"].append(state["deck"].pop())
         dealer_play(state["dealer"], state["deck"])
         _, _, payout, _ = calculate_result(state["player"], state["dealer"], state["bet"])
@@ -705,6 +735,7 @@ class BlackjackCog(commands.Cog):
         view = BlackjackResultView(self, user_id, state["bet"] // 2)
         f = self._result_file(state)
         await interaction.response.edit_message(embed=embed, attachments=[f], view=view)
+        asyncio.create_task(self._schedule_delete(interaction.message, 10))
 
 
 # ---------------------------------------------------------------------------
