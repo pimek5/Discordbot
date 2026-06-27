@@ -14,7 +14,7 @@ Buttons (shown during game):
 
 Rules:
   - Blackjack (21 on first 2 cards) pays 3:2
-  - Dealer hits on soft 16, stands on hard 17+
+  - Dealer stands on all 17s (S17 — standard European rule)
   - Bust = instant loss
   - Tie = push (bet refunded)
 """
@@ -115,19 +115,8 @@ def hand_label(hand: list, hide_second: bool = False) -> str:
 # ---------------------------------------------------------------------------
 
 def dealer_play(hand: list, deck: list):
-    """Dealer hits on soft ≤16, stands on hard 17+."""
-    while True:
-        v = hand_value(hand)
-        if v >= 17:
-            break
-        # soft 17 check — dealer hits soft 17
-        total_raw = sum(VALUES[c["rank"]] for c in hand)
-        aces = sum(1 for c in hand if c["rank"] == "A")
-        is_soft = aces > 0 and (total_raw - 10 * (aces - (total_raw - v) // 10)) != v
-        if v == 17 and is_soft:
-            pass  # hit soft 17
-        elif v >= 17:
-            break
+    """Dealer stands on all 17s (S17 rule — standard European blackjack)."""
+    while hand_value(hand) < 17:
         hand.append(deck.pop())
 
 
