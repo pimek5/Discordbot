@@ -82,6 +82,64 @@ def _get_font(size: int) -> ImageFont.ImageFont:
     return ImageFont.load_default(size=size)
 
 
+def _draw_suit_shape(draw: ImageDraw.ImageDraw, cx: int, cy: int,
+                     suit: str, color: tuple, size: int = 22):
+    """Draw a suit symbol as PIL shapes (font-independent)."""
+    s = size
+
+    if suit in ("♥", "♥️"):   # Heart
+        r = s * 0.32
+        # Two circles top
+        draw.ellipse([cx - r*1.1 - r, cy - r, cx - r*1.1 + r, cy + r], fill=color)
+        draw.ellipse([cx + r*0.1 - r, cy - r, cx + r*0.1 + r, cy + r], fill=color)
+        # Bottom triangle
+        draw.polygon([
+            (int(cx - r*1.35), int(cy + r*0.5)),
+            (int(cx),           int(cy + r*2.1)),
+            (int(cx + r*1.35),  int(cy + r*0.5)),
+        ], fill=color)
+
+    elif suit in ("♦", "♦️"):  # Diamond
+        hs = int(s * 0.55)
+        draw.polygon([
+            (cx,      cy - hs),
+            (cx + hs, cy),
+            (cx,      cy + hs),
+            (cx - hs, cy),
+        ], fill=color)
+
+    elif suit in ("♠", "♠️"):  # Spade (inverted heart + stem)
+        r = s * 0.30
+        # Two circles (top, mirrored = downward circles)
+        draw.ellipse([cx - r*1.1 - r, cy - r*0.9, cx - r*1.1 + r, cy + r*1.0], fill=color)
+        draw.ellipse([cx + r*0.1 - r, cy - r*0.9, cx + r*0.1 + r, cy + r*1.0], fill=color)
+        # Top point
+        draw.polygon([
+            (int(cx - r*1.35), int(cy + r*0.3)),
+            (int(cx),           int(cy - r*2.1)),
+            (int(cx + r*1.35),  int(cy + r*0.3)),
+        ], fill=color)
+        # Stem
+        sw = max(3, int(r * 0.55))
+        draw.rectangle([cx - sw, cy + int(r*0.9), cx + sw, cy + int(r*1.9)], fill=color)
+        draw.rectangle([cx - sw*2, cy + int(r*1.7), cx + sw*2, cy + int(r*2.1)], fill=color)
+
+    elif suit in ("♣", "♣️"):  # Club (3 circles + stem)
+        r = int(s * 0.28)
+        # Top circle
+        draw.ellipse([cx - r, cy - int(r*2.0), cx + r, cy - int(r*0.2)], fill=color)
+        # Bottom-left circle
+        draw.ellipse([cx - int(r*2.0), cy - r, cx - int(r*0.0), cy + r], fill=color)
+        # Bottom-right circle
+        draw.ellipse([cx,              cy - r, cx + int(r*2.0), cy + r], fill=color)
+        # Fill center gap
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
+        # Stem
+        sw = max(2, int(r * 0.5))
+        draw.rectangle([cx - sw, cy + r - 2, cx + sw, cy + int(r*2.0)], fill=color)
+        draw.rectangle([cx - sw*2, cy + int(r*1.7), cx + sw*2, cy + int(r*2.2)], fill=color)
+
+
 def _draw_card(draw: ImageDraw.ImageDraw, x: int, y: int,
                rank: str, suit: str, hidden: bool = False):
     """Draw a single card at position (x, y)."""
@@ -89,9 +147,7 @@ def _draw_card(draw: ImageDraw.ImageDraw, x: int, y: int,
     box = [x, y, x + CARD_W, y + CARD_H]
 
     if hidden:
-        # Card back — dark blue with pattern
         draw.rounded_rectangle(box, radius=r, fill=(40, 60, 140), outline=(80, 100, 180), width=2)
-        # Simple cross-hatch lines
         for i in range(0, CARD_W, 8):
             draw.line([(x+i, y), (x+i, y+CARD_H)], fill=(50, 75, 160), width=1)
         for j in range(0, CARD_H, 8):
@@ -99,28 +155,27 @@ def _draw_card(draw: ImageDraw.ImageDraw, x: int, y: int,
         draw.rounded_rectangle(box, radius=r, fill=None, outline=(120, 150, 220), width=2)
         return
 
-    # Card face — white background
+    # Card face
     draw.rounded_rectangle(box, radius=r, fill=(255, 255, 255), outline=(180, 180, 180), width=1)
-
     color = SUIT_COLOR.get(suit, (20, 20, 20))
 
-    # Top-left: rank + suit small
-    f_small = _get_font(14)
-    f_rank  = _get_font(18)
-    f_suit  = _get_font(30)
+    f_rank = _get_font(18)
+    f_br   = _get_font(13)
 
-    draw.text((x + 4, y + 2),  rank, fill=color, font=f_rank)
-    draw.text((x + 4, y + 22), suit, fill=color, font=f_small)
+    # Top-left rank
+    draw.text((x + 4, y + 2), rank, fill=color, font=f_rank)
 
-    # Centre suit
-    suit_w = draw.textlength(suit, font=f_suit)
-    draw.text((x + (CARD_W - suit_w) / 2, y + 32), suit, fill=color, font=f_suit)
+    # Small suit shape top-left under rank
+    _draw_suit_shape(draw, x + 10, y + 30, suit, color, size=14)
 
-    # Bottom-right (rotated via canvas flip trick)
-    f_br = _get_font(13)
-    br_text = f"{rank}{suit}"
-    br_w = draw.textlength(br_text, font=f_br)
-    draw.text((x + CARD_W - br_w - 4, y + CARD_H - 18), br_text, fill=color, font=f_br)
+    # Large centre suit
+    _draw_suit_shape(draw, x + CARD_W // 2, y + CARD_H // 2, suit, color, size=26)
+
+    # Bottom-right rank (small)
+    br_w = int(draw.textlength(rank, font=f_br))
+    draw.text((x + CARD_W - br_w - 5, y + CARD_H - 18), rank, fill=color, font=f_br)
+    # Tiny suit bottom-right
+    _draw_suit_shape(draw, x + CARD_W - 9, y + CARD_H - 8, suit, color, size=10)
 
 
 def render_table(dealer_hand: list, player_hand: list,
