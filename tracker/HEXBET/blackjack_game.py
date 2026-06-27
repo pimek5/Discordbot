@@ -450,7 +450,7 @@ class BlackjackCog(commands.Cog):
     # ------------------------------------------------------------------
     # /hxbjstart — post the lobby embed in the BJ channel
 
-    @app_commands.command(name="hxbjstart", description="Post the Blackjack lobby in the BJ channel")
+    @app_commands.command(name="blackjack", description="Post the Blackjack lobby in the BJ channel")
     async def hxbjstart(self, interaction: discord.Interaction):
         channel = self.bot.get_channel(BJ_CHANNEL_ID)
         if not channel:
