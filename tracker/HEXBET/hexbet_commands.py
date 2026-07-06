@@ -1160,18 +1160,34 @@ class Hexbet(commands.Cog):
                                 
                                 if isinstance(blue_team, dict) and isinstance(red_team, dict):
                                     blue_players = blue_team.get('players', [])
-                                    red_players = red_team.get('players', [])
-                                    
+                                    red_players  = red_team.get('players', [])
+
                                     # Re-detect streamer mode based on RiotID presence
                                     all_players = blue_players + red_players
                                     for p in all_players:
-                                        riot_id_name = p.get('riotIdGameName', '').strip()
-                                        riot_id_tag = p.get('riotIdTagline', '').strip()
+                                        riot_id_name    = p.get('riotIdGameName', '').strip()
+                                        riot_id_tag     = p.get('riotIdTagline', '').strip()
                                         riot_id_combined = p.get('riotId', '').strip()
-                                        
-                                        # Check if player has visible riot ID (either split or combined format)
                                         has_riot_id = bool(riot_id_name and riot_id_tag) or bool(riot_id_combined and '#' in riot_id_combined)
                                         p['streamer_mode'] = not has_riot_id
+
+                                    # Re-enrich players whose rank is still UNRANKED (API failed earlier)
+                                    unranked_non_streamer = [
+                                        p for p in all_players
+                                        if not p.get('streamer_mode')
+                                        and p.get('tier', 'UNRANKED') == 'UNRANKED'
+                                        and p.get('puuid')
+                                    ]
+                                    if unranked_non_streamer:
+                                        region = platform_to_region(platform)
+                                        logger.info(f"🔄 Re-enriching {len(unranked_non_streamer)} UNRANKED player(s) for match {match['id']}")
+                                        try:
+                                            await self._enrich_players(unranked_non_streamer, region)
+                                            self._apply_lobby_average(all_players)
+                                            # Persist updated data back to DB
+                                            self.db.update_match_teams(match['id'], blue_players, red_players)
+                                        except Exception as re_err:
+                                            logger.warning(f"⚠️ Re-enrich failed for match {match['id']}: {re_err}")
                                     
                                     odds_blue = blue_team.get('odds', 1.5)
                                     odds_red = red_team.get('odds', 1.5)
