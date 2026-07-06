@@ -89,6 +89,9 @@ async def load_champion_data():
                     if 804 not in CHAMPION_ID_TO_NAME:
                         CHAMPION_ID_TO_NAME[804] = "Yunara"
                         logger.info("Added Yunara (804) manually")
+                    if 805 not in CHAMPION_ID_TO_NAME:
+                        CHAMPION_ID_TO_NAME[805] = "Locke"
+                        logger.info("Added Locke (805) manually")
                     if 904 not in CHAMPION_ID_TO_NAME:
                         CHAMPION_ID_TO_NAME[904] = "Zaahen"
                         logger.info("Added Zaahen (904) manually")

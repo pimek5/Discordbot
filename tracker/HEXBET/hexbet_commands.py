@@ -3572,96 +3572,39 @@ class Hexbet(commands.Cog):
                 return
             
             game_name, tag_line = riot_id.split('#', 1)
-            
-            # URL encode the tagline (for special characters like Chinese)
-            import urllib.parse
-            encoded_tag = urllib.parse.quote(tag_line)
-            encoded_name = urllib.parse.quote(game_name)
-            
-            logger.info(f"🔍 Searching for: {game_name}#{tag_line}")
-            logger.info(f"🔗 Encoded as: {encoded_name}#{encoded_tag}")
-            
-            # Map platform region to routing region
-            region_map = {
-                'euw1': 'europe', 'eun1': 'europe', 'ru': 'europe', 'tr1': 'europe',
-                'na1': 'americas', 'br1': 'americas', 'la1': 'americas', 'la2': 'americas',
-                'kr': 'asia', 'jp1': 'asia',
-                'oc1': 'sea'
-            }
-            
-            routing_region = region_map.get(region, 'americas')
-            
-            # Get PUUID from specified routing region with retry on rate limit
-            puuid = None
-            headers = {'X-Riot-Token': self.riot_api.api_key}
-            
-            account_url = f"https://{routing_region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_name}/{encoded_tag}"
-            logger.info(f"📡 Account URL: {account_url}")
-            
-            # Retry up to 3 times on rate limit
-            for attempt in range(3):
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(account_url, headers=headers) as resp:
-                        logger.info(f"📊 Response status: {resp.status} (attempt {attempt + 1}/3)")
-                        
-                        if resp.status == 200:
-                            account_data = await resp.json()
-                            puuid = account_data.get('puuid')
-                            logger.info(f"✅ Found PUUID on {routing_region}: {puuid}")
-                            break
-                        elif resp.status == 429:
-                            # Rate limit - wait and retry
-                            retry_after = resp.headers.get('Retry-After', '2')
-                            wait_time = int(retry_after) if retry_after.isdigit() else 2
-                            logger.warning(f"⏳ Rate limited, waiting {wait_time}s before retry...")
-                            if attempt < 2:  # Don't wait on last attempt
-                                await asyncio.sleep(wait_time)
-                        else:
-                            error_text = await resp.text()
-                            logger.error(f"❌ API Error {resp.status}: {error_text[:200]}")
-                            break
-            
+            logger.info(f"🔍 Looking up: {game_name}#{tag_line} on {region}")
+
+            # ── Step 1: PUUID via riot_api (handles rate limits + retries) ─────
+            puuid = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line, region)
             if not puuid:
-                logger.error(f"❌ Failed to get PUUID for {riot_id} on {routing_region}")
-                await interaction.followup.send(f"❌ RiotID not found: `{riot_id}` on {region} ({routing_region})\nThis may be due to API rate limits. Try again in a moment.", ephemeral=True)
+                await interaction.followup.send(
+                    f"❌ RiotID not found: `{riot_id}` on {region}\n"
+                    "Check that the name/tag and region are correct.",
+                    ephemeral=True,
+                )
                 return
-            
-            # Get summoner data from specified platform region
-            summoner_data = None
-            summoner_id = None
-            
-            summoner_url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(summoner_url, headers=headers) as resp:
-                    if resp.status == 200:
-                        summoner_data = await resp.json()
-                        summoner_id = summoner_data.get('id')
-                        logger.info(f"✅ Found summoner on {region}")
-            
-            if not summoner_id:
+            logger.info(f"✅ PUUID: {puuid}")
+
+            # ── Step 2: Summoner data ──────────────────────────────────────────
+            region_short = platform_to_region(region)
+            summoner = await self.riot_api.get_summoner_by_puuid(puuid, region_short)
+            if not summoner:
                 await interaction.followup.send(f"❌ Failed to get summoner data from {region}", ephemeral=True)
                 return
-            
-            # Get ranked stats from the specified region
-            ranked_url = f"https://{region}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
-            stats = None
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(ranked_url, headers=headers) as resp:
-                    if resp.status == 200:
-                        stats_data = await resp.json()
-                        if stats_data:
-                            ranked = [s for s in stats_data if s.get('queueType') == 'RANKED_SOLO_5x5']
-                            stats = ranked[0] if ranked else stats_data[0]
-            
-            tier = stats.get('tier', 'DIAMOND') if stats else 'DIAMOND'
-            lp = stats.get('leaguePoints', 0) if stats else 0
-            wins = stats.get('wins', 0) if stats else 0
+            summoner_id = summoner.get('id', '')
+            logger.info(f"✅ Summoner ID: {summoner_id}")
+
+            # ── Step 3: Ranked stats ───────────────────────────────────────────
+            stats_list = await self.riot_api.get_ranked_stats_by_puuid(puuid, region_short) or []
+            solo = [s for s in stats_list if s.get('queueType') == 'RANKED_SOLO_5x5']
+            stats = solo[0] if solo else (stats_list[0] if stats_list else None)
+
+            tier   = stats.get('tier', 'DIAMOND') if stats else 'DIAMOND'
+            lp     = stats.get('leaguePoints', 0) if stats else 0
+            wins   = stats.get('wins', 0) if stats else 0
             losses = stats.get('losses', 0) if stats else 0
-            wr = round((wins / (wins + losses) * 100), 1) if (wins + losses) > 0 else 50.0
-            
-            logger.info(f"📊 Player stats: {tier} {lp}LP, {wins}W {losses}L ({wr}% WR)")
+            wr     = round((wins / (wins + losses) * 100), 1) if (wins + losses) > 0 else 50.0
+            logger.info(f"📊 {tier} {lp}LP  {wins}W {losses}L  {wr}% WR")
             
             # Add to verified_players
             conn = self.db.get_connection()

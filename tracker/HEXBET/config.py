@@ -313,6 +313,7 @@ CHAMPION_EMOJIS = {
     799: '<:champ_Ambessa:1441318425283792937>',
     800: '<:champ_Mel:1441318562504642650>',  # Correct DDragon ID
     804: '<:champ_Yunara:1441318681220218880>',  # Correct DDragon ID
+    805: '<:Champ_Locke:1523689576567275672>',    # Locke
     875: '<:champ_Sett:1441318614987964427>',
     876: '<:champ_Lillia:1441318548352930012>',
     887: '<:champ_Gwen:1441318478379225168>',
