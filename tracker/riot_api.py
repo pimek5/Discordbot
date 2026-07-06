@@ -491,8 +491,10 @@ class RiotAPI:
                                 logger.info(f"📭 No ranked data found (404) - player may be unranked")
                                 return []
                             elif response.status == 429:
-                                logger.warning(f"⏳ Rate limited on {candidate_platform} (attempt {attempt + 1}/{retries})")
-                                await asyncio.sleep(2)
+                                retry_after = response.headers.get('Retry-After', '5')
+                                wait = min(int(retry_after) if retry_after.isdigit() else 5, 30)
+                                logger.warning(f"⏳ Rate limited on {candidate_platform} (attempt {attempt + 1}/{retries}), waiting {wait}s")
+                                await asyncio.sleep(wait)
                                 continue
                             else:
                                 error_text = await response.text()
@@ -541,11 +543,13 @@ class RiotAPI:
                             elif response.status == 404:
                                 return []
                             elif response.status == 429:
-                                await asyncio.sleep(2)
+                                retry_after = response.headers.get('Retry-After', '5')
+                                wait = min(int(retry_after) if retry_after.isdigit() else 5, 30)
+                                logger.warning(f"⏳ Rate limited (summonerId) on {candidate_platform} (attempt {attempt + 1}/{retries}), waiting {wait}s")
+                                await asyncio.sleep(wait)
                                 continue
                             else:
-                                # Non-retryable status for this platform; move to fallback if available.
-                                break
+                                break  # non-retryable, try next platform
                 except asyncio.TimeoutError:
                     logger.warning(f"⏱️ Timeout getting ranked stats from {candidate_platform} (attempt {attempt + 1}/{retries})")
                     if attempt < retries - 1:
