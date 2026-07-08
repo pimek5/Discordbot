@@ -66,7 +66,8 @@ CHAMPION_ALIASES = {
     'yumi': 'Yuumi', 'vel': 'Velkoz',
     
     # Newer champions (additional aliases)
-    'mel': 'Mel', 'yunara': 'Yunara', 'ambessa': 'Ambessa',
+    'mel': 'Mel', 'yunara': 'Yunara', 'ambessa': 'Ambessa', 'locke': 'Locke',
+
     
     # With spaces/apostrophes
     'aurelion sol': 'AurelionSol', 'dr mundo': 'DrMundo', 'dr. mundo': 'DrMundo',

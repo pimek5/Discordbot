@@ -81,6 +81,7 @@ CHAMPION_EMOJIS = {
     'Lucian': '<:champ_Lucian:1435682466362036347>',
     'Lulu': '<:champ_Lulu:1435682467951546558>',
     'Lux': '<:champ_Lux:1435682469679726602>',
+    'Locke': '<:Champ_Locke:1523689576567275672>',
     'Malphite': '<:champ_Malphite:1435682470657003562>',
     'Malzahar': '<:champ_Malzahar:1435682472212824124>',
     'Maokai': '<:champ_Maokai:1435682473530097694>',

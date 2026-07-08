@@ -61,6 +61,11 @@ DDRAGON_BASE = f"https://ddragon.leagueoflegends.com/cdn/{DDRAGON_VERSION}"
 # Champion ID to name mapping (loaded at startup)
 CHAMPION_ID_TO_NAME = {}
 
+# Manual champion overrides for champions missing from DDragon.
+MANUAL_CHAMPION_OVERRIDES = {
+    805: "Locke",
+}
+
 async def load_champion_data():
     """Load champion data from DDragon"""
     global CHAMPION_ID_TO_NAME
@@ -77,16 +82,24 @@ async def load_champion_data():
                     for champ_name, champ_data in data['data'].items():
                         champ_id = int(champ_data['key'])
                         CHAMPION_ID_TO_NAME[champ_id] = champ_name
+                    for champ_id, champ_name in MANUAL_CHAMPION_OVERRIDES.items():
+                        CHAMPION_ID_TO_NAME[champ_id] = champ_name
                     print(f"✅ Loaded {len(CHAMPION_ID_TO_NAME)} champions from DDragon")
                     logger.info(f"✅ Loaded {len(CHAMPION_ID_TO_NAME)} champions from DDragon")
                 else:
                     print(f"⚠️ DDragon returned status {response.status}")
+                    for champ_id, champ_name in MANUAL_CHAMPION_OVERRIDES.items():
+                        CHAMPION_ID_TO_NAME[champ_id] = champ_name
     except asyncio.TimeoutError:
         print("❌ Timeout loading champion data from DDragon")
         logger.error("❌ Timeout loading champion data from DDragon")
+        for champ_id, champ_name in MANUAL_CHAMPION_OVERRIDES.items():
+            CHAMPION_ID_TO_NAME[champ_id] = champ_name
     except Exception as e:
         print(f"❌ Error loading champion data: {e}")
         logger.error(f"❌ Error loading champion data: {e}")
+        for champ_id, champ_name in MANUAL_CHAMPION_OVERRIDES.items():
+            CHAMPION_ID_TO_NAME[champ_id] = champ_name
 
 def get_champion_icon_url(champion_id: int) -> str:
     """Get champion splash art URL"""
