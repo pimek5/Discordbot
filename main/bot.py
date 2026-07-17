@@ -2359,16 +2359,13 @@ async def find_matching_mod(thread_name, runeforge_mods, threshold=0.7):
 
 async def add_runeforge_tag(thread: discord.Thread, tag_id: int):
     """Add 'onRuneforge' tag to a thread"""
-    was_archived = False
-    was_locked = False
-    was_opened = False
-    
     try:
         print(f"🏷️ Attempting to add tag to thread: {thread.name} (ID: {thread.id})")
-        
-        # Remember if thread was archived so we can restore it
-        was_archived = thread.archived
-        was_locked = thread.locked
+
+        # Do not auto-open or re-lock threads anymore.
+        if thread.archived or thread.locked:
+            print(f"  ⏭️ Skipping thread (archived={thread.archived}, locked={thread.locked})")
+            return False
         
         # Check if tag already exists
         current_tag_names = [tag.name for tag in thread.applied_tags]
@@ -2377,14 +2374,6 @@ async def add_runeforge_tag(thread: discord.Thread, tag_id: int):
         if any(tag.name == "onRuneforge" for tag in thread.applied_tags):
             print(f"  ✅ Thread already has onRuneforge tag")
             return False
-        
-        # If thread is archived or locked, unarchive/unlock it first
-        if was_archived or was_locked:
-            print(f"  📂 Thread is archived={was_archived}, locked={was_locked} - opening it...")
-            await thread.edit(archived=False, locked=False)
-            was_opened = True
-            print(f"  ✅ Thread opened successfully")
-            await asyncio.sleep(0.5)  # Small delay to ensure Discord processes the change
         
         # Get the parent channel (ForumChannel)
         parent = thread.parent
@@ -2425,29 +2414,16 @@ async def add_runeforge_tag(thread: discord.Thread, tag_id: int):
         import traceback
         traceback.print_exc()
         return False
-    finally:
-        # ALWAYS restore thread state if we opened it
-        if was_opened and (was_archived or was_locked):
-            print(f"  📂 Restoring thread state: archived={was_archived}, locked={was_locked}...")
-            try:
-                await asyncio.sleep(0.5)
-                await thread.edit(archived=was_archived, locked=was_locked)
-                print(f"  ✅ Thread state restored")
-            except Exception as e:
-                print(f"  ⚠️ Failed to restore thread state: {e}")
 
 async def remove_runeforge_tag(thread: discord.Thread):
     """Remove 'onRuneforge' tag from a thread"""
-    was_archived = False
-    was_locked = False
-    was_opened = False
-    
     try:
         print(f"🏷️ Attempting to remove tag from thread: {thread.name} (ID: {thread.id})")
-        
-        # Remember if thread was archived so we can restore it
-        was_archived = thread.archived
-        was_locked = thread.locked
+
+        # Do not auto-open or re-lock threads anymore.
+        if thread.archived or thread.locked:
+            print(f"  ⏭️ Skipping thread (archived={thread.archived}, locked={thread.locked})")
+            return False
         
         # Check if tag exists
         current_tag_names = [tag.name for tag in thread.applied_tags]
@@ -2456,14 +2432,6 @@ async def remove_runeforge_tag(thread: discord.Thread):
         if not any(tag.name == "onRuneforge" for tag in thread.applied_tags):
             print(f"  ✅ Thread doesn't have onRuneforge tag")
             return False
-        
-        # If thread is archived or locked, unarchive/unlock it first
-        if was_archived or was_locked:
-            print(f"  📂 Thread is archived={was_archived}, locked={was_locked} - opening it...")
-            await thread.edit(archived=False, locked=False)
-            was_opened = True
-            print(f"  ✅ Thread opened successfully")
-            await asyncio.sleep(0.5)  # Small delay to ensure Discord processes the change
         
         # Get the parent channel (ForumChannel)
         parent = thread.parent
@@ -2488,16 +2456,6 @@ async def remove_runeforge_tag(thread: discord.Thread):
         import traceback
         traceback.print_exc()
         return False
-    finally:
-        # ALWAYS restore thread state if we opened it
-        if was_opened and (was_archived or was_locked):
-            print(f"  📂 Restoring thread state: archived={was_archived}, locked={was_locked}...")
-            try:
-                await asyncio.sleep(0.5)
-                await thread.edit(archived=was_archived, locked=was_locked)
-                print(f"  ✅ Thread state restored")
-            except Exception as e:
-                print(f"  ⚠️ Failed to restore thread state: {e}")
 
 @tasks.loop(seconds=RUNEFORGE_CHECK_INTERVAL)
 async def check_threads_for_runeforge():

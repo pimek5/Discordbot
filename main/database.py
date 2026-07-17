@@ -155,6 +155,22 @@ class Database:
                         ALTER TABLE voting_sessions 
                         ADD COLUMN IF NOT EXISTS auto_exclude_previous BOOLEAN DEFAULT TRUE
                     """)
+                    cur.execute("""
+                        ALTER TABLE voting_sessions
+                        ADD COLUMN IF NOT EXISTS end_at TIMESTAMP
+                    """)
+                    cur.execute("""
+                        ALTER TABLE voting_sessions
+                        ADD COLUMN IF NOT EXISTS reminder_3d_sent BOOLEAN DEFAULT FALSE
+                    """)
+                    cur.execute("""
+                        ALTER TABLE voting_sessions
+                        ADD COLUMN IF NOT EXISTS reminder_2d_sent BOOLEAN DEFAULT FALSE
+                    """)
+                    cur.execute("""
+                        ALTER TABLE voting_sessions
+                        ADD COLUMN IF NOT EXISTS reminder_1d_sent BOOLEAN DEFAULT FALSE
+                    """)
                     conn.commit()
                     logger.info("✅ Voting exclusions migration applied")
                 except Exception as migration_error:
@@ -1526,16 +1542,16 @@ class Database:
     
     # ==================== VOTING OPERATIONS ====================
     
-    def create_voting_session(self, guild_id: int, channel_id: int, started_by: int, excluded_champions: List[str] = None) -> int:
+    def create_voting_session(self, guild_id: int, channel_id: int, started_by: int, excluded_champions: List[str] = None, end_at=None) -> int:
         """Create a new voting session and return its ID"""
         conn = self.get_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO voting_sessions (guild_id, channel_id, started_by, status, excluded_champions)
-                    VALUES (%s, %s, %s, 'active', %s)
+                    INSERT INTO voting_sessions (guild_id, channel_id, started_by, status, excluded_champions, end_at, reminder_3d_sent, reminder_2d_sent, reminder_1d_sent)
+                    VALUES (%s, %s, %s, 'active', %s, %s, FALSE, FALSE, FALSE)
                     RETURNING id
-                """, (guild_id, channel_id, started_by, excluded_champions or []))
+                """, (guild_id, channel_id, started_by, excluded_champions or [], end_at))
                 session_id = cur.fetchone()[0]
                 conn.commit()
                 return session_id
@@ -1556,6 +1572,20 @@ class Database:
                 return cur.fetchone()
         finally:
             self.return_connection(conn)
+
+    def get_all_active_voting_sessions(self) -> List[Dict]:
+        """Get all active voting sessions across guilds."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM voting_sessions
+                    WHERE status = 'active'
+                    ORDER BY started_at ASC
+                """)
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
     
     def update_voting_message_id(self, session_id: int, message_id: int):
         """Update the message ID for a voting session"""
@@ -1567,6 +1597,46 @@ class Database:
                     SET message_id = %s
                     WHERE id = %s
                 """, (message_id, session_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def set_voting_end_time(self, session_id: int, end_at):
+        """Set or update the scheduled end time for a voting session."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE voting_sessions
+                    SET end_at = %s,
+                        reminder_3d_sent = FALSE,
+                        reminder_2d_sent = FALSE,
+                        reminder_1d_sent = FALSE
+                    WHERE id = %s
+                """, (end_at, session_id))
+                conn.commit()
+        finally:
+            self.return_connection(conn)
+
+    def mark_voting_reminder_sent(self, session_id: int, days_remaining: int):
+        """Mark a scheduled voting reminder as sent."""
+        column_map = {
+            3: 'reminder_3d_sent',
+            2: 'reminder_2d_sent',
+            1: 'reminder_1d_sent',
+        }
+        column = column_map.get(days_remaining)
+        if not column:
+            return
+
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"""
+                    UPDATE voting_sessions
+                    SET {column} = TRUE
+                    WHERE id = %s
+                """, (session_id,))
                 conn.commit()
         finally:
             self.return_connection(conn)
