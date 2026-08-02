@@ -274,15 +274,18 @@ class VoteCommands(commands.Cog):
         """Ping everyone when the voting session enters the last 3 days."""
         channel = self.bot.get_channel(session['channel_id'])
         if not channel:
+            logger.warning("⚠️ Voting reminder skipped for session %s: channel %s not found", session['id'], session['channel_id'])
             return
 
         day_label = "Day" if days_remaining == 1 else "Days"
+        logger.info("📢 Sending voting reminder for session %s: %s %s remaining", session['id'], days_remaining, day_label)
         try:
             await channel.send(
                 content=f"@everyone {days_remaining} {day_label} remaining Vote",
                 allowed_mentions=discord.AllowedMentions(everyone=True),
                 delete_after=10,
             )
+            logger.info("✅ Voting reminder sent for session %s", session['id'])
         except Exception as e:
             logger.error(f"Failed to send voting reminder: {e}")
 
@@ -328,17 +331,23 @@ class VoteCommands(commands.Cog):
             end_at = session.get('end_at')
             if end_at:
                 remaining_seconds = int((end_at - now).total_seconds())
+                logger.info("🕒 Voting monitor session %s: end_at=%s, now=%s, remaining_seconds=%s", session['id'], end_at, now, remaining_seconds)
                 if remaining_seconds <= 0:
+                    logger.info("🛑 Voting session %s reached its end time; finalizing", session['id'])
                     await self.finalize_voting_session(session)
                     continue
 
                 days_remaining = (end_at.date() - now.date()).days
+                logger.info("⏳ Voting session %s has %s day(s) remaining", session['id'], days_remaining)
                 if days_remaining in (3, 2, 1):
                     reminder_flag = f"reminder_{days_remaining}d_sent"
                     if not session.get(reminder_flag):
+                        logger.info("📣 Voting session %s reached the %s-day reminder threshold", session['id'], days_remaining)
                         await self.send_voting_reminder(session, days_remaining)
                         db.mark_voting_reminder_sent(session['id'], days_remaining)
                         session[reminder_flag] = True
+                    else:
+                        logger.info("⏭️ Voting session %s already sent the %s-day reminder", session['id'], days_remaining)
 
             await self.refresh_voting_message(session)
 

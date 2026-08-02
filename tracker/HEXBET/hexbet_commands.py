@@ -580,6 +580,17 @@ class Hexbet(commands.Cog):
             return DEFAULT_BET_LOGS_CHANNEL_ID
         return DEFAULT_BET_CHANNEL_ID
 
+    async def _resolve_channel(self, channel_id: int):
+        """Resolve a channel from cache, then API as fallback."""
+        channel = self.bot.get_channel(channel_id)
+        if channel:
+            return channel
+        try:
+            return await self.bot.fetch_channel(channel_id)
+        except Exception as e:
+            logger.warning(f"⚠️ Could not resolve channel {channel_id}: {e}")
+            return None
+
     async def cleanup_old_bets(self):
         """Delete settled matches and their bets immediately"""
         try:
@@ -596,26 +607,30 @@ class Hexbet(commands.Cog):
                     match_id = match.get('id')
                     channel_id = match.get('channel_id')
                     message_id = match.get('message_id')
+                    status = (match.get('status') or '').lower()
                     winner = match.get('winner')
                     updated_at = match.get('updated_at')
                     
-                    logger.info(f"🗑️ Processing match {match_id}: winner={winner}, updated_at={updated_at}")
+                    logger.info(f"🗑️ Processing match {match_id}: status={status}, winner={winner}, updated_at={updated_at}")
                     
                     # Calculate time since settlement
                     from datetime import datetime, timezone
                     now = datetime.now(timezone.utc)
                     # Make updated_at timezone-aware if it's naive
-                    if updated_at.tzinfo is None:
+                    if updated_at and updated_at.tzinfo is None:
                         updated_at = updated_at.replace(tzinfo=timezone.utc)
+                    elif not updated_at:
+                        logger.warning(f"⚠️ Match {match_id} has no updated_at timestamp; treating as due for cleanup")
+                        updated_at = now
                     time_since_settlement = (now - updated_at).total_seconds() / 60  # in minutes
                     
                     should_delete = False
                     
-                    # Remakes and cancelled matches - delete immediately
-                    if winner in ['refunded', 'cancel', 'cancelled']:
+                    # Refunded/remake/cancelled states should be removed immediately.
+                    if status == 'refunded' or (winner or '').lower() in ['refunded', 'cancel', 'cancelled']:
                         should_delete = True
                     # Normal settled matches (blue/red) - delete after 3 minutes
-                    elif winner in ['blue', 'red'] and time_since_settlement >= 3:
+                    elif status == 'settled' and (winner or '').lower() in ['blue', 'red'] and time_since_settlement >= 3:
                         should_delete = True
                     
                     if should_delete and channel_id and message_id:
@@ -624,7 +639,7 @@ class Hexbet(commands.Cog):
                         if match_messages:
                             for guild_id, ch_id, msg_id in match_messages:
                                 try:
-                                    channel = self.bot.get_channel(ch_id)
+                                    channel = await self._resolve_channel(ch_id)
                                     if channel:
                                         message = await channel.fetch_message(msg_id)
                                         await message.delete()
@@ -638,7 +653,7 @@ class Hexbet(commands.Cog):
                         else:
                             # Fallback to old single message_id system
                             try:
-                                channel = self.bot.get_channel(channel_id)
+                                channel = await self._resolve_channel(channel_id)
                                 if channel:
                                     message = await channel.fetch_message(message_id)
                                     await message.delete()
@@ -918,7 +933,7 @@ class Hexbet(commands.Cog):
             riot_id = player['riot_id']
             platform = player['region']
             region = region_map.get(platform, 'euw')
-            discord_name = player['riot_id']  # Show Riot account being scouted, not Discord name
+            discord_name = (player.get('discord_name') or '').strip() or riot_id
 
             try:
                 if '#' in riot_id:
@@ -968,7 +983,7 @@ class Hexbet(commands.Cog):
         riot_id: str,
     ) -> bool:
         """Post a scouted player's live game to the scouting channel."""
-        channel = self.bot.get_channel(SCOUTING_CHANNEL_ID)
+        channel = await self._resolve_channel(SCOUTING_CHANNEL_ID)
         if not channel:
             logger.error(f"❌ Scouting channel {SCOUTING_CHANNEL_ID} not found")
             return False
@@ -1016,6 +1031,29 @@ class Hexbet(commands.Cog):
                 else:
                     scouted_rank_str = "UNRANKED"
                 break
+
+        # Prefer direct Riot-ID rank lookup for stable/accurate scouting header rank.
+        if '#' in riot_id:
+            try:
+                game_name, tag_line = riot_id.split('#', 1)
+                puuid_for_rank = await self.riot_api.get_puuid_by_riot_id(game_name, tag_line, platform)
+                if puuid_for_rank:
+                    ranked_stats = await self.riot_api.get_ranked_stats_by_puuid(puuid_for_rank, region)
+                    if ranked_stats:
+                        solo_stats = [s for s in ranked_stats if s.get('queueType') == 'RANKED_SOLO_5x5']
+                        rank_entry = solo_stats[0] if solo_stats else ranked_stats[0]
+                        tier = rank_entry.get('tier', 'UNRANKED')
+                        div = rank_entry.get('rank', '')
+                        lp = rank_entry.get('leaguePoints', 0)
+                        t_emoji = CFG_RANK_EMOJIS.get(tier, '')
+                        if tier in ('MASTER', 'GRANDMASTER', 'CHALLENGER'):
+                            scouted_rank_str = f"{t_emoji} {tier} • {lp} LP"
+                        elif tier != 'UNRANKED':
+                            scouted_rank_str = f"{t_emoji} {tier} {div} • {lp} LP"
+                        else:
+                            scouted_rank_str = "UNRANKED"
+            except Exception as rank_err:
+                logger.warning(f"⚠️ Could not resolve explicit scouting rank for {riot_id}: {rank_err}")
 
         display_name = f"{scouted_player_name} — {scouted_rank_str}" if scouted_rank_str else scouted_player_name
 
@@ -1578,7 +1616,7 @@ class Hexbet(commands.Cog):
                 match_messages = self.db.get_match_messages(match['id'])
                 for guild_id, channel_id, message_id in match_messages:
                     try:
-                        channel = self.bot.get_channel(channel_id)
+                        channel = await self._resolve_channel(channel_id)
                         if channel:
                             msg = await channel.fetch_message(message_id)
                             await msg.delete()
@@ -1720,7 +1758,7 @@ class Hexbet(commands.Cog):
         # Update and delete message in EACH guild
         for guild_id, channel_id, message_id in match_messages:
             try:
-                channel = self.bot.get_channel(channel_id)
+                channel = await self._resolve_channel(channel_id)
                 if not channel:
                     logger.warning(f"Channel {channel_id} not found for match {match['id']}")
                     continue
@@ -1760,7 +1798,7 @@ class Hexbet(commands.Cog):
         
         for guild_id, channel_id, message_id in match_messages:
             try:
-                channel = self.bot.get_channel(channel_id)
+                channel = await self._resolve_channel(channel_id)
                 if not channel:
                     continue
                     

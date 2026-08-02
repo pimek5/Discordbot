@@ -1019,6 +1019,7 @@ class MusicBot(commands.Bot):
         
         self.queues = {}  # Dictionary of queues for each server
         self._guild_sync_done = False
+        self.idle_since = {}  # guild_id -> datetime when idle state started
         
     async def setup_hook(self):
         """Hook called on bot startup"""
@@ -1060,6 +1061,52 @@ class MusicBot(commands.Bot):
         
         if not self.update_status.is_running():
             self.update_status.start()
+        if not self.idle_disconnect_watchdog.is_running():
+            self.idle_disconnect_watchdog.start()
+
+    @tasks.loop(seconds=30)
+    async def idle_disconnect_watchdog(self):
+        """Disconnect from voice if idle for too long (unless 24/7 mode is enabled)."""
+        now = datetime.now()
+        for guild in self.guilds:
+            voice_client = guild.voice_client
+            if not voice_client or not voice_client.is_connected():
+                self.idle_since.pop(guild.id, None)
+                continue
+
+            settings = db.get_guild_settings(str(guild.id))
+            mode_247_enabled = bool(settings[2]) if settings and len(settings) > 2 else False
+            if mode_247_enabled:
+                self.idle_since.pop(guild.id, None)
+                continue
+
+            queue = self.get_queue(guild.id)
+            has_pending_queue = not queue.is_empty()
+            is_active = voice_client.is_playing() or voice_client.is_paused() or has_pending_queue
+            if is_active:
+                self.idle_since.pop(guild.id, None)
+                continue
+
+            idle_started_at = self.idle_since.get(guild.id)
+            if idle_started_at is None:
+                self.idle_since[guild.id] = now
+                continue
+
+            idle_seconds = (now - idle_started_at).total_seconds()
+            if idle_seconds < 180:
+                continue
+
+            try:
+                await voice_client.disconnect()
+                logger.info("🔌 Auto-disconnected from %s after %ss of inactivity", guild.name, int(idle_seconds))
+            except Exception as e:
+                logger.warning("Failed to auto-disconnect idle voice client in %s: %s", guild.name, e)
+            finally:
+                self.idle_since.pop(guild.id, None)
+
+    @idle_disconnect_watchdog.before_loop
+    async def before_idle_disconnect_watchdog(self):
+        await self.wait_until_ready()
         
     @tasks.loop(minutes=5)
     async def update_status(self):
@@ -1843,9 +1890,19 @@ async def play_next(interaction: discord.Interaction):
         song = queue.next()
 
     if not song and queue.is_empty() and queue.loop_mode == 'off':
+        settings = db.get_guild_settings(str(interaction.guild.id))
+        mode_247_enabled = bool(settings[2]) if settings and len(settings) > 2 else False
+        if mode_247_enabled:
+            return
+
         # Disconnect after 3 minutes of inactivity
         await asyncio.sleep(180)
-        if interaction.guild.voice_client and not interaction.guild.voice_client.is_playing():
+        if (
+            interaction.guild.voice_client
+            and not interaction.guild.voice_client.is_playing()
+            and not interaction.guild.voice_client.is_paused()
+            and queue.is_empty()
+        ):
             await interaction.guild.voice_client.disconnect()
             try:
                 embed = discord.Embed(
