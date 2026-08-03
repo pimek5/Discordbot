@@ -200,6 +200,8 @@ MAX_INVITE_USERS = 16
 TEMP_CHANNEL_CATEGORY_NAME = "Temporary Channels"
 
 LOG_CHANNEL_ID = 1408036991454417039
+MOD_BAN_CHANNEL_ID = 1533644252888695081
+MOD_APPEAL_CHANNEL_ID = 1533644273302376649
 
 # Twitter Configuration
 TWITTER_USERNAME = "p1mek"
@@ -5099,6 +5101,42 @@ def has_mod_role(interaction: discord.Interaction) -> bool:
     user_role_ids = [role.id for role in member.roles]
     return any(role_id in user_role_ids for role_id in ALLOWED_MOD_ROLES)
 
+
+class BanNoticeView(discord.ui.View):
+    """Appeal helper buttons sent with the ban DM."""
+
+    def __init__(self, ban_id: int, guild_name: str):
+        super().__init__(timeout=7 * 24 * 60 * 60)
+        self.ban_id = ban_id
+        self.guild_name = guild_name
+
+    @discord.ui.button(label="Appeal Ban", emoji="📝", style=discord.ButtonStyle.primary)
+    async def appeal_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        help_embed = discord.Embed(
+            title="📝 Ban Appeal",
+            description=(
+                f"To appeal this ban for **{self.guild_name}**, use:\n"
+                f"`/appeal appeal_text:<your message>`"
+            ),
+            color=discord.Color.blurple(),
+            timestamp=datetime.datetime.now()
+        )
+        help_embed.add_field(
+            name="Ban Reference",
+            value=f"Ban ID: **{self.ban_id}**",
+            inline=False,
+        )
+        help_embed.add_field(
+            name="What to include",
+            value="What happened, why you want to return, and what will change.",
+            inline=False,
+        )
+
+        try:
+            await interaction.response.send_message(embed=help_embed, ephemeral=True)
+        except Exception:
+            await interaction.response.send_message(embed=help_embed)
+
 @mod_group.command(name="ban", description="Ban a user from the server with a reason (works with user ID)")
 @app_commands.describe(
     user="The user to ban (mention or ID)",
@@ -5153,34 +5191,38 @@ async def ban_user(
         
         # Send DM to user before banning
         try:
-            embed = discord.Embed(
-                title="🔨 You have been banned",
-                description=f"You have been banned from **{interaction.guild.name}**",
-                color=discord.Color.red(),
-                timestamp=datetime.datetime.now()
-            )
-            
-            embed.add_field(name="📋 Reason", value=reason, inline=False)
-            
             if duration:
                 hours = duration // 60
                 minutes = duration % 60
                 duration_text = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-                embed.add_field(name="⏰ Duration", value=duration_text, inline=True)
-                embed.add_field(name="🔓 Expires", value=f"<t:{int((datetime.datetime.now() + datetime.timedelta(minutes=duration)).timestamp())}:R>", inline=True)
+                expires_at = datetime.datetime.now() + datetime.timedelta(minutes=duration)
+                expires_text = f"<t:{int(expires_at.timestamp())}:F> (<t:{int(expires_at.timestamp())}:R>)"
             else:
-                embed.add_field(name="⏰ Duration", value="Permanent", inline=True)
-            
+                duration_text = "Permanent"
+                expires_text = "No automatic expiry"
+
+            embed = discord.Embed(
+                title="🚫 Ban Notice",
+                description=(
+                    f"You have been banned from **{interaction.guild.name}**.\n"
+                    f"If you believe this was a mistake, you can submit an appeal."
+                ),
+                color=0xE74C3C,
+                timestamp=datetime.datetime.now()
+            )
+
+            embed.add_field(name="📋 Reason", value=reason[:1024], inline=False)
+            embed.add_field(name="⏱️ Duration", value=duration_text, inline=True)
+            embed.add_field(name="🕒 Expires", value=expires_text, inline=True)
             embed.add_field(
-                name="📝 How to Appeal",
-                value=f"Send me a **Direct Message** and use `/appeal` command to submit your appeal.\n"
-                      f"You can also use `/appeal` in the server if you're still a member.",
+                name="🧾 Appeal",
+                value="Use the **Appeal Ban** button below, or run `/appeal` manually.",
                 inline=False
             )
-            
+
             embed.set_footer(text=f"Ban ID: {ban_id} • Moderator: {interaction.user.name}")
-            
-            await user.send(embed=embed)
+
+            await user.send(embed=embed, view=BanNoticeView(ban_id=ban_id, guild_name=interaction.guild.name))
             dm_sent = True
         except discord.Forbidden:
             dm_sent = False
@@ -5228,10 +5270,12 @@ async def ban_user(
         except:
             pass
         
-        # Log to mod log channel if exists
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID) if 'LOG_CHANNEL_ID' in globals() else None
-        if log_channel:
-            await log_channel.send(embed=embed)
+        # Log ban to dedicated moderator ban channel (fallback to global log channel)
+        mod_ban_channel = interaction.guild.get_channel(MOD_BAN_CHANNEL_ID)
+        if not mod_ban_channel and 'LOG_CHANNEL_ID' in globals():
+            mod_ban_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        if mod_ban_channel:
+            await mod_ban_channel.send(embed=embed)
             
     except discord.Forbidden:
         await interaction.followup.send("❌ I don't have permission to ban this user!", ephemeral=True)
@@ -5457,8 +5501,10 @@ async def appeal_ban(interaction: discord.Interaction, appeal_text: str):
             guild = bot.get_guild(guild_id)
         
         if guild:
-            log_channel = guild.get_channel(LOG_CHANNEL_ID) if 'LOG_CHANNEL_ID' in globals() else None
-            if log_channel:
+            mod_appeal_channel = guild.get_channel(MOD_APPEAL_CHANNEL_ID)
+            if not mod_appeal_channel and 'LOG_CHANNEL_ID' in globals():
+                mod_appeal_channel = guild.get_channel(LOG_CHANNEL_ID)
+            if mod_appeal_channel:
                 mod_embed = discord.Embed(
                     title="📝 New Ban Appeal",
                     description=f"{interaction.user.mention} has submitted a ban appeal",
@@ -5474,7 +5520,7 @@ async def appeal_ban(interaction: discord.Interaction, appeal_text: str):
                 mod_embed.add_field(name="📍 Submitted via", value="DM with bot" if not interaction.guild else "Server command", inline=True)
                 mod_embed.add_field(name="⚙️ Review", value="Use `/mod appeals` to review", inline=False)
                 
-                await log_channel.send(embed=mod_embed)
+                await mod_appeal_channel.send(embed=mod_embed)
         
     except Exception as e:
         print(f"Error submitting appeal: {e}")
