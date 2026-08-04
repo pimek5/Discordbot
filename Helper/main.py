@@ -673,13 +673,14 @@ def create_bot():
 
         await update_streaming_embed(guild)
 
-    async def hide_all_channels_for_role(guild: discord.Guild):
-        role = guild.get_role(HIDE_CHANNELS_FOR_ROLE_ID)
+    async def hide_all_channels_for_role(guild: discord.Guild, role_id: int = HIDE_CHANNELS_FOR_ROLE_ID) -> tuple[int, int]:
+        role = guild.get_role(role_id)
         if not role:
-            logger.warning("Role %s not found in guild %s", HIDE_CHANNELS_FOR_ROLE_ID, guild.id)
-            return
+            logger.warning("Role %s not found in guild %s", role_id, guild.id)
+            return 0, 0
 
         changed = 0
+        failed = 0
         for channel in guild.channels:
             try:
                 overwrite = channel.overwrites_for(role)
@@ -693,14 +694,17 @@ def create_bot():
                 )
                 changed += 1
             except Exception as e:
+                failed += 1
                 logger.warning("Failed to update visibility for channel %s in guild %s: %s", channel.id, guild.id, e)
 
         logger.info(
-            "Hidden channels sync complete for role %s in guild %s (updated: %s)",
-            HIDE_CHANNELS_FOR_ROLE_ID,
+            "Hidden channels sync complete for role %s in guild %s (updated: %s, failed: %s)",
+            role_id,
             guild.id,
             changed,
+            failed,
         )
+        return changed, failed
 
     @tasks.loop(minutes=5)
     async def sync_streaming_roles_loop():
@@ -1075,6 +1079,42 @@ def create_bot():
 
         for msg in messages:
             await interaction.followup.send(msg, ephemeral=True)
+
+    @bot.tree.command(name="hidechannels", description="Hide all channels for a role in this server")
+    @app_commands.describe(role="Role to hide channels for (leave empty to use default configured role)")
+    async def hidechannels(interaction: discord.Interaction, role: Optional[discord.Role] = None):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        if not interaction.user.guild_permissions.manage_channels:
+            await interaction.response.send_message("❌ You need Manage Channels permission to use this command.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        target_role_id = role.id if role else HIDE_CHANNELS_FOR_ROLE_ID
+        changed, failed = await hide_all_channels_for_role(interaction.guild, role_id=target_role_id)
+
+        target_role = interaction.guild.get_role(target_role_id)
+        if not target_role:
+            await interaction.followup.send(
+                f"❌ Role with ID `{target_role_id}` was not found in this server.",
+                ephemeral=True,
+            )
+            return
+
+        result_embed = discord.Embed(
+            title="🔒 Channel Visibility Updated",
+            color=discord.Color.orange(),
+            timestamp=datetime.now(timezone.utc),
+            description=f"Visibility update completed for {target_role.mention}",
+        )
+        result_embed.add_field(name="✅ Channels updated", value=str(changed), inline=True)
+        result_embed.add_field(name="⚠️ Failed", value=str(failed), inline=True)
+        result_embed.add_field(name="🆔 Role ID", value=str(target_role_id), inline=True)
+
+        await interaction.followup.send(embed=result_embed, ephemeral=True)
 
     @bot.event
     async def setup_hook():
