@@ -1253,6 +1253,34 @@ def create_bot():
 
         await interaction.followup.send(embed=result_embed, ephemeral=True)
 
+    @bot.tree.command(name="xdd", description="Refresh role panel and role permission sync")
+    async def xdd(interaction: discord.Interaction):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+            return
+
+        if not interaction.user.guild_permissions.manage_channels:
+            await interaction.response.send_message("❌ You need Manage Channels permission to use this command.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        changed, failed = await ensure_role_permissions_like_verified(interaction.guild)
+        await ensure_role_claim_message(interaction.guild)
+
+        embed = discord.Embed(
+            title="✅ /xdd completed",
+            description="Role claim panel and permission sync have been refreshed.",
+            color=discord.Color.green(),
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.add_field(name="🔁 Channels updated", value=str(changed), inline=True)
+        embed.add_field(name="⚠️ Failed", value=str(failed), inline=True)
+        embed.add_field(name="🆔 Role", value=f"<@&{ROLE_CLAIM_ROLE_ID}>", inline=True)
+        embed.add_field(name="📢 Panel channel", value=f"<#{ROLE_CLAIM_CHANNEL_ID}>", inline=True)
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @bot.event
     async def setup_hook():
         bot.add_view(HelperView())
