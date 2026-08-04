@@ -15,6 +15,7 @@ HELPER_FORUM_ID = 1464368533088768124  # Support forum channel ID
 SOLVED_TAG_ID = 1464379665333620746  # Tag applied when thread is solved
 UNSOLVED_TAG_ID = 1464379721272787069  # Tag applied when thread is unsolved/created
 STREAM_ROLE_ID = 1470171489096564736  # Role granted while streaming
+HIDE_CHANNELS_FOR_ROLE_ID = 1534168554180706494  # Role that should not see any channels
 STREAM_LIST_CHANNEL_ID = 1470173597157818559  # Channel for streaming roster embed
 THREAD_UPDATE_IGNORED_PARENT_IDS = {
     HELPER_FORUM_ID,
@@ -672,6 +673,35 @@ def create_bot():
 
         await update_streaming_embed(guild)
 
+    async def hide_all_channels_for_role(guild: discord.Guild):
+        role = guild.get_role(HIDE_CHANNELS_FOR_ROLE_ID)
+        if not role:
+            logger.warning("Role %s not found in guild %s", HIDE_CHANNELS_FOR_ROLE_ID, guild.id)
+            return
+
+        changed = 0
+        for channel in guild.channels:
+            try:
+                overwrite = channel.overwrites_for(role)
+                if overwrite.view_channel is False:
+                    continue
+                overwrite.view_channel = False
+                await channel.set_permissions(
+                    role,
+                    overwrite=overwrite,
+                    reason="Helper: hide all channels for restricted role",
+                )
+                changed += 1
+            except Exception as e:
+                logger.warning("Failed to update visibility for channel %s in guild %s: %s", channel.id, guild.id, e)
+
+        logger.info(
+            "Hidden channels sync complete for role %s in guild %s (updated: %s)",
+            HIDE_CHANNELS_FOR_ROLE_ID,
+            guild.id,
+            changed,
+        )
+
     @tasks.loop(minutes=5)
     async def sync_streaming_roles_loop():
         if not GUILD_ID:
@@ -696,6 +726,10 @@ def create_bot():
             guild = bot.get_guild(int(GUILD_ID))
             if guild:
                 await sync_streaming_roles(guild)
+                await hide_all_channels_for_role(guild)
+        else:
+            for guild in bot.guilds:
+                await hide_all_channels_for_role(guild)
         if not getattr(bot, "_kofi_server_started", False):
             bot._kofi_server_started = True
             await start_kofi_server(bot)
