@@ -461,13 +461,8 @@ def create_bot():
                 target_allow, target_deny = verified_overwrite.pair()
                 desired_overwrite = discord.PermissionOverwrite.from_pair(target_allow, target_deny)
 
-                everyone_overwrite = channel.overwrites_for(everyone)
-                if everyone_overwrite.view_channel is False:
-                    # Keep neutral when @everyone is explicitly denied visibility.
-                    desired_overwrite.view_channel = None
-                else:
-                    # For all other channels, force explicit visibility for this role.
-                    desired_overwrite.view_channel = True
+                # Force explicit visibility for this role so it never keeps an X deny.
+                desired_overwrite.view_channel = True
                 current_overwrite = channel.overwrites_for(target_role)
 
                 if current_overwrite == desired_overwrite:
