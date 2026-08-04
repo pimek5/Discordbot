@@ -28,6 +28,8 @@ THREAD_UPDATE_IGNORED_PARENT_IDS = {
 THREAD_UPDATE_LOG_CHANNEL_ID = 1372734313594093638
 THREAD_UPDATE_NOTIFY_ROLE_ID = 1173564965152637018
 MAIN_GUILD_ID = 1153027935553454191  # Main server — forum announcements only fire here
+ROLE_CLAIM_ROLE_ID = 1534177344812744816
+ROLE_CLAIM_CHANNEL_ID = 1534177637306728448
 ORDER_BUTTON_URL = "https://ptb.discord.com/channels/1153027935553454191/1245400205063618570"
 REPORT_ISSUES_BUTTON_URL = "https://ptb.discord.com/channels/1153027935553454191/1264484659765448804"
 AUTO_TRIAGE_KEYWORDS = {
@@ -193,6 +195,41 @@ class ThreadUpdateLinksView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(discord.ui.Button(label="Order", style=discord.ButtonStyle.link, url=ORDER_BUTTON_URL))
         self.add_item(discord.ui.Button(label="Report skin issues", style=discord.ButtonStyle.link, url=REPORT_ISSUES_BUTTON_URL))
+
+
+class RoleClaimView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Get Access Role",
+        emoji="✅",
+        style=discord.ButtonStyle.success,
+        custom_id="helper_claim_access_role",
+    )
+    async def claim_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("❌ This button can only be used in a server.", ephemeral=True)
+            return
+
+        role = interaction.guild.get_role(ROLE_CLAIM_ROLE_ID)
+        if role is None:
+            await interaction.response.send_message(
+                f"❌ Role with ID {ROLE_CLAIM_ROLE_ID} was not found.",
+                ephemeral=True,
+            )
+            return
+
+        if role in interaction.user.roles:
+            await interaction.response.send_message("ℹ️ You already have this role.", ephemeral=True)
+            return
+
+        try:
+            await interaction.user.add_roles(role, reason="Role claim button used")
+            await interaction.response.send_message(f"✅ You received {role.mention}", ephemeral=True)
+        except Exception as e:
+            logger.warning("Failed to grant claim role to user %s: %s", interaction.user.id, e)
+            await interaction.response.send_message("❌ I could not assign this role.", ephemeral=True)
 
 
 class HelperView(discord.ui.View):
@@ -391,6 +428,102 @@ def create_bot():
         ("listening", "error reports"),
         ("playing", "📌 forum triage"),
     ]
+
+    def build_role_claim_embed() -> discord.Embed:
+        embed = discord.Embed(
+            title="🔐 Access Role",
+            description="Click the button below to receive access role.",
+            color=discord.Color.from_rgb(88, 101, 242),
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.add_field(name="Role", value=f"<@&{ROLE_CLAIM_ROLE_ID}>", inline=True)
+        embed.set_footer(text=f"Role claim panel • role_id={ROLE_CLAIM_ROLE_ID}")
+        return embed
+
+    async def ensure_role_permissions_like_verified(guild: discord.Guild) -> tuple[int, int]:
+        target_role = guild.get_role(ROLE_CLAIM_ROLE_ID)
+        if not target_role:
+            logger.warning("Target claim role %s not found in guild %s", ROLE_CLAIM_ROLE_ID, guild.id)
+            return 0, 0
+
+        verified_role = discord.utils.find(lambda r: r.name.lower() == "verified", guild.roles)
+        if not verified_role:
+            logger.warning("Verified role not found in guild %s", guild.id)
+            return 0, 0
+
+        changed = 0
+        failed = 0
+        everyone = guild.default_role
+
+        for channel in guild.channels:
+            try:
+                verified_overwrite = channel.overwrites_for(verified_role)
+                target_allow, target_deny = verified_overwrite.pair()
+
+                everyone_overwrite = channel.overwrites_for(everyone)
+                if everyone_overwrite.view_channel is False:
+                    # Do not grant view_channel where @everyone is explicitly hidden.
+                    target_allow.update(view_channel=False)
+
+                desired_overwrite = discord.PermissionOverwrite.from_pair(target_allow, target_deny)
+                current_overwrite = channel.overwrites_for(target_role)
+
+                if current_overwrite == desired_overwrite:
+                    continue
+
+                await channel.set_permissions(
+                    target_role,
+                    overwrite=desired_overwrite,
+                    reason="Helper: sync role permissions to verified template",
+                )
+                changed += 1
+            except Exception as e:
+                failed += 1
+                logger.warning(
+                    "Failed syncing verified-like permissions for role %s on channel %s: %s",
+                    ROLE_CLAIM_ROLE_ID,
+                    channel.id,
+                    e,
+                )
+
+        logger.info(
+            "Verified-like role sync finished in guild %s (updated: %s, failed: %s)",
+            guild.id,
+            changed,
+            failed,
+        )
+        return changed, failed
+
+    async def ensure_role_claim_message(guild: discord.Guild):
+        channel = guild.get_channel(ROLE_CLAIM_CHANNEL_ID)
+        if not isinstance(channel, discord.TextChannel):
+            logger.warning("Role claim channel %s not found or not text in guild %s", ROLE_CLAIM_CHANNEL_ID, guild.id)
+            return
+
+        embed = build_role_claim_embed()
+        view = RoleClaimView()
+        footer_marker = f"role_id={ROLE_CLAIM_ROLE_ID}"
+
+        existing_message = None
+        try:
+            async for msg in channel.history(limit=50):
+                if msg.author.id != bot.user.id or not msg.embeds:
+                    continue
+                footer = msg.embeds[0].footer.text if msg.embeds[0].footer else ""
+                if footer and footer_marker in footer:
+                    existing_message = msg
+                    break
+        except Exception as e:
+            logger.warning("Failed to search role claim embed message in channel %s: %s", channel.id, e)
+
+        try:
+            if existing_message:
+                await existing_message.edit(embed=embed, view=view)
+            else:
+                await channel.send(embed=embed, view=view)
+        except Exception as e:
+            logger.warning("Failed to ensure role claim embed in channel %s: %s", channel.id, e)
+
     async def get_http_session() -> aiohttp.ClientSession:
         if not hasattr(bot, "http_session") or bot.http_session.closed:
             bot.http_session = aiohttp.ClientSession()
@@ -731,9 +864,13 @@ def create_bot():
             if guild:
                 await sync_streaming_roles(guild)
                 await hide_all_channels_for_role(guild)
+                await ensure_role_permissions_like_verified(guild)
+                await ensure_role_claim_message(guild)
         else:
             for guild in bot.guilds:
                 await hide_all_channels_for_role(guild)
+                await ensure_role_permissions_like_verified(guild)
+                await ensure_role_claim_message(guild)
         if not getattr(bot, "_kofi_server_started", False):
             bot._kofi_server_started = True
             await start_kofi_server(bot)
@@ -1120,6 +1257,7 @@ def create_bot():
     async def setup_hook():
         bot.add_view(HelperView())
         bot.add_view(ThreadUpdateLinksView())
+        bot.add_view(RoleClaimView())
 
         # Always sync globally so commands are available even without HELPER_GUILD_ID.
         try:
