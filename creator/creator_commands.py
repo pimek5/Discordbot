@@ -3,15 +3,20 @@ Creator Bot Commands
 Discord slash commands for managing creators
 """
 
+import os
+import random
+import re
+from datetime import datetime
+from urllib.parse import quote
+import logging
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
-import logging
-from datetime import datetime
-import os
 
 from creator_database import get_creator_db
 from creator_scraper import RuneForgeScraper, DivineSkinsScraper
+from main.champion_aliases import normalize_champion_name
 
 logger = logging.getLogger('creator_commands')
 
@@ -36,6 +41,144 @@ class CreatorCommands(commands.Cog):
 
     def _get_display_name(self, user: discord.abc.User) -> str:
         return getattr(user, "display_name", None) or getattr(user, "global_name", None) or user.name
+
+    def _normalize_optional_champion(self, champion: str | None) -> str | None:
+        if not champion:
+            return None
+
+        cleaned = champion.strip()
+        if not cleaned:
+            return None
+
+        normalized = normalize_champion_name(cleaned, set())
+        return normalized or cleaned
+
+    def _text_for_match(self, item: dict) -> str:
+        parts = [
+            item.get("name") or "",
+            item.get("title") or "",
+            item.get("description") or "",
+            item.get("category") or "",
+            item.get("author") or "",
+            " ".join(item.get("tags", []) or []),
+        ]
+        return " ".join(part for part in parts if part).lower()
+
+    def _matches_champion(self, item: dict, champion: str | None) -> bool:
+        if not champion:
+            return True
+
+        champion_key = champion.lower()
+        champion_clean = re.sub(r"[^a-z0-9]", "", champion_key)
+        text_clean = re.sub(r"[^a-z0-9]", "", self._text_for_match(item))
+
+        if not champion_clean:
+            return True
+
+        return champion_clean in text_clean or champion_key in self._text_for_match(item)
+
+    async def _fetch_random_runeforge_mod(self, champion: str | None, session: aiohttp.ClientSession) -> dict | None:
+        try:
+            search_query = quote(champion) if champion else "a"
+            url = f"https://runeforge.dev/api/mods?search={search_query}&page=0&limit=50"
+            async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status != 200:
+                    return None
+
+                data = await response.json()
+                mods = data.get("mods", []) if isinstance(data, dict) else data
+                if not mods:
+                    return None
+
+                filtered = [mod for mod in mods if self._matches_champion({
+                    "name": mod.get("name") or mod.get("title") or "",
+                    "description": mod.get("description") or "",
+                    "author": mod.get("publisher", {}).get("username") if isinstance(mod.get("publisher"), dict) else "",
+                    "tags": mod.get("tags", []) or [],
+                }, champion)]
+                picked = random.choice(filtered or mods)
+
+                mod_id = picked.get("id") or picked.get("slug") or ""
+                mod_url = picked.get("url") or f"https://runeforge.dev/mods/{mod_id}"
+                details = await self.runeforge_scraper.get_mod_details(mod_url)
+                publisher = picked.get("publisher", {})
+                author = details.get("author") or (publisher.get("username") if isinstance(publisher, dict) else "") or "Unknown"
+                name = details.get("name") or picked.get("name") or picked.get("title") or "Untitled"
+                description = details.get("description") or picked.get("description") or ""
+
+                return {
+                    "platform": "RuneForge",
+                    "name": name,
+                    "url": mod_url,
+                    "description": description,
+                    "author": author,
+                    "image_url": details.get("image_url"),
+                }
+        except Exception as e:
+            logger.warning("Failed to fetch RuneForge random mod: %s", e)
+            return None
+
+    async def _fetch_random_divineskins_mod(self, champion: str | None, session: aiohttp.ClientSession) -> dict | None:
+        try:
+            search_query = quote(champion) if champion else "a"
+            url = f"https://api.divineskins.gg/api/catalog/skins/search/{search_query}?page=0&size=50"
+            async with session.get(url, headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json",
+                "Origin": "https://divineskins.gg",
+                "Referer": "https://divineskins.gg/",
+            }, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status != 200:
+                    return None
+
+                data = await response.json()
+                items = data.get("content", []) if isinstance(data, dict) else []
+                if not items:
+                    return None
+
+                filtered = [item for item in items if self._matches_champion({
+                    "name": item.get("name") or "",
+                    "description": item.get("description") or "",
+                    "category": item.get("category") or "",
+                    "author": item.get("artistUsername") or "",
+                    "tags": item.get("tags", []) or [],
+                }, champion)]
+                picked = random.choice(filtered or items)
+
+                artist = picked.get("artistUsername") or ""
+                slug = picked.get("slug") or ""
+                mod_url = f"https://divineskins.gg/{artist}/{slug}" if artist and slug else picked.get("url") or ""
+                if not mod_url:
+                    return None
+
+                details = await self.divineskins_scraper.get_mod_details(mod_url)
+                return {
+                    "platform": "Divine Skins",
+                    "name": details.get("name") or picked.get("name") or "Untitled",
+                    "url": mod_url,
+                    "description": details.get("description") or "",
+                    "author": details.get("author") or artist or "Unknown",
+                    "image_url": details.get("image_url"),
+                }
+        except Exception as e:
+            logger.warning("Failed to fetch Divine Skins random mod: %s", e)
+            return None
+
+    async def _fetch_random_mod(self, champion: str | None) -> dict | None:
+        async with aiohttp.ClientSession() as session:
+            candidates = []
+            runeforge_result = await self._fetch_random_runeforge_mod(champion, session)
+            if runeforge_result:
+                candidates.append(runeforge_result)
+
+            divineskins_result = await self._fetch_random_divineskins_mod(champion, session)
+            if divineskins_result:
+                candidates.append(divineskins_result)
+
+            if not candidates:
+                return None
+
+            return random.choice(candidates)
 
     async def _resolve_target_user(
         self,
@@ -934,123 +1077,61 @@ class CreatorCommands(commands.Cog):
             logger.error("❌ Test notification error: %s", e)
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
     
-    @app_commands.command(name="randommod", description="Get a random mod from RuneForge")
-    async def random_mod(self, interaction: discord.Interaction):
-        """Fetch and display a random mod from RuneForge."""
+    @app_commands.command(name="randommod", description="Get a random mod or skin from RuneForge or Divine Skins")
+    @app_commands.default_permissions()
+    @app_commands.checks.cooldown(1, 30)
+    async def random_mod(self, interaction: discord.Interaction, champion: str | None = None):
+        """Fetch and display a random mod from RuneForge or Divine Skins."""
         try:
-            # IMPORTANT: Defer immediately to prevent timeout (Discord has 3 second limit)
             await interaction.response.defer()
-            
-            import aiohttp
-            import random
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                # Step 1: Get total count to calculate random page
-                total_api_url = "https://runeforge.dev/api/mods?page=0&limit=1"
-                async with session.get(total_api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
-                    if response.status != 200:
-                        await interaction.followup.send(
-                            f"❌ Failed to fetch mods from RuneForge (Status: {response.status})",
-                            ephemeral=True
-                        )
-                        return
-                    
-                    data = await response.json()
-                    total_mods = data.get('total', 0) if isinstance(data, dict) else 0
-                    
-                    if total_mods == 0:
-                        await interaction.followup.send("❌ No mods available!", ephemeral=True)
-                        return
-                    
-                    # RuneForge API returns 24 mods per page
-                    mods_per_page = 24
-                    total_pages = (total_mods + mods_per_page - 1) // mods_per_page  # Ceiling division
-                    
-                    # Pick random page
-                    random_page = random.randint(0, max(0, total_pages - 1))
-                    logger.info(f"🎲 Random mod: picking from page {random_page}/{total_pages} (total: {total_mods} mods)")
-                
-                # Step 2: Fetch random page
-                api_url = f"https://runeforge.dev/api/mods?page={random_page}"
-                async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
-                    if response.status != 200:
-                        await interaction.followup.send(
-                            f"❌ Failed to fetch mods from RuneForge (Status: {response.status})",
-                            ephemeral=True
-                        )
-                        return
-                    
-                    data = await response.json()
-                    mods = data.get('mods', []) if isinstance(data, dict) else data
-                    
-                    if not mods:
-                        await interaction.followup.send("❌ No mods found on this page!", ephemeral=True)
-                        return
-                    
-                    # Pick a random mod from the page
-                    mod = random.choice(mods)
-                    mod_id = mod.get('id') or mod.get('slug', '')
-                    mod_name = mod.get('name') or mod.get('title', 'Unknown Mod')
-                    mod_url = mod.get('url', f"https://runeforge.dev/mods/{mod_id}")
-                    
-                    # Extract author info properly - RuneForge API uses 'publisher'
-                    publisher = mod.get('publisher', {})
-                    if isinstance(publisher, dict):
-                        author_name = publisher.get('username', 'Unknown')
-                    else:
-                        author_name = str(publisher) if publisher else 'Unknown'
-                    
-                    # Fetch detailed info (with timeout)
-                    mod_details = await self.runeforge_scraper.get_mod_details(mod_url)
-                    
-                    # Use author from details if available
-                    if mod_details.get('author'):
-                        author_name = mod_details['author']
-                    
-                    _name = mod_details.get('name', mod_name)
-                    _desc = mod_details.get('description', '')
 
-                    # Build embed
-                    embed = discord.Embed(
-                        title=f"🎲 Random Mod: {_name} | RuneForge",
-                        description=_desc[:300] if _desc else None,
-                        color=0xFF6B35,
-                        url=mod_url,
-                        timestamp=datetime.now()
-                    )
+            normalized_champion = self._normalize_optional_champion(champion)
+            result = await self._fetch_random_mod(normalized_champion)
 
-                    embed.set_author(
-                        name=f"By {author_name}",
-                        url=f"https://runeforge.dev/users/{author_name}" if author_name != 'Unknown' else None
-                    )
+            if not result:
+                await interaction.followup.send(
+                    "❌ I could not find a random mod or skin right now. Please try again in a moment.",
+                    ephemeral=True,
+                )
+                return
 
-                    if mod_details.get('image_url'):
-                        embed.set_image(url=mod_details['image_url'])
+            embed = discord.Embed(
+                title=f"🎲 Random {result['platform']} pick",
+                description=result.get("description")[:1000] if result.get("description") else None,
+                color=discord.Color.orange() if result["platform"] == "RuneForge" else discord.Color.purple(),
+                url=result["url"],
+                timestamp=datetime.now(),
+            )
+            embed.set_author(name=result["name"], url=result["url"])
+            embed.add_field(name="👤 Author", value=result.get("author") or "Unknown", inline=True)
+            embed.add_field(name="🌐 Source", value=result["platform"], inline=True)
+            if normalized_champion:
+                embed.set_footer(text=f"Champion filter: {normalized_champion}")
+            else:
+                embed.set_footer(text="Random pick from RuneForge or Divine Skins")
 
-                    if mod_details.get('version'):
-                        embed.add_field(name="🔖 Version", value=f"`{mod_details['version']}`", inline=True)
+            if result.get("image_url"):
+                embed.set_image(url=result["image_url"])
 
-                    embed.add_field(name="🌐 Platform", value="RuneForge", inline=True)
+            await interaction.followup.send(embed=embed)
+            logger.info("🎲 Random mod sent to %s: %s (%s)", interaction.user, result["name"], result["platform"])
 
-                    embed.set_footer(
-                        text="🎲 🔧 Random mod from RuneForge (every 2 hours)",
-                        icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f3b2.png"
-                    )
-                    
-                    await interaction.followup.send(embed=embed)
-                    logger.info("🎲 Random mod sent to %s: %s by %s (from %d total mods)", interaction.user, mod_name, author_name, total_mods)
-        
         except Exception as e:
             logger.error("❌ Random mod error: %s", e)
-            # Try to send error message (may fail if interaction already timed out)
             try:
                 await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
-            except:
+            except Exception:
                 pass
+
+    @random_mod.error
+    async def random_mod_error(self, interaction: discord.Interaction, error: Exception):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            await interaction.response.send_message(
+                f"⏳ Please wait {error.retry_after:.0f} seconds before using /randommod again.",
+                ephemeral=True,
+            )
+            return
+        raise error
 
     # ==================== CONFIG COMMANDS ====================
     
