@@ -3,10 +3,13 @@ Creator Bot Commands
 Discord slash commands for managing creators
 """
 
+import importlib.util
 import os
 import random
 import re
+import sys
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import quote
 import logging
 import aiohttp
@@ -16,7 +19,38 @@ from discord.ext import commands
 
 from creator_database import get_creator_db
 from creator_scraper import RuneForgeScraper, DivineSkinsScraper
-from main.champion_aliases import normalize_champion_name
+
+
+def _load_normalize_champion_name():
+    try:
+        from main.champion_aliases import normalize_champion_name as imported
+        return imported
+    except ModuleNotFoundError:
+        repo_root = Path(__file__).resolve().parents[1]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        try:
+            from main.champion_aliases import normalize_champion_name as imported
+            return imported
+        except ModuleNotFoundError:
+            module_path = repo_root / "main" / "champion_aliases.py"
+            if module_path.exists():
+                spec = importlib.util.spec_from_file_location("champion_aliases_local", module_path)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    return module.normalize_champion_name
+
+            def fallback(name: str, valid_champions: set) -> str | None:
+                cleaned = name.strip()
+                if not cleaned:
+                    return None
+                return cleaned
+
+            return fallback
+
+
+normalize_champion_name = _load_normalize_champion_name()
 
 logger = logging.getLogger('creator_commands')
 
