@@ -1113,7 +1113,17 @@ class CreatorCommands(commands.Cog):
             if result.get("image_url"):
                 embed.set_image(url=result["image_url"])
 
-            await interaction.followup.send(embed=embed)
+            view = discord.ui.View(timeout=60)
+            view.add_item(
+                discord.ui.Button(
+                    label="Download",
+                    emoji="⬇️",
+                    style=discord.ButtonStyle.link,
+                    url=result["url"],
+                )
+            )
+
+            await interaction.followup.send(embed=embed, view=view)
             logger.info("🎲 Random mod sent to %s: %s (%s)", interaction.user, result["name"], result["platform"])
 
         except Exception as e:
