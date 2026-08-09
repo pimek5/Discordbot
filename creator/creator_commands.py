@@ -76,6 +76,12 @@ class CreatorCommands(commands.Cog):
     def _get_display_name(self, user: discord.abc.User) -> str:
         return getattr(user, "display_name", None) or getattr(user, "global_name", None) or user.name
 
+    async def _send_interaction_message(self, interaction: discord.Interaction, content: str | None = None, *, ephemeral: bool = False, embed: discord.Embed | None = None, view: discord.ui.View | None = None):
+        if interaction.response.is_done():
+            await interaction.followup.send(content=content, embed=embed, view=view, ephemeral=ephemeral)
+        else:
+            await interaction.response.send_message(content=content, embed=embed, view=view, ephemeral=ephemeral)
+
     def _normalize_optional_champion(self, champion: str | None) -> str | None:
         if not champion:
             return None
@@ -1172,7 +1178,8 @@ class CreatorCommands(commands.Cog):
     @random_mod.error
     async def random_mod_error(self, interaction: discord.Interaction, error: Exception):
         if isinstance(error, app_commands.CommandOnCooldown):
-            await interaction.response.send_message(
+            await self._send_interaction_message(
+                interaction,
                 f"⏳ Please wait {error.retry_after:.0f} seconds before using /randommod again.",
                 ephemeral=True,
             )
