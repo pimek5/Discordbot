@@ -111,18 +111,18 @@ class CreatorCommands(commands.Cog):
 
         return champion_clean in text_clean or champion_key in self._text_for_match(item)
 
-    async def _fetch_random_runeforge_mod(self, champion: str | None, session: aiohttp.ClientSession) -> dict | None:
+    async def _fetch_random_runeforge_mods(self, champion: str | None, session: aiohttp.ClientSession) -> list[dict]:
         try:
             search_query = quote(champion) if champion else "a"
             url = f"https://runeforge.dev/api/mods?search={search_query}&page=0&limit=50"
             async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status != 200:
-                    return None
+                    return []
 
                 data = await response.json()
                 mods = data.get("mods", []) if isinstance(data, dict) else data
                 if not mods:
-                    return None
+                    return []
 
                 filtered = [mod for mod in mods if self._matches_champion({
                     "name": mod.get("name") or mod.get("title") or "",
@@ -130,29 +130,32 @@ class CreatorCommands(commands.Cog):
                     "author": mod.get("publisher", {}).get("username") if isinstance(mod.get("publisher"), dict) else "",
                     "tags": mod.get("tags", []) or [],
                 }, champion)]
-                picked = random.choice(filtered or mods)
+                if not filtered:
+                    return []
 
-                mod_id = picked.get("id") or picked.get("slug") or ""
-                mod_url = picked.get("url") or f"https://runeforge.dev/mods/{mod_id}"
-                details = await self.runeforge_scraper.get_mod_details(mod_url)
-                publisher = picked.get("publisher", {})
-                author = details.get("author") or (publisher.get("username") if isinstance(publisher, dict) else "") or "Unknown"
-                name = details.get("name") or picked.get("name") or picked.get("title") or "Untitled"
-                description = details.get("description") or picked.get("description") or ""
-
-                return {
-                    "platform": "RuneForge",
-                    "name": name,
-                    "url": mod_url,
-                    "description": description,
-                    "author": author,
-                    "image_url": details.get("image_url"),
-                }
+                results = []
+                for picked in filtered:
+                    mod_id = picked.get("id") or picked.get("slug") or ""
+                    mod_url = picked.get("url") or f"https://runeforge.dev/mods/{mod_id}"
+                    details = await self.runeforge_scraper.get_mod_details(mod_url)
+                    publisher = picked.get("publisher", {})
+                    author = details.get("author") or (publisher.get("username") if isinstance(publisher, dict) else "") or "Unknown"
+                    name = details.get("name") or picked.get("name") or picked.get("title") or "Untitled"
+                    description = details.get("description") or picked.get("description") or ""
+                    results.append({
+                        "platform": "RuneForge",
+                        "name": name,
+                        "url": mod_url,
+                        "description": description,
+                        "author": author,
+                        "image_url": details.get("image_url"),
+                    })
+                return results
         except Exception as e:
             logger.warning("Failed to fetch RuneForge random mod: %s", e)
-            return None
+            return []
 
-    async def _fetch_random_divineskins_mod(self, champion: str | None, session: aiohttp.ClientSession) -> dict | None:
+    async def _fetch_random_divineskins_mods(self, champion: str | None, session: aiohttp.ClientSession) -> list[dict]:
         try:
             search_query = quote(champion) if champion else "a"
             url = f"https://api.divineskins.gg/api/catalog/skins/search/{search_query}?page=0&size=50"
@@ -163,12 +166,12 @@ class CreatorCommands(commands.Cog):
                 "Referer": "https://divineskins.gg/",
             }, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status != 200:
-                    return None
+                    return []
 
                 data = await response.json()
                 items = data.get("content", []) if isinstance(data, dict) else []
                 if not items:
-                    return None
+                    return []
 
                 filtered = [item for item in items if self._matches_champion({
                     "name": item.get("name") or "",
@@ -177,37 +180,36 @@ class CreatorCommands(commands.Cog):
                     "author": item.get("artistUsername") or "",
                     "tags": item.get("tags", []) or [],
                 }, champion)]
-                picked = random.choice(filtered or items)
+                if not filtered:
+                    return []
 
-                artist = picked.get("artistUsername") or ""
-                slug = picked.get("slug") or ""
-                mod_url = f"https://divineskins.gg/{artist}/{slug}" if artist and slug else picked.get("url") or ""
-                if not mod_url:
-                    return None
+                results = []
+                for picked in filtered:
+                    artist = picked.get("artistUsername") or ""
+                    slug = picked.get("slug") or ""
+                    mod_url = f"https://divineskins.gg/{artist}/{slug}" if artist and slug else picked.get("url") or ""
+                    if not mod_url:
+                        continue
 
-                details = await self.divineskins_scraper.get_mod_details(mod_url)
-                return {
-                    "platform": "Divine Skins",
-                    "name": details.get("name") or picked.get("name") or "Untitled",
-                    "url": mod_url,
-                    "description": details.get("description") or "",
-                    "author": details.get("author") or artist or "Unknown",
-                    "image_url": details.get("image_url"),
-                }
+                    details = await self.divineskins_scraper.get_mod_details(mod_url)
+                    results.append({
+                        "platform": "Divine Skins",
+                        "name": details.get("name") or picked.get("name") or "Untitled",
+                        "url": mod_url,
+                        "description": details.get("description") or "",
+                        "author": details.get("author") or artist or "Unknown",
+                        "image_url": details.get("image_url"),
+                    })
+                return results
         except Exception as e:
             logger.warning("Failed to fetch Divine Skins random mod: %s", e)
-            return None
+            return []
 
     async def _fetch_random_mod(self, champion: str | None) -> dict | None:
         async with aiohttp.ClientSession() as session:
             candidates = []
-            runeforge_result = await self._fetch_random_runeforge_mod(champion, session)
-            if runeforge_result:
-                candidates.append(runeforge_result)
-
-            divineskins_result = await self._fetch_random_divineskins_mod(champion, session)
-            if divineskins_result:
-                candidates.append(divineskins_result)
+            candidates.extend(await self._fetch_random_runeforge_mods(champion, session))
+            candidates.extend(await self._fetch_random_divineskins_mods(champion, session))
 
             if not candidates:
                 return None
