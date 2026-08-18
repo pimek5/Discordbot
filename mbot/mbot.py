@@ -139,12 +139,12 @@ YTDL_FORMAT_OPTIONS = {
     'keepvideo': False,
     'cachedir': False,
     'extract_flat': False,  # Full extraction by default
-    # 'web'/'mweb' need cookies to skip the "Sign in to confirm" bot check,
-    # and 'ios' alone lacks a working format list, so use only the API-based
-    # clients that need neither cookies nor a PO Token for format URLs.
+    # 'web'/'mweb' need cookies to skip the "Sign in to confirm" bot check, and
+    # 'android_vr' started requiring a PO Token on 2026-08-18 (yt-dlp#17456),
+    # so stick to clients that need neither cookies nor a PO Token.
     'extractor_args': {
         'youtube': {
-            'player_client': ['android', 'android_vr', 'tv_embedded'],
+            'player_client': ['android', 'tv_embedded'],
         }
     },
     'http_headers': {
