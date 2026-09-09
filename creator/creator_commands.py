@@ -3,6 +3,7 @@ Creator Bot Commands
 Discord slash commands for managing creators
 """
 
+import asyncio
 import importlib.util
 import os
 import random
