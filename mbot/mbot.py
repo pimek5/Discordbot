@@ -1387,6 +1387,8 @@ class MusicControlView(View):
         
         try:
             song.source = await YTDLSource.from_url(song.url, loop=bot.loop)
+            if not interaction.guild.voice_client.is_connected():
+                await ensure_voice_connected(interaction.guild, interaction.guild.voice_client.channel)
             interaction.guild.voice_client.play(
                 song.source,
                 after=lambda e: asyncio.run_coroutine_threadsafe(
@@ -1489,6 +1491,41 @@ class MusicControlView(View):
 bot = MusicBot()
 
 
+async def ensure_voice_connected(guild: discord.Guild, channel: discord.VoiceChannel, retries: int = 4) -> discord.VoiceClient:
+    """Ensure a healthy, connected voice client for the given channel, reconnecting if needed."""
+    vc = guild.voice_client
+
+    if vc and vc.channel != channel:
+        try:
+            await vc.move_to(channel)
+        except Exception:
+            try:
+                await vc.disconnect(force=True)
+            except Exception:
+                pass
+            vc = None
+
+    if not vc:
+        vc = await channel.connect()
+
+    for _ in range(retries):
+        if vc.is_connected():
+            return vc
+        await asyncio.sleep(0.5)
+
+    # Still not connected after waiting: force a fresh connection attempt
+    try:
+        await vc.disconnect(force=True)
+    except Exception:
+        pass
+    vc = await channel.connect()
+    for _ in range(retries):
+        if vc.is_connected():
+            return vc
+        await asyncio.sleep(0.5)
+    return vc
+
+
 @bot.tree.command(name="join", description="Join the bot to your voice channel")
 async def join(interaction: discord.Interaction):
     """Join user's voice channel"""
@@ -1502,10 +1539,10 @@ async def join(interaction: discord.Interaction):
     channel = interaction.user.voice.channel
     
     if interaction.guild.voice_client:
-        await interaction.guild.voice_client.move_to(channel)
+        await ensure_voice_connected(interaction.guild, channel)
         await interaction.response.send_message(f"🔄 Moved to **{channel.name}**")
     else:
-        await channel.connect()
+        await ensure_voice_connected(interaction.guild, channel)
         await interaction.response.send_message(f"✅ Joined **{channel.name}**")
 
 
@@ -1545,11 +1582,13 @@ async def play(interaction: discord.Interaction, url: str):
         
     channel = interaction.user.voice.channel
     
-    # Join channel if bot is not connected
-    if not interaction.guild.voice_client:
-        await channel.connect()
-    elif interaction.guild.voice_client.channel != channel:
-        await interaction.guild.voice_client.move_to(channel)
+    # Join channel (or move/reconnect) and verify the voice client is actually connected
+    try:
+        await ensure_voice_connected(interaction.guild, channel)
+    except Exception as e:
+        logger.error(f"Failed to establish voice connection: {e}")
+        await interaction.followup.send(f"⚠️ Could not connect to voice channel: {str(e)}")
+        return
     
     try:
         queue = bot.get_queue(interaction.guild.id)
@@ -1592,6 +1631,7 @@ async def play(interaction: discord.Interaction, url: str):
                             
                             queue.current = song
                             song.source.volume = queue.volume
+                            await ensure_voice_connected(interaction.guild, channel)
                             interaction.guild.voice_client.play(
                                 song.source,
                                 after=lambda e: asyncio.run_coroutine_threadsafe(
@@ -1736,6 +1776,7 @@ async def play(interaction: discord.Interaction, url: str):
                             song_duration=player.duration or 0
                         )
                         
+                        await ensure_voice_connected(interaction.guild, channel)
                         interaction.guild.voice_client.play(
                             player,
                             after=lambda e: asyncio.run_coroutine_threadsafe(
@@ -1843,6 +1884,10 @@ async def play(interaction: discord.Interaction, url: str):
             player = await YTDLSource.from_url(url, loop=bot.loop, stream=False)
             player.requester = interaction.user
             song = Song(player, interaction.user)
+            
+            # Re-verify the voice connection: extraction can take a while and the
+            # session may have dropped in the meantime even if still shown as joined.
+            await ensure_voice_connected(interaction.guild, channel)
             
             # If nothing is playing, start playback
             if not interaction.guild.voice_client.is_playing():
@@ -2053,12 +2098,24 @@ async def play_next(interaction: discord.Interaction):
         if hasattr(song.source, 'volume'):
             song.source.volume = queue.volume
         
-        interaction.guild.voice_client.play(
-            song.source,
-            after=lambda e: asyncio.run_coroutine_threadsafe(
-                play_next(interaction), bot.loop
+        voice_client = interaction.guild.voice_client
+        try:
+            if not voice_client or not voice_client.is_connected():
+                target_channel = (voice_client.channel if voice_client else None) or (interaction.user.voice.channel if interaction.user.voice else None)
+                if not target_channel:
+                    logger.error("⚠️ Cannot recover voice connection: no known channel to rejoin")
+                    return
+                voice_client = await ensure_voice_connected(interaction.guild, target_channel)
+            voice_client.play(
+                song.source,
+                after=lambda e: asyncio.run_coroutine_threadsafe(
+                    play_next(interaction), bot.loop
+                )
             )
-        )
+        except Exception as e:
+            logger.error(f"⚠️ Failed to play next track (voice connection issue): {e}")
+            asyncio.create_task(play_next(interaction))
+            return
         
         embed = create_now_playing_embed(song, queue, bot.user, show_progress=True)
         
