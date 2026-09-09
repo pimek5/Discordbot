@@ -1643,31 +1643,25 @@ async def play(interaction: discord.Interaction, url: str):
             url = re.sub(r'[&?]list=[^&]*', '', url)
             logger.info(f"🧹 Cleaned URL (removed playlist parameter): {url}")
         
-        # Create custom ytdl options based on intent
-        ytdl_opts = YTDL_FORMAT_OPTIONS.copy()
         if is_playlist:
-            ytdl_opts['noplaylist'] = False
-            ytdl_opts['yes_playlist'] = True
-            ytdl_opts['extract_flat'] = 'in_playlist'  # Fast extraction for playlists
             logger.info(f"{playlist_type_info['icon']} {playlist_type_info['name']} mode enabled | URL: {url[:100]}...")
         else:
-            ytdl_opts['noplaylist'] = True
-            ytdl_opts['extract_flat'] = False
             logger.info(f"🎬 Single video mode | URL: {url[:100]}...")
         
-        # Create temporary ytdl instance with appropriate options
-        temp_ytdl = yt_dlp.YoutubeDL(apply_cookies_to_ytdl_options(ytdl_opts))
-        
-        # Extract info to check if it's a playlist
+        # Extract info (with multi-tier fallback across clients/platforms) to check if it's a playlist
         loop = bot.loop or asyncio.get_event_loop()
         try:
-            data = await loop.run_in_executor(None, lambda: temp_ytdl.extract_info(url, download=False))
+            data, temp_ytdl, _source_label = await loop.run_in_executor(
+                None, lambda: YTDLSource._extract_with_fallback(url, download=False, is_playlist=is_playlist)
+            )
         except Exception as e:
             # If DRM error, try YouTube search
             if 'DRM' in str(e):
                 logger.warning(f"⚠️ DRM protection detected, searching on YouTube instead")
                 url = f"ytsearch:{url.replace('spotify.com', '').split('/')[-1]}"
-                data = await loop.run_in_executor(None, lambda: temp_ytdl.extract_info(url, download=False))
+                data, temp_ytdl, _source_label = await loop.run_in_executor(
+                    None, lambda: YTDLSource._extract_with_fallback(url, download=False, is_playlist=is_playlist)
+                )
             else:
                 raise
         
