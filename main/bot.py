@@ -285,7 +285,7 @@ MEMBER_LADDER_CHANNEL_ID = 1453423679957368865
 MEMBER_LADDER_STEP = 100
 member_ladder_state = {
     'message_id': None,
-    'recent_joins': [],  # list of (id, name) most recent
+    'recent_joins': [],  # list of (id, name, joined_at) most recent
     'recent_boosters': [],  # list of (id, name, premium_since) most recent
 }
 
@@ -715,8 +715,9 @@ class MyBot(commands.Bot):
 
             # Track recent joins for ladder embed (keep last 10)
             try:
-                entry = (member.id, member.display_name)
-                member_ladder_state['recent_joins'] = ([entry] + member_ladder_state.get('recent_joins', []))[:10]
+                join_ts = getattr(member, "joined_at", None) or datetime.datetime.now(datetime.timezone.utc)
+                entry = (member.id, member.display_name, join_ts)
+                member_ladder_state['recent_joins'] = ([entry] + [j for j in member_ladder_state.get('recent_joins', []) if j[0] != member.id])[:10]
             except Exception:
                 pass
             # Trigger immediate ladder refresh
@@ -6210,6 +6211,23 @@ async def auto_migrate_puuids():
 # ================================
 #   MEMBER LADDER (PROGRESS) TRACKER
 # ================================
+async def update_recent_joins(guild: discord.Guild):
+    """Capture the 10 most recent joins from guild members."""
+    try:
+        joins = []
+        for m in guild.members:
+            if m.bot:
+                continue
+            ts = getattr(m, "joined_at", None)
+            if ts:
+                joins.append((m.id, m.display_name, ts))
+        if joins:
+            joins.sort(key=lambda x: x[2] or datetime.datetime.min, reverse=True)
+            member_ladder_state['recent_joins'] = joins[:10]
+    except Exception as e:
+        print(f"⚠️ Failed to update recent joins: {e}")
+
+
 async def update_recent_boosters(guild: discord.Guild):
     """Capture the 10 most recent boosters from guild members."""
     try:
@@ -6285,7 +6303,14 @@ def build_member_ladder_embed(guild: discord.Guild) -> discord.Embed:
     # Recent joins (up to 10)
     joins = member_ladder_state.get('recent_joins', []) or []
     if joins:
-        lines = [f"• <@{uid}>" for uid, _name in joins]
+        lines = []
+        for item in joins:
+            uid = item[0]
+            ts = item[2] if len(item) > 2 else None
+            if ts:
+                lines.append(f"• <@{uid}> — <t:{int(ts.timestamp())}:R>")
+            else:
+                lines.append(f"• <@{uid}>")
         embed.add_field(name="Recent joins", value="\n".join(lines), inline=False)
 
     # Recent boosters (up to 10)
@@ -6348,6 +6373,7 @@ async def refresh_member_ladder(guild: discord.Guild):
     channel = guild.get_channel(MEMBER_LADDER_CHANNEL_ID) or bot.get_channel(MEMBER_LADDER_CHANNEL_ID)
     if not channel:
         return
+    await update_recent_joins(guild)
     await update_recent_boosters(guild)
     msg = await ensure_member_ladder_message(guild)
     if not msg:
@@ -6367,6 +6393,7 @@ async def update_member_ladder():
     guild = bot.get_guild(GUILD_ID)
     if not guild:
         return
+    await update_recent_joins(guild)
     await update_recent_boosters(guild)
     await refresh_member_ladder(guild)
 

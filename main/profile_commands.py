@@ -34,6 +34,11 @@ from objective_icons import (
     get_champion_loading
 )
 
+try:
+    from card_generator import ProfileCardGenerator
+except ImportError:
+    from main.card_generator import ProfileCardGenerator
+
 logger = logging.getLogger('profile_commands')
 
 # Use new Application Emojis
@@ -235,6 +240,74 @@ class ProfileCommands(commands.Cog):
         self.bot = bot
         self.riot_api = riot_api
         self.guild = discord.Object(id=guild_id)
+
+        # Register User Apps / Context Menu Commands
+        try:
+            inst = app_commands.AppInstallationType(guild=True, user=True)
+            ctx = app_commands.AppCommandContext(guild=True, dm_channel=True, private_channel=True)
+
+            self.ctx_profile = app_commands.ContextMenu(
+                name='LoL Profile',
+                callback=self.context_profile,
+                allowed_installs=inst,
+                allowed_contexts=ctx
+            )
+            self.ctx_card = app_commands.ContextMenu(
+                name='LoL Profile Card',
+                callback=self.context_card,
+                allowed_installs=inst,
+                allowed_contexts=ctx
+            )
+            self.ctx_hexbet = app_commands.ContextMenu(
+                name='HexBet Stats',
+                callback=self.context_hexbet,
+                allowed_installs=inst,
+                allowed_contexts=ctx
+            )
+
+            self.bot.tree.add_command(self.ctx_profile)
+            self.bot.tree.add_command(self.ctx_card)
+            self.bot.tree.add_command(self.ctx_hexbet)
+        except Exception as e:
+            logger.warning("Context menu registration notice: %s", e)
+
+    async def context_profile(self, interaction: discord.Interaction, user: discord.User):
+        """User context menu callback to view player profile."""
+        await self.profile(interaction, user=user)
+
+    async def context_card(self, interaction: discord.Interaction, user: discord.User):
+        """User context menu callback to generate dynamic profile card."""
+        await self.card(interaction, user=user)
+
+    async def context_hexbet(self, interaction: discord.Interaction, user: discord.User):
+        """User context menu callback to view user HexBet stats."""
+        await interaction.response.defer()
+        try:
+            db = get_db()
+            db_user = db.get_user_by_discord_id(user.id) if hasattr(db, 'get_user_by_discord_id') else None
+            points = db_user.get('points', 0) if db_user else 0
+            stats = db.get_user_betting_stats(user.id) if hasattr(db, 'get_user_betting_stats') else None
+
+            embed = discord.Embed(
+                title=f"💎 HexBet Summary • {user.display_name}",
+                color=0x00D1FF
+            )
+            embed.set_thumbnail(url=user.display_avatar.url)
+            embed.add_field(name="💰 HexPoints", value=f"**{points:,}** pts", inline=True)
+            if stats:
+                total_bets = stats.get('total_bets', 0)
+                wins = stats.get('wins', 0)
+                losses = stats.get('losses', 0)
+                wr = (wins / total_bets * 100) if total_bets > 0 else 0
+                embed.add_field(name="📊 Record", value=f"{wins}W - {losses}L ({wr:.1f}%)", inline=True)
+                embed.add_field(name="📈 Profit", value=f"{stats.get('total_profit', 0):+,} pts", inline=True)
+            else:
+                embed.add_field(name="📊 Record", value="0 bets recorded", inline=True)
+            embed.set_footer(text="HEXRTBRXEN • HexBet Community")
+            await interaction.followup.send(embed=embed)
+        except Exception as e:
+            logger.error("Error in HexBet context menu: %s", e)
+            await interaction.followup.send(f"❌ Error fetching HexBet stats: {e}", ephemeral=True)
 
     def _build_stats_chart(self, match_details: list) -> Optional[discord.File]:
         """Create a compact season stats chart (KDA + CS/min trend)."""
@@ -1558,6 +1631,122 @@ class ProfileCommands(commands.Cog):
         finally:
             # Cancel keep-alive task once we've sent the final response
             keep_alive_task.cancel()
+
+    @app_commands.command(name="card", description="Generate a sleek dynamic visual LoL profile card (PNG)")
+    @app_commands.describe(user="The user to view (defaults to yourself)")
+    async def card(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
+        """Generate a high-quality visual profile card image"""
+        await interaction.response.defer()
+        target = user or interaction.user
+        db = get_db()
+        db_user = db.get_user_by_discord_id(target.id)
+        
+        if not db_user:
+            embed = discord.Embed(
+                title="❌ No Account Linked",
+                description=f"{'You have' if target == interaction.user else f'{target.mention} has'} not linked any League of Legends accounts yet.\nUse `/link` to connect an account.",
+                color=0xFF0000
+            )
+            await interaction.followup.send(embed=embed)
+            return
+
+        all_accounts = db.get_user_accounts(db_user['id'])
+        if not all_accounts:
+            await interaction.followup.send("❌ No linked accounts found!", ephemeral=True)
+            return
+
+        visible_accounts = db.get_visible_user_accounts(db_user['id']) or all_accounts
+        account = db.get_primary_account(db_user['id']) or all_accounts[0]
+
+        # Fetch fresh summoner data
+        fresh_summoner = await self.riot_api.get_summoner_by_puuid(account['puuid'], account['region'])
+        level = fresh_summoner.get('summonerLevel', account.get('summoner_level', 1)) if fresh_summoner else account.get('summoner_level', 1)
+        profile_icon_id = fresh_summoner.get('profileIconId', account.get('profile_icon_id', 0)) if fresh_summoner else account.get('profile_icon_id', 0)
+        avatar_url = f"https://ddragon.leagueoflegends.com/cdn/14.24.1/img/profileicon/{profile_icon_id}.png" if profile_icon_id else target.display_avatar.url
+
+        # Fetch ranks
+        ranks = await self.riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
+        solo_rank = next((r for r in (ranks or []) if 'SOLO' in r.get('queueType', '')), None)
+        flex_rank = next((r for r in (ranks or []) if 'FLEX' in r.get('queueType', '')), None)
+
+        # Fetch mastery
+        mastery_data = await self.riot_api.get_champion_mastery(account['puuid'], account['region'], count=3)
+        top_champions = []
+        if mastery_data:
+            for m in mastery_data:
+                cid = m.get('championId', 0)
+                cname = CHAMPION_ID_TO_NAME.get(cid, f"Champion {cid}")
+                top_champions.append({
+                    'champion_id': cid,
+                    'name': cname,
+                    'score': m.get('championPoints', 0),
+                    'level': m.get('championLevel', 1)
+                })
+
+        # Fetch match history sample for stats summary
+        stats_summary = None
+        try:
+            match_ids = await self.riot_api.get_match_history_by_puuid(account['puuid'], account['region'], count=15)
+            if match_ids:
+                tasks = [self.riot_api.get_match_details(mid, account['region']) for mid in match_ids[:10]]
+                matches = await asyncio.gather(*tasks, return_exceptions=True)
+                valid_matches = [m for m in matches if isinstance(m, dict) and 'info' in m]
+
+                if valid_matches:
+                    kills, deaths, assists, cs_total, dmg_total, wins = 0, 0, 0, 0, 0, 0
+                    total_dur = 0
+                    for match in valid_matches:
+                        p = next((x for x in match['info']['participants'] if x.get('puuid') == account['puuid']), None)
+                        if not p:
+                            continue
+                        kills += p.get('kills', 0)
+                        deaths += p.get('deaths', 0)
+                        assists += p.get('assists', 0)
+                        cs_total += (p.get('totalMinionsKilled', 0) + p.get('neutralMinionsKilled', 0))
+                        dmg_total += p.get('totalDamageDealtToChampions', 0)
+                        dur = match['info'].get('gameDuration', 0)
+                        if dur > 10000:
+                            dur = dur / 1000
+                        total_dur += max(dur / 60, 1)
+                        if p.get('win'):
+                            wins += 1
+
+                    cnt = max(len(valid_matches), 1)
+                    losses = cnt - wins
+                    stats_summary = {
+                        'games_played': cnt,
+                        'wins': wins,
+                        'losses': losses,
+                        'winrate': (wins / cnt * 100),
+                        'kda': (kills + assists) / max(deaths, 1),
+                        'avg_kills': kills / cnt,
+                        'avg_deaths': deaths / cnt,
+                        'avg_assists': assists / cnt,
+                        'avg_cs': cs_total / cnt,
+                        'cs_per_min': cs_total / max(total_dur, 1),
+                        'avg_damage': int(dmg_total / cnt)
+                    }
+        except Exception as e:
+            logger.warning("Failed to calculate card stats summary: %s", e)
+
+        # Generate PNG buffer
+        try:
+            buffer = await ProfileCardGenerator.generate_card(
+                summoner_name=account['riot_id_game_name'],
+                tagline=account['riot_id_tagline'],
+                region=account['region'],
+                level=level,
+                solo_rank=solo_rank,
+                flex_rank=flex_rank,
+                top_champions=top_champions,
+                stats_summary=stats_summary,
+                avatar_url=avatar_url
+            )
+            file = discord.File(fp=buffer, filename=f"card_{account['riot_id_game_name']}.png")
+            await interaction.followup.send(file=file)
+        except Exception as e:
+            logger.error("Error generating profile card: %s", e)
+            await interaction.followup.send(f"❌ Error generating profile card: {e}", ephemeral=True)
 
     @app_commands.command(name="unlink", description="Unlink one account or all your linked Riot accounts")
     @app_commands.describe(
@@ -4845,6 +5034,67 @@ class ProfileView(discord.ui.View):
         self.update_navigation_buttons()
         embed = await self.create_ranks_embed()
         await interaction.response.edit_message(embed=embed, view=self, attachments=[])
+
+    @discord.ui.button(label="Card", style=discord.ButtonStyle.success, emoji="🎨", row=2)
+    async def card_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Generate and send dynamic profile card image"""
+        await interaction.response.defer()
+        account = [acc for acc in self.all_accounts if acc.get('verified')][0] if self.all_accounts else None
+        if not account:
+            await interaction.followup.send("❌ No verified account found.", ephemeral=True)
+            return
+
+        solo_rank = None
+        flex_rank = None
+        for acc_ranks in self.account_ranks.values():
+            if not solo_rank and acc_ranks.get('solo'):
+                solo_rank = acc_ranks['solo']
+            if not flex_rank and acc_ranks.get('flex'):
+                flex_rank = acc_ranks['flex']
+
+        top_champions = []
+        for c in (self.champ_stats or [])[:3]:
+            cid = c.get('champion_id', 0)
+            top_champions.append({
+                'champion_id': cid,
+                'name': CHAMPION_ID_TO_NAME.get(cid, f"Champion {cid}"),
+                'score': c.get('score', 0),
+                'level': c.get('level', 1)
+            })
+
+        stats_summary = None
+        if self.combined_stats:
+            stats_summary = {
+                'games_played': self.combined_stats.get('total_games', 0),
+                'wins': self.combined_stats.get('wins', 0),
+                'losses': self.combined_stats.get('losses', 0),
+                'winrate': self.combined_stats.get('winrate', 0.0),
+                'kda': self.combined_stats.get('kda', 0.0),
+                'avg_kills': self.combined_stats.get('avg_kills', 0.0),
+                'avg_deaths': self.combined_stats.get('avg_deaths', 0.0),
+                'avg_assists': self.combined_stats.get('avg_assists', 0.0),
+                'avg_cs': self.combined_stats.get('avg_cs', 0.0),
+                'cs_per_min': self.combined_stats.get('cs_per_min', 0.0),
+                'avg_damage': self.combined_stats.get('avg_damage', 0)
+            }
+
+        try:
+            buffer = await ProfileCardGenerator.generate_card(
+                summoner_name=account['riot_id_game_name'],
+                tagline=account['riot_id_tagline'],
+                region=account['region'],
+                level=account.get('summoner_level', 1),
+                solo_rank=solo_rank,
+                flex_rank=flex_rank,
+                top_champions=top_champions,
+                stats_summary=stats_summary,
+                avatar_url=self.target_user.display_avatar.url
+            )
+            file = discord.File(fp=buffer, filename=f"card_{account['riot_id_game_name']}.png")
+            await interaction.followup.send(file=file)
+        except Exception as e:
+            logger.error("Error generating profile card from view: %s", e)
+            await interaction.followup.send(f"❌ Error generating card: {e}", ephemeral=True)
     
     def update_navigation_buttons(self):
         """Update navigation button states based on current view and page"""

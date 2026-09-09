@@ -123,7 +123,7 @@ if not RESOLVED_YTDL_COOKIEFILE:
 
 # Konfiguracja yt-dlp
 YTDL_FORMAT_OPTIONS = {
-    'format': 'bestaudio[ext=m4a]/bestaudio/best',
+    'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,  # Default: single video only (will be changed dynamically for playlists)
@@ -138,15 +138,7 @@ YTDL_FORMAT_OPTIONS = {
     'prefer_ffmpeg': True,
     'keepvideo': False,
     'cachedir': False,
-    'extract_flat': False,  # Full extraction by default
-    # 'web'/'mweb' need cookies to skip the "Sign in to confirm" bot check, and
-    # 'android_vr' started requiring a PO Token on 2026-08-18 (yt-dlp#17456),
-    # so stick to clients that need neither cookies nor a PO Token.
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['android', 'tv_embedded'],
-        }
-    },
+    'extract_flat': False,
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -849,38 +841,138 @@ async def handle_spotify_to_youtube(url):
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
-    """Audio source for discord.py using yt-dlp"""
+    """Audio source for discord.py using yt-dlp with multi-source fallback."""
     
-    def __init__(self, source, *, data, volume=0.5, filename=None):
+    def __init__(self, source, *, data, volume=0.5, filename=None, platform_source='YouTube'):
         super().__init__(source, volume)
         self.data = data
         self.title = data.get('title')
-        self.url = data.get('url')
+        self.url = data.get('url') or data.get('webpage_url')
         self.duration = data.get('duration')
         self.thumbnail = data.get('thumbnail')
         self.requester = None
         self.filename = filename  # Track downloaded file for cleanup
+        self.platform_source = platform_source
+
+    @classmethod
+    def _extract_with_fallback(cls, target_query: str, download: bool, is_playlist: bool = False) -> tuple[dict, yt_dlp.YoutubeDL, str]:
+        """
+        Resilient multi-tier extraction across YouTube, SoundCloud, Bandcamp, and direct streams.
+        Operates smoothly without cookies.
+        """
+        raw = target_query.strip()
+        opts = YTDL_FORMAT_OPTIONS.copy()
+        if is_playlist:
+            opts['noplaylist'] = False
+            opts['yes_playlist'] = True
+            opts['extract_flat'] = 'in_playlist'
+        else:
+            opts['noplaylist'] = True
+            opts['extract_flat'] = False
+
+        opts_with_cookies = apply_cookies_to_ytdl_options(opts)
+
+        # 0. Check explicit source prefixes
+        if raw.startswith(('sc:', 'soundcloud:')):
+            sc_query = raw.split(':', 1)[1].strip()
+            ydl_sc = yt_dlp.YoutubeDL(opts)
+            data = ydl_sc.extract_info(f"scsearch1:{sc_query}", download=download)
+            if data:
+                return data, ydl_sc, 'SoundCloud'
+
+        if raw.startswith(('yt:', 'youtube:')):
+            raw = f"ytsearch:{raw.split(':', 1)[1].strip()}"
+
+        # Direct SoundCloud or Bandcamp URL
+        if 'soundcloud.com' in raw:
+            ydl_sc = yt_dlp.YoutubeDL(opts)
+            data = ydl_sc.extract_info(raw, download=download)
+            if data:
+                return data, ydl_sc, 'SoundCloud'
+
+        if 'bandcamp.com' in raw:
+            ydl_bc = yt_dlp.YoutubeDL(opts)
+            data = ydl_bc.extract_info(raw, download=download)
+            if data:
+                return data, ydl_bc, 'Bandcamp'
+
+        last_error = None
+
+        # Tier 1: Primary extraction (with or without cookies)
+        try:
+            ydl_primary = yt_dlp.YoutubeDL(opts_with_cookies)
+            data = ydl_primary.extract_info(raw, download=download)
+            if data:
+                source_name = 'SoundCloud' if 'soundcloud' in str(data.get('extractor', '')).lower() else 'YouTube'
+                return data, ydl_primary, source_name
+        except Exception as e:
+            last_error = e
+            logger.warning("Primary extraction failed for %s: %s", raw[:80], e)
+
+        # Tier 2: YouTube Client Fallback
+        if 'youtube.com' in raw or 'youtu.be' in raw or raw.startswith('ytsearch') or not raw.startswith('http'):
+            try:
+                opts_yt = opts.copy()
+                opts_yt['extractor_args'] = {'youtube': {'player_client': ['android', 'tv_embedded']}}
+                ydl_yt = yt_dlp.YoutubeDL(opts_yt)
+                data = ydl_yt.extract_info(raw, download=download)
+                if data:
+                    return data, ydl_yt, 'YouTube'
+            except Exception as e_yt:
+                last_error = e_yt
+                logger.warning("YouTube client fallback failed: %s", e_yt)
+
+        # Tier 3: SoundCloud Search Fallback
+        search_term = raw
+        if search_term.startswith(('ytsearch:', 'ytsearch1:', 'ytsearch5:')):
+            search_term = search_term.split(':', 1)[1]
+
+        if not search_term.startswith('http'):
+            try:
+                logger.info("🔄 Falling back to SoundCloud search for: %s", search_term)
+                ydl_sc = yt_dlp.YoutubeDL(opts)
+                data = ydl_sc.extract_info(f"scsearch1:{search_term}", download=download)
+                if data:
+                    return data, ydl_sc, 'SoundCloud'
+            except Exception as e_sc:
+                logger.warning("SoundCloud fallback failed: %s", e_sc)
+                last_error = e_sc
+        elif any(search_term.lower().endswith(ext) for ext in ('.mp3', '.m4a', '.wav', '.ogg', '.flac', '.aac')):
+            try:
+                ydl_direct = yt_dlp.YoutubeDL(opts)
+                data = ydl_direct.extract_info(search_term, download=download)
+                if data:
+                    return data, ydl_direct, 'Direct Stream'
+            except Exception as e_direct:
+                last_error = e_direct
+
+        if last_error:
+            raise last_error
+        raise Exception(f"Unable to extract audio for '{raw}' across all audio sources.")
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
-        """Fetches track information from URL"""
+        """Fetches track information from URL with multi-source fallback."""
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        data, used_downloader, source_name = await loop.run_in_executor(
+            None,
+            lambda: cls._extract_with_fallback(url, download=not stream)
+        )
 
         if 'entries' in data:
-            # If it's a playlist, take the first element
             data = data['entries'][0]
 
-        filename = data['url'] if stream else ytdl.prepare_filename(data)
-        return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data, filename=filename if not stream else None)
+        filename = data.get('url') if stream else used_downloader.prepare_filename(data)
+        return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data, filename=filename if not stream else None, platform_source=source_name)
 
 
 class Song:
     """Music track representation"""
-    def __init__(self, source, requester, query=None):
+    def __init__(self, source, requester, query=None, platform_source='YouTube'):
         self.source = source
         self.requester = requester
         self.query = query  # For lazy loading (Spotify)
+        self.platform_source = getattr(source, 'platform_source', platform_source) if source else platform_source
         if source:
             self.title = source.title
             self.url = source.url
@@ -1791,6 +1883,8 @@ async def play(interaction: discord.Interaction, url: str):
                 if player.duration:
                     mins, secs = divmod(player.duration, 60)
                     embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
+                source_badge = getattr(player, 'platform_source', 'YouTube')
+                embed.add_field(name="🌐 Source", value=source_badge, inline=True)
                 embed.add_field(name="🔊 Volume", value=f"{int(queue.volume * 100)}%", inline=True)
                 embed.set_footer(text="DJSona Music", icon_url=bot.user.display_avatar.url)
                 
@@ -1842,6 +1936,8 @@ async def play(interaction: discord.Interaction, url: str):
                 if player.duration:
                     mins, secs = divmod(player.duration, 60)
                     embed.add_field(name="⏱️ Duration", value=f"{int(mins)}:{int(secs):02d}", inline=True)
+                source_badge = getattr(player, 'platform_source', 'YouTube')
+                embed.add_field(name="🌐 Source", value=source_badge, inline=True)
                 embed.set_footer(text="DJSona Music", icon_url=bot.user.display_avatar.url)
                 
                 view = MusicControlView(interaction.guild.id)
@@ -1849,14 +1945,7 @@ async def play(interaction: discord.Interaction, url: str):
             
     except Exception as e:
         logger.error(f"Error during playback: {e}")
-        error_text = str(e)
-        if 'Sign in to confirm' in error_text or 'cookies' in error_text:
-            await interaction.followup.send(
-                "⚠️ YouTube requires authentication. Configure YTDL_COOKIES_FILE or "
-                "YTDL_COOKIES_FROM_BROWSER (for example: chrome:Default) in the bot environment and try again."
-            )
-        else:
-            await interaction.followup.send(f"⚠️ An error occurred during playback: {error_text}")
+        await interaction.followup.send(f"⚠️ An error occurred during playback: {str(e)}")
 
 
 def cleanup_audio_file(filename):
@@ -2611,10 +2700,10 @@ async def play_favorite(interaction: discord.Interaction, number: int):
     await play(interaction, song_url)
 
 
-@bot.tree.command(name="search", description="Search for music and choose from results")
-@app_commands.describe(query="Search query or Spotify URL")
+@bot.tree.command(name="search", description="Search for music across YouTube & SoundCloud and choose from results")
+@app_commands.describe(query="Search query, YouTube link, or SoundCloud (sc:query)")
 async def search(interaction: discord.Interaction, query: str):
-    """Search for music"""
+    """Search for music across multiple platforms"""
     if not check_channel(interaction):
         await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
         return
@@ -2640,34 +2729,47 @@ async def search(interaction: discord.Interaction, query: str):
                 query = spotify_result
         
         loop = bot.loop or asyncio.get_event_loop()
-        search_query = f"ytsearch5:{query}" if not query.startswith('ytsearch') else query
-        try:
+        results = []
+        source_label = "YouTube"
+
+        if query.startswith(('sc:', 'soundcloud:')):
+            clean_query = query.split(':', 1)[1].strip()
+            search_query = f"scsearch5:{clean_query}"
+            source_label = "SoundCloud"
             data = await loop.run_in_executor(None, lambda: ytdl.extract_info(search_query, download=False))
-        except Exception as e:
-            # If DRM error, try as search
-            if 'DRM' in str(e):
-                logger.warning(f"⚠️ DRM protection detected, searching on YouTube instead")
-                search_query = f"ytsearch5:{query}"
+            if data and 'entries' in data:
+                results = [e for e in data['entries'] if e]
+        else:
+            search_query = f"ytsearch5:{query}" if not query.startswith('ytsearch') else query
+            try:
                 data = await loop.run_in_executor(None, lambda: ytdl.extract_info(search_query, download=False))
-            else:
-                raise
+                if data and 'entries' in data:
+                    results = [e for e in data['entries'] if e]
+            except Exception as e_yt:
+                logger.warning("YouTube search failed, trying SoundCloud: %s", e_yt)
+                # Fallback to SoundCloud search
+                clean_q = query.replace('ytsearch:', '').replace('ytsearch5:', '')
+                data = await loop.run_in_executor(None, lambda: ytdl.extract_info(f"scsearch5:{clean_q}", download=False))
+                if data and 'entries' in data:
+                    results = [e for e in data['entries'] if e]
+                    source_label = "SoundCloud"
         
-        if not data or 'entries' not in data or not data['entries']:
-            await interaction.followup.send("⚠️ No results found!")
+        if not results:
+            await interaction.followup.send("⚠️ No results found across YouTube or SoundCloud!")
             return
         
-        results = data['entries'][:5]
+        results = results[:5]
         
         embed = discord.Embed(
-            title=f"🔎 Search Results for: {query}",
-            description="Use `/play <URL>` to play a song from results",
-            color=discord.Color.blue(),
+            title=f"🔎 Search Results ({source_label}): {query[:50]}",
+            description="Use `/play <URL>` or `/play <Title>` to play a track",
+            color=0x00D1FF if source_label == 'YouTube' else 0xFF7700,
             timestamp=datetime.now()
         )
         
         for idx, result in enumerate(results, 1):
             title = result.get('title', 'Unknown')
-            url = result.get('webpage_url') or f"https://www.youtube.com/watch?v={result.get('id')}"
+            url = result.get('webpage_url') or result.get('url') or f"https://www.youtube.com/watch?v={result.get('id')}"
             duration = result.get('duration', 0)
             
             mins, secs = divmod(duration, 60)
@@ -2679,6 +2781,7 @@ async def search(interaction: discord.Interaction, query: str):
                 inline=False
             )
         
+        embed.set_footer(text=f"DJSona Music • {source_label} Multi-Source Search")
         await interaction.followup.send(embed=embed, ephemeral=True)
         
     except Exception as e:

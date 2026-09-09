@@ -467,7 +467,166 @@ class CreatorCommands(commands.Cog):
         except Exception as e:
             logger.error("❌ Error viewing profile: %s", e)
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
-    
+
+    @creator_group.command(name="portfolio", description="View multi-platform creator portfolio and top works")
+    @app_commands.describe(
+        user="Discord user mention/ID/username (optional)",
+        username="Direct creator username on RuneForge / Divine Skins (optional)"
+    )
+    async def view_portfolio(
+        self,
+        interaction: discord.Interaction,
+        user: str = None,
+        username: str = None
+    ):
+        """Build and showcase creator's unified portfolio across all platforms."""
+        await interaction.response.defer(ephemeral=False)
+        try:
+            db = self._get_db(interaction)
+            target_user = None
+            rf_username = None
+            ds_username = None
+            
+            if username:
+                rf_username = username.strip()
+                ds_username = username.strip()
+            else:
+                target_user = await self._resolve_target_user(interaction, user)
+                if target_user:
+                    rf_creator = db.get_creator(target_user.id, 'runeforge')
+                    ds_creator = db.get_creator(target_user.id, 'divineskins')
+                    if rf_creator:
+                        rf_username = rf_creator['username']
+                    if ds_creator:
+                        ds_username = ds_creator['username']
+                
+            if not rf_username and not ds_username:
+                await interaction.followup.send(
+                    "❌ No creator found! Provide a `username` or mention a user who linked their creator profile.",
+                    ephemeral=True
+                )
+                return
+
+            # Fetch fresh data from both platforms concurrently
+            rf_profile_task = self.runeforge_scraper.get_profile_data(rf_username) if rf_username else asyncio.sleep(0, result=None)
+            rf_mods_task = self.runeforge_scraper.get_user_mods(rf_username) if rf_username else asyncio.sleep(0, result=[])
+            ds_profile_task = self.divineskins_scraper.get_profile_data(ds_username) if ds_username else asyncio.sleep(0, result=None)
+            ds_skins_task = self.divineskins_scraper.get_user_skins(ds_username) if ds_username else asyncio.sleep(0, result=[])
+
+            rf_profile, rf_mods, ds_profile, ds_skins = await asyncio.gather(
+                rf_profile_task, rf_mods_task, ds_profile_task, ds_skins_task, return_exceptions=True
+            )
+
+            if isinstance(rf_profile, Exception): rf_profile = None
+            if isinstance(rf_mods, Exception) or not isinstance(rf_mods, list): rf_mods = []
+            if isinstance(ds_profile, Exception): ds_profile = None
+            if isinstance(ds_skins, Exception) or not isinstance(ds_skins, list): ds_skins = []
+
+            if not rf_profile and not ds_profile and not rf_mods and not ds_skins:
+                await interaction.followup.send(
+                    f"❌ Could not retrieve portfolio data for `{rf_username or ds_username}`.",
+                    ephemeral=True
+                )
+                return
+
+            # Calculate aggregated statistics
+            total_mods = (rf_profile.get('total_mods') if rf_profile else 0) or len(rf_mods)
+            total_skins = (ds_profile.get('total_mods') if ds_profile else 0) or len(ds_skins)
+            total_creations = total_mods + total_skins
+
+            total_downloads = ((rf_profile.get('total_downloads') or 0) if rf_profile else 0) + ((ds_profile.get('total_downloads') or 0) if ds_profile else 0)
+            total_views = ((rf_profile.get('total_views') or 0) if rf_profile else 0) + ((ds_profile.get('total_views') or 0) if ds_profile else 0)
+            total_followers = ((rf_profile.get('followers') or 0) if rf_profile else 0) + ((ds_profile.get('followers') or 0) if ds_profile else 0)
+
+            creator_title = rf_username or ds_username or (target_user.display_name if target_user else "Creator")
+            embed = discord.Embed(
+                title=f"🎨 Creator Portfolio • {creator_title}",
+                description="Unified creator profile across custom League modding platforms",
+                color=0x00D1FF,
+                timestamp=datetime.now()
+            )
+
+            if target_user:
+                embed.set_author(name=self._get_display_name(target_user), icon_url=target_user.display_avatar.url)
+            elif rf_profile and rf_profile.get('avatar_url'):
+                embed.set_thumbnail(url=rf_profile['avatar_url'])
+            elif ds_profile and ds_profile.get('avatar_url'):
+                embed.set_thumbnail(url=ds_profile['avatar_url'])
+
+            # Aggregated Stats
+            stats_line = [
+                f"📦 **{total_creations:,}** Total Works",
+                f"📥 **{total_downloads:,}** Downloads",
+                f"👁️ **{total_views:,}** Views",
+            ]
+            if total_followers:
+                stats_line.append(f"⭐ **{total_followers:,}** Followers")
+            embed.add_field(name="📊 Global Statistics", value=" • ".join(stats_line), inline=False)
+
+            # Platforms section
+            platforms_desc = []
+            if rf_profile or rf_mods:
+                rank_str = f" ({rf_profile.get('rank')})" if rf_profile and rf_profile.get('rank') else ""
+                platforms_desc.append(f"• 🔧 **RuneForge**: `{rf_username}`{rank_str} — {len(rf_mods)} mods")
+            if ds_profile or ds_skins:
+                rank_str = f" ({ds_profile.get('rank')})" if ds_profile and ds_profile.get('rank') else ""
+                platforms_desc.append(f"• ✨ **Divine Skins**: `{ds_username}`{rank_str} — {len(ds_skins)} skins")
+            if platforms_desc:
+                embed.add_field(name="🌐 Linked Platforms", value="\n".join(platforms_desc), inline=False)
+
+            # Featured / Top Creations (sort by downloads/views if available)
+            all_creations = []
+            for m in rf_mods:
+                all_creations.append({
+                    'name': m.get('name', 'Untitled Mod'),
+                    'url': m.get('url', ''),
+                    'platform': 'RuneForge',
+                    'icon': '🔧',
+                    'downloads': m.get('downloads', 0),
+                    'views': m.get('views', 0)
+                })
+            for s in ds_skins:
+                all_creations.append({
+                    'name': s.get('name', 'Untitled Skin'),
+                    'url': s.get('url', ''),
+                    'platform': 'Divine Skins',
+                    'icon': '✨',
+                    'downloads': s.get('downloads', 0),
+                    'views': s.get('views', 0)
+                })
+
+            if all_creations:
+                # Top 4 most popular works
+                top_works = sorted(all_creations, key=lambda x: (x['downloads'], x['views']), reverse=True)[:4]
+                top_lines = []
+                for w in top_works:
+                    stat_detail = ""
+                    if w['downloads']:
+                        stat_detail = f" — 📥 {w['downloads']:,} dls"
+                    elif w['views']:
+                        stat_detail = f" — 👁️ {w['views']:,} views"
+                    top_lines.append(f"{w['icon']} **[{w['name']}]({w['url']})** (`{w['platform']}`){stat_detail}")
+                embed.add_field(name="⭐ Top Creations", value="\n".join(top_lines), inline=False)
+
+                # Latest 3 releases
+                recent_works = all_creations[:3]
+                recent_lines = [f"{w['icon']} [{w['name']}]({w['url']}) (`{w['platform']}`)" for w in recent_works]
+                embed.add_field(name="🆕 Recent Releases", value="\n".join(recent_lines), inline=False)
+
+            embed.set_footer(text="HEXRTBRXEN Creator Hub • Live Portfolio")
+
+            # UI Buttons for direct profile links
+            view = discord.ui.View(timeout=180)
+            if rf_username:
+                view.add_item(discord.ui.Button(label="RuneForge Profile", emoji="🔧", style=discord.ButtonStyle.link, url=f"https://runeforge.dev/users/{rf_username}"))
+            if ds_username:
+                view.add_item(discord.ui.Button(label="Divine Skins Profile", emoji="✨", style=discord.ButtonStyle.link, url=f"https://divineskins.gg/{ds_username}"))
+
+            await interaction.followup.send(embed=embed, view=view if len(view.children) > 0 else None)
+        except Exception as e:
+            logger.error("❌ Error in creator portfolio: %s", e)
+            await interaction.followup.send(f"❌ Error displaying portfolio: {str(e)}", ephemeral=True)
+
     @creator_group.command(name="remove", description="Stop tracking a creator")
     @app_commands.describe(
         platform="Platform (runeforge or divineskins)",
