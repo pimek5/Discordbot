@@ -11,6 +11,7 @@ from discord.ui import Button, View
 import asyncio
 import yt_dlp
 import os
+import time
 from dotenv import load_dotenv
 from typing import Optional, Dict, List
 import logging
@@ -909,18 +910,21 @@ class YTDLSource(discord.PCMVolumeTransformer):
             last_error = e
             logger.warning("Primary extraction failed for %s: %s", raw[:80], e)
 
-        # Tier 2: YouTube Client Fallback
+        # Tier 2: YouTube Client Fallback (try several clients individually since
+        # YouTube's bot-check experiments can be scoped per-client on flagged IPs).
         if 'youtube.com' in raw or 'youtu.be' in raw or raw.startswith('ytsearch') or not raw.startswith('http'):
-            try:
-                opts_yt = opts.copy()
-                opts_yt['extractor_args'] = {'youtube': {'player_client': ['android', 'tv_embedded']}}
-                ydl_yt = yt_dlp.YoutubeDL(opts_yt)
-                data = ydl_yt.extract_info(raw, download=download)
-                if data:
-                    return data, ydl_yt, 'YouTube'
-            except Exception as e_yt:
-                last_error = e_yt
-                logger.warning("YouTube client fallback failed: %s", e_yt)
+            for client_list in (['android'], ['tv_embedded'], ['ios'], ['android', 'tv_embedded']):
+                try:
+                    opts_yt = opts.copy()
+                    opts_yt['extractor_args'] = {'youtube': {'player_client': client_list}}
+                    ydl_yt = yt_dlp.YoutubeDL(opts_yt)
+                    data = ydl_yt.extract_info(raw, download=download)
+                    if data:
+                        return data, ydl_yt, 'YouTube'
+                except Exception as e_yt:
+                    last_error = e_yt
+                    logger.warning("YouTube client fallback (%s) failed: %s", client_list, e_yt)
+                    time.sleep(0.4)
 
         # Tier 3: SoundCloud Search Fallback
         search_term = raw
