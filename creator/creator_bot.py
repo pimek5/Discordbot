@@ -8,6 +8,8 @@ from discord.ext import commands, tasks
 import logging
 import os
 import asyncio
+import aiohttp
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
 # Local modules (same folder)
@@ -79,6 +81,9 @@ class CreatorBot(commands.Bot):
         # Start random mod tasks
         self.send_random_mod_from_subscribed.start()  # Co 1h od zasubskrybowanych
         self.send_random_mod_from_all.start()  # Co 2h z całego RuneForge
+
+        # Start AryasDemise YouTube upload monitor
+        self.check_aryasdemise_youtube.start()
         
     async def on_ready(self):
         logger.info('✅ Creator Bot logged in as %s', self.user)
@@ -553,7 +558,95 @@ class CreatorBot(commands.Bot):
     async def before_all_mod(self):
         await self.wait_until_ready()
         logger.info("✅ Random mod from all task started (every 2 hours)")
-    
+
+    # ── AryasDemise YouTube upload monitor ───────────────────────────────────
+    ARYASDEMISE_CHANNEL_ID = "UCaVgS2GIh1gN-D5NeWOr0CA"
+    ARYASDEMISE_RELEASES_GUILD_ID = 1231167221330350111
+    ARYASDEMISE_RELEASES_CHANNEL_ID = 1503143283256201277
+
+    @tasks.loop(minutes=10)
+    async def check_aryasdemise_youtube(self):
+        """Poll AryasDemise's YouTube RSS feed and post new uploads as mod releases."""
+        try:
+            feed_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={self.ARYASDEMISE_CHANNEL_ID}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(feed_url, timeout=aiohttp.ClientTimeout(total=15)) as response:
+                    if response.status != 200:
+                        logger.warning("⚠️ AryasDemise YouTube feed returned status %s", response.status)
+                        return
+                    xml_text = await response.text()
+
+            root = ET.fromstring(xml_text)
+            ns = {"atom": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
+            entries = root.findall("atom:entry", ns)
+            if not entries:
+                return
+
+            db = get_creator_db(self.ARYASDEMISE_RELEASES_GUILD_ID)
+            state_key = f"youtube:{self.ARYASDEMISE_CHANNEL_ID}"
+            last_video_id = db.get_youtube_last_video_id(state_key)
+
+            latest_entry = entries[0]
+            video_id = latest_entry.findtext("yt:videoId", default="", namespaces=ns)
+            video_title = latest_entry.findtext("atom:title", default="Untitled", namespaces=ns)
+            video_link_el = latest_entry.find("atom:link", ns)
+            video_url = video_link_el.get("href") if video_link_el is not None else f"https://www.youtube.com/watch?v={video_id}"
+            thumbnail_url = f"https://i3.ytimg.com/vi/{video_id}/hqdefault.jpg"
+
+            if not video_id:
+                return
+
+            # First run: seed state without posting, to avoid spamming the whole back-catalog.
+            if last_video_id is None:
+                db.set_youtube_last_video_id(state_key, video_id)
+                logger.info("✅ AryasDemise YouTube monitor seeded with latest video %s", video_id)
+                return
+
+            if video_id == last_video_id:
+                return
+
+            channel = self.get_channel(self.ARYASDEMISE_RELEASES_CHANNEL_ID)
+            if not channel:
+                try:
+                    channel = await self.fetch_channel(self.ARYASDEMISE_RELEASES_CHANNEL_ID)
+                except Exception as e:
+                    logger.error("❌ AryasDemise releases channel %s not found: %s", self.ARYASDEMISE_RELEASES_CHANNEL_ID, e)
+                    return
+
+            embed = discord.Embed(
+                title=f"🆕 New Mod Released: {video_title} | Youtube",
+                color=0xFF0000,
+                url=video_url,
+                timestamp=datetime.now(),
+            )
+            embed.set_author(name="By AryasDemise")
+            embed.set_image(url=thumbnail_url)
+            embed.set_footer(
+                text="Posted on YouTube",
+                icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4fa.png"
+            )
+
+            class _YoutubeVideoView(discord.ui.View):
+                def __init__(self, url):
+                    super().__init__()
+                    self.add_item(discord.ui.Button(
+                        label="Watch Video",
+                        url=url,
+                        style=discord.ButtonStyle.link,
+                        emoji="🔗",
+                    ))
+
+            await channel.send(embed=embed, view=_YoutubeVideoView(video_url))
+            db.set_youtube_last_video_id(state_key, video_id)
+            logger.info("✅ Posted new AryasDemise YouTube upload: %s", video_title)
+        except Exception as e:
+            logger.error("❌ Error checking AryasDemise YouTube feed: %s", e)
+
+    @check_aryasdemise_youtube.before_loop
+    async def before_aryasdemise_youtube(self):
+        await self.wait_until_ready()
+        logger.info("✅ AryasDemise YouTube monitor task started (every 10 minutes)")
+
     async def check_runeforge_updates(self, db, creator_id: int, guild_id: int, profile_url: str, discord_user_id: int):
         try:
             if not db.get_creator_by_id(creator_id):

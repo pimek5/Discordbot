@@ -156,6 +156,17 @@ class CreatorDatabase:
                     )
                     """
                 )
+                # Tracks the last video seen per monitored YouTube channel to avoid duplicate posts
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS youtube_watch_state (
+                        id SERIAL PRIMARY KEY,
+                        channel_key VARCHAR(100) UNIQUE NOT NULL,
+                        last_video_id VARCHAR(50),
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
                 self.conn.commit()
                 logger.info("✅ Database tables created/verified")
                 
@@ -776,6 +787,39 @@ class CreatorDatabase:
         except Exception as e:
             logger.error("❌ Error getting watchlist entries: %s", e)
             return []
+
+    def get_youtube_last_video_id(self, channel_key: str) -> str | None:
+        """Get the last posted video ID for a monitored YouTube channel."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    "SELECT last_video_id FROM youtube_watch_state WHERE channel_key = %s",
+                    (channel_key,),
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+        except Exception as e:
+            logger.error("❌ Error getting YouTube watch state for %s: %s", channel_key, e)
+            return None
+
+    def set_youtube_last_video_id(self, channel_key: str, video_id: str):
+        """Persist the last posted video ID for a monitored YouTube channel."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO youtube_watch_state (channel_key, last_video_id, updated_at)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (channel_key) DO UPDATE SET
+                        last_video_id = EXCLUDED.last_video_id,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (channel_key, video_id),
+                )
+                self.conn.commit()
+        except Exception as e:
+            logger.error("❌ Error setting YouTube watch state for %s: %s", channel_key, e)
+            self.conn.rollback()
 
 
 _db_instances: Dict[str, CreatorDatabase] = {}
