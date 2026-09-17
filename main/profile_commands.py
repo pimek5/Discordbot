@@ -1812,6 +1812,12 @@ class ProfileCommands(commands.Cog):
             if target == interaction.user and diamond_accounts:
                 embed.description += "\n\n✅ **Decay notifications enabled** for all D+ accounts\nDisable with `/decaynotifsoff`"
 
+            embed.add_field(
+                name="ℹ️ Data Source",
+                value="Days remaining calculated from **match history** (API inactiveStartTime not always available)",
+                inline=False
+            )
+
             embed.set_footer(text="Decay check • Last updated now")
             await interaction.followup.send(embed=embed)
 
