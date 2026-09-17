@@ -1767,10 +1767,12 @@ class ProfileCommands(commands.Cog):
 
                 winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
                 rank_icon = RANK_EMOJIS.get(tier, "🎖️")
+                days_until_demote = decay_status.get('days_until_demote')
 
                 if at_risk and days_remaining == 0:
                     status_emoji = "🚨"
-                    status_text = "**DECAY ACTIVE!**"
+                    demote_text = f" - {days_until_demote}d to demotion" if days_until_demote else ""
+                    status_text = f"**DECAY ACTIVE!**{demote_text}"
                 elif at_risk and days_remaining is not None and days_remaining <= 1:
                     status_emoji = "🚨"
                     status_text = f"**CRITICAL** - {days_remaining}d left"
