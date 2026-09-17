@@ -3508,6 +3508,9 @@ class ProfileCommands(commands.Cog):
                     at_risk = decay_status.get('at_risk', False)
                     tier = decay_status.get('tier', 'UNRANKED')
 
+                    riot_id = await self.riot_api.get_riot_id_from_puuid(puuid)
+                    account_name = f"{riot_id['gameName']}#{riot_id['tagLine']}" if riot_id else f"Account ({region.upper()})"
+
                     if days_remaining is None or not at_risk or 'DIAMOND' not in tier:
                         db.update_decay_last_checked(user_id, puuid)
                         continue
@@ -3528,7 +3531,7 @@ class ProfileCommands(commands.Cog):
                             description=f"Your {tier} account has **1 DAY OR LESS** of inactivity bank!",
                             color=0xFF0000
                         )
-                        embed.add_field(name="Account", value=f"`{decay_status.get('last_ranked_game', 'Unknown')}`", inline=False)
+                        embed.add_field(name="Account", value=f"`{account_name}`", inline=False)
                         embed.add_field(name="Current LP", value=f"{decay_status.get('lp', 0)} LP", inline=True)
                         embed.add_field(name="Days Until Demotion", value=f"{decay_status.get('days_until_demote', 0)} days", inline=True)
                         embed.add_field(name="⚠️ Action Required", value="**Play a ranked game NOW** to avoid demotion!", inline=False)
@@ -3547,7 +3550,7 @@ class ProfileCommands(commands.Cog):
                             description=f"Your {tier} account has **3 DAYS OR LESS** of inactivity bank!",
                             color=0xFF8800
                         )
-                        embed.add_field(name="Account", value=f"`{decay_status.get('last_ranked_game', 'Unknown')}`", inline=False)
+                        embed.add_field(name="Account", value=f"`{account_name}`", inline=False)
                         embed.add_field(name="Days Remaining", value=f"{days_remaining} days", inline=True)
                         embed.add_field(name="Current LP", value=f"{decay_status.get('lp', 0)} LP", inline=True)
                         embed.add_field(name="💡 Tip", value="Play 1+ ranked games to refill your bank!", inline=False)
@@ -3566,7 +3569,7 @@ class ProfileCommands(commands.Cog):
                             description=f"Your {tier} account is getting close to decay!",
                             color=0xFFDD00
                         )
-                        embed.add_field(name="Account", value=f"`{decay_status.get('last_ranked_game', 'Unknown')}`", inline=False)
+                        embed.add_field(name="Account", value=f"`{account_name}`", inline=False)
                         embed.add_field(name="Days in Bank", value=f"{days_remaining}/30", inline=True)
                         embed.add_field(name="Current LP", value=f"{decay_status.get('lp', 0)} LP", inline=True)
                         embed.add_field(name="💡 Tip", value="Play a few ranked games to stay safe!", inline=False)
