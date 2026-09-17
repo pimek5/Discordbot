@@ -1632,6 +1632,197 @@ class ProfileCommands(commands.Cog):
             # Cancel keep-alive task once we've sent the final response
             keep_alive_task.cancel()
 
+    @app_commands.command(name="decaycheck", description="Check LP decay status (Diamond+)")
+    @app_commands.describe(user="The user to check (defaults to yourself)")
+    async def decaycheck(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
+        """Check decay status with account and rank display"""
+        await interaction.response.defer()
+
+        target = user or interaction.user
+        db = get_db()
+
+        db_user = db.get_user_by_discord_id(target.id)
+
+        if not db_user:
+            embed = discord.Embed(
+                title="❌ No Account Linked",
+                description=f"{'You' if target == interaction.user else target.mention} {'have' if target == interaction.user else 'has'} not linked any League of Legends accounts yet.",
+                color=0xFF0000
+            )
+
+            if target == interaction.user:
+                embed.add_field(
+                    name="📝 How to Link Your Account",
+                    value=(
+                        "**Step 1:** Get your Riot ID (Name#TAG)\n"
+                        "`/link riot_id:<Name#TAG> region:<region>`\n\n"
+                        "**Step 2:** Change your in-game profile icon\n"
+                        "(as instructed by the bot)\n\n"
+                        "**Step 3:** Verify your account\n"
+                        "`/verifyacc`\n\n"
+                        "**Supported Regions:** na, euw, eune, kr, jp, br, lan, las, oce, tr, ru"
+                    ),
+                    inline=False
+                )
+            else:
+                embed.description += f"\n\n**Tell them to use `/link` to connect their account!**"
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        all_accounts = db.get_user_accounts(db_user['id'])
+        if not all_accounts:
+            await interaction.followup.send("❌ No linked accounts found!", ephemeral=True)
+            return
+
+        account = db.get_primary_account(db_user['id']) or all_accounts[0]
+
+        try:
+            rank_stats = await self.riot_api.get_ranked_stats_by_puuid(account['puuid'], account['region'])
+            riot_id = await self.riot_api.get_riot_id_from_puuid(account['puuid'])
+            decay_status = await self.riot_api.check_decay_status(account['puuid'], account['region'])
+
+            rank_display_name = f"{riot_id['gameName']}#{riot_id['tagLine']}" if riot_id else account['riot_id']
+
+            solo_rank = next((r for r in (rank_stats or []) if r.get('queueType') == 'RANKED_SOLO_5x5'), None)
+
+            if not solo_rank:
+                embed = discord.Embed(
+                    title="📊 Decay Check",
+                    description=f"**Account:** {rank_display_name}\n**Region:** {account['region'].upper()}",
+                    color=0x99AAB5
+                )
+                embed.add_field(name="Rank", value="📭 Unranked", inline=True)
+                embed.add_field(name="Status", value="✅ No decay (not ranked)", inline=True)
+                embed.set_footer(text="Decay only applies to Diamond and above")
+                await interaction.followup.send(embed=embed)
+                return
+
+            tier = solo_rank.get('tier', 'UNRANKED')
+            rank = solo_rank.get('rank', '')
+            lp = solo_rank.get('leaguePoints', 0)
+            wins = solo_rank.get('wins', 0)
+            losses = solo_rank.get('losses', 0)
+            winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+
+            decay_tiers = ['DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER']
+            is_decay_eligible = tier in decay_tiers
+
+            rank_color_map = {
+                'IRON': 0x75351B,
+                'BRONZE': 0xCD7F32,
+                'SILVER': 0xC0C0C0,
+                'GOLD': 0xFFD700,
+                'PLATINUM': 0x00D1FF,
+                'EMERALD': 0x50C878,
+                'DIAMOND': 0x0A6FA5,
+                'MASTER': 0x1B1221,
+                'GRANDMASTER': 0xFF4444,
+                'CHALLENGER': 0x6B5B95
+            }
+            rank_color = rank_color_map.get(tier, 0x99AAB5)
+
+            embed = discord.Embed(
+                title="📊 Decay Status Check",
+                description=f"**Account:** `{rank_display_name}`\n**Region:** `{account['region'].upper()}`",
+                color=rank_color
+            )
+
+            rank_icon = RANK_EMOJIS.get(tier, "🎖️")
+            embed.add_field(
+                name="Current Rank",
+                value=f"{rank_icon} {tier} {rank}\n**{lp} LP**\n{wins}W - {losses}L ({winrate:.1f}%)",
+                inline=False
+            )
+
+            if not is_decay_eligible:
+                embed.add_field(
+                    name="✅ Decay Status",
+                    value=f"No decay below Diamond",
+                    inline=False
+                )
+                embed.set_footer(text="Decay only applies to Diamond and above | Last updated now")
+            else:
+                at_risk = decay_status.get('at_risk', False)
+                days_remaining = decay_status.get('days_remaining')
+                max_bank = decay_status.get('max_bank', 30)
+                lp_loss_per_day = decay_status.get('lp_loss_per_day', 50)
+                last_game = decay_status.get('last_ranked_game')
+                days_until_demote = decay_status.get('days_until_demote')
+
+                if at_risk and days_remaining == 0:
+                    status_emoji = "🚨"
+                    status_text = "**DECAY ACTIVE**"
+                    status_color = 0xFF0000
+                elif at_risk and days_remaining is not None and days_remaining <= 3:
+                    status_emoji = "⚠️"
+                    status_text = f"**DECAY WARNING** - {days_remaining} days left"
+                    status_color = 0xFF8800
+                elif at_risk and days_remaining is not None and days_remaining <= 7:
+                    status_emoji = "⚡"
+                    status_text = f"**Low Bank** - {days_remaining}/{max_bank} days"
+                    status_color = 0xFFDD00
+                else:
+                    status_emoji = "✅"
+                    status_text = f"**Safe** - {days_remaining}/{max_bank} days in bank"
+                    status_color = 0x2ECC71
+
+                embed.color = status_color
+
+                embed.add_field(
+                    name=f"{status_emoji} Decay Status",
+                    value=status_text,
+                    inline=False
+                )
+
+                if days_remaining is not None:
+                    embed.add_field(
+                        name="📊 Bank Details",
+                        value=f"**Days Remaining:** {days_remaining}/{max_bank}\n**LP Loss/Day:** {lp_loss_per_day} LP",
+                        inline=True
+                    )
+
+                if last_game:
+                    embed.add_field(
+                        name="🎮 Last Ranked Game",
+                        value=f"`{last_game}`",
+                        inline=True
+                    )
+
+                if days_until_demote is not None and days_until_demote > 0:
+                    embed.add_field(
+                        name="⚠️ Days Until Demotion",
+                        value=f"{days_until_demote} day{'s' if days_until_demote != 1 else ''}",
+                        inline=True
+                    )
+
+                embed.add_field(
+                    name="📋 Decay Rules",
+                    value=(
+                        f"**Diamond:** 30 days bank, 50 LP/day loss\n"
+                        f"**Master+:** 14 days bank, 75 LP/day loss\n"
+                        f"\n💡 Play ranked to earn back bank points!"
+                    ),
+                    inline=False
+                )
+
+            embed.set_footer(text="Decay check • Diamond and above only")
+
+            if target == interaction.user and is_decay_eligible:
+                db.enable_decay_notifications(db_user['id'], account['puuid'], target.id, account['region'])
+                embed.description += "\n\n✅ **Decay notifications enabled** - You'll get DM alerts at 7, 3, and 1 day thresholds\nDisable with `/decaynotifsoff`"
+
+            await interaction.followup.send(embed=embed)
+
+        except Exception as e:
+            logger.error(f"Error in decaycheck: {e}")
+            embed = discord.Embed(
+                title="❌ Error Checking Decay Status",
+                description=f"Failed to retrieve decay information: {str(e)[:100]}",
+                color=0xFF0000
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
     @app_commands.command(name="card", description="Generate a sleek dynamic visual LoL profile card (PNG)")
     @app_commands.describe(user="The user to view (defaults to yourself)")
     async def card(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
@@ -3226,12 +3417,180 @@ class ProfileCommands(commands.Cog):
                 ephemeral=True
             )
             return
-        
+
         # Create view with toggle buttons
         view = AccountVisibilityView(db, user_data['id'], all_accounts)
         embed = view.create_embed()
-        
+
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="decaynotifsoff", description="Disable LP decay notifications on DM")
+    async def decaynotifsoff(self, interaction: discord.Interaction):
+        """Disable decay notifications"""
+        await interaction.response.defer(ephemeral=True)
+
+        target = interaction.user
+        db = get_db()
+
+        db_user = db.get_user_by_discord_id(target.id)
+
+        if not db_user:
+            embed = discord.Embed(
+                title="❌ No Account Linked",
+                description="You have not linked any League of Legends accounts yet.",
+                color=0xFF0000
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        all_accounts = db.get_user_accounts(db_user['id'])
+        if not all_accounts:
+            await interaction.followup.send("❌ No linked accounts found!", ephemeral=True)
+            return
+
+        disabled_count = 0
+        for account in all_accounts:
+            if db.disable_decay_notifications(db_user['id'], account['puuid']):
+                disabled_count += 1
+
+        embed = discord.Embed(
+            title="✅ Decay Notifications Disabled",
+            description=f"Disabled notifications for {disabled_count} account{'s' if disabled_count != 1 else ''}.",
+            color=0x2ECC71
+        )
+        embed.add_field(
+            name="📧 What happens next?",
+            value="You will **no longer** receive DM notifications about LP decay warnings.",
+            inline=False
+        )
+        embed.add_field(
+            name="💡 Re-enable anytime",
+            value="Just use `/decaycheck` again to turn notifications back on.",
+            inline=False
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @tasks.loop(minutes=30)
+    async def check_decay_notifications(self):
+        """Background task: Check decay status and send notifications every 30 minutes"""
+        if not self.bot.user:
+            return
+
+        try:
+            db = get_db()
+            all_enabled = db.get_all_decay_notifications_enabled()
+
+            if not all_enabled:
+                return
+
+            logger.info(f"🔍 Checking decay status for {len(all_enabled)} accounts...")
+
+            for notification_record in all_enabled:
+                try:
+                    user_id = notification_record['user_id']
+                    puuid = notification_record['puuid']
+                    discord_id = notification_record['discord_id']
+                    region = notification_record['region']
+
+                    last_7d_notif = notification_record.get('last_notif_7_days')
+                    last_3d_notif = notification_record.get('last_notif_3_days')
+                    last_1d_notif = notification_record.get('last_notif_1_day')
+
+                    decay_status = await self.riot_api.check_decay_status(puuid, region)
+                    days_remaining = decay_status.get('days_remaining')
+                    at_risk = decay_status.get('at_risk', False)
+                    tier = decay_status.get('tier', 'UNRANKED')
+
+                    if days_remaining is None or not at_risk or 'DIAMOND' not in tier:
+                        db.update_decay_last_checked(user_id, puuid)
+                        continue
+
+                    user = self.bot.get_user(discord_id)
+                    if not user:
+                        try:
+                            user = await self.bot.fetch_user(discord_id)
+                        except:
+                            logger.warning(f"Could not fetch user {discord_id}")
+                            continue
+
+                    now = datetime.now(timezone.utc)
+
+                    if days_remaining <= 1 and (not last_1d_notif or (now - last_1d_notif).days >= 1):
+                        embed = discord.Embed(
+                            title="🚨 DECAY CRITICAL!",
+                            description=f"Your {tier} account has **1 DAY OR LESS** of inactivity bank!",
+                            color=0xFF0000
+                        )
+                        embed.add_field(name="Account", value=f"`{decay_status.get('last_ranked_game', 'Unknown')}`", inline=False)
+                        embed.add_field(name="Current LP", value=f"{decay_status.get('lp', 0)} LP", inline=True)
+                        embed.add_field(name="Days Until Demotion", value=f"{decay_status.get('days_until_demote', 0)} days", inline=True)
+                        embed.add_field(name="⚠️ Action Required", value="**Play a ranked game NOW** to avoid demotion!", inline=False)
+                        embed.set_footer(text="Use /decaycheck for more details")
+
+                        try:
+                            await user.send(embed=embed)
+                            db.update_decay_notification_sent(user_id, puuid, 1)
+                            logger.info(f"📧 Sent 1-day decay notification to {user.name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to send 1-day notification to {discord_id}: {e}")
+
+                    elif days_remaining <= 3 and (not last_3d_notif or (now - last_3d_notif).days >= 1):
+                        embed = discord.Embed(
+                            title="⚠️ DECAY WARNING!",
+                            description=f"Your {tier} account has **3 DAYS OR LESS** of inactivity bank!",
+                            color=0xFF8800
+                        )
+                        embed.add_field(name="Account", value=f"`{decay_status.get('last_ranked_game', 'Unknown')}`", inline=False)
+                        embed.add_field(name="Days Remaining", value=f"{days_remaining} days", inline=True)
+                        embed.add_field(name="Current LP", value=f"{decay_status.get('lp', 0)} LP", inline=True)
+                        embed.add_field(name="💡 Tip", value="Play 1+ ranked games to refill your bank!", inline=False)
+                        embed.set_footer(text="Use /decaycheck for more details")
+
+                        try:
+                            await user.send(embed=embed)
+                            db.update_decay_notification_sent(user_id, puuid, 3)
+                            logger.info(f"📧 Sent 3-day decay notification to {user.name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to send 3-day notification to {discord_id}: {e}")
+
+                    elif days_remaining <= 7 and (not last_7d_notif or (now - last_7d_notif).days >= 1):
+                        embed = discord.Embed(
+                            title="⚡ Decay Bank Low",
+                            description=f"Your {tier} account is getting close to decay!",
+                            color=0xFFDD00
+                        )
+                        embed.add_field(name="Account", value=f"`{decay_status.get('last_ranked_game', 'Unknown')}`", inline=False)
+                        embed.add_field(name="Days in Bank", value=f"{days_remaining}/30", inline=True)
+                        embed.add_field(name="Current LP", value=f"{decay_status.get('lp', 0)} LP", inline=True)
+                        embed.add_field(name="💡 Tip", value="Play a few ranked games to stay safe!", inline=False)
+                        embed.set_footer(text="Use /decaycheck for more details | Notifications can be disabled with /decaynotifsoff")
+
+                        try:
+                            await user.send(embed=embed)
+                            db.update_decay_notification_sent(user_id, puuid, 7)
+                            logger.info(f"📧 Sent 7-day decay notification to {user.name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to send 7-day notification to {discord_id}: {e}")
+
+                    db.update_decay_last_checked(user_id, puuid)
+
+                except Exception as e:
+                    logger.error(f"Error checking decay for account {puuid}: {e}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"Error in decay notification check: {e}")
+
+    @check_decay_notifications.before_loop
+    async def before_decay_check(self):
+        """Wait for bot to be ready before starting decay check loop"""
+        await self.bot.wait_until_ready()
+
+    async def cog_load(self) -> None:
+        """Start decay notification check when cog is loaded"""
+        if not self.check_decay_notifications.is_running():
+            self.check_decay_notifications.start()
+            logger.info("✅ Decay notification check task started")
 
 
 # ==================== ACCOUNT VISIBILITY VIEW ====================

@@ -393,3 +393,27 @@ CREATE INDEX IF NOT EXISTS idx_pro_teams_rank ON pro_teams(rank);
 CREATE INDEX IF NOT EXISTS idx_pro_players_name ON pro_players(name);
 CREATE INDEX IF NOT EXISTS idx_pro_players_team ON pro_players(team_id);
 CREATE INDEX IF NOT EXISTS idx_pro_player_champs ON pro_player_champions(player_id);
+
+-- ================================
+--    DECAY NOTIFICATION SETTINGS
+-- ================================
+
+CREATE TABLE IF NOT EXISTS decay_notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    puuid VARCHAR(100) NOT NULL,
+    discord_id BIGINT NOT NULL,
+    region VARCHAR(10) NOT NULL,
+    decay_notifs_enabled BOOLEAN DEFAULT TRUE,
+    last_notif_7_days TIMESTAMP,
+    last_notif_3_days TIMESTAMP,
+    last_notif_1_day TIMESTAMP,
+    last_checked TIMESTAMP DEFAULT NOW(),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(user_id, puuid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_decay_notifs_user ON decay_notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_decay_notifs_enabled ON decay_notifications(decay_notifs_enabled) WHERE decay_notifs_enabled = TRUE;
+CREATE INDEX IF NOT EXISTS idx_decay_notifs_last_checked ON decay_notifications(last_checked);

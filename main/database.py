@@ -2436,6 +2436,126 @@ class Database:
                 self._checked_out_generations.clear()
                 logger.info("✅ Database connections closed")
 
+    # ==================== DECAY NOTIFICATIONS ====================
+
+    def enable_decay_notifications(self, user_id: int, puuid: str, discord_id: int, region: str) -> bool:
+        """Enable decay notifications for a user account"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO decay_notifications (user_id, puuid, discord_id, region, decay_notifs_enabled, last_checked)
+                    VALUES (%s, %s, %s, %s, TRUE, NOW())
+                    ON CONFLICT (user_id, puuid) DO UPDATE SET
+                        decay_notifs_enabled = TRUE,
+                        updated_at = NOW()
+                    RETURNING id
+                """, (user_id, puuid, discord_id, region))
+                result = cur.fetchone()
+                conn.commit()
+                return result is not None
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Error enabling decay notifications: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+
+    def disable_decay_notifications(self, user_id: int, puuid: str) -> bool:
+        """Disable decay notifications for a user account"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE decay_notifications
+                    SET decay_notifs_enabled = FALSE, updated_at = NOW()
+                    WHERE user_id = %s AND puuid = %s
+                """, (user_id, puuid))
+                conn.commit()
+                return cur.rowcount > 0
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Error disabling decay notifications: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+
+    def get_decay_notifications_enabled(self, user_id: int) -> List[Dict]:
+        """Get all accounts with decay notifications enabled for a user"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM decay_notifications
+                    WHERE user_id = %s AND decay_notifs_enabled = TRUE
+                    ORDER BY last_checked ASC
+                """, (user_id,))
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def get_all_decay_notifications_enabled(self) -> List[Dict]:
+        """Get all accounts with decay notifications enabled (for background task)"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM decay_notifications
+                    WHERE decay_notifs_enabled = TRUE
+                    ORDER BY last_checked ASC
+                """)
+                return cur.fetchall()
+        finally:
+            self.return_connection(conn)
+
+    def update_decay_notification_sent(self, user_id: int, puuid: str, days_threshold: int) -> bool:
+        """Update the last notification timestamp"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                if days_threshold == 7:
+                    col = "last_notif_7_days"
+                elif days_threshold == 3:
+                    col = "last_notif_3_days"
+                elif days_threshold == 1:
+                    col = "last_notif_1_day"
+                else:
+                    return False
+
+                cur.execute(f"""
+                    UPDATE decay_notifications
+                    SET {col} = NOW(), updated_at = NOW()
+                    WHERE user_id = %s AND puuid = %s
+                """, (user_id, puuid))
+                conn.commit()
+                return cur.rowcount > 0
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Error updating decay notification: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+
+    def update_decay_last_checked(self, user_id: int, puuid: str) -> bool:
+        """Update when decay status was last checked"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE decay_notifications
+                    SET last_checked = NOW(), updated_at = NOW()
+                    WHERE user_id = %s AND puuid = %s
+                """, (user_id, puuid))
+                conn.commit()
+                return cur.rowcount > 0
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Error updating last_checked: {e}")
+            return False
+        finally:
+            self.return_connection(conn)
+
+
 # Global database instance
 db = None
 
