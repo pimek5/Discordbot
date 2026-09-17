@@ -789,17 +789,17 @@ class RiotAPI:
                 else:
                     # Lub może być string ISO format
                     inactive_date = datetime.fromisoformat(str(inactive_start_time).replace('Z', '+00:00'))
-                
+
                 now = datetime.now(timezone.utc)
                 days_since_inactive = (now - inactive_date).days
-                
+
                 logger.info(f"✅ Using API inactiveStartTime: {days_since_inactive} days inactive")
-                
+
                 max_bank = decay_starts_after
                 days_in_bank = max_bank
                 days_remaining = max(0, max_bank - days_since_inactive)
                 days_until_demote = max(0, lp // lp_loss_per_day) if days_remaining <= 0 else None
-                
+
                 if days_remaining <= 0:
                     return {
                         'at_risk': True,
@@ -811,6 +811,7 @@ class RiotAPI:
                         'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
                         'tier': f'{tier} {rank}',
                         'lp': lp,
+                        'data_source': 'api',
                         'message': f'🚨 **DECAY ACTIVE!** {tier} {rank} ({lp} LP)\nInactive since: {days_since_inactive} days ago'
                     }
                 elif days_remaining <= 3:
@@ -824,6 +825,7 @@ class RiotAPI:
                         'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
                         'tier': f'{tier} {rank}',
                         'lp': lp,
+                        'data_source': 'api',
                         'message': f'⚠️ **DECAY WARNING!** {tier} {rank} ({lp} LP)\n{days_remaining} days left in bank'
                     }
                 else:
@@ -837,6 +839,7 @@ class RiotAPI:
                         'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
                         'tier': f'{tier} {rank}',
                         'lp': lp,
+                        'data_source': 'api',
                         'message': f'✅ {tier} {rank} ({lp} LP) - Safe for {days_remaining} days'
                     }
             except Exception as e:
@@ -858,22 +861,23 @@ class RiotAPI:
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
                 'lp': lp,
+                'data_source': 'match_history',
                 'message': f'⚠️ {tier} {rank} ({lp} LP) - no match history found'
             }
-        
+
         # Zbierz daty ranked solo queue gier (queueId już przefiltrowany przez API)
         ranked_game_dates = []
         for match_id in match_ids:
             match_data = await self.get_match_details(match_id, region)
             if not match_data:
                 continue
-            
+
             info = match_data.get('info', {})
             timestamp = info.get('gameCreation')
             if timestamp:
                 game_date = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
                 ranked_game_dates.append(game_date)
-        
+
         if not ranked_game_dates:
             return {
                 'at_risk': True,
@@ -885,6 +889,7 @@ class RiotAPI:
                 'last_ranked_game': None,
                 'tier': f'{tier} {rank}',
                 'lp': lp,
+                'data_source': 'match_history',
                 'message': f'⚠️ {tier} {rank} ({lp} LP) - no ranked games in history'
             }
         
@@ -958,6 +963,7 @@ class RiotAPI:
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
                 'lp': lp,
+                'data_source': 'match_history',
                 'message': f'🚨 **DECAY ACTIVE!** {tier} {rank} ({lp} LP)\n'
                           f'Last game: {days_since} days ago\n'
                           f'Bank empty — play immediately!'
@@ -973,6 +979,7 @@ class RiotAPI:
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
                 'lp': lp,
+                'data_source': 'match_history',
                 'message': f'⚠️ **DECAY WARNING!** {tier} {rank} ({lp} LP)\n'
                           f'Last game: {days_since} days ago\n'
                           f'Bank: {days_remaining}/{max_bank} days\n'
@@ -989,6 +996,7 @@ class RiotAPI:
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
                 'lp': lp,
+                'data_source': 'match_history',
                 'message': f'⚡ {tier} {rank} ({lp} LP)\n'
                           f'Last game: {days_since} days ago\n'
                           f'Bank: {days_remaining}/{max_bank} days\n'
@@ -1005,6 +1013,7 @@ class RiotAPI:
                 'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
                 'tier': f'{tier} {rank}',
                 'lp': lp,
+                'data_source': 'match_history',
                 'message': f'✅ {tier} {rank} ({lp} LP)\n'
                           f'Last game: {days_since} days ago\n'
                           f'Bank: {days_remaining}/{max_bank} days\n'

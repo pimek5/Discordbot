@@ -1812,9 +1812,16 @@ class ProfileCommands(commands.Cog):
             if target == interaction.user and diamond_accounts:
                 embed.description += "\n\n✅ **Decay notifications enabled** for all D+ accounts\nDisable with `/decaynotifsoff`"
 
+            # Check data source
+            data_sources = set(acc['decay_status'].get('data_source', 'unknown') for acc in diamond_accounts)
+            if 'api' in data_sources:
+                source_text = "✅ **Using Riot API** (inactiveStartTime) - Highly Accurate"
+            else:
+                source_text = "⚠️ **Using Match History Fallback** - May be inaccurate if match history is hidden"
+
             embed.add_field(
-                name="ℹ️ Data Source",
-                value="Days remaining calculated from **match history** (API inactiveStartTime not always available)",
+                name="ℹ️ Data Accuracy",
+                value=source_text,
                 inline=False
             )
 
