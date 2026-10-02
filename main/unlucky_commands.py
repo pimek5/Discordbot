@@ -70,8 +70,10 @@ class UnluckyCommands(commands.Cog):
 
         return f"{color} [{bar}] {score:.1f}/5\n{label}"
 
-    def calculate_lane_stats(self, matches: List[Dict], player_puuid: str) -> Dict:
-        """Calculate stats per lane from match data"""
+    def calculate_lane_stats(self, matches: List[Dict], player_puuid: str) -> tuple:
+        """Calculate stats per lane and timeline from match data
+        Returns: (lane_stats, gold_timeline, deaths_timeline, first_blood_count, surrender_count, dragons_total)
+        """
         lane_stats = defaultdict(lambda: {
             'gold_diff': [],
             'deaths_diff': [],
@@ -81,15 +83,25 @@ class UnluckyCommands(commands.Cog):
             'games': 0,
         })
 
+        gold_timeline = {'10min': [], '20min': [], 'end': []}
+        deaths_timeline = {'10min': [], '20min': [], 'end': []}
+        first_blood_count = 0
+        surrender_count = 0
+        dragons_total = 0
+        total_games = len(matches)
+
         for match in matches:
             info = match.get('info', {})
             participants = info.get('participants', [])
+            frames = match.get('timeline', {}).get('frames', [])
 
             # Find player in match
             player_data = None
-            for p in participants:
+            player_idx = None
+            for idx, p in enumerate(participants):
                 if p.get('puuid') == player_puuid:
                     player_data = p
+                    player_idx = idx
                     break
 
             if not player_data:
@@ -125,6 +137,56 @@ class UnluckyCommands(commands.Cog):
                 lane_stats[lane]['cs'].append(player_data.get('totalMinionsKilled', 0) + player_data.get('neutralMinionsKilled', 0))
                 lane_stats[lane]['games'] += 1
 
+            # Timeline analysis (gold at 10min, 20min, end)
+            if frames:
+                # Get data from timeline frames
+                for frame in frames:
+                    frame_timeline = frame.get('participantFrames', {})
+                    player_frame = frame_timeline.get(str(player_idx), {})
+
+                    timestamp = frame.get('timestamp', 0)
+                    minutes = timestamp // 60000 if timestamp else 0
+
+                    if minutes == 10:
+                        player_gold_10 = player_frame.get('totalGold', 0)
+                        team_gold_10 = sum(frame_timeline.get(str(i), {}).get('totalGold', 0)
+                                          for i, p in enumerate(participants)
+                                          if p.get('teamId') == team_id and i != player_idx)
+                        if team_count > 0:
+                            gold_timeline['10min'].append(player_gold_10 - (team_gold_10 / team_count))
+                    elif minutes == 20:
+                        player_gold_20 = player_frame.get('totalGold', 0)
+                        team_gold_20 = sum(frame_timeline.get(str(i), {}).get('totalGold', 0)
+                                          for i, p in enumerate(participants)
+                                          if p.get('teamId') == team_id and i != player_idx)
+                        if team_count > 0:
+                            gold_timeline['20min'].append(player_gold_20 - (team_gold_20 / team_count))
+
+            # End game gold diff
+            gold_timeline['end'].append(gold_diff)
+            deaths_timeline['end'].append(deaths_diff)
+
+            # First blood
+            first_blood_id = None
+            for event in match.get('timeline', {}).get('events', []):
+                if event.get('type') == 'CHAMPION_KILL' and not first_blood_id:
+                    first_blood_id = event.get('killerId')
+                    break
+
+            if first_blood_id == player_idx + 1:  # killerId is 1-indexed
+                first_blood_count += 1
+
+            # Surrender (remake is when game ends before 15 min with no kills)
+            game_duration = info.get('gameDuration', 0) // 60  # in minutes
+            if game_duration < 15:
+                surrender_count += 1
+
+            # Dragons
+            for event in match.get('timeline', {}).get('events', []):
+                if event.get('type') == 'ELITE_MONSTER_KILL' and event.get('monsterType') == 'DRAGON':
+                    if event.get('killerTeamId') == team_id:
+                        dragons_total += 1
+
         # Calculate averages
         result = {}
         for lane, stats in lane_stats.items():
@@ -136,7 +198,11 @@ class UnluckyCommands(commands.Cog):
                     'games': stats['games'],
                 }
 
-        return result
+        # Timeline averages
+        gold_timeline_avg = {k: sum(v)/len(v) if v else 0 for k, v in gold_timeline.items()}
+        deaths_timeline_avg = {k: sum(v)/len(v) if v else 0 for k, v in deaths_timeline.items()}
+
+        return result, gold_timeline_avg, deaths_timeline_avg, first_blood_count, surrender_count, dragons_total, total_games
 
     def format_gold_bar(self, value: float, width: int = 20) -> str:
         """Format a bar for gold diff"""
@@ -198,15 +264,18 @@ class UnluckyCommands(commands.Cog):
                 return
 
             # Calculate stats
-            lane_stats = self.calculate_lane_stats(matches, puuid)
+            lane_stats, gold_timeline, deaths_timeline, fb_count, surrender_count, dragons_total, total_games = self.calculate_lane_stats(matches, puuid)
             if not lane_stats:
                 await interaction.followup.send(f"❌ Could not parse lane data from matches")
                 return
 
             verdict_score = self.calculate_overall_verdict(lane_stats)
 
-            # Create embed
-            embed = discord.Embed(
+            # Create embeds
+            embeds = []
+
+            # Embed 1: Verdict + Gold Timeline
+            embed1 = discord.Embed(
                 title=f"🔍 Unlucky or Bad? — {summoner_name}",
                 description=f"Analysis of last **{len(matches)}** games in **{region.upper()}**",
                 color=0x0099ff
@@ -214,9 +283,33 @@ class UnluckyCommands(commands.Cog):
 
             # Verdict bar
             verdict_bar = self.create_verdict_bar(verdict_score)
-            embed.add_field(name="📊 Your Verdict", value=verdict_bar, inline=False)
+            embed1.add_field(name="📊 Your Verdict", value=verdict_bar, inline=False)
 
-            # Lane breakdown - Gold
+            # Gold Timeline (10min, 20min, end)
+            gold_text = "```\n"
+            gold_text += f"10 MIN:  {gold_timeline.get('10min', 0):+7.0f}g\n"
+            gold_text += f"20 MIN:  {gold_timeline.get('20min', 0):+7.0f}g\n"
+            gold_text += f"END:     {gold_timeline.get('end', 0):+7.0f}g\n"
+            gold_text += "```"
+            embed1.add_field(name="💰 GOLD vs MATCHUP", value=gold_text, inline=True)
+
+            # Deaths Timeline
+            deaths_text = "```\n"
+            deaths_text += f"10 MIN:  {deaths_timeline.get('10min', 0):+5.1f}d\n"
+            deaths_text += f"20 MIN:  {deaths_timeline.get('20min', 0):+5.1f}d\n"
+            deaths_text += f"END:     {deaths_timeline.get('end', 0):+5.1f}d\n"
+            deaths_text += "```"
+            embed1.add_field(name="💀 DEATHS vs MATCHUP", value=deaths_text, inline=True)
+
+            embeds.append(embed1)
+
+            # Embed 2: Lane breakdown
+            embed2 = discord.Embed(
+                title="🗺️ Lane Breakdown",
+                color=0x00ff00
+            )
+
+            # Gold per lane
             gold_breakdown = "```\n"
             for lane in ['TOP', 'JGL', 'MID', 'BOT', 'SUP']:
                 if lane in lane_stats:
@@ -225,9 +318,9 @@ class UnluckyCommands(commands.Cog):
                     color = "🔵" if gold_diff >= 0 else "🔴"
                     gold_breakdown += f"{lane:3} {color} {gold_diff:+7.0f}g\n"
             gold_breakdown += "```"
-            embed.add_field(name="💰 Gold Diff per Lane", value=gold_breakdown, inline=True)
+            embed2.add_field(name="💰 Gold Diff per Lane", value=gold_breakdown, inline=True)
 
-            # Lane breakdown - Deaths
+            # Deaths per lane
             deaths_breakdown = "```\n"
             for lane in ['TOP', 'JGL', 'MID', 'BOT', 'SUP']:
                 if lane in lane_stats:
@@ -236,20 +329,53 @@ class UnluckyCommands(commands.Cog):
                     color = "🔴" if deaths_diff >= 0 else "🟢"
                     deaths_breakdown += f"{lane:3} {color} {deaths_diff:+5.1f}d\n"
             deaths_breakdown += "```"
-            embed.add_field(name="💀 Deaths Diff per Lane", value=deaths_breakdown, inline=True)
+            embed2.add_field(name="💀 Deaths Diff per Lane", value=deaths_breakdown, inline=True)
 
-            # Lane KDA/CS
+            # KDA per lane
             kda_breakdown = "```\n"
             for lane in ['TOP', 'JGL', 'MID', 'BOT', 'SUP']:
                 if lane in lane_stats:
                     stats = lane_stats[lane]
                     kda_breakdown += f"{lane}: {stats['avg_kda']}\n"
             kda_breakdown += "```"
-            embed.add_field(name="⚔️ KDA/CS per Lane", value=kda_breakdown, inline=False)
+            embed2.add_field(name="⚔️ KDA/CS per Lane", value=kda_breakdown, inline=False)
 
-            embed.set_footer(text=f"Analyzed {len(matches)} games • Data from Riot API")
+            embeds.append(embed2)
 
-            await interaction.followup.send(embed=embed)
+            # Embed 3: Team stats
+            embed3 = discord.Embed(
+                title="👥 Team Statistics",
+                color=0xff9900
+            )
+
+            fb_rate = (fb_count / len(matches) * 100) if matches else 0
+            surrender_rate = (surrender_count / len(matches) * 100) if matches else 0
+            avg_dragons = dragons_total / len(matches) if matches else 0
+
+            embed3.add_field(
+                name="🩸 First Blood",
+                value=f"**{fb_rate:.0f}%**\nYour team gets first blood in {fb_rate:.0f}% of games",
+                inline=True
+            )
+
+            embed3.add_field(
+                name="🐉 Dragons per Game",
+                value=f"**{avg_dragons:.1f}**\nYour team takes {avg_dragons:.1f} dragons per game",
+                inline=True
+            )
+
+            embed3.add_field(
+                name="⛔ Surrender Rate",
+                value=f"**{surrender_rate:.0f}%**\nYour team surrenders in {surrender_rate:.0f}% of games",
+                inline=True
+            )
+
+            embed3.set_footer(text=f"Analyzed {len(matches)} games • Data from Riot API")
+
+            embeds.append(embed3)
+
+            # Send all embeds
+            await interaction.followup.send(embeds=embeds)
 
         except Exception as e:
             logger.error(f"Error in analyze_unlucky: {e}")
