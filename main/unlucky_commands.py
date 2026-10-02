@@ -239,7 +239,7 @@ class UnluckyCommands(commands.Cog):
                 tag_line = None
 
             # Get player account info
-            account = await self.riot_api.get_account(game_name, tag_line, region)
+            account = await self.riot_api.get_account_by_riot_id(game_name, tag_line, region)
             if not account:
                 await interaction.followup.send(f"❌ Player **{summoner_name}** not found")
                 return
