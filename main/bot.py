@@ -824,7 +824,13 @@ class MyBot(commands.Bot):
                 vote_cog = VoteCommands(self)
                 await self.add_cog(vote_cog)
                 print("  ✅ VoteCommands loaded")
-                
+
+                # Load unlucky commands
+                print("🔄 Loading UnluckyCommands...")
+                import unlucky_commands
+                await unlucky_commands.setup(self)
+                print("  ✅ UnluckyCommands loaded")
+
                 # Load help commands
                 print("🔄 Loading help commands...")
                 import help_commands
