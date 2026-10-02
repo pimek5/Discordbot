@@ -1803,33 +1803,35 @@ class Database:
         finally:
             self.return_connection(conn)
     
-    def get_previous_session_winners(self, guild_id: int, limit: int = 5) -> List[str]:
-        """Get top N champions from the last ended session"""
+    def get_previous_session_winners(self, guild_id: int, limit: int = 10, last_sessions: int = 2) -> List[str]:
+        """Get top N champions from the last N ended sessions"""
         conn = self.get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Get the last ended session
+                # Get the last N ended sessions
                 cur.execute("""
                     SELECT id FROM voting_sessions
                     WHERE guild_id = %s AND status = 'ended'
                     ORDER BY ended_at DESC
-                    LIMIT 1
-                """, (guild_id,))
-                
-                last_session = cur.fetchone()
-                if not last_session:
+                    LIMIT %s
+                """, (guild_id, last_sessions))
+
+                sessions = cur.fetchall()
+                if not sessions:
                     return []
-                
-                # Get top champions from that session
-                cur.execute("""
+
+                session_ids = tuple(row['id'] for row in sessions)
+
+                # Get top champions from those sessions combined
+                cur.execute(f"""
                     SELECT champion_name
                     FROM voting_votes
-                    WHERE session_id = %s
+                    WHERE session_id IN ({','.join(['%s'] * len(session_ids))})
                     GROUP BY champion_name
                     ORDER BY SUM(points) DESC
                     LIMIT %s
-                """, (last_session['id'], limit))
-                
+                """, session_ids + (limit,))
+
                 return [row['champion_name'] for row in cur.fetchall()]
         finally:
             self.return_connection(conn)

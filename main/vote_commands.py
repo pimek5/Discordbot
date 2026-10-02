@@ -514,8 +514,8 @@ class VoteCommands(commands.Cog):
             )
             return
         
-        # Get winners from previous session to auto-exclude
-        previous_winners = db.get_previous_session_winners(interaction.guild_id, limit=5)
+        # Get winners from previous 2 sessions to auto-exclude
+        previous_winners = db.get_previous_session_winners(interaction.guild_id, limit=10, last_sessions=2)
         
         # Create new voting session with exclusions
         session_id = db.create_voting_session(
@@ -544,7 +544,7 @@ class VoteCommands(commands.Cog):
         
         ping_text = f"🗳️ **Voting session started!** {' '.join(pings)}\nHead over to <#{VOTING_CHANNEL_ID}> to vote!"
         if previous_winners:
-            ping_text += f"\n🚫 Auto-excluded top 5 from last session: {', '.join(previous_winners)}"
+            ping_text += f"\n🚫 Auto-excluded top 10 from last 2 sessions: {', '.join(previous_winners)}"
         
         try:
             await channel.send(ping_text)
