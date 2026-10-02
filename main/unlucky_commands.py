@@ -396,5 +396,5 @@ class UnluckyCommands(commands.Cog):
         )
 
 async def setup(bot):
-    riot_api = RiotAPI()
+    riot_api = bot.riot_api
     await bot.add_cog(UnluckyCommands(bot, riot_api))
