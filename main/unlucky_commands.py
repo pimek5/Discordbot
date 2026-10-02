@@ -92,7 +92,149 @@ class UnluckyCommands(commands.Cog):
         total_games = 0
         valid_games = 0
 
-        for match in matches:
+        logger.info(f"🔄 Processing {len(matches)} matches for PUUID {player_puuid}")
+
+        for match_idx, match in enumerate(matches):
+            info = match.get('info', {})
+
+            # Filter for Ranked Solo/Duo only
+            queue_id = info.get('queueId')
+            logger.info(f"  Match {match_idx}: queueId={queue_id}")
+            if queue_id not in [420, 440]:  # 420 = Ranked Solo/Duo, 440 = Ranked Flex
+                logger.info(f"    ❌ Skipped (not ranked)")
+                continue
+
+            total_games += 1
+            participants = info.get('participants', [])
+            frames = match.get('timeline', {}).get('frames', [])
+
+            # Find player in match
+            player_data = None
+            player_idx = None
+            for idx, p in enumerate(participants):
+                if p.get('puuid') == player_puuid:
+                    player_data = p
+                    player_idx = idx
+                    break
+
+            if not player_data:
+                logger.info(f"    ❌ Player not found in match")
+                continue
+
+            valid_games += 1
+
+            lane = player_data.get('lane', 'UNKNOWN')
+            logger.info(f"    ✅ Found player in lane: {lane}")
+
+            if lane == 'UNKNOWN':
+                logger.info(f"    ❌ Unknown lane")
+                continue
+
+            # Get team average for comparison
+            team_id = player_data.get('teamId')
+            player_team_members = [p for p in participants if p.get('teamId') == team_id and p.get('puuid') != player_puuid]
+
+            if not player_team_members:
+                logger.info(f"    ❌ No teammates found")
+                continue
+
+            team_gold = sum(p.get('goldEarned', 0) for p in player_team_members)
+            team_deaths = sum(p.get('deaths', 0) for p in player_team_members)
+            team_count = len(player_team_members)
+
+            avg_gold = team_gold / team_count
+            avg_deaths = team_deaths / team_count
+
+            gold_diff = player_data.get('goldEarned', 0) - avg_gold
+            deaths_diff = player_data.get('deaths', 0) - avg_deaths
+
+            logger.info(f"    💰 Gold diff: {gold_diff:.0f}, Deaths diff: {deaths_diff:.1f}")
+
+            lane_stats[lane]['gold_diff'].append(gold_diff)
+            lane_stats[lane]['deaths_diff'].append(deaths_diff)
+            lane_stats[lane]['kills'].append(player_data.get('kills', 0))
+            lane_stats[lane]['deaths'].append(player_data.get('deaths', 0))
+            lane_stats[lane]['cs'].append(player_data.get('totalMinionsKilled', 0) + player_data.get('neutralMinionsKilled', 0))
+            lane_stats[lane]['games'] += 1
+
+            # Timeline analysis (gold at 10min, 20min, end)
+            if frames and len(frames) > 1:
+                logger.info(f"    📊 Timeline frames: {len(frames)}")
+                for frame in frames:
+                    frame_timeline = frame.get('participantFrames', {})
+                    player_frame = frame_timeline.get(str(player_idx + 1), {})  # participantFrames use 1-indexed keys
+
+                    if not player_frame:
+                        continue
+
+                    timestamp = frame.get('timestamp', 0)
+                    minutes = timestamp // 60000 if timestamp else 0
+
+                    if minutes == 10:
+                        player_gold_10 = player_frame.get('totalGold', 0)
+                        team_gold_10 = sum(frame_timeline.get(str(i + 1), {}).get('totalGold', 0)
+                                          for i, p in enumerate(participants)
+                                          if p.get('teamId') == team_id and i != player_idx)
+                        if team_count > 0:
+                            diff_10 = player_gold_10 - (team_gold_10 / team_count)
+                            gold_timeline['10min'].append(diff_10)
+                            logger.info(f"      10min gold: {diff_10:.0f}")
+                    elif minutes == 20:
+                        player_gold_20 = player_frame.get('totalGold', 0)
+                        team_gold_20 = sum(frame_timeline.get(str(i + 1), {}).get('totalGold', 0)
+                                          for i, p in enumerate(participants)
+                                          if p.get('teamId') == team_id and i != player_idx)
+                        if team_count > 0:
+                            diff_20 = player_gold_20 - (team_gold_20 / team_count)
+                            gold_timeline['20min'].append(diff_20)
+                            logger.info(f"      20min gold: {diff_20:.0f}")
+
+            # End game gold/deaths diff
+            gold_timeline['end'].append(gold_diff)
+            deaths_timeline['end'].append(deaths_diff)
+
+            # First blood
+            first_blood_killer = None
+            for event in match.get('timeline', {}).get('events', []):
+                if event.get('type') == 'CHAMPION_KILL':
+                    first_blood_killer = event.get('killerId')
+                    break
+
+            if first_blood_killer == player_idx + 1:  # killerId is 1-indexed
+                first_blood_count += 1
+
+            # Surrender (games under 15 minutes)
+            game_duration = info.get('gameDuration', 0) // 60  # in minutes
+            if game_duration < 15:
+                surrender_count += 1
+
+            # Dragons
+            for event in match.get('timeline', {}).get('events', []):
+                if event.get('type') == 'ELITE_MONSTER_KILL' and event.get('monsterType') == 'DRAGON':
+                    if event.get('killerTeamId') == team_id:
+                        dragons_total += 1
+
+        logger.info(f"📊 Results: {total_games} ranked games, {valid_games} valid, lanes={dict(lane_stats)}")
+
+        # Calculate averages
+        result = {}
+        for lane, stats in lane_stats.items():
+            if stats['games'] > 0:
+                result[lane] = {
+                    'avg_gold_diff': sum(stats['gold_diff']) / stats['games'],
+                    'avg_deaths_diff': sum(stats['deaths_diff']) / stats['games'],
+                    'avg_kills': sum(stats['kills']) / stats['games'],
+                    'avg_deaths': sum(stats['deaths']) / stats['games'],
+                    'avg_cs': sum(stats['cs']) / stats['games'],
+                    'avg_kda': f"{sum(stats['kills'])/stats['games']:.1f}/{sum(stats['deaths'])/stats['games']:.1f}/{sum(stats['cs'])/stats['games']:.0f}",
+                    'games': stats['games'],
+                }
+
+        # Timeline averages
+        gold_timeline_avg = {k: sum(v)/len(v) if v else 0 for k, v in gold_timeline.items()}
+        deaths_timeline_avg = {k: sum(v)/len(v) if v else 0 for k, v in deaths_timeline.items()}
+
+        return result, gold_timeline_avg, deaths_timeline_avg, first_blood_count, surrender_count, dragons_total, valid_games
             info = match.get('info', {})
 
             # Filter for Ranked Solo/Duo only
