@@ -745,22 +745,26 @@ class RiotAPI:
         now = datetime.now(timezone.utc)
         last_game = ranked_games[-1]
 
-        # Symuluj bank dzień po dniu od najstarszej gry
-        current_bank = 0
-        current_date = ranked_games[0].date()
-        today = now.date()
+        # Calculate days elapsed since last game
+        days_since_last_game = (now.date() - last_game.date()).days
 
+        # Count games per day across ALL 20 games
         games_by_day = {}
         for game_date in ranked_games:
             day_key = game_date.date()
             games_by_day[day_key] = games_by_day.get(day_key, 0) + 1
 
-        while current_date <= today:
-            if current_date in games_by_day:
-                current_bank = min(current_bank + games_by_day[current_date] * bank_per_game, max_bank)
+        # Simulate bank from last game to today
+        # Start at max bank, then lose 1 day per day without games
+        current_bank = max_bank  # Start at max bank
+        for i in range(1, days_since_last_game + 1):
+            check_date = last_game.date() + timedelta(days=i)
+            if check_date in games_by_day:
+                # If there's a game that day (shouldn't happen after last_game)
+                current_bank = min(current_bank + games_by_day[check_date] * bank_per_game, max_bank)
             else:
+                # No game = lose 1 day of bank
                 current_bank = max(0, current_bank - 1)
-            current_date += timedelta(days=1)
 
         days_remaining = current_bank
         at_risk = days_remaining <= 0
