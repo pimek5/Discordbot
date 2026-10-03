@@ -81,8 +81,8 @@ class HelpView(discord.ui.View):
         )
         
         embed.add_field(
-            name="/decaycheck",
-            value="Check LP decay status for all Diamond+ accounts\n`/decaycheck` or `/decaycheck user:@someone`\n• Diamond: 28 days bank, +7 per game, 50 LP/day loss\n• Master+: 14 days bank, +1 per game, 75 LP/day loss\n• Based on ~20 most recent ranked solo games",
+            name="/decay",
+            value="Check LP decay status (Diamond+) with notification controls\n`/decay` or `/decay user:@someone`\n• Diamond: 28 days bank, +7 per game, 50 LP/day loss\n• Master+: 14 days bank, +1 per game, 75 LP/day loss\n• Toggle decay notifications with buttons",
             inline=False
         )
         

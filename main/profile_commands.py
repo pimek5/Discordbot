@@ -1632,10 +1632,74 @@ class ProfileCommands(commands.Cog):
             # Cancel keep-alive task once we've sent the final response
             keep_alive_task.cancel()
 
-    @app_commands.command(name="decaycheck", description="Check LP decay status (Diamond+)")
+    class DecayNotificationView(discord.ui.View):
+        def __init__(self, bot, user_id):
+            super().__init__(timeout=None)
+            self.bot = bot
+            self.user_id = user_id
+
+        @discord.ui.button(label="Enable Notifications", emoji="📧", style=discord.ButtonStyle.success, custom_id="decay_notif_on")
+        async def enable_notif(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("❌ This button is only for you!", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            db = get_db()
+            db_user = db.get_user_by_discord_id(interaction.user.id)
+            if not db_user:
+                await interaction.followup.send("❌ No account linked!", ephemeral=True)
+                return
+
+            all_accounts = db.get_user_accounts(db_user['id'])
+            enabled_count = 0
+            for account in all_accounts:
+                if db.enable_decay_notifications(db_user['id'], account['puuid'], interaction.user.id, account['region']):
+                    enabled_count += 1
+
+            embed = discord.Embed(
+                title="✅ Decay Notifications Enabled",
+                description=f"Enabled DM notifications for {enabled_count} account{'s' if enabled_count != 1 else ''}.",
+                color=0x2ECC71
+            )
+            embed.add_field(name="📧 What happens next?", value="You will receive DM notifications about LP decay warnings when your accounts are at risk.", inline=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            button.label = "✅ Notifications On"
+            await interaction.message.edit(view=self)
+
+        @discord.ui.button(label="Disable Notifications", emoji="🔇", style=discord.ButtonStyle.danger, custom_id="decay_notif_off")
+        async def disable_notif(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("❌ This button is only for you!", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            db = get_db()
+            db_user = db.get_user_by_discord_id(interaction.user.id)
+            if not db_user:
+                await interaction.followup.send("❌ No account linked!", ephemeral=True)
+                return
+
+            all_accounts = db.get_user_accounts(db_user['id'])
+            disabled_count = 0
+            for account in all_accounts:
+                if db.disable_decay_notifications(db_user['id'], account['puuid']):
+                    disabled_count += 1
+
+            embed = discord.Embed(
+                title="✅ Decay Notifications Disabled",
+                description=f"Disabled DM notifications for {disabled_count} account{'s' if disabled_count != 1 else ''}.",
+                color=0xFF6B6B
+            )
+            embed.add_field(name="📧 What happens next?", value="You will **no longer** receive DM notifications about LP decay warnings.", inline=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            button.label = "🔇 Notifications Off"
+            await interaction.message.edit(view=self)
+
+    @app_commands.command(name="decay", description="Check LP decay status (Diamond+) with notification controls")
     @app_commands.describe(user="The user to check (defaults to yourself)")
-    async def decaycheck(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
-        """Check decay status with account and rank display"""
+    async def decay(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
+        """Check decay status with notification toggle buttons"""
         await interaction.response.defer()
 
         target = user or interaction.user
@@ -1717,7 +1781,7 @@ class ProfileCommands(commands.Cog):
 
                     days_remaining = decay_status.get('days_remaining')
                     at_risk = decay_status.get('at_risk', False)
-                    max_bank = decay_status.get('max_bank', 30)
+                    max_bank = decay_status.get('max_bank', 28)
 
                     diamond_accounts.append({
                         'account': account,
@@ -1749,7 +1813,7 @@ class ProfileCommands(commands.Cog):
 
             base_color = rank_color_map.get(diamond_accounts[0]['tier'], 0x99AAB5)
             embed = discord.Embed(
-                title=f"📊 Decay Status Check • {len(diamond_accounts)} Diamond+ Account{'s' if len(diamond_accounts) != 1 else ''}",
+                title=f"📊 Decay Status • {len(diamond_accounts)} Diamond+ Account{'s' if len(diamond_accounts) != 1 else ''}",
                 description=f"**Player:** {'You' if target == interaction.user else target.mention}",
                 color=base_color
             )
@@ -1809,14 +1873,16 @@ class ProfileCommands(commands.Cog):
                 inline=False
             )
 
-            if target == interaction.user and diamond_accounts:
-                embed.description += "\n\n✅ **Decay notifications enabled** for all D+ accounts\nDisable with `/decaynotifsoff`"
-
             embed.set_footer(text="Decay check • Last updated now")
-            await interaction.followup.send(embed=embed)
+
+            if target == interaction.user:
+                view = DecayNotificationView(self.bot, db_user['id'])
+                await interaction.followup.send(embed=embed, view=view)
+            else:
+                await interaction.followup.send(embed=embed)
 
         except Exception as e:
-            logger.error(f"Error in decaycheck: {e}")
+            logger.error(f"Error in decay: {e}")
             embed = discord.Embed(
                 title="❌ Error Checking Decay Status",
                 description=f"Failed to retrieve decay information: {str(e)[:100]}",
@@ -3425,52 +3491,6 @@ class ProfileCommands(commands.Cog):
 
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="decaynotifsoff", description="Disable LP decay notifications on DM")
-    async def decaynotifsoff(self, interaction: discord.Interaction):
-        """Disable decay notifications"""
-        await interaction.response.defer(ephemeral=True)
-
-        target = interaction.user
-        db = get_db()
-
-        db_user = db.get_user_by_discord_id(target.id)
-
-        if not db_user:
-            embed = discord.Embed(
-                title="❌ No Account Linked",
-                description="You have not linked any League of Legends accounts yet.",
-                color=0xFF0000
-            )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            return
-
-        all_accounts = db.get_user_accounts(db_user['id'])
-        if not all_accounts:
-            await interaction.followup.send("❌ No linked accounts found!", ephemeral=True)
-            return
-
-        disabled_count = 0
-        for account in all_accounts:
-            if db.disable_decay_notifications(db_user['id'], account['puuid']):
-                disabled_count += 1
-
-        embed = discord.Embed(
-            title="✅ Decay Notifications Disabled",
-            description=f"Disabled notifications for {disabled_count} account{'s' if disabled_count != 1 else ''}.",
-            color=0x2ECC71
-        )
-        embed.add_field(
-            name="📧 What happens next?",
-            value="You will **no longer** receive DM notifications about LP decay warnings.",
-            inline=False
-        )
-        embed.add_field(
-            name="💡 Re-enable anytime",
-            value="Just use `/decaycheck` again to turn notifications back on.",
-            inline=False
-        )
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
     @tasks.loop(minutes=30)
     async def check_decay_notifications(self):
         """Background task: Check decay status and send notifications every 30 minutes"""
@@ -3529,7 +3549,7 @@ class ProfileCommands(commands.Cog):
                         embed.add_field(name="Current LP", value=f"{decay_status.get('lp', 0)} LP", inline=True)
                         embed.add_field(name="Days Until Demotion", value=f"{decay_status.get('days_until_demote', 0)} days", inline=True)
                         embed.add_field(name="⚠️ Action Required", value="**Play a ranked game NOW** to avoid demotion!", inline=False)
-                        embed.set_footer(text="Use /decaycheck for more details")
+                        embed.set_footer(text="Use /decay for more details")
 
                         try:
                             await user.send(embed=embed)
@@ -3548,7 +3568,7 @@ class ProfileCommands(commands.Cog):
                         embed.add_field(name="Days Remaining", value=f"{days_remaining} days", inline=True)
                         embed.add_field(name="Current LP", value=f"{decay_status.get('lp', 0)} LP", inline=True)
                         embed.add_field(name="💡 Tip", value="Play 1+ ranked games to refill your bank!", inline=False)
-                        embed.set_footer(text="Use /decaycheck for more details")
+                        embed.set_footer(text="Use /decay for more details")
 
                         try:
                             await user.send(embed=embed)
@@ -3567,7 +3587,7 @@ class ProfileCommands(commands.Cog):
                         embed.add_field(name="Days in Bank", value=f"{days_remaining}/30", inline=True)
                         embed.add_field(name="Current LP", value=f"{decay_status.get('lp', 0)} LP", inline=True)
                         embed.add_field(name="💡 Tip", value="Play a few ranked games to stay safe!", inline=False)
-                        embed.set_footer(text="Use /decaycheck for more details | Notifications can be disabled with /decaynotifsoff")
+                        embed.set_footer(text="Use /decay to manage notifications!")
 
                         try:
                             await user.send(embed=embed)
