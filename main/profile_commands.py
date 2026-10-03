@@ -1763,6 +1763,7 @@ class ProfileCommands(commands.Cog):
                 max_bank = decay_status.get('max_bank', 0)
                 lp_loss_per_day = decay_status.get('lp_loss_per_day', 0)
                 days_per_game = decay_status.get('days_per_game', 0)
+                days_until_demote = decay_status.get('days_until_demote', 0)
 
                 rank_icon = RANK_EMOJIS.get(acc_data['tier'], "🎖️")
                 wins = acc_data['wins']
@@ -1771,8 +1772,7 @@ class ProfileCommands(commands.Cog):
 
                 if at_risk and days_remaining == 0:
                     status_emoji = "🚨"
-                    lp_loss_total = lp
-                    status_text = f"**DECAY ACTIVE!** Losing {lp_loss_total} LP total"
+                    status_text = f"**DECAY ACTIVE!** {days_until_demote}d until demotion"
                 elif at_risk and days_remaining <= 3:
                     status_emoji = "⚠️"
                     status_text = f"**WARNING** - {days_remaining}d left in bank"

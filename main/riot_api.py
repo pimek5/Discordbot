@@ -721,7 +721,7 @@ class RiotAPI:
         match_ids = await self.get_match_history(puuid, region, count=20, queue=420)
         if not match_ids:
             days_until_demote = lp // lp_loss_per_day if lp > 0 else 0
-            return {'at_risk': True, 'days_remaining': 0, 'max_bank': max_bank, 'lp_loss_per_day': lp_loss_per_day, 'tier': f'{tier} {rank}', 'lp': lp, 'days_until_demote': days_until_demote}
+            return {'at_risk': True, 'days_remaining': 0, 'max_bank': max_bank, 'lp_loss_per_day': lp_loss_per_day, 'tier': f'{tier} {rank}', 'lp': lp, 'days_per_game': 7 if tier == 'DIAMOND' else 1, 'days_until_demote': days_until_demote}
 
         # Try to get details for matches, prioritizing first (newest) match
         ranked_games = []
@@ -744,7 +744,7 @@ class RiotAPI:
 
         if not ranked_games:
             days_until_demote = lp // lp_loss_per_day if lp > 0 else 0
-            return {'at_risk': True, 'days_remaining': 0, 'max_bank': max_bank, 'lp_loss_per_day': lp_loss_per_day, 'tier': f'{tier} {rank}', 'lp': lp, 'days_until_demote': days_until_demote}
+            return {'at_risk': True, 'days_remaining': 0, 'max_bank': max_bank, 'lp_loss_per_day': lp_loss_per_day, 'tier': f'{tier} {rank}', 'lp': lp, 'days_per_game': 7 if tier == 'DIAMOND' else 1, 'days_until_demote': days_until_demote}
 
         # If we couldn't get the newest game's details, use the oldest available
         if last_game is None:
