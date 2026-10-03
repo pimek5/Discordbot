@@ -1749,12 +1749,13 @@ class ProfileCommands(commands.Cog):
 
             base_color = rank_color_map.get(diamond_accounts[0]['tier'], 0x99AAB5)
             embed = discord.Embed(
-                title=f"📊 Decay Status • {len(diamond_accounts)} Diamond+ Account{'s' if len(diamond_accounts) != 1 else ''}",
-                description=f"**Player:** {'You' if target == interaction.user else target.mention}",
+                title=f"💎 LP Decay Tracker",
+                description=f"{'Your' if target == interaction.user else f'{target.mention}'}s Diamond+ Accounts",
                 color=base_color
             )
+            embed.set_thumbnail(url=target.display_avatar.url)
 
-            for acc_data in diamond_accounts:
+            for i, acc_data in enumerate(diamond_accounts):
                 decay_status = acc_data['decay_status']
                 tier_str = decay_status.get('tier', 'UNKNOWN')
                 lp = decay_status.get('lp', 0)
@@ -1768,26 +1769,42 @@ class ProfileCommands(commands.Cog):
                 rank_icon = RANK_EMOJIS.get(acc_data['tier'], "🎖️")
                 wins = acc_data['wins']
                 losses = acc_data['losses']
-                winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+                total_games = wins + losses
+                winrate = (wins / total_games * 100) if total_games > 0 else 0
 
+                # Progress bar for bank
+                bar_length = 15
+                filled = int((days_remaining / max_bank) * bar_length) if max_bank > 0 else 0
+                filled = min(filled, bar_length)
+                bar = "█" * filled + "░" * (bar_length - filled)
+
+                # Status with color
                 if at_risk and days_remaining == 0:
                     status_emoji = "🚨"
-                    status_text = f"**DECAY ACTIVE!** {days_until_demote}d until demotion"
-                elif at_risk and days_remaining <= 3:
+                    status_text = f"**DECAY ACTIVE!** ⏰ {days_until_demote}d until demotion"
+                    field_color_code = "🔴"
+                elif at_risk and days_remaining <= 2:
                     status_emoji = "⚠️"
-                    status_text = f"**WARNING** - {days_remaining}d left in bank"
-                elif at_risk and days_remaining <= 7:
+                    status_text = f"**CRITICAL** - Only {days_remaining}d left!"
+                    field_color_code = "🔴"
+                elif at_risk and days_remaining <= 5:
                     status_emoji = "⚡"
-                    status_text = f"**Low** - {days_remaining}/{max_bank}d bank"
+                    status_text = f"**WARNING** - {days_remaining}/{max_bank}d bank"
+                    field_color_code = "🟠"
+                elif at_risk and days_remaining <= 10:
+                    status_emoji = "💛"
+                    status_text = f"**CAUTION** - {days_remaining}/{max_bank}d bank"
+                    field_color_code = "🟡"
                 else:
                     status_emoji = "✅"
-                    status_text = f"**Safe** - {days_remaining}/{max_bank}d bank"
+                    status_text = f"**SAFE** - {days_remaining}/{max_bank}d bank"
+                    field_color_code = "🟢"
 
                 account_info = (
-                    f"{rank_icon} **{tier_str}** • {lp} LP\n"
-                    f"📊 {wins}W - {losses}L ({winrate:.1f}%)\n"
+                    f"{rank_icon} **{tier_str} {lp} LP** • {wins}W {losses}L ({winrate:.1f}%)\n"
+                    f"{field_color_code} `{bar}` {days_remaining}/{max_bank}\n"
                     f"{status_emoji} {status_text}\n"
-                    f"📉 {days_per_game}d per game • {lp_loss_per_day} LP/day loss"
+                    f"⏸️ +{days_per_game}d per game • 📉 {lp_loss_per_day} LP/day"
                 )
 
                 embed.add_field(
@@ -1796,20 +1813,24 @@ class ProfileCommands(commands.Cog):
                     inline=False
                 )
 
+                if i < len(diamond_accounts) - 1:
+                    embed.add_field(name="", value="", inline=False)
+
                 if target == interaction.user:
                     db.enable_decay_notifications(db_user['id'], acc_data['account']['puuid'], target.id, acc_data['account']['region'])
 
             embed.add_field(
-                name="📋 Decay Mechanics",
+                name="📚 How Decay Works",
                 value=(
-                    f"**Diamond:** 28 days bank, +7 per game, −50 LP/day\n"
-                    f"**Master+:** 14 days bank, +1 per game, −75 LP/day\n"
-                    f"\n💡 Based on ~20 most recent ranked solo games"
+                    "**Diamond:** Start with 28 days • Gain 7 per game • Lose 50 LP/day\n"
+                    "**Master+:** Start with 14 days • Gain 1 per game • Lose 75 LP/day\n"
+                    "⏱️ Tracked from your 20 most recent solo ranked games"
                 ),
                 inline=False
             )
 
-            embed.set_footer(text="Decay check • Last updated now")
+            embed.set_footer(text=f"💾 Refreshed now • {len(diamond_accounts)} account{'s' if len(diamond_accounts) != 1 else ''}")
+            embed.color = base_color
 
             if target == interaction.user:
                 view = DecayNotificationView(self.bot, db_user['id'])
