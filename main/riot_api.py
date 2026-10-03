@@ -688,334 +688,93 @@ class RiotAPI:
         return None
     
     async def check_decay_status(self, puuid: str, region: str) -> Dict:
-        """Check if account is at risk of LP decay with accurate banking system
-        
-        Decay rules:
-        - Diamond: max 30 days bank, decay starts after 30 days inactivity
-        - Master/GM/Chall: max 14 days bank, decay starts after 14 days inactivity
-        
-        Returns dict with:
-        - at_risk: bool
-        - days_remaining: int
-        - days_in_bank: int
-        - max_bank: int
-        - last_ranked_game: str
-        - tier: str
-        - lp: int
-        - message: str
+        """Check LP decay status matching endofseasontracker.com 1:1
+
+        Based on approximately 20 most recent ranked solo games.
+
+        Decay mechanics:
+        - Diamond: 28 initial days, +7 per game (max 28), −50 LP/day
+        - Master+: 14 initial days, +1 per game (max 14), −75 LP/day
         """
         from datetime import datetime, timezone, timedelta
-        
-        # Pobierz ranked stats
+
         ranked_stats = await self.get_ranked_stats_by_puuid(puuid, region)
         if not ranked_stats:
-            return {
-                'at_risk': False,
-                'days_remaining': None,
-                'days_in_bank': 0,
-                'max_bank': 0,
-                'lp_loss_per_day': None,
-                'days_until_demote': None,
-                'last_ranked_game': None,
-                'tier': 'UNRANKED',
-                'lp': 0,
-                'message': '❌ Brak danych rankingowych'
-            }
-        
-        # Znajdź solo queue i sprawdź co dokładnie zawiera
-        solo_queue = None
-        for queue in ranked_stats:
-            if queue.get('queueType') == 'RANKED_SOLO_5x5':
-                solo_queue = queue
-                logger.debug(f"🔍 Solo queue data: {queue}")  # Log all fields
-                break
-        
+            return {'at_risk': False, 'days_remaining': None, 'max_bank': 0, 'lp_loss_per_day': None, 'tier': 'UNRANKED', 'lp': 0}
+
+        solo_queue = next((q for q in ranked_stats if q.get('queueType') == 'RANKED_SOLO_5x5'), None)
         if not solo_queue:
-            return {
-                'at_risk': False,
-                'days_remaining': None,
-                'days_in_bank': 0,
-                'max_bank': 0,
-                'lp_loss_per_day': None,
-                'days_until_demote': None,
-                'last_ranked_game': None,
-                'tier': 'UNRANKED',
-                'lp': 0,
-                'message': '❌ Brak danych Solo Queue'
-            }
-        
+            return {'at_risk': False, 'days_remaining': None, 'max_bank': 0, 'lp_loss_per_day': None, 'tier': 'UNRANKED', 'lp': 0}
+
         tier = solo_queue.get('tier', 'UNRANKED')
         rank = solo_queue.get('rank', '')
         lp = solo_queue.get('leaguePoints', 0)
-        wins = solo_queue.get('wins', 0)
-        losses = solo_queue.get('losses', 0)
-        
-        # Check if there's inactiveStartTime field from API
-        inactive = solo_queue.get('inactive', False)
-        inactive_start_time = solo_queue.get('inactiveStartTime')
-        
-        logger.info(f"📊 Decay API fields — tier={tier} {rank} lp={lp} inactive={inactive} inactiveStartTime={inactive_start_time} all_keys={list(solo_queue.keys())}")
-        
-        # Decay działa tylko dla Diamond+
-        decay_tiers = ['DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER']
-        if tier not in decay_tiers:
-            return {
-                'at_risk': False,
-                'days_remaining': None,
-                'days_in_bank': 0,
-                'max_bank': 0,
-                'lp_loss_per_day': None,
-                'days_until_demote': None,
-                'last_ranked_game': None,
-                'tier': f'{tier} {rank}',
-                'lp': lp,
-                'message': f'✅ {tier} {rank} ({lp} LP) - no decay below Diamond'
-            }
-        
-        # Ustaw parametry decay wg rankingu
-        if tier == 'DIAMOND':
-            decay_starts_after = 30
-            lp_loss_per_day = 50
-        else:  # Master+
-            decay_starts_after = 14
-            lp_loss_per_day = 75
-        
-        # Najlepsze źródło: jeśli API ma inactiveStartTime, użyj tego
-        if inactive and inactive_start_time:
-            try:
-                # inactiveStartTime może być timestamp w ms
-                if isinstance(inactive_start_time, (int, float)):
-                    inactive_date = datetime.fromtimestamp(inactive_start_time / 1000, tz=timezone.utc)
-                else:
-                    # Lub może być string ISO format
-                    inactive_date = datetime.fromisoformat(str(inactive_start_time).replace('Z', '+00:00'))
 
-                now = datetime.now(timezone.utc)
-                days_since_inactive = (now - inactive_date).days
+        if tier not in ['DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER']:
+            return {'at_risk': False, 'days_remaining': None, 'max_bank': 0, 'lp_loss_per_day': None, 'tier': tier, 'lp': lp}
 
-                logger.info(f"✅ Using API inactiveStartTime: {days_since_inactive} days inactive")
+        max_bank = 28 if tier == 'DIAMOND' else 14
+        lp_loss_per_day = 50 if tier == 'DIAMOND' else 75
+        bank_per_game = 7 if tier == 'DIAMOND' else 1
 
-                max_bank = decay_starts_after
-                days_in_bank = max_bank
-                days_remaining = max(0, max_bank - days_since_inactive)
-                days_until_demote = max(0, lp // lp_loss_per_day) if days_remaining <= 0 else None
-
-                if days_remaining <= 0:
-                    return {
-                        'at_risk': True,
-                        'days_remaining': 0,
-                        'days_in_bank': 0,
-                        'max_bank': max_bank,
-                        'lp_loss_per_day': lp_loss_per_day,
-                        'days_until_demote': days_until_demote,
-                        'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
-                        'tier': f'{tier} {rank}',
-                        'lp': lp,
-                        'data_source': 'api',
-                        'message': f'🚨 **DECAY ACTIVE!** {tier} {rank} ({lp} LP)\nInactive since: {days_since_inactive} days ago'
-                    }
-                elif days_remaining <= 3:
-                    return {
-                        'at_risk': True,
-                        'days_remaining': days_remaining,
-                        'days_in_bank': max(0, days_remaining),
-                        'max_bank': max_bank,
-                        'lp_loss_per_day': lp_loss_per_day,
-                        'days_until_demote': None,
-                        'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
-                        'tier': f'{tier} {rank}',
-                        'lp': lp,
-                        'data_source': 'api',
-                        'message': f'⚠️ **DECAY WARNING!** {tier} {rank} ({lp} LP)\n{days_remaining} days left in bank'
-                    }
-                else:
-                    return {
-                        'at_risk': False,
-                        'days_remaining': days_remaining,
-                        'days_in_bank': days_remaining,
-                        'max_bank': max_bank,
-                        'lp_loss_per_day': lp_loss_per_day,
-                        'days_until_demote': None,
-                        'last_ranked_game': inactive_date.strftime('%Y-%m-%d %H:%M UTC'),
-                        'tier': f'{tier} {rank}',
-                        'lp': lp,
-                        'data_source': 'api',
-                        'message': f'✅ {tier} {rank} ({lp} LP) - Safe for {days_remaining} days'
-                    }
-            except Exception as e:
-                logger.warning(f"⚠️ Could not parse inactiveStartTime: {e}, falling back to match history")
-        
-        # Fallback: użyj match history jeśli API nie ma inactiveStartTime
-        logger.info(f"📊 Falling back to match history for decay calculation")
-        
-        # Pobierz TYLKO ranked solo gry (queue=420), max 200 aby mieć wystarczającą historię
-        match_ids = await self.get_match_history(puuid, region, count=200, queue=420)
+        # Pobierz ~20 ostatnich ranked solo queue gier
+        match_ids = await self.get_match_history(puuid, region, count=20, queue=420)
         if not match_ids:
-            return {
-                'at_risk': True,
-                'days_remaining': 0,
-                'days_in_bank': 0,
-                'max_bank': decay_starts_after,
-                'lp_loss_per_day': lp_loss_per_day,
-                'days_until_demote': max(0, lp // lp_loss_per_day),
-                'last_ranked_game': None,
-                'tier': f'{tier} {rank}',
-                'lp': lp,
-                'data_source': 'match_history',
-                'message': f'⚠️ {tier} {rank} ({lp} LP) - no match history found'
-            }
+            days_until_demote = lp // lp_loss_per_day if lp > 0 else 0
+            return {'at_risk': True, 'days_remaining': 0, 'max_bank': max_bank, 'lp_loss_per_day': lp_loss_per_day, 'tier': f'{tier} {rank}', 'lp': lp, 'days_until_demote': days_until_demote}
 
-        # Zbierz daty ranked solo queue gier (queueId już przefiltrowany przez API)
-        ranked_game_dates = []
+        ranked_games = []
         for match_id in match_ids:
-            match_data = await self.get_match_details(match_id, region)
-            if not match_data:
+            try:
+                match_data = await self.get_match_details(match_id, region)
+                if not match_data:
+                    continue
+                info = match_data.get('info', {})
+                timestamp = info.get('gameCreation')
+                if timestamp:
+                    game_date = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                    ranked_games.append(game_date)
+            except Exception:
                 continue
 
-            info = match_data.get('info', {})
-            timestamp = info.get('gameCreation')
-            if timestamp:
-                game_date = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
-                ranked_game_dates.append(game_date)
+        if not ranked_games:
+            days_until_demote = lp // lp_loss_per_day if lp > 0 else 0
+            return {'at_risk': True, 'days_remaining': 0, 'max_bank': max_bank, 'lp_loss_per_day': lp_loss_per_day, 'tier': f'{tier} {rank}', 'lp': lp, 'days_until_demote': days_until_demote}
 
-        if not ranked_game_dates:
-            return {
-                'at_risk': True,
-                'days_remaining': 0,
-                'days_in_bank': 0,
-                'max_bank': decay_starts_after,
-                'lp_loss_per_day': lp_loss_per_day,
-                'days_until_demote': max(0, lp // lp_loss_per_day),
-                'last_ranked_game': None,
-                'tier': f'{tier} {rank}',
-                'lp': lp,
-                'data_source': 'match_history',
-                'message': f'⚠️ {tier} {rank} ({lp} LP) - no ranked games in history'
-            }
-        
-        # Sortuj daty od najstarszej do najnowszej
-        ranked_game_dates.sort()
-        
+        ranked_games.sort()
         now = datetime.now(timezone.utc)
-        last_game_date = ranked_game_dates[-1]
-        
-        # Parametry banku wg ranku
-        max_bank = decay_starts_after
-        bank_per_game = 7 if tier == 'DIAMOND' else 1  # Diamond +7 dni/grę, Master+ +1 dzień/grę
-        
-        # Okno symulacji: max_bank*2+30 dni wstecz, aby dokładnie obliczyć bank
-        # Startujemy od bank=0 i odbudowujemy na podstawie gier
-        # Jeśli historia sięga poza okno, zaczynamy od max_bank (gracz aktywny)
-        window_days = max_bank * 2 + 30  # np. Diamond: 30*2+30 = 90 dni
-        sim_window_start = now - timedelta(days=window_days)
-        
-        if ranked_game_dates[0] <= sim_window_start:
-            # Historia sięga poza okno — gracz grał regularnie, startuj z max
-            current_bank = max_bank
-            simulation_start = sim_window_start
-        else:
-            # Historia krótsza niż okno — zaczynamy od 0 bo nie wiemy ile miał na starcie
-            # (np. świeżo wbił Diamond)
-            current_bank = 0
-            simulation_start = ranked_game_dates[0]
-        
-        # Grupuj gry po dniach (bez godzin), tylko od simulation_start
-        games_by_day = {}
-        for game_date in ranked_game_dates:
-            if game_date >= simulation_start:
-                day_key = game_date.date()
-                games_by_day[day_key] = games_by_day.get(day_key, 0) + 1
-        
-        # Symuluj bank dzień po dniu
-        current_date = simulation_start.date()
+        last_game = ranked_games[-1]
+
+        # Symuluj bank dzień po dniu od najstarszej gry
+        current_bank = 0
+        current_date = ranked_games[0].date()
         today = now.date()
-        
+
+        games_by_day = {}
+        for game_date in ranked_games:
+            day_key = game_date.date()
+            games_by_day[day_key] = games_by_day.get(day_key, 0) + 1
+
         while current_date <= today:
             if current_date in games_by_day:
-                # Była gra tego dnia - dodaj dni do banku za każdą grę
-                games_played = games_by_day[current_date]
-                current_bank += games_played * bank_per_game
-                current_bank = min(current_bank, max_bank)  # Cap na max
+                current_bank = min(current_bank + games_by_day[current_date] * bank_per_game, max_bank)
             else:
-                # Nie było gry - bank maleje o 1
-                current_bank -= 1
-            
+                current_bank = max(0, current_bank - 1)
             current_date += timedelta(days=1)
-        
-        days_remaining = max(0, current_bank)
-        days_in_bank = days_remaining
-        days_until_demote = max(0, lp // lp_loss_per_day) if days_remaining <= 0 else None
-        
-        # Oblicz dni od ostatniej gry dla wyświetlenia
-        days_since = (now - last_game_date).days
-        
-        logger.info(f"✅ Simulated bank for {tier} {rank}: {days_remaining}/{max_bank} days (last game: {last_game_date.strftime('%Y-%m-%d')})")
-        
-        # Jeśli days_remaining <= 0, decay aktywny
-        if days_remaining <= 0:
-            return {
-                'at_risk': True,
-                'days_remaining': 0,
-                'days_in_bank': 0,
-                'max_bank': max_bank,
-                'lp_loss_per_day': lp_loss_per_day,
-                'days_until_demote': days_until_demote,
-                'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
-                'tier': f'{tier} {rank}',
-                'lp': lp,
-                'data_source': 'match_history',
-                'message': f'🚨 **DECAY ACTIVE!** {tier} {rank} ({lp} LP)\n'
-                          f'Last game: {days_since} days ago\n'
-                          f'Bank empty — play immediately!'
-            }
-        elif days_remaining <= 3:
-            return {
-                'at_risk': True,
-                'days_remaining': days_remaining,
-                'days_in_bank': max(0, days_remaining),
-                'max_bank': max_bank,
-                'lp_loss_per_day': lp_loss_per_day,
-                'days_until_demote': None,
-                'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
-                'tier': f'{tier} {rank}',
-                'lp': lp,
-                'data_source': 'match_history',
-                'message': f'⚠️ **DECAY WARNING!** {tier} {rank} ({lp} LP)\n'
-                          f'Last game: {days_since} days ago\n'
-                          f'Bank: {days_remaining}/{max_bank} days\n'
-                          f'**{days_remaining} days left!**'
-            }
-        elif days_remaining <= 7:
-            return {
-                'at_risk': True,
-                'days_remaining': days_remaining,
-                'days_in_bank': days_remaining,
-                'max_bank': max_bank,
-                'lp_loss_per_day': lp_loss_per_day,
-                'days_until_demote': None,
-                'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
-                'tier': f'{tier} {rank}',
-                'lp': lp,
-                'data_source': 'match_history',
-                'message': f'⚡ {tier} {rank} ({lp} LP)\n'
-                          f'Last game: {days_since} days ago\n'
-                          f'Bank: {days_remaining}/{max_bank} days\n'
-                          f'{days_remaining} days remaining'
-            }
-        else:
-            return {
-                'at_risk': False,
-                'days_remaining': days_remaining,
-                'days_in_bank': days_remaining,
-                'max_bank': max_bank,
-                'lp_loss_per_day': lp_loss_per_day,
-                'days_until_demote': None,
-                'last_ranked_game': last_game_date.strftime('%Y-%m-%d %H:%M UTC'),
-                'tier': f'{tier} {rank}',
-                'lp': lp,
-                'data_source': 'match_history',
-                'message': f'✅ {tier} {rank} ({lp} LP)\n'
-                          f'Last game: {days_since} days ago\n'
-                          f'Bank: {days_remaining}/{max_bank} days\n'
-                          f'Safe for {days_remaining} more days'
-            }
+
+        days_remaining = current_bank
+        at_risk = days_remaining <= 0
+        days_until_demote = lp // lp_loss_per_day if days_remaining <= 0 else None
+
+        return {
+            'at_risk': at_risk,
+            'days_remaining': max(0, days_remaining),
+            'max_bank': max_bank,
+            'lp_loss_per_day': lp_loss_per_day,
+            'tier': f'{tier} {rank}',
+            'lp': lp,
+            'last_ranked_game': last_game.strftime('%Y-%m-%d'),
+            'days_per_game': bank_per_game,
+            'days_until_demote': days_until_demote,
+            'data_source': 'match_history'
+        }

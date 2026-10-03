@@ -81,8 +81,8 @@ class HelpView(discord.ui.View):
         )
         
         embed.add_field(
-            name="/decay",
-            value="Check LP decay status for all Diamond+ accounts\n`/decay` or `/decay user:@someone`\n• Shows days remaining until decay\n• Includes accurate banking calculation\n• Auto-updates account names",
+            name="/decaycheck",
+            value="Check LP decay status for all Diamond+ accounts\n`/decaycheck` or `/decaycheck user:@someone`\n• Diamond: 28 days bank, +7 per game, 50 LP/day loss\n• Master+: 14 days bank, +1 per game, 75 LP/day loss\n• Based on ~20 most recent ranked solo games",
             inline=False
         )
         
@@ -526,8 +526,8 @@ class RankStatsView(discord.ui.View):
         )
         
         embed.add_field(
-            name="/decay",
-            value="Check LP decay status (Diamond+)\n`/decay` or `/decay user:@someone`\n• Shows days until decay\n• Accurate banking calculation\n• Updates account names automatically",
+            name="/decaycheck",
+            value="Check LP decay status (Diamond+)\n`/decaycheck` or `/decaycheck user:@someone`\n• Diamond: 28 days bank, +7 per game, 50 LP/day loss\n• Master+: 14 days bank, +1 per game, 75 LP/day loss\n• ~20 most recent ranked solo games",
             inline=False
         )
         
@@ -753,8 +753,8 @@ class HelpCommands(commands.Cog):
         )
         
         embed.add_field(
-            name="/decay",
-            value="Check LP decay status (Diamond+)\n`/decay` or `/decay user:@someone`\n• Shows days until decay\n• Accurate banking calculation\n• Updates account names automatically",
+            name="/decaycheck",
+            value="Check LP decay status (Diamond+)\n`/decaycheck` or `/decaycheck user:@someone`\n• Diamond: 28 days bank, +7 per game, 50 LP/day loss\n• Master+: 14 days bank, +1 per game, 75 LP/day loss\n• ~20 most recent ranked solo games",
             inline=False
         )
         

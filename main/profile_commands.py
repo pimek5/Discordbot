@@ -1755,41 +1755,39 @@ class ProfileCommands(commands.Cog):
             )
 
             for acc_data in diamond_accounts:
-                tier = acc_data['tier']
-                rank = acc_data['rank']
-                lp = acc_data['lp']
+                decay_status = acc_data['decay_status']
+                tier_str = decay_status.get('tier', 'UNKNOWN')
+                lp = decay_status.get('lp', 0)
+                days_remaining = decay_status.get('days_remaining', 0)
+                at_risk = decay_status.get('at_risk', False)
+                max_bank = decay_status.get('max_bank', 0)
+                lp_loss_per_day = decay_status.get('lp_loss_per_day', 0)
+                days_per_game = decay_status.get('days_per_game', 0)
+
+                rank_icon = RANK_EMOJIS.get(acc_data['tier'], "🎖️")
                 wins = acc_data['wins']
                 losses = acc_data['losses']
-                days_remaining = acc_data['days_remaining']
-                at_risk = acc_data['at_risk']
-                max_bank = acc_data['max_bank']
-                decay_status = acc_data['decay_status']
-
                 winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-                rank_icon = RANK_EMOJIS.get(tier, "🎖️")
-                days_until_demote = decay_status.get('days_until_demote')
 
                 if at_risk and days_remaining == 0:
                     status_emoji = "🚨"
-                    demote_text = f" - {days_until_demote}d to demotion" if days_until_demote else ""
-                    status_text = f"**DECAY ACTIVE!**{demote_text}"
-                elif at_risk and days_remaining is not None and days_remaining <= 1:
-                    status_emoji = "🚨"
-                    status_text = f"**CRITICAL** - {days_remaining}d left"
-                elif at_risk and days_remaining is not None and days_remaining <= 3:
+                    lp_loss_total = lp
+                    status_text = f"**DECAY ACTIVE!** Losing {lp_loss_total} LP total"
+                elif at_risk and days_remaining <= 3:
                     status_emoji = "⚠️"
-                    status_text = f"**WARNING** - {days_remaining}d left"
-                elif at_risk and days_remaining is not None and days_remaining <= 7:
+                    status_text = f"**WARNING** - {days_remaining}d left in bank"
+                elif at_risk and days_remaining <= 7:
                     status_emoji = "⚡"
-                    status_text = f"**Low** - {days_remaining}/{max_bank}d"
+                    status_text = f"**Low** - {days_remaining}/{max_bank}d bank"
                 else:
                     status_emoji = "✅"
-                    status_text = f"**Safe** - {days_remaining if days_remaining is not None else '?'}/{max_bank}d"
+                    status_text = f"**Safe** - {days_remaining}/{max_bank}d bank"
 
                 account_info = (
-                    f"{rank_icon} **{tier} {rank}** • {lp} LP\n"
+                    f"{rank_icon} **{tier_str}** • {lp} LP\n"
                     f"📊 {wins}W - {losses}L ({winrate:.1f}%)\n"
-                    f"{status_emoji} {status_text}"
+                    f"{status_emoji} {status_text}\n"
+                    f"📉 {days_per_game}d per game • {lp_loss_per_day} LP/day loss"
                 )
 
                 embed.add_field(
@@ -1802,30 +1800,17 @@ class ProfileCommands(commands.Cog):
                     db.enable_decay_notifications(db_user['id'], acc_data['account']['puuid'], target.id, acc_data['account']['region'])
 
             embed.add_field(
-                name="📋 Decay Rules",
+                name="📋 Decay Mechanics",
                 value=(
-                    f"**Diamond:** 30 days bank, 50 LP/day loss\n"
-                    f"**Master+:** 14 days bank, 75 LP/day loss\n"
-                    f"\n💡 Play ranked to refill bank!"
+                    f"**Diamond:** 28 days bank, +7 per game, −50 LP/day\n"
+                    f"**Master+:** 14 days bank, +1 per game, −75 LP/day\n"
+                    f"\n💡 Based on ~20 most recent ranked solo games"
                 ),
                 inline=False
             )
 
             if target == interaction.user and diamond_accounts:
                 embed.description += "\n\n✅ **Decay notifications enabled** for all D+ accounts\nDisable with `/decaynotifsoff`"
-
-            # Check data source
-            data_sources = set(acc['decay_status'].get('data_source', 'unknown') for acc in diamond_accounts)
-            if 'api' in data_sources:
-                source_text = "✅ **Using Riot API** (inactiveStartTime) - Highly Accurate"
-            else:
-                source_text = "⚠️ **Using Match History Fallback** - May be inaccurate if match history is hidden"
-
-            embed.add_field(
-                name="ℹ️ Data Accuracy",
-                value=source_text,
-                inline=False
-            )
 
             embed.set_footer(text="Decay check • Last updated now")
             await interaction.followup.send(embed=embed)
