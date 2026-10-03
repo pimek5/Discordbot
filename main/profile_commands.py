@@ -1627,74 +1627,75 @@ class ProfileCommands(commands.Cog):
             
             message = await interaction.followup.send(embed=embed, view=view)
             view.message = message  # Store message for deletion on timeout
-        
+
         finally:
             # Cancel keep-alive task once we've sent the final response
             keep_alive_task.cancel()
 
-    class DecayNotificationView(discord.ui.View):
-        def __init__(self, bot, user_id):
-            super().__init__(timeout=None)
-            self.bot = bot
-            self.user_id = user_id
 
-        @discord.ui.button(label="Enable Notifications", emoji="📧", style=discord.ButtonStyle.success, custom_id="decay_notif_on")
-        async def enable_notif(self, interaction: discord.Interaction, button: discord.ui.Button):
-            if interaction.user.id != self.user_id:
-                await interaction.response.send_message("❌ This button is only for you!", ephemeral=True)
-                return
+class DecayNotificationView(discord.ui.View):
+    def __init__(self, bot, user_id):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.user_id = user_id
 
-            await interaction.response.defer(ephemeral=True)
-            db = get_db()
-            db_user = db.get_user_by_discord_id(interaction.user.id)
-            if not db_user:
-                await interaction.followup.send("❌ No account linked!", ephemeral=True)
-                return
+    @discord.ui.button(label="Enable Notifications", emoji="📧", style=discord.ButtonStyle.success, custom_id="decay_notif_on")
+    async def enable_notif(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ This button is only for you!", ephemeral=True)
+            return
 
-            all_accounts = db.get_user_accounts(db_user['id'])
-            enabled_count = 0
-            for account in all_accounts:
-                if db.enable_decay_notifications(db_user['id'], account['puuid'], interaction.user.id, account['region']):
-                    enabled_count += 1
+        await interaction.response.defer(ephemeral=True)
+        db = get_db()
+        db_user = db.get_user_by_discord_id(interaction.user.id)
+        if not db_user:
+            await interaction.followup.send("❌ No account linked!", ephemeral=True)
+            return
 
-            embed = discord.Embed(
-                title="✅ Decay Notifications Enabled",
-                description=f"Enabled DM notifications for {enabled_count} account{'s' if enabled_count != 1 else ''}.",
-                color=0x2ECC71
-            )
-            embed.add_field(name="📧 What happens next?", value="You will receive DM notifications about LP decay warnings when your accounts are at risk.", inline=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            button.label = "✅ Notifications On"
-            await interaction.message.edit(view=self)
+        all_accounts = db.get_user_accounts(db_user['id'])
+        enabled_count = 0
+        for account in all_accounts:
+            if db.enable_decay_notifications(db_user['id'], account['puuid'], interaction.user.id, account['region']):
+                enabled_count += 1
 
-        @discord.ui.button(label="Disable Notifications", emoji="🔇", style=discord.ButtonStyle.danger, custom_id="decay_notif_off")
-        async def disable_notif(self, interaction: discord.Interaction, button: discord.ui.Button):
-            if interaction.user.id != self.user_id:
-                await interaction.response.send_message("❌ This button is only for you!", ephemeral=True)
-                return
+        embed = discord.Embed(
+            title="✅ Decay Notifications Enabled",
+            description=f"Enabled DM notifications for {enabled_count} account{'s' if enabled_count != 1 else ''}.",
+            color=0x2ECC71
+        )
+        embed.add_field(name="📧 What happens next?", value="You will receive DM notifications about LP decay warnings when your accounts are at risk.", inline=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        button.label = "✅ Notifications On"
+        await interaction.message.edit(view=self)
 
-            await interaction.response.defer(ephemeral=True)
-            db = get_db()
-            db_user = db.get_user_by_discord_id(interaction.user.id)
-            if not db_user:
-                await interaction.followup.send("❌ No account linked!", ephemeral=True)
-                return
+    @discord.ui.button(label="Disable Notifications", emoji="🔇", style=discord.ButtonStyle.danger, custom_id="decay_notif_off")
+    async def disable_notif(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ This button is only for you!", ephemeral=True)
+            return
 
-            all_accounts = db.get_user_accounts(db_user['id'])
-            disabled_count = 0
-            for account in all_accounts:
-                if db.disable_decay_notifications(db_user['id'], account['puuid']):
-                    disabled_count += 1
+        await interaction.response.defer(ephemeral=True)
+        db = get_db()
+        db_user = db.get_user_by_discord_id(interaction.user.id)
+        if not db_user:
+            await interaction.followup.send("❌ No account linked!", ephemeral=True)
+            return
 
-            embed = discord.Embed(
-                title="✅ Decay Notifications Disabled",
-                description=f"Disabled DM notifications for {disabled_count} account{'s' if disabled_count != 1 else ''}.",
-                color=0xFF6B6B
-            )
-            embed.add_field(name="📧 What happens next?", value="You will **no longer** receive DM notifications about LP decay warnings.", inline=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            button.label = "🔇 Notifications Off"
-            await interaction.message.edit(view=self)
+        all_accounts = db.get_user_accounts(db_user['id'])
+        disabled_count = 0
+        for account in all_accounts:
+            if db.disable_decay_notifications(db_user['id'], account['puuid']):
+                disabled_count += 1
+
+        embed = discord.Embed(
+            title="✅ Decay Notifications Disabled",
+            description=f"Disabled DM notifications for {disabled_count} account{'s' if disabled_count != 1 else ''}.",
+            color=0xFF6B6B
+        )
+        embed.add_field(name="📧 What happens next?", value="You will **no longer** receive DM notifications about LP decay warnings.", inline=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        button.label = "🔇 Notifications Off"
+        await interaction.message.edit(view=self)
 
     @app_commands.command(name="decay", description="Check LP decay status (Diamond+) with notification controls")
     @app_commands.describe(user="The user to check (defaults to yourself)")
