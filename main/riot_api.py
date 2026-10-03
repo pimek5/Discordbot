@@ -723,8 +723,11 @@ class RiotAPI:
             days_until_demote = lp // lp_loss_per_day if lp > 0 else 0
             return {'at_risk': True, 'days_remaining': 0, 'max_bank': max_bank, 'lp_loss_per_day': lp_loss_per_day, 'tier': f'{tier} {rank}', 'lp': lp, 'days_until_demote': days_until_demote}
 
+        # Try to get details for matches, prioritizing first (newest) match
         ranked_games = []
-        for match_id in match_ids:
+        last_game = None
+
+        for idx, match_id in enumerate(match_ids):
             try:
                 match_data = await self.get_match_details(match_id, region)
                 if not match_data:
@@ -734,6 +737,8 @@ class RiotAPI:
                 if timestamp:
                     game_date = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
                     ranked_games.append(game_date)
+                    if last_game is None and idx == 0:
+                        last_game = game_date
             except Exception:
                 continue
 
@@ -741,9 +746,12 @@ class RiotAPI:
             days_until_demote = lp // lp_loss_per_day if lp > 0 else 0
             return {'at_risk': True, 'days_remaining': 0, 'max_bank': max_bank, 'lp_loss_per_day': lp_loss_per_day, 'tier': f'{tier} {rank}', 'lp': lp, 'days_until_demote': days_until_demote}
 
-        ranked_games.sort()
+        # If we couldn't get the newest game's details, use the oldest available
+        if last_game is None:
+            ranked_games.sort()
+            last_game = ranked_games[-1]  # Use most recent available game
+
         now = datetime.now(timezone.utc)
-        last_game = ranked_games[-1]
 
         # Calculate days elapsed since last game
         days_since_last_game = (now.date() - last_game.date()).days
