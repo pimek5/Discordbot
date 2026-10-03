@@ -1833,7 +1833,7 @@ class ProfileCommands(commands.Cog):
             embed.color = base_color
 
             if target == interaction.user:
-                view = DecayNotificationView(self.bot, db_user['id'])
+                view = DecayNotificationView(self.bot, interaction.user.id)
                 await interaction.followup.send(embed=embed, view=view)
             else:
                 await interaction.followup.send(embed=embed)
