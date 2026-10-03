@@ -1,4 +1,4 @@
-﻿"""
+"""
 Profile Commands Module
 /link, /verifyacc, /profile, /unlink, /forcelink, /forceunlink
 """
@@ -3457,6 +3457,13 @@ class ProfileCommands(commands.Cog):
                     days_remaining = decay_status.get('days_remaining')
                     at_risk = decay_status.get('at_risk', False)
                     tier = decay_status.get('tier', 'UNRANKED')
+
+                    rank_order = {'IRON': 0, 'BRONZE': 1, 'SILVER': 2, 'GOLD': 3, 'PLATINUM': 4, 'EMERALD': 5, 'DIAMOND': 6, 'MASTER': 7, 'GRANDMASTER': 8, 'CHALLENGER': 9}
+                    tier_value = rank_order.get(tier, -1)
+
+                    if tier_value < 5:
+                        db.update_decay_last_checked(user_id, puuid)
+                        continue
 
                     riot_id = await self.riot_api.get_riot_id_from_puuid(puuid)
                     account_name = f"{riot_id['gameName']}#{riot_id['tagLine']}" if riot_id else f"Account ({region.upper()})"
