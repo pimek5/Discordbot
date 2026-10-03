@@ -764,8 +764,9 @@ class RiotAPI:
 
         # Simulate bank from last game to today
         # Start at max bank, then lose 1 day per day without games
+        # Count days AFTER last game, not including today
         current_bank = max_bank  # Start at max bank
-        for i in range(1, days_since_last_game + 1):
+        for i in range(1, days_since_last_game):
             check_date = last_game.date() + timedelta(days=i)
             if check_date in games_by_day:
                 # If there's a game that day (shouldn't happen after last_game)
