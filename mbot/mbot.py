@@ -42,9 +42,13 @@ YTDL_COOKIES_FILE = os.getenv('YTDL_COOKIES_FILE')
 # Default to cookies.txt in mbot directory if env not set
 if not YTDL_COOKIES_FILE:
     default_cookies = os.path.join(os.path.dirname(__file__), 'cookies.txt')
+    logger.info(f"🔍 Checking for default cookies at: {default_cookies}")
     if os.path.exists(default_cookies):
+        logger.info(f"✅ Found default cookies!")
         YTDL_COOKIES_FILE = default_cookies
         logger.info(f"📋 Using default cookies file: {YTDL_COOKIES_FILE}")
+    else:
+        logger.warning(f"❌ Default cookies not found at: {default_cookies}")
 YTDL_COOKIES_FROM_BROWSER = os.getenv('YTDL_COOKIES_FROM_BROWSER')
 YTDL_COOKIES_PROFILE = os.getenv('YTDL_COOKIES_PROFILE')
 YTDL_COOKIES_DATA = os.getenv('YTDL_COOKIES_DATA')
