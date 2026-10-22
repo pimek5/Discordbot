@@ -977,8 +977,32 @@ class YTDLSource(discord.PCMVolumeTransformer):
             lambda: cls._extract_with_fallback(url, download=not stream)
         )
 
-        if 'entries' in data:
+        # Handle search results (entries list)
+        if 'entries' in data and data['entries']:
             data = data['entries'][0]
+        elif 'entries' in data and not data['entries']:
+            # Empty entries - try Spotify as fallback
+            if spotify_client:
+                logger.info(f"🔄 YouTube returned no results for '{url}', trying Spotify...")
+                try:
+                    results = spotify_client.search(url, type='track', limit=1)
+                    if results.get('tracks', {}).get('items'):
+                        track = results['tracks']['items'][0]
+                        search_query = f"{track['artists'][0]['name']} {track['name']}"
+                        logger.info(f"🎵 Found on Spotify: {search_query}, searching YouTube...")
+                        # Retry with Spotify result
+                        data, used_downloader, source_name = await loop.run_in_executor(
+                            None,
+                            lambda: cls._extract_with_fallback(f"ytsearch1:{search_query}", download=not stream)
+                        )
+                        if 'entries' in data and data['entries']:
+                            data = data['entries'][0]
+                except Exception as e:
+                    logger.warning(f"Spotify fallback failed: {e}")
+
+        # Final check
+        if not data or not data.get('url'):
+            raise ValueError(f"Could not find playable content for: {url}")
 
         filename = data.get('url') if stream else used_downloader.prepare_filename(data)
         return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data, filename=filename if not stream else None, platform_source=source_name)
