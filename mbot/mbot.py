@@ -39,16 +39,6 @@ logger = logging.getLogger('DJSona')
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
 YTDL_COOKIES_FILE = os.getenv('YTDL_COOKIES_FILE')
-# Default to cookies.txt in mbot directory if env not set
-if not YTDL_COOKIES_FILE:
-    default_cookies = os.path.join(os.path.dirname(__file__), 'cookies.txt')
-    logger.info(f"🔍 Checking for default cookies at: {default_cookies}")
-    if os.path.exists(default_cookies):
-        logger.info(f"✅ Found default cookies!")
-        YTDL_COOKIES_FILE = default_cookies
-        logger.info(f"📋 Using default cookies file: {YTDL_COOKIES_FILE}")
-    else:
-        logger.warning(f"❌ Default cookies not found at: {default_cookies}")
 YTDL_COOKIES_FROM_BROWSER = os.getenv('YTDL_COOKIES_FROM_BROWSER')
 YTDL_COOKIES_PROFILE = os.getenv('YTDL_COOKIES_PROFILE')
 YTDL_COOKIES_DATA = os.getenv('YTDL_COOKIES_DATA')
@@ -80,23 +70,27 @@ def parse_cookies_from_browser_value(value: Optional[str], profile: Optional[str
 
 def resolve_cookiefile_path(cookiefile_value: Optional[str]) -> Optional[str]:
     """Resolve cookie file path from env, handling relative paths safely."""
-    if not cookiefile_value:
-        return None
+    # First, try the provided value
+    if cookiefile_value:
+        raw = cookiefile_value.strip()
+        if raw:
+            # Relative path should be relative to this file directory, not process CWD.
+            if os.path.isabs(raw):
+                candidate = raw
+            else:
+                candidate = os.path.join(os.path.dirname(__file__), raw)
 
-    raw = cookiefile_value.strip()
-    if not raw:
-        return None
+            if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+                return candidate
 
-    # Relative path should be relative to this file directory, not process CWD.
-    if os.path.isabs(raw):
-        candidate = raw
-    else:
-        candidate = os.path.join(os.path.dirname(__file__), raw)
+            logger.warning("⚠️ YTDL_COOKIES_FILE is set but file is missing or empty: %s", candidate)
 
-    if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
-        return candidate
+    # Fallback: check for cookies.txt in mbot directory
+    default_candidate = os.path.join(os.path.dirname(__file__), 'cookies.txt')
+    if os.path.exists(default_candidate) and os.path.getsize(default_candidate) > 0:
+        logger.info(f"📋 Using cookies from: {default_candidate}")
+        return default_candidate
 
-    logger.warning("⚠️ YTDL_COOKIES_FILE is set but file is missing or empty: %s", candidate)
     return None
 
 
