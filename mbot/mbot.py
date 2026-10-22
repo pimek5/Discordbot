@@ -128,6 +128,11 @@ RESOLVED_YTDL_COOKIEFILE = resolve_cookiefile_path(YTDL_COOKIES_FILE)
 if not RESOLVED_YTDL_COOKIEFILE:
     RESOLVED_YTDL_COOKIEFILE = ensure_cookiefile_from_env_data(YTDL_COOKIES_DATA)
 
+if RESOLVED_YTDL_COOKIEFILE:
+    logger.info(f"✅ Cookies loaded: {RESOLVED_YTDL_COOKIEFILE}")
+else:
+    logger.warning("⚠️ No cookies found for YouTube extraction")
+
 # Konfiguracja yt-dlp
 YTDL_FORMAT_OPTIONS = {
     'format': 'bestaudio/best',
@@ -981,24 +986,18 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if 'entries' in data and data['entries']:
             data = data['entries'][0]
         elif 'entries' in data and not data['entries']:
-            # Empty entries - try Spotify as fallback
-            if spotify_client:
-                logger.info(f"🔄 YouTube returned no results for '{url}', trying Spotify...")
-                try:
-                    results = spotify_client.search(url, type='track', limit=1)
-                    if results.get('tracks', {}).get('items'):
-                        track = results['tracks']['items'][0]
-                        search_query = f"{track['artists'][0]['name']} {track['name']}"
-                        logger.info(f"🎵 Found on Spotify: {search_query}, searching YouTube...")
-                        # Retry with Spotify result
-                        data, used_downloader, source_name = await loop.run_in_executor(
-                            None,
-                            lambda: cls._extract_with_fallback(f"ytsearch1:{search_query}", download=not stream)
-                        )
-                        if 'entries' in data and data['entries']:
-                            data = data['entries'][0]
-                except Exception as e:
-                    logger.warning(f"Spotify fallback failed: {e}")
+            # Empty entries - try SoundCloud as fallback instead of Spotify
+            logger.info(f"🔄 YouTube returned no results for '{url}', trying SoundCloud...")
+            try:
+                # Retry with SoundCloud search
+                data, used_downloader, source_name = await loop.run_in_executor(
+                    None,
+                    lambda: cls._extract_with_fallback(f"scsearch1:{url}", download=not stream)
+                )
+                if 'entries' in data and data['entries']:
+                    data = data['entries'][0]
+            except Exception as e:
+                logger.warning(f"SoundCloud fallback failed: {e}")
 
         # Final check
         if not data or not data.get('url'):
