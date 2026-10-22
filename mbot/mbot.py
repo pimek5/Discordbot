@@ -932,7 +932,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if 'youtube.com' in raw or 'youtu.be' in raw or raw.startswith('ytsearch') or not raw.startswith('http'):
             for client_list in (['android'], ['tv_embedded'], ['ios'], ['android', 'tv_embedded']):
                 try:
-                    opts_yt = opts.copy()
+                    opts_yt = opts_with_cookies.copy()
                     opts_yt['extractor_args'] = {'youtube': {'player_client': client_list}}
                     ydl_yt = yt_dlp.YoutubeDL(opts_yt)
                     data = ydl_yt.extract_info(raw, download=download)
