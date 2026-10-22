@@ -39,6 +39,12 @@ logger = logging.getLogger('DJSona')
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
 YTDL_COOKIES_FILE = os.getenv('YTDL_COOKIES_FILE')
+# Default to cookies.txt in mbot directory if env not set
+if not YTDL_COOKIES_FILE:
+    default_cookies = os.path.join(os.path.dirname(__file__), 'cookies.txt')
+    if os.path.exists(default_cookies):
+        YTDL_COOKIES_FILE = default_cookies
+        logger.info(f"📋 Using default cookies file: {YTDL_COOKIES_FILE}")
 YTDL_COOKIES_FROM_BROWSER = os.getenv('YTDL_COOKIES_FROM_BROWSER')
 YTDL_COOKIES_PROFILE = os.getenv('YTDL_COOKIES_PROFILE')
 YTDL_COOKIES_DATA = os.getenv('YTDL_COOKIES_DATA')
