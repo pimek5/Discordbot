@@ -133,7 +133,7 @@ else:
 
 # Konfiguracja yt-dlp
 YTDL_FORMAT_OPTIONS = {
-    'format': 'worst',
+    'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,  # Default: single video only (will be changed dynamically for playlists)
