@@ -1,0 +1,2 @@
+# Force LF line endings for deployment files
+cookies.txt text eol=lf
