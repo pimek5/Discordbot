@@ -1112,7 +1112,7 @@ async def enqueue_autoplay_track(interaction: discord.Interaction, queue: MusicQ
     search_query = f"ytsearch1:{cleaned or base_title}"
 
     try:
-        player = await YTDLSource.from_url(search_query, loop=bot.loop, stream=False)
+        player = await YTDLSource.from_url(search_query, loop=bot.loop, stream=True)
     except Exception as e:
         logger.warning("Autoplay failed to load related track for '%s': %s", base_title, e)
         return False
