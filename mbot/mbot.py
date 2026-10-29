@@ -133,7 +133,7 @@ else:
 
 # Konfiguracja yt-dlp
 YTDL_FORMAT_OPTIONS = {
-    'format': 'bestaudio/best',
+    'format': 'bestaudio/best/worst',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,  # Default: single video only (will be changed dynamically for playlists)
@@ -172,14 +172,9 @@ YTDL_FORMAT_OPTIONS = {
     },
 }
 
-def apply_cookies_to_ytdl_options(options: Dict, stream: bool = False) -> Dict:
+def apply_cookies_to_ytdl_options(options: Dict) -> Dict:
     """Apply cookie settings to yt-dlp options if configured via env."""
     opts = options.copy()
-
-    # For streaming mode, use more permissive format selection
-    if stream and opts.get('format') == 'bestaudio/best':
-        opts['format'] = 'best'  # Fallback to best available (streaming-compatible)
-
     if RESOLVED_YTDL_COOKIEFILE:
         opts['cookiefile'] = RESOLVED_YTDL_COOKIEFILE
     parsed_cookies = parse_cookies_from_browser_value(YTDL_COOKIES_FROM_BROWSER, YTDL_COOKIES_PROFILE)
@@ -893,7 +888,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
             opts['noplaylist'] = True
             opts['extract_flat'] = False
 
-        opts_with_cookies = apply_cookies_to_ytdl_options(opts, stream=(not download))
+        opts_with_cookies = apply_cookies_to_ytdl_options(opts)
 
         # 0. Check explicit source prefixes
         if raw.startswith(('sc:', 'soundcloud:')):

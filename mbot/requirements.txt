@@ -1,6 +1,8 @@
 discord.py[voice]>=2.4.0
 # Keep yt-dlp current for YouTube extractor and authentication fixes.
-yt-dlp>=2026.10.0
+yt-dlp[default]>=2026.10.0
+# JS runtime required by yt-dlp to solve YouTube challenges (otherwise: "Requested format is not available")
+deno
 PyNaCl>=1.5.0
 python-dotenv==1.0.0
 aiohttp>=3.9.1
