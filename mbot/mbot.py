@@ -1446,39 +1446,15 @@ class MusicControlView(View):
             return
         
         queue = bot.get_queue(interaction.guild.id)
-        
-        # Admin skip without vote
-        if interaction.user.guild_permissions.administrator:
-            if not queue.is_empty():
-                interaction.guild.voice_client.stop()
-                await interaction.response.send_message("⏭️ Skipped (admin)", ephemeral=True)
-            else:
-                interaction.guild.voice_client.stop()
-                await interaction.response.send_message("📭 Queue ended", ephemeral=True)
-            return
-        
-        # Voting system
-        queue.skip_votes.add(interaction.user.id)
-        voice_channel = interaction.guild.voice_client.channel
-        members_count = len([m for m in voice_channel.members if not m.bot])
-        votes_needed = members_count // 2 + 1
-        
-        if len(queue.skip_votes) >= votes_needed:
-            if not queue.is_empty():
-                interaction.guild.voice_client.stop()
-                await interaction.response.send_message(f"⏭️ Skipped! ({len(queue.skip_votes)}/{votes_needed})", ephemeral=True)
-            else:
-                interaction.guild.voice_client.stop()
-                await interaction.response.send_message("📭 Queue ended", ephemeral=True)
+        had_next = not queue.is_empty()
+        interaction.guild.voice_client.stop()
+        if had_next:
+            await interaction.response.send_message("⏭️ Skipped", ephemeral=True)
         else:
-            await interaction.response.send_message(f"🗳️ Vote: {len(queue.skip_votes)}/{votes_needed}", ephemeral=True)
-    
+            await interaction.response.send_message("📭 Queue ended", ephemeral=True)
+
     @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, custom_id="stop_btn")
     async def stop_button(self, interaction: discord.Interaction, button: Button):
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("⚠️ Only admins can stop!", ephemeral=True)
-            return
-        
         if interaction.guild.voice_client:
             queue = bot.get_queue(interaction.guild.id)
             # Cleanup current song file
@@ -2244,40 +2220,12 @@ async def skip(interaction: discord.Interaction):
         await interaction.response.send_message("⚠️ Nothing is playing!", ephemeral=True)
         return
     
-    queue = bot.get_queue(interaction.guild.id)
-    
-    # Voting system - requires 50% votes if more than 2 people
-    voice_channel = interaction.guild.voice_client.channel
-    members_count = len([m for m in voice_channel.members if not m.bot])
-    
-    if members_count <= 2:
-        # Auto skip if max 2 people
-        interaction.guild.voice_client.stop()
-        embed = discord.Embed(
-            title="⏭️ Track Skipped",
-            color=discord.Color.blue()
-        )
-        await interaction.response.send_message(embed=embed)
-    else:
-        # Voting system
-        queue.skip_votes.add(interaction.user.id)
-        votes_needed = members_count // 2 + 1
-        
-        if len(queue.skip_votes) >= votes_needed:
-            interaction.guild.voice_client.stop()
-            embed = discord.Embed(
-                title="⏭️ Track Skipped",
-                description=f"Vote complete: {len(queue.skip_votes)}/{votes_needed}",
-                color=discord.Color.blue()
-            )
-            await interaction.response.send_message(embed=embed)
-        else:
-            embed = discord.Embed(
-                title="🗳️ Vote Registered",
-                description=f"Votes: {len(queue.skip_votes)}/{votes_needed}",
-                color=discord.Color.gold()
-            )
-            await interaction.response.send_message(embed=embed)
+    interaction.guild.voice_client.stop()
+    embed = discord.Embed(
+        title="⏭️ Track Skipped",
+        color=discord.Color.blue()
+    )
+    await interaction.response.send_message(embed=embed)
 
 
 @bot.tree.command(name="queue", description="Show music queue")
@@ -2877,27 +2825,6 @@ async def search(interaction: discord.Interaction, query: str):
         await interaction.followup.send(f"⚠️ Search failed: {str(e)}", ephemeral=True)
 
 
-@bot.tree.command(name="setdj", description="Set DJ role (Admin only)")
-@app_commands.describe(role="Role that will have DJ permissions")
-async def set_dj_role(interaction: discord.Interaction, role: discord.Role):
-    """Set DJ role"""
-    if not check_channel(interaction):
-        await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
-        return
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("⚠️ Only administrators can set DJ role!", ephemeral=True)
-        return
-    
-    db.update_guild_setting(str(interaction.guild.id), 'dj_role_id', str(role.id))
-    
-    embed = discord.Embed(
-        title="🎧 DJ Role Set!",
-        description=f"DJ role is now: {role.mention}\nMembers with this role can control music without voting.",
-        color=discord.Color.green()
-    )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
 @bot.tree.command(name="setmusicchannel", description="Set music command channel for this server (Admin only)")
 @app_commands.describe(channel="Text channel where music commands will be allowed")
 async def set_music_channel(interaction: discord.Interaction, channel: discord.TextChannel):
@@ -3090,7 +3017,6 @@ async def help_command(interaction: discord.Interaction):
             "`/wrapped [scope] [year]` - Your music Wrapped! (scope: My Stats/Server Stats)",
         ]),
         ("🛠️ Server Management", [
-            "`/setdj <role>` - Set DJ role (admin only)",
             "`/247` - Toggle 24/7 mode (admin only)",
             "`/setmusicchannel <#channel>` - Restrict music commands to one channel (admin only)",
             "`/musicchanneloff` - Disable channel restriction (admin only)",
