@@ -865,7 +865,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         super().__init__(source, volume)
         self.data = data
         self.title = data.get('title')
-        self.url = data.get('url') or data.get('webpage_url')
+        self.url = data.get('webpage_url') or data.get('url')
         self.duration = data.get('duration')
         self.thumbnail = data.get('thumbnail')
         self.requester = None
@@ -879,6 +879,15 @@ class YTDLSource(discord.PCMVolumeTransformer):
         Operates smoothly without cookies.
         """
         raw = target_query.strip()
+
+        # Plain text (title / phrase) -> explicit YouTube search for the top result.
+        if not re.match(r'^(https?://|ytsearch|scsearch|sc:|soundcloud:|yt:|youtube:)', raw, re.IGNORECASE):
+            raw = f"ytsearch1:{raw}"
+
+        def has_results(result) -> bool:
+            # A search with no hits returns a dict with an empty 'entries' list, not an exception.
+            return bool(result) and (is_playlist or not ('entries' in result and not result['entries']))
+
         opts = YTDL_FORMAT_OPTIONS.copy()
         if is_playlist:
             opts['noplaylist'] = False
@@ -920,9 +929,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
         try:
             ydl_primary = yt_dlp.YoutubeDL(opts_with_cookies)
             data = ydl_primary.extract_info(raw, download=download)
-            if data:
+            if has_results(data):
                 source_name = 'SoundCloud' if 'soundcloud' in str(data.get('extractor', '')).lower() else 'YouTube'
                 return data, ydl_primary, source_name
+            logger.warning("Primary extraction returned no results for %s", raw[:80])
         except Exception as e:
             last_error = e
             logger.warning("Primary extraction failed for %s: %s", raw[:80], e)
@@ -936,7 +946,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                     opts_yt['extractor_args'] = {'youtube': {'player_client': client_list}}
                     ydl_yt = yt_dlp.YoutubeDL(opts_yt)
                     data = ydl_yt.extract_info(raw, download=download)
-                    if data:
+                    if has_results(data):
                         return data, ydl_yt, 'YouTube'
                 except Exception as e_yt:
                     last_error = e_yt
@@ -945,7 +955,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
         # Tier 3: SoundCloud Search Fallback
         search_term = raw
-        if search_term.startswith(('ytsearch:', 'ytsearch1:', 'ytsearch5:')):
+        if search_term.startswith(('ytsearch:', 'ytsearch1:', 'ytsearch5:', 'scsearch1:')):
             search_term = search_term.split(':', 1)[1]
 
         if not search_term.startswith('http'):
@@ -953,7 +963,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 logger.info("🔄 Falling back to SoundCloud search for: %s", search_term)
                 ydl_sc = yt_dlp.YoutubeDL(opts)
                 data = ydl_sc.extract_info(f"scsearch1:{search_term}", download=download)
-                if data:
+                if has_results(data):
                     return data, ydl_sc, 'SoundCloud'
             except Exception as e_sc:
                 logger.warning("SoundCloud fallback failed: %s", e_sc)
@@ -1923,6 +1933,7 @@ async def play(interaction: discord.Interaction, url: str):
             player = await YTDLSource.from_url(url, loop=bot.loop, stream=False)
             player.requester = interaction.user
             song = Song(player, interaction.user)
+            track_url = url if url.lower().startswith(('http://', 'https://')) else (player.url or url)
             
             # Re-verify the voice connection: extraction can take a while and the
             # session may have dropped in the meantime even if still shown as joined.
@@ -1938,20 +1949,20 @@ async def play(interaction: discord.Interaction, url: str):
                     user_id=str(interaction.user.id),
                     username=interaction.user.name,
                     song_title=player.title,
-                    song_url=url,
+                    song_url=track_url,
                     song_duration=player.duration or 0
                 )
-                
+
                 interaction.guild.voice_client.play(
                     player,
                     after=lambda e: asyncio.run_coroutine_threadsafe(
                         play_next(interaction), bot.loop
                     )
                 )
-                
+
                 embed = discord.Embed(
                     title="🎵 Now Playing",
-                    description=f"**[{player.title}]({url})**",
+                    description=f"**[{player.title}]({track_url})**",
                     color=discord.Color.green(),
                     timestamp=datetime.now()
                 )
@@ -2003,7 +2014,7 @@ async def play(interaction: discord.Interaction, url: str):
                 
                 embed = discord.Embed(
                     title="✅ Added to Queue",
-                    description=f"**[{player.title}]({url})**",
+                    description=f"**[{player.title}]({track_url})**",
                     color=discord.Color.blue(),
                     timestamp=datetime.now()
                 )
