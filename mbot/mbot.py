@@ -157,19 +157,6 @@ YTDL_FORMAT_OPTIONS = {
             'player_client': ['android', 'web', 'mweb']
         }
     },
-    'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-us,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Site': 'none',
-        'Cache-Control': 'max-age=0',
-    },
 }
 
 def apply_cookies_to_ytdl_options(options: Dict) -> Dict:
