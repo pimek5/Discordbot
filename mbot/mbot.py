@@ -944,6 +944,22 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if search_term.startswith(('ytsearch:', 'ytsearch1:', 'ytsearch5:', 'scsearch1:')):
             search_term = search_term.split(':', 1)[1]
 
+        # A blocked YouTube link can still be played from SoundCloud by looking up the video title.
+        if search_term.startswith('http') and ('youtube.com' in search_term or 'youtu.be' in search_term):
+            try:
+                import json
+                import urllib.parse
+                import urllib.request
+                oembed = "https://www.youtube.com/oembed?format=json&url=" + urllib.parse.quote(search_term, safe='')
+                with urllib.request.urlopen(oembed, timeout=10) as resp:
+                    title = (json.load(resp).get('title') or '').strip()
+                title = re.sub(r'\s*[\(\[][^\)\]]*[\)\]]', '', title).strip() or title
+                if title:
+                    logger.info("🔄 YouTube blocked, searching SoundCloud for title: %s", title)
+                    search_term = title
+            except Exception as e_oembed:
+                logger.warning("Could not resolve YouTube title for SoundCloud fallback: %s", e_oembed)
+
         if not search_term.startswith('http'):
             try:
                 logger.info("🔄 Falling back to SoundCloud search for: %s", search_term)
