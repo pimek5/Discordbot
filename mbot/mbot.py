@@ -122,9 +122,9 @@ def ensure_cookiefile_from_env_data(cookies_data: Optional[str]) -> Optional[str
         return None
 
 
-RESOLVED_YTDL_COOKIEFILE = resolve_cookiefile_path(YTDL_COOKIES_FILE)
+RESOLVED_YTDL_COOKIEFILE = ensure_cookiefile_from_env_data(YTDL_COOKIES_DATA)
 if not RESOLVED_YTDL_COOKIEFILE:
-    RESOLVED_YTDL_COOKIEFILE = ensure_cookiefile_from_env_data(YTDL_COOKIES_DATA)
+    RESOLVED_YTDL_COOKIEFILE = resolve_cookiefile_path(YTDL_COOKIES_FILE)
 
 if RESOLVED_YTDL_COOKIEFILE:
     logger.info(f"✅ Cookies loaded: {RESOLVED_YTDL_COOKIEFILE}")
