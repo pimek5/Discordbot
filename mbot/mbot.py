@@ -42,6 +42,7 @@ YTDL_COOKIES_FILE = os.getenv('YTDL_COOKIES_FILE')
 YTDL_COOKIES_FROM_BROWSER = os.getenv('YTDL_COOKIES_FROM_BROWSER')
 YTDL_COOKIES_PROFILE = os.getenv('YTDL_COOKIES_PROFILE')
 YTDL_COOKIES_DATA = os.getenv('YTDL_COOKIES_DATA')
+YTDL_PROXY = os.getenv('YTDL_PROXY')
 
 
 def parse_cookies_from_browser_value(value: Optional[str], profile: Optional[str]):
@@ -152,16 +153,13 @@ YTDL_FORMAT_OPTIONS = {
     'socket_timeout': 30,
     'retries': 10,
     'fragment_retries': 10,
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['android', 'web', 'mweb']
-        }
-    },
 }
 
 def apply_cookies_to_ytdl_options(options: Dict) -> Dict:
     """Apply cookie settings to yt-dlp options if configured via env."""
     opts = options.copy()
+    if YTDL_PROXY and YTDL_PROXY.strip():
+        opts['proxy'] = YTDL_PROXY.strip()
     if RESOLVED_YTDL_COOKIEFILE:
         opts['cookiefile'] = RESOLVED_YTDL_COOKIEFILE
     parsed_cookies = parse_cookies_from_browser_value(YTDL_COOKIES_FROM_BROWSER, YTDL_COOKIES_PROFILE)
@@ -927,7 +925,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
         # Tier 2: YouTube Client Fallback (try several clients individually since
         # YouTube's bot-check experiments can be scoped per-client on flagged IPs).
         if 'youtube.com' in raw or 'youtu.be' in raw or raw.startswith('ytsearch') or not raw.startswith('http'):
-            for client_list in (['android'], ['tv_embedded'], ['ios'], ['android', 'tv_embedded']):
+            # Only clients that work with cookies and need no PO token (android/ios/web/mweb do).
+            for client_list in (['web_embedded'], ['tv'], ['tv_downgraded'], ['tv_samsung']):
                 try:
                     opts_yt = opts_with_cookies.copy()
                     opts_yt['extractor_args'] = {'youtube': {'player_client': client_list}}
@@ -949,9 +948,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
             try:
                 logger.info("🔄 Falling back to SoundCloud search for: %s", search_term)
                 ydl_sc = yt_dlp.YoutubeDL(opts)
-                data = ydl_sc.extract_info(f"scsearch1:{search_term}", download=download)
-                if has_results(data):
-                    return data, ydl_sc, 'SoundCloud'
+                flat = yt_dlp.YoutubeDL({**opts, 'extract_flat': True}).extract_info(f"scsearch5:{search_term}", download=False)
+                candidates = [e for e in (flat or {}).get('entries') or [] if e and e.get('url')]
+                full_tracks = [e for e in candidates if not re.search(r'snippet|preview|teaser', e.get('title') or '', re.IGNORECASE)]
+                if candidates:
+                    pick = (full_tracks or candidates)[0]
+                    data = ydl_sc.extract_info(pick['url'], download=download)
+                    if has_results(data):
+                        return data, ydl_sc, 'SoundCloud'
             except Exception as e_sc:
                 logger.warning("SoundCloud fallback failed: %s", e_sc)
                 last_error = e_sc
