@@ -1088,6 +1088,85 @@ class CreatorCommands(commands.Cog):
             logger.error("❌ Error refreshing creator: %s", e)
             await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
     
+    @creator_group.command(name="repost", description="Repost saved creator posts from a date")
+    @app_commands.describe(from_date="Repost saved items from this date onward (DD.MM.YYYY)")
+    async def repost_creator_posts(self, interaction: discord.Interaction, from_date: str):
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission to use this command!",
+                ephemeral=True,
+            )
+            return
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            cutoff = datetime.strptime(from_date.strip(), "%d.%m.%Y")
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Invalid date. Use the format `DD.MM.YYYY`, for example `10.10.2026`.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        db = self._get_db(interaction)
+        posts = db.get_mods_since(cutoff, interaction.guild_id)
+        if not posts:
+            await interaction.followup.send(
+                f"No saved posts found from {cutoff:%d.%m.%Y} onward.",
+                ephemeral=True,
+            )
+            return
+
+        status = await interaction.followup.send(
+            f"🔁 Reposting {len(posts)} saved post(s)...",
+            ephemeral=True,
+        )
+        sent = 0
+        failed = 0
+        for index, post in enumerate(posts, start=1):
+            platform = post["platform"]
+            label = "skin" if platform == "divineskins" else "mod"
+            try:
+                delivered = await self.bot.send_notification(
+                    db,
+                    interaction.guild_id,
+                    post["discord_user_id"],
+                    post["username"],
+                    f"Reposted {label}",
+                    post["mod_name"],
+                    post["mod_url"],
+                    platform,
+                    mod_metadata={
+                        "id": post["mod_id"],
+                        "name": post["mod_name"],
+                        "updated_at": post.get("updated_at"),
+                    },
+                    is_repost=True,
+                )
+                if delivered:
+                    db.log_notification(post["creator_id"], post["mod_id"], "Reposted")
+                    sent += 1
+                else:
+                    failed += 1
+            except Exception:
+                logger.exception("Failed to repost %s (%s)", post.get("mod_id"), platform)
+                failed += 1
+
+            if index % 10 == 0 or index == len(posts):
+                await status.edit(
+                    content=f"🔁 Reposting: {index}/{len(posts)} • sent {sent} • failed {failed}"
+                )
+
+        await status.edit(
+            content=f"✅ Repost complete: {sent} sent, {failed} failed (from {cutoff:%d.%m.%Y})."
+        )
+
     @creator_group.command(name="test", description="Test scraping for a creator profile")
     @app_commands.describe(
         platform="Platform to test",

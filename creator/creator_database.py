@@ -443,6 +443,25 @@ class CreatorDatabase:
         except Exception as e:
             logger.error("❌ Error getting creator mods: %s", e)
             return []
+
+    def get_mods_since(self, from_date, guild_id: int):
+        """Return saved mods for a guild whose last notification timestamp is in range."""
+        try:
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT m.*, c.username, c.discord_user_id
+                    FROM mods m
+                    JOIN creators c ON c.id = m.creator_id
+                    WHERE c.guild_id = %s AND m.notified_at >= %s
+                    ORDER BY m.notified_at ASC, c.username, m.mod_name
+                    """,
+                    (guild_id, from_date),
+                )
+                return cur.fetchall()
+        except Exception as e:
+            logger.error("❌ Error getting mods since %s for guild %s: %s", from_date, guild_id, e)
+            return []
     
     def log_notification(self, creator_id: int, mod_id: str, action: str):
         try:

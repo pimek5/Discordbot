@@ -904,7 +904,7 @@ class CreatorBot(commands.Bot):
         except Exception as e:
             logger.error("❌ Error sending webhook notifications: %s", e)
     
-    async def send_notification(self, db, guild_id: int, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0, mod_metadata: dict | None = None):
+    async def send_notification(self, db, guild_id: int, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0, mod_metadata: dict | None = None, is_repost: bool = False):
         try:
             if guild_id is not None:
                 guild_config = db.get_guild_config(guild_id)
@@ -912,7 +912,8 @@ class CreatorBot(commands.Bot):
             else:
                 guild_configs = db.get_all_guild_configs()
 
-            is_new_mod = 'posted new' in action.lower()
+            is_repost = is_repost or 'repost' in action.lower()
+            is_new_mod = 'posted new' in action.lower() or is_repost
 
             user = self.get_user(discord_user_id)
             
@@ -974,7 +975,7 @@ class CreatorBot(commands.Bot):
 
             is_divineskins = platform == 'divineskins'
             platform_name = "DivineSkins" if is_divineskins else "RuneForge"
-            game_label = "League of Legends · New mod"
+            game_label = "League of Legends · Reposted content" if is_repost else "League of Legends · New mod"
             if is_update:
                 game_label = f"League of Legends · {platform_name} update"
 
@@ -1111,7 +1112,7 @@ class CreatorBot(commands.Bot):
             # Cross-guild mirror: for any new mod, broadcast to ALL guilds (across all
             # databases) that track this creator, so every server gets the notification
             # regardless of which DB detected the update first.
-            if is_new_mod and not is_update:
+            if is_new_mod and not is_update and not is_repost:
                 mirrored_guilds = 0
                 for other_db in get_all_creator_dbs():
                     for cfg in other_db.get_all_guild_configs():
@@ -1136,13 +1137,15 @@ class CreatorBot(commands.Bot):
                     getattr(db, 'label', 'unknown'),
                     guild_id,
                 )
-                return
+                return False
 
             for channel in channels:
                 await channel.send(embed=embed, view=view)
             logger.info("✅ Rich notification sent: %s - %s - %s", username, action, mod_name)
+            return True
         except Exception as e:
             logger.error("❌ Error sending notification: %s", e)
+            return False
 
 
 def main():
