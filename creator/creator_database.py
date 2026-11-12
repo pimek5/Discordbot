@@ -88,6 +88,20 @@ class CreatorDatabase:
                     )
                     """
                 )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS reposted_items (
+                        guild_id BIGINT NOT NULL,
+                        platform VARCHAR(20) NOT NULL,
+                        mod_id TEXT NOT NULL,
+                        creator_id INTEGER REFERENCES creators(id) ON DELETE CASCADE,
+                        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        posted_at TIMESTAMP,
+                        PRIMARY KEY (guild_id, platform, mod_id)
+                    )
+                    """
+                )
                 # Guild configuration per server
                 cur.execute(
                     """
@@ -444,8 +458,8 @@ class CreatorDatabase:
             logger.error("❌ Error getting creator mods: %s", e)
             return []
 
-    def get_mods_since(self, from_date, guild_id: int):
-        """Return saved mods for a guild whose last notification timestamp is in range."""
+    def get_mods_for_guild(self, guild_id: int):
+        """Return saved mods with their creator details for one guild."""
         try:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
@@ -453,15 +467,104 @@ class CreatorDatabase:
                     SELECT m.*, c.username, c.discord_user_id
                     FROM mods m
                     JOIN creators c ON c.id = m.creator_id
-                    WHERE c.guild_id = %s AND m.notified_at >= %s
-                    ORDER BY m.notified_at ASC, c.username, m.mod_name
+                    WHERE c.guild_id = %s
+                    ORDER BY c.username, m.platform, m.mod_name
                     """,
-                    (guild_id, from_date),
+                    (guild_id,),
                 )
                 return cur.fetchall()
         except Exception as e:
-            logger.error("❌ Error getting mods since %s for guild %s: %s", from_date, guild_id, e)
+            logger.error("❌ Error getting mods for guild %s: %s", guild_id, e)
             return []
+
+    def get_reposted_mod_keys(self, guild_id: int):
+        """Return platform and mod IDs already reposted in a guild."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT platform, mod_id
+                    FROM reposted_items
+                    WHERE guild_id = %s
+                    UNION
+                    SELECT DISTINCT m.platform, l.mod_id
+                    FROM notification_log l
+                    JOIN creators c ON c.id = l.creator_id
+                    JOIN mods m ON m.creator_id = l.creator_id AND m.mod_id = l.mod_id
+                    WHERE c.guild_id = %s AND l.action = 'Reposted'
+                    """,
+                    (guild_id, guild_id),
+                )
+                return {(platform, str(mod_id)) for platform, mod_id in cur.fetchall()}
+        except Exception as e:
+            logger.error("❌ Error getting repost history for guild %s: %s", guild_id, e)
+            return None
+
+    def claim_repost(self, guild_id: int, platform: str, mod_id: str, creator_id: int) -> bool | None:
+        """Atomically reserve a guild/platform/mod tuple before sending it."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO reposted_items (guild_id, platform, mod_id, creator_id)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (guild_id, platform, mod_id) DO NOTHING
+                    """,
+                    (guild_id, platform, str(mod_id), creator_id),
+                )
+                claimed = cur.rowcount == 1
+                self.conn.commit()
+                return claimed
+        except Exception as e:
+            logger.error("❌ Error claiming repost %s/%s for guild %s: %s", platform, mod_id, guild_id, e)
+            self.conn.rollback()
+            return None
+
+    def complete_repost(self, guild_id: int, platform: str, mod_id: str, creator_id: int) -> bool:
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE reposted_items
+                    SET status = 'posted', posted_at = CURRENT_TIMESTAMP
+                    WHERE guild_id = %s AND platform = %s AND mod_id = %s AND status = 'pending'
+                    """,
+                    (guild_id, platform, str(mod_id)),
+                )
+                if cur.rowcount != 1:
+                    self.conn.rollback()
+                    return False
+                cur.execute(
+                    """
+                    INSERT INTO notification_log (creator_id, mod_id, action)
+                    VALUES (%s, %s, 'Reposted')
+                    """,
+                    (creator_id, str(mod_id)),
+                )
+                self.conn.commit()
+                return True
+        except Exception as e:
+            logger.error("❌ Error completing repost %s/%s: %s", platform, mod_id, e)
+            self.conn.rollback()
+            return False
+
+    def release_repost(self, guild_id: int, platform: str, mod_id: str) -> bool:
+        """Release a reservation when no notification was delivered."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM reposted_items
+                    WHERE guild_id = %s AND platform = %s AND mod_id = %s AND status = 'pending'
+                    """,
+                    (guild_id, platform, str(mod_id)),
+                )
+                self.conn.commit()
+                return cur.rowcount == 1
+        except Exception as e:
+            logger.error("❌ Error releasing repost %s/%s: %s", platform, mod_id, e)
+            self.conn.rollback()
+            return False
     
     def log_notification(self, creator_id: int, mod_id: str, action: str):
         try:

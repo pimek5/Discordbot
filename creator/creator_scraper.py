@@ -350,6 +350,7 @@ class RuneForgeScraper:
                 if not mod_url.startswith('http'):
                     mod_url = f"{self.BASE_URL}{mod_url if mod_url.startswith('/') else f'/mods/{mod_url}'}"
                 updated_at = mod.get('updated_at', mod.get('updatedAt', ''))
+                published_at = mod.get('publishedAt') or mod.get('createdAt', '')
                 views = mod.get('views', mod.get('view_count', 0))
                 downloads = mod.get('downloads', mod.get('download_count', 0))
                 parsed.append({
@@ -357,6 +358,7 @@ class RuneForgeScraper:
                     'name': mod_name,
                     'url': mod_url,
                     'updated_at': updated_at,
+                    'published_at': published_at,
                     'views': views,
                     'downloads': downloads,
                     'description': mod.get('description', ''),
@@ -585,6 +587,7 @@ class DivineSkinsScraper:
             'name': '', 'description': '', 'author': '',
             'views': 0, 'downloads': 0, 'likes': 0,
             'version': '', 'file_size': 0, 'updated_at': '', 'created_at': '',
+            'published_at': '',
             'tags': [], 'features': [], 'image_url': None, 'author_avatar': None,
             'category': '', 'champion': '', 'works_on': '', 'disclosures': [],
             'ai_usage': {}, 'video_id': '', 'installs_through_launcher': False,
@@ -631,7 +634,9 @@ class DivineSkinsScraper:
                     details['downloads'] = item.get('downloadCount', 0)
                     details['likes'] = item.get('likeCount', 0)
                     details['updated_at'] = item.get('lastUpdatedDate', '')
-                    details['created_at'] = item.get('contentUpdatedDate', '')
+                    details['created_at'] = item.get('createdDate', '')
+                    current_release = item.get('currentRelease') or {}
+                    details['published_at'] = item.get('createdDate') or current_release.get('publishedAt', '')
                     avatar = item.get('artistProfilePicture')
                     if isinstance(avatar, str) and avatar.startswith(('http://', 'https://')):
                         details['author_avatar'] = avatar

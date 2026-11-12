@@ -67,6 +67,7 @@ class CreatorCommands(commands.Cog):
         self.bot = bot
         self.runeforge_scraper = RuneForgeScraper()
         self.divineskins_scraper = DivineSkinsScraper()
+        self._repost_lock = asyncio.Lock()
     
     def _get_guild_id(self, interaction: discord.Interaction) -> int:
         return interaction.guild_id if interaction.guild else 0
@@ -1114,25 +1115,136 @@ class CreatorCommands(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        db = self._get_db(interaction)
-        posts = db.get_mods_since(cutoff, interaction.guild_id)
-        if not posts:
+        if self._repost_lock.locked():
             await interaction.followup.send(
-                f"No saved posts found from {cutoff:%d.%m.%Y} onward.",
+                "A repost operation is already running. Try again when it finishes.",
+                ephemeral=True,
+            )
+            return
+        async with self._repost_lock:
+            await self._repost_saved_posts(interaction, cutoff)
+
+    async def _repost_saved_posts(self, interaction: discord.Interaction, cutoff: datetime):
+        db = self._get_db(interaction)
+        saved_posts = db.get_mods_for_guild(interaction.guild_id)
+        if not saved_posts:
+            await interaction.followup.send(
+                "No saved posts found for this server.",
+                ephemeral=True,
+            )
+            return
+
+        reposted_keys = db.get_reposted_mod_keys(interaction.guild_id)
+        if reposted_keys is None:
+            await interaction.followup.send(
+                "❌ Could not check repost history; nothing was sent to avoid duplicates.",
+                ephemeral=True,
+            )
+            return
+
+        posts_by_creator = {}
+        seen_keys = set()
+        skipped_duplicates = 0
+        for post in saved_posts:
+            key = (post["platform"], str(post["mod_id"]))
+            if key in reposted_keys or key in seen_keys:
+                skipped_duplicates += 1
+                continue
+            seen_keys.add(key)
+            posts_by_creator.setdefault(post["creator_id"], []).append(post)
+
+        if not posts_by_creator:
+            await interaction.followup.send(
+                f"No unreposted saved posts remain. Skipped {skipped_duplicates} duplicate/already reposted item(s).",
                 ephemeral=True,
             )
             return
 
         status = await interaction.followup.send(
-            f"🔁 Reposting {len(posts)} saved post(s)...",
+            "🔎 Resolving publication dates for saved posts...",
             ephemeral=True,
         )
+        candidates = []
+        unknown_dates = 0
+        for creator_index, creator_posts in enumerate(posts_by_creator.values(), start=1):
+            creator = creator_posts[0]
+            if creator["platform"] == "runeforge":
+                content = await self.runeforge_scraper.get_user_mods(creator["username"])
+                published_by_id = {
+                    str(item.get("id")): item.get("published_at")
+                    for item in content
+                    if item.get("id")
+                }
+                publication_dates = [
+                    (post, published_by_id.get(str(post["mod_id"])))
+                    for post in creator_posts
+                ]
+            else:
+                semaphore = asyncio.Semaphore(8)
+
+                async def fetch_publication_date(post):
+                    async with semaphore:
+                        details = await self.divineskins_scraper.get_mod_details(
+                            post["mod_url"],
+                            mod_metadata={"id": post["mod_id"]},
+                        )
+                    return post, details.get("published_at")
+
+                publication_dates = await asyncio.gather(
+                    *(fetch_publication_date(post) for post in creator_posts),
+                    return_exceptions=True,
+                )
+
+            for result in publication_dates:
+                if isinstance(result, Exception):
+                    unknown_dates += 1
+                    continue
+                post, published_at = result
+                try:
+                    publication_day = datetime.fromisoformat(
+                        str(published_at).replace("Z", "+00:00")
+                    ).date()
+                except (TypeError, ValueError):
+                    unknown_dates += 1
+                    continue
+                if publication_day >= cutoff.date():
+                    candidates.append((publication_day, post))
+
+            await status.edit(
+                content=f"🔎 Resolving publication dates: {creator_index}/{len(posts_by_creator)} creators..."
+            )
+
+        posts = [post for _, post in sorted(candidates, key=lambda item: item[0])]
+        if not posts:
+            await status.edit(
+                content=(
+                    f"No saved posts published from {cutoff:%d.%m.%Y} onward. "
+                    f"{unknown_dates} item(s) had no readable publication date."
+                )
+            )
+            return
+
+        await status.edit(content=f"🔁 Reposting {len(posts)} saved post(s)...")
         sent = 0
         failed = 0
+        skipped_during_send = 0
         for index, post in enumerate(posts, start=1):
             platform = post["platform"]
             label = "skin" if platform == "divineskins" else "mod"
             try:
+                claimed = db.claim_repost(
+                    interaction.guild_id,
+                    platform,
+                    post["mod_id"],
+                    post["creator_id"],
+                )
+                if claimed is False:
+                    skipped_during_send += 1
+                    continue
+                if claimed is None:
+                    failed += 1
+                    continue
+
                 delivered = await self.bot.send_notification(
                     db,
                     interaction.guild_id,
@@ -1150,12 +1262,21 @@ class CreatorCommands(commands.Cog):
                     is_repost=True,
                 )
                 if delivered:
-                    db.log_notification(post["creator_id"], post["mod_id"], "Reposted")
-                    sent += 1
+                    if db.complete_repost(
+                        interaction.guild_id,
+                        platform,
+                        post["mod_id"],
+                        post["creator_id"],
+                    ):
+                        sent += 1
+                    else:
+                        failed += 1
                 else:
+                    db.release_repost(interaction.guild_id, platform, post["mod_id"])
                     failed += 1
             except Exception:
                 logger.exception("Failed to repost %s (%s)", post.get("mod_id"), platform)
+                db.release_repost(interaction.guild_id, platform, post["mod_id"])
                 failed += 1
 
             if index % 10 == 0 or index == len(posts):
@@ -1164,7 +1285,11 @@ class CreatorCommands(commands.Cog):
                 )
 
         await status.edit(
-            content=f"✅ Repost complete: {sent} sent, {failed} failed (from {cutoff:%d.%m.%Y})."
+            content=(
+                f"✅ Repost complete: {sent} sent, {failed} failed "
+                f"(published from {cutoff:%d.%m.%Y}; {unknown_dates} date(s) unavailable; "
+                f"{skipped_duplicates + skipped_during_send} duplicate/already reposted item(s) skipped)."
+            )
         )
 
     @creator_group.command(name="test", description="Test scraping for a creator profile")

@@ -1139,8 +1139,17 @@ class CreatorBot(commands.Bot):
                 )
                 return False
 
+            sent_channels = 0
             for channel in channels:
-                await channel.send(embed=embed, view=view)
+                try:
+                    await channel.send(embed=embed, view=view)
+                    sent_channels += 1
+                except Exception as e:
+                    logger.error("❌ Failed to send notification to channel %s: %s", channel.id, e)
+            if not sent_channels:
+                return False
+            if sent_channels < len(channels):
+                logger.warning("⚠️ Notification delivered to %s/%s channels", sent_channels, len(channels))
             logger.info("✅ Rich notification sent: %s - %s - %s", username, action, mod_name)
             return True
         except Exception as e:
