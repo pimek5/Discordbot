@@ -157,6 +157,42 @@ class RuneForgeScraper:
     async def get_user_mods(self, username: str) -> list:
         username = _normalize_username(username)
         try:
+             api_mods = []
+             seen_api_ids = set()
+             try:
+                 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                     for page in range(50):
+                         api_url = f"{self.BASE_URL}/api/mods"
+                         async with session.get(
+                             api_url,
+                             params={'search': username, 'page': page, 'limit': 50},
+                             headers={'User-Agent': 'Mozilla/5.0'},
+                         ) as response:
+                             if response.status != 200:
+                                 logger.warning("⚠️ RuneForge catalog API returned %s for %s", response.status, username)
+                                 break
+                             data = await response.json()
+
+                         if not isinstance(data, dict):
+                             break
+                         page_mods = data.get('mods') or []
+                         if not page_mods:
+                             break
+                         for mod in page_mods:
+                             publisher = mod.get('publisher')
+                             if not isinstance(publisher, dict) or publisher.get('username', '').casefold() != username.casefold():
+                                 continue
+                             mod_id = str(mod.get('id') or mod.get('slug') or '')
+                             if mod_id and mod_id not in seen_api_ids:
+                                 seen_api_ids.add(mod_id)
+                                 api_mods.append(mod)
+
+                 if api_mods:
+                     logger.info("✅ Found %s mods for %s on RuneForge (catalog API)", len(api_mods), username)
+                     return self._parse_api_mods(api_mods)
+             except Exception as e:
+                 logger.warning("⚠️ RuneForge catalog API failed for %s, trying fallbacks: %s", username, e)
+
              api_url = f"{self.API_URL}/users/{username}/mods"
              async with aiohttp.ClientSession() as session:
                  async with session.get(api_url) as response:
@@ -168,7 +204,7 @@ class RuneForgeScraper:
                              elif isinstance(json_data, dict) and 'mods' in json_data:
                                  return self._parse_api_mods(json_data['mods'])
                          except Exception as e:
-                             logger.warning("⚠️ API mods not JSON, trying HTML: %s", e)
+                             logger.warning("⚠️ API mods not JSON, trying HTML scraping: %s", e)
              
              # HTML fallback with pagination
              all_mods = []
@@ -185,10 +221,12 @@ class RuneForgeScraper:
                      retry_count = 0
                      max_retries = 1
                      response_ok = False
+                     last_status = None
                      
                      while retry_count <= max_retries and not response_ok:
                          try:
                              async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                                 last_status = response.status
                                  if response.status == 200:
                                      response_ok = True
                                      error_500_count = 0  # Reset error counter on success
@@ -252,13 +290,8 @@ class RuneForgeScraper:
                                      
                                      logger.info("✅ Page %s: found %s new mods", page, page_mods)
                                  else:
-                                     # Check for 500 errors
                                      if response.status >= 500:
-                                         error_500_count += 1
-                                         logger.error("❌ Server error %s on page %s (count: %s)", response.status, page, error_500_count)
-                                         if error_500_count > 2:
-                                             logger.error("❌ Too many server errors (%s), stopping pagination", error_500_count)
-                                             return all_mods
+                                         logger.error("❌ Server error %s on page %s", response.status, page)
                                      
                                      if retry_count < max_retries:
                                          logger.warning("⚠️ Page %s returned %s, retrying...", page, response.status)
@@ -268,6 +301,7 @@ class RuneForgeScraper:
                                          logger.warning("⚠️ Page %s failed with status %s, skipping...", page, response.status)
                                          response_ok = True  # Exit retry loop
                          except asyncio.TimeoutError:
+                             last_status = None
                              if retry_count < max_retries:
                                  logger.warning("⚠️ Page %s timeout, retrying...", page)
                                  retry_count += 1
@@ -276,6 +310,7 @@ class RuneForgeScraper:
                                  logger.warning("⚠️ Page %s timeout (no retries left), skipping...", page)
                                  response_ok = True  # Exit retry loop
                          except Exception as e:
+                             last_status = None
                              if retry_count < max_retries:
                                  logger.warning("⚠️ Error fetching page %s: %s, retrying...", page, e)
                                  retry_count += 1
@@ -283,6 +318,15 @@ class RuneForgeScraper:
                              else:
                                  logger.warning("⚠️ Error fetching page %s: %s, skipping...", page, e)
                                  response_ok = True  # Exit retry loop
+
+                     if last_status is not None and last_status >= 500:
+                         error_500_count += 1
+                         logger.error("❌ Consecutive RuneForge pages failed: %s", error_500_count)
+                         if error_500_count > 2:
+                             logger.error("❌ Too many consecutive server-error pages, stopping pagination")
+                             return all_mods
+                     elif last_status is None or last_status < 500:
+                         error_500_count = 0
                      
                      # Delay between pages to avoid rate limiting
                      await asyncio.sleep(1)
@@ -301,7 +345,10 @@ class RuneForgeScraper:
             try:
                 mod_id = mod.get('id', mod.get('slug', ''))
                 mod_name = mod.get('name', mod.get('title', ''))
-                mod_url = mod.get('url', f"{self.BASE_URL}/mods/{mod_id}")
+                slug = mod.get('slug') or mod_id
+                mod_url = mod.get('url') or f"{self.BASE_URL}/mods/{slug}"
+                if not mod_url.startswith('http'):
+                    mod_url = f"{self.BASE_URL}{mod_url if mod_url.startswith('/') else f'/mods/{mod_url}'}"
                 updated_at = mod.get('updated_at', mod.get('updatedAt', ''))
                 views = mod.get('views', mod.get('view_count', 0))
                 downloads = mod.get('downloads', mod.get('download_count', 0))
