@@ -1105,7 +1105,6 @@ class CreatorCommands(commands.Cog):
                 profile = await self.runeforge_scraper.get_profile_data(username)
                 mods = await self.runeforge_scraper.get_user_mods(username)
             else:
-                # [Not working for now] - DivineSkins requires JavaScript execution (CSR)
                 profile = await self.divineskins_scraper.get_profile_data(username)
                 mods = await self.divineskins_scraper.get_user_skins(username)
             
@@ -1124,8 +1123,6 @@ class CreatorCommands(commands.Cog):
             
             if mods:
                 mods_label = "✅ Content Found"
-                if platform == 'divineskins':
-                    mods_label = "⚠️ Content Found [Not working for now]"
                 embed.add_field(name=mods_label, value=f"{len(mods)} items", inline=False)
                 recent = mods[:3]
                 items_text = "\n".join([f"• [{m['name']}]({m['url']})" for m in recent])

@@ -12,6 +12,7 @@ import aiohttp
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from urllib.parse import urlsplit
 
 # Local modules (same folder)
 from creator_database import get_creator_db, get_all_creator_dbs, SPECIAL_CREATOR_GUILD_ID
@@ -32,6 +33,22 @@ NOTIFICATION_CHANNEL_ID = int(os.getenv('CREATOR_NOTIFICATION_CHANNEL_ID', '0'))
 HOURLY_MOD_CHANNEL_ID = 1450391066330005586  # Kanał dla losowych modów co godzinę
 CREATOR_GUIDE_CHANNEL_ID = 1459967029036453980  # Kanał na stały embed z komendami i guide
 CREATOR_GUIDE_MARKER = "CREATOR_GUIDE_V1"
+
+
+def _valid_http_url(value):
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value or any(character.isspace() for character in value):
+        return None
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme.lower() not in ('http', 'https') or not parsed.hostname:
+            return None
+    except ValueError:
+        return None
+    return value
+
 
 # Bot intents
 intents = discord.Intents.default()
@@ -456,7 +473,7 @@ class CreatorBot(commands.Bot):
                 # Get total count to calculate random index across all mods
                 mods_per_page = 50  # explicit page size to control distribution
                 total_api_url = f"https://runeforge.dev/api/mods?page=0&limit=1"
-                async with session.get(total_api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                async with session.get(total_api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as response:
                     if response.status != 200:
                         logger.error("❌ Failed to fetch mods from RuneForge (Status: %s)", response.status)
                         return
@@ -476,7 +493,7 @@ class CreatorBot(commands.Bot):
                 
                 # Fetch random page with explicit limit
                 api_url = f"https://runeforge.dev/api/mods?page={random_page}&limit={mods_per_page}"
-                async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as response:
                     if response.status != 200:
                         logger.error("❌ Failed to fetch mods page (Status: %s)", response.status)
                         return
@@ -553,7 +570,7 @@ class CreatorBot(commands.Bot):
                     logger.info("✅ Random mod sent: %s by %s", mod_name, author_name)
             
         except Exception as e:
-            logger.error("❌ Error sending random mod: %s", e)
+            logger.exception("❌ Error sending random mod: %r", e)
     
     @send_random_mod_from_all.before_loop
     async def before_all_mod(self):
@@ -717,7 +734,7 @@ class CreatorBot(commands.Bot):
             logger.error("❌ Error checking RuneForge for %s: %s", profile_url, e)
     
     async def check_divineskins_updates(self, db, creator_id: int, guild_id: int, profile_url: str, discord_user_id: int):
-        """[Not working for now] - DivineSkins requires JavaScript execution (CSR)"""
+        """Check a DivineSkins profile for newly published skins."""
         try:
             if not db.get_creator_by_id(creator_id):
                 logger.warning("⚠️ Skipping DivineSkins check; creator %s was removed", creator_id)
@@ -952,6 +969,8 @@ class CreatorBot(commands.Bot):
             final_tags = mod_details.get('tags', [])
             final_image = mod_details.get('image_url') or mod_details.get('thumbnail_url')
             creator_avatar = creator_avatar or mod_details.get('author_avatar') or mod_details.get('artistProfilePicture')
+            final_image = _valid_http_url(final_image)
+            creator_avatar = _valid_http_url(creator_avatar)
 
             is_divineskins = platform == 'divineskins'
             platform_name = "DivineSkins" if is_divineskins else "RuneForge"

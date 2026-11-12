@@ -12,6 +12,10 @@ import re
 logger = logging.getLogger('creator_scraper')
 
 
+def _normalize_username(username: str) -> str:
+    return username.strip().lstrip('@')
+
+
 def _merge_listing_metadata(details: dict, metadata: dict | None) -> dict:
     merged = dict(details)
     if not metadata:
@@ -37,6 +41,7 @@ class RuneForgeScraper:
     API_URL = "https://runeforge.dev/api"
     
     async def get_profile_data(self, username: str) -> dict | None:
+        username = _normalize_username(username)
         try:
             # Try API first
             api_url = f"{self.API_URL}/users/{username}"
@@ -150,7 +155,8 @@ class RuneForgeScraper:
         return data
     
     async def get_user_mods(self, username: str) -> list:
-         try:
+        username = _normalize_username(username)
+        try:
              api_url = f"{self.API_URL}/users/{username}/mods"
              async with aiohttp.ClientSession() as session:
                  async with session.get(api_url) as response:
@@ -284,7 +290,7 @@ class RuneForgeScraper:
              
              logger.info("✅ Total: found %s mods for %s on RuneForge (scanned %s pages)", len(all_mods), username, page)
              return all_mods
-         except Exception as e:
+        except Exception as e:
              logger.error("❌ Error getting user mods: %s", e)
              return []
  
@@ -462,6 +468,7 @@ class DivineSkinsScraper:
 
     async def get_user_skins(self, username: str) -> list:
         """Return list of skins for a user via the DivineSkins catalog API."""
+        username = _normalize_username(username)
         skins = []
         page = 0
         try:
@@ -505,6 +512,7 @@ class DivineSkinsScraper:
 
     async def get_profile_data(self, username: str) -> dict | None:
         """Fetch Divine Skins profile by aggregating catalog API data."""
+        username = _normalize_username(username)
         try:
             skins = await self.get_user_skins(username)
             total_downloads = sum(s.get('downloads', 0) for s in skins)
@@ -537,7 +545,7 @@ class DivineSkinsScraper:
         try:
             parts = mod_url.split('?', 1)[0].rstrip('/').split('/')
             slug = parts[-1] if len(parts) >= 2 else ''
-            artist = parts[-2] if len(parts) >= 4 else ''
+            artist = parts[-2].lstrip('@') if len(parts) >= 4 else ''
             skin_id = (mod_metadata or {}).get('id')
             item = None
             full = None
@@ -577,7 +585,9 @@ class DivineSkinsScraper:
                     details['likes'] = item.get('likeCount', 0)
                     details['updated_at'] = item.get('lastUpdatedDate', '')
                     details['created_at'] = item.get('contentUpdatedDate', '')
-                    details['author_avatar'] = item.get('artistProfilePicture')
+                    avatar = item.get('artistProfilePicture')
+                    if isinstance(avatar, str) and avatar.startswith(('http://', 'https://')):
+                        details['author_avatar'] = avatar
                     image_path = item.get('imagePath', '')
                     if image_path:
                         details['image_url'] = f"{self.CDN_URL}/{image_path}"
