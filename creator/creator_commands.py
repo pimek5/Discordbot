@@ -144,7 +144,7 @@ class CreatorCommands(commands.Cog):
                 for picked in filtered:
                     mod_id = picked.get("id") or picked.get("slug") or ""
                     mod_url = picked.get("url") or f"https://runeforge.dev/mods/{mod_id}"
-                    details = await self.runeforge_scraper.get_mod_details(mod_url)
+                    details = await self.runeforge_scraper.get_mod_details(mod_url, mod_metadata=picked)
                     publisher = picked.get("publisher", {})
                     author = details.get("author") or (publisher.get("username") if isinstance(publisher, dict) else "") or "Unknown"
                     name = details.get("name") or picked.get("name") or picked.get("title") or "Untitled"
@@ -166,12 +166,11 @@ class CreatorCommands(commands.Cog):
         try:
             search_query = quote(champion) if champion else "a"
             url = f"https://api.divineskins.gg/api/catalog/skins/search/{search_query}?page=0&size=50"
-            async with session.get(url, headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "application/json",
-                "Origin": "https://divineskins.gg",
-                "Referer": "https://divineskins.gg/",
-            }, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            async with session.get(
+                url,
+                headers=self.divineskins_scraper.API_HEADERS,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as response:
                 if response.status != 200:
                     return []
 
@@ -198,7 +197,7 @@ class CreatorCommands(commands.Cog):
                     if not mod_url:
                         continue
 
-                    details = await self.divineskins_scraper.get_mod_details(mod_url)
+                    details = await self.divineskins_scraper.get_mod_details(mod_url, mod_metadata=picked)
                     results.append({
                         "platform": "Divine Skins",
                         "name": details.get("name") or picked.get("name") or "Untitled",
@@ -1197,9 +1196,9 @@ class CreatorCommands(commands.Cog):
             mod_details = {}
             try:
                 if platform == 'runeforge':
-                    mod_details = await self.runeforge_scraper.get_mod_details(test_mod['url'])
+                    mod_details = await self.runeforge_scraper.get_mod_details(test_mod['url'], mod_metadata=test_mod)
                 else:
-                    mod_details = await self.divineskins_scraper.get_mod_details(test_mod['url'])
+                    mod_details = await self.divineskins_scraper.get_mod_details(test_mod['url'], mod_metadata=test_mod)
             except Exception as e:
                 logger.warning("⚠️ Error fetching mod details: %s", e)
 

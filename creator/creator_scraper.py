@@ -12,6 +12,26 @@ import re
 logger = logging.getLogger('creator_scraper')
 
 
+def _merge_listing_metadata(details: dict, metadata: dict | None) -> dict:
+    merged = dict(details)
+    if not metadata:
+        return merged
+
+    for key, value in metadata.items():
+        if key in ('id', 'url', 'publisher') or value in (None, '', [], {}):
+            continue
+        current = merged.get(key)
+        if current in (None, '', [], {}) or (current == 0 and value):
+            merged[key] = value
+
+    publisher = metadata.get('publisher')
+    if isinstance(publisher, dict) and not merged.get('author'):
+        merged['author'] = publisher.get('username', '')
+    if not merged.get('name') and metadata.get('title'):
+        merged['name'] = metadata['title']
+    return merged
+
+
 class RuneForgeScraper:
     BASE_URL = "https://runeforge.dev"
     API_URL = "https://runeforge.dev/api"
@@ -318,14 +338,14 @@ class RuneForgeScraper:
         except Exception:
             return 0
 
-    async def get_mod_details(self, mod_url: str) -> dict:
+    async def get_mod_details(self, mod_url: str, mod_metadata: dict | None = None) -> dict:
         """Fetch detailed information about a specific mod including description, tags, stats, and images."""
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(mod_url) as response:
                     if response.status != 200:
                         logger.warning("⚠️ Mod page returned status %s", response.status)
-                        return {}
+                        return _merge_listing_metadata({}, mod_metadata)
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
                     
@@ -412,10 +432,10 @@ class RuneForgeScraper:
                     details['tags'] = [tag.get_text(strip=True) for tag in tag_elements[:5]]
                     
                     logger.info("✅ Fetched mod details: %s", details.get('name', mod_url))
-                    return details
+                    return _merge_listing_metadata(details, mod_metadata)
         except Exception as e:
             logger.error(f"❌ Error fetching mod details from {mod_url}: {e}")
-            return {}
+        return _merge_listing_metadata({}, mod_metadata)
 
     def _strip_cdn_proxy(self, url: str) -> str:
         """If url is a Cloudflare cdn-cgi/image proxy, extract the direct image link."""
@@ -432,9 +452,10 @@ class DivineSkinsScraper:
     CATALOG_API = "https://api.divineskins.gg"
     CDN_URL = "https://lol-assets.divine-cdn.com"
 
-    _API_HEADERS = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
+    API_HEADERS = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/json,*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
         'Origin': 'https://divineskins.gg',
         'Referer': 'https://divineskins.gg/',
     }
@@ -447,7 +468,7 @@ class DivineSkinsScraper:
             async with aiohttp.ClientSession() as session:
                 while True:
                     url = f"{self.CATALOG_API}/api/catalog/skins/search/{username}?page={page}&size=100"
-                    async with session.get(url, headers=self._API_HEADERS) as resp:
+                    async with session.get(url, headers=self.API_HEADERS) as resp:
                         if resp.status != 200:
                             logger.error("\u274c DivineSkins catalog API error %s: %s", resp.status, url)
                             break
@@ -503,7 +524,7 @@ class DivineSkinsScraper:
             logger.error("\u274c Error scraping DivineSkins profile %s: %s", username, e)
             return None
 
-    async def get_mod_details(self, mod_url: str) -> dict:
+    async def get_mod_details(self, mod_url: str, mod_metadata: dict | None = None) -> dict:
         """Fetch skin details by extracting slug from URL and querying the catalog API."""
         details = {
             'name': '', 'description': '', 'author': '',
@@ -514,72 +535,87 @@ class DivineSkinsScraper:
             'ai_usage': {}, 'video_id': '', 'installs_through_launcher': False,
         }
         try:
-            parts = mod_url.rstrip('/').split('/')
+            parts = mod_url.split('?', 1)[0].rstrip('/').split('/')
             slug = parts[-1] if len(parts) >= 2 else ''
             artist = parts[-2] if len(parts) >= 4 else ''
-            if artist and slug:
-                # Search by artist username, then filter by slug
-                url = f"{self.CATALOG_API}/api/catalog/skins/search/{artist}?page=0&size=100"
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, headers=self._API_HEADERS) as resp:
+            skin_id = (mod_metadata or {}).get('id')
+            item = None
+            full = None
+            async with aiohttp.ClientSession() as session:
+                if skin_id:
+                    async with session.get(
+                        f"{self.CATALOG_API}/api/catalog/skins/{skin_id}",
+                        headers=self.API_HEADERS,
+                    ) as detail_response:
+                        if detail_response.status == 200:
+                            payload = await detail_response.json()
+                            if isinstance(payload, dict):
+                                item = payload
+                                full = payload
+
+                if item is None and artist and slug:
+                    url = f"{self.CATALOG_API}/api/catalog/skins/search/{artist}?page=0&size=100"
+                    async with session.get(url, headers=self.API_HEADERS) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             item = next((entry for entry in data.get('content', [])
                                          if entry.get('slug', '').lower() == slug.lower()), None)
-                            if item:
-                                details['name'] = item.get('name', '')
-                                details['author'] = item.get('artistUsername', artist)
-                                details['category'] = item.get('category', '')
-                                details['champion'] = item.get('champion', '')
-                                details['features'] = item.get('features') or []
-                                details['works_on'] = item.get('worksOn', '')
-                                details['disclosures'] = item.get('disclosures') or []
-                                details['ai_usage'] = item.get('aiUsage') or {}
-                                details['video_id'] = item.get('videoId', '') or ''
-                                details['installs_through_launcher'] = bool(item.get('installsThroughLauncher'))
-                                details['views'] = item.get('viewCount', 0)
-                                details['downloads'] = item.get('downloadCount', 0)
-                                details['likes'] = item.get('likeCount', 0)
-                                details['updated_at'] = item.get('lastUpdatedDate', '')
-                                details['created_at'] = item.get('contentUpdatedDate', '')
-                                details['author_avatar'] = item.get('artistProfilePicture')
-                                ip = item.get('imagePath', '')
-                                if ip:
-                                    details['image_url'] = f"{self.CDN_URL}/{ip}"
 
-                                skin_id = item.get('id')
-                                if skin_id:
-                                    async with session.get(
-                                        f"{self.CATALOG_API}/api/catalog/skins/{skin_id}",
-                                        headers=self._API_HEADERS,
-                                    ) as detail_response:
-                                        if detail_response.status == 200:
-                                            full = await detail_response.json()
-                                            details['description'] = full.get('description', '') or ''
-                                            details['features'] = full.get('features') or details['features']
-                                            details['works_on'] = full.get('worksOn', details['works_on'])
-                                            details['disclosures'] = full.get('disclosures') or details['disclosures']
-                                            details['ai_usage'] = full.get('aiUsage') or details['ai_usage']
-                                            details['video_id'] = full.get('videoId', details['video_id']) or ''
-                                            details['installs_through_launcher'] = bool(
-                                                full.get('installsThroughLauncher', details['installs_through_launcher'])
-                                            )
-                                            current_release = full.get('currentRelease') or {}
-                                            details['version'] = current_release.get('versionNumber', '') or ''
-                                            versions = full.get('versions') or []
-                                            if versions:
-                                                current_version = next(
-                                                    (v for v in versions if v.get('id') == current_release.get('id')),
-                                                    versions[0],
-                                                )
-                                                details['file_size'] = current_version.get('fileSize', 0) or 0
-                                            details['tags'] = full.get('themes') or []
+                if item:
+                    details['name'] = item.get('name', '')
+                    details['author'] = item.get('artistUsername', artist)
+                    details['category'] = item.get('category', '')
+                    details['champion'] = item.get('champion', '')
+                    details['features'] = item.get('features') or []
+                    details['works_on'] = item.get('worksOn', '')
+                    details['disclosures'] = item.get('disclosures') or []
+                    details['ai_usage'] = item.get('aiUsage') or {}
+                    details['video_id'] = item.get('videoId', '') or ''
+                    details['installs_through_launcher'] = bool(item.get('installsThroughLauncher'))
+                    details['views'] = item.get('viewCount', 0)
+                    details['downloads'] = item.get('downloadCount', 0)
+                    details['likes'] = item.get('likeCount', 0)
+                    details['updated_at'] = item.get('lastUpdatedDate', '')
+                    details['created_at'] = item.get('contentUpdatedDate', '')
+                    details['author_avatar'] = item.get('artistProfilePicture')
+                    image_path = item.get('imagePath', '')
+                    if image_path:
+                        details['image_url'] = f"{self.CDN_URL}/{image_path}"
 
-                                logger.info("[DivineSkins] \u2705 Mod details from API: %s", details['name'])
-                                return details
+                    if full is None and item.get('id'):
+                        async with session.get(
+                            f"{self.CATALOG_API}/api/catalog/skins/{item['id']}",
+                            headers=self.API_HEADERS,
+                        ) as detail_response:
+                            if detail_response.status == 200:
+                                full = await detail_response.json()
+
+                    if isinstance(full, dict):
+                        details['description'] = full.get('description', '') or ''
+                        details['features'] = full.get('features') or details['features']
+                        details['works_on'] = full.get('worksOn', details['works_on'])
+                        details['disclosures'] = full.get('disclosures') or details['disclosures']
+                        details['ai_usage'] = full.get('aiUsage') or details['ai_usage']
+                        details['video_id'] = full.get('videoId', details['video_id']) or ''
+                        details['installs_through_launcher'] = bool(
+                            full.get('installsThroughLauncher', details['installs_through_launcher'])
+                        )
+                        current_release = full.get('currentRelease') or {}
+                        details['version'] = current_release.get('versionNumber', '') or ''
+                        versions = full.get('versions') or []
+                        if versions:
+                            current_version = next(
+                                (version for version in versions if version.get('id') == current_release.get('id')),
+                                versions[0],
+                            )
+                            details['file_size'] = current_version.get('fileSize', 0) or 0
+                        details['tags'] = full.get('themes') or []
+
+                    logger.info("[DivineSkins] ✅ Mod details from API: %s", details['name'])
+                    return _merge_listing_metadata(details, mod_metadata)
             # Fallback: og: meta tags
             async with aiohttp.ClientSession() as session:
-                async with session.get(mod_url, headers={'User-Agent': self._API_HEADERS['User-Agent']}) as resp:
+                async with session.get(mod_url, headers={'User-Agent': self.API_HEADERS['User-Agent']}) as resp:
                     if resp.status == 200:
                         html = await resp.text()
                         soup = BeautifulSoup(html, 'html.parser')
@@ -594,7 +630,7 @@ class DivineSkinsScraper:
                             details['image_url'] = og_image['content']
         except Exception as e:
             logger.error("\u274c Error fetching mod details from %s: %s", mod_url, e)
-        return details
+        return _merge_listing_metadata(details, mod_metadata)
 
     async def get_mod_image(self, mod_url: str) -> str | None:
         """Return thumbnail image URL for a mod page."""
@@ -606,7 +642,7 @@ class DivineSkinsScraper:
                 # Search by artist username, then filter by slug
                 url = f"{self.CATALOG_API}/api/catalog/skins/search/{artist}?size=100"
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(url, headers=self._API_HEADERS) as resp:
+                    async with session.get(url, headers=self.API_HEADERS) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             for item in data.get('content', []):
@@ -616,7 +652,7 @@ class DivineSkinsScraper:
                                         return f"{self.CDN_URL}/{ip}"
             # Fallback og:image
             async with aiohttp.ClientSession() as session:
-                async with session.get(mod_url, headers={'User-Agent': self._API_HEADERS['User-Agent']}) as resp:
+                async with session.get(mod_url, headers={'User-Agent': self.API_HEADERS['User-Agent']}) as resp:
                     if resp.status == 200:
                         soup = BeautifulSoup(await resp.text(), 'html.parser')
                         og = soup.find('meta', property='og:image')

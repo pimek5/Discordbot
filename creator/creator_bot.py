@@ -931,9 +931,9 @@ class CreatorBot(commands.Bot):
             mod_details = {}
             try:
                 if platform == 'runeforge':
-                    mod_details = await self.runeforge_scraper.get_mod_details(mod_url)
+                    mod_details = await self.runeforge_scraper.get_mod_details(mod_url, mod_metadata=mod_metadata)
                 else:
-                    mod_details = await self.divineskins_scraper.get_mod_details(mod_url)
+                    mod_details = await self.divineskins_scraper.get_mod_details(mod_url, mod_metadata=mod_metadata)
             except Exception as e:
                 logger.warning("⚠️ Error fetching mod details: %s", e)
 
