@@ -975,7 +975,7 @@ class CreatorBot(commands.Bot):
 
             is_divineskins = platform == 'divineskins'
             platform_name = "DivineSkins" if is_divineskins else "RuneForge"
-            game_label = "League of Legends · Reposted content" if is_repost else "League of Legends · New mod"
+            game_label = "League of Legends · New mod"
             if is_update:
                 game_label = f"League of Legends · {platform_name} update"
 
