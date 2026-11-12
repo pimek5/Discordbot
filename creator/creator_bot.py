@@ -9,6 +9,7 @@ import logging
 import os
 import asyncio
 import aiohttp
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
@@ -683,7 +684,8 @@ class CreatorBot(commands.Bot):
                         mod_url,
                         'runeforge',
                         views,
-                        downloads
+                        downloads,
+                        mod_metadata=mod,
                     )
                     db.add_mod(creator_id, mod_id, mod_name, mod_url, updated_at, 'runeforge')
 
@@ -770,7 +772,8 @@ class CreatorBot(commands.Bot):
                         skin_url,
                         'divineskins',
                         views,
-                        downloads
+                        downloads,
+                        mod_metadata=skin,
                     )
                     db.add_mod(creator_id, skin_id, skin_name, skin_url, updated_at, 'divineskins')
 
@@ -884,7 +887,7 @@ class CreatorBot(commands.Bot):
         except Exception as e:
             logger.error("❌ Error sending webhook notifications: %s", e)
     
-    async def send_notification(self, db, guild_id: int, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0):
+    async def send_notification(self, db, guild_id: int, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0, mod_metadata: dict | None = None):
         try:
             if guild_id is not None:
                 guild_config = db.get_guild_config(guild_id)
@@ -934,78 +937,136 @@ class CreatorBot(commands.Bot):
             except Exception as e:
                 logger.warning("⚠️ Error fetching mod details: %s", e)
 
+            for key, value in (mod_metadata or {}).items():
+                if value not in (None, '', [], {}):
+                    mod_details.setdefault(key, value)
+                    if mod_details.get(key) in (None, '', [], {}) or (mod_details.get(key) == 0 and value):
+                        mod_details[key] = value
+
             # Use detailed data if available, fallback to basic data
-            final_name = mod_details.get('name', mod_name)
-            final_views = mod_details.get('views', views)
-            final_downloads = mod_details.get('downloads', downloads)
+            final_name = mod_details.get('name') or mod_name
+            final_views = mod_details.get('views') or views
+            final_downloads = mod_details.get('downloads') or downloads
             final_likes = mod_details.get('likes', 0)
             final_version = mod_details.get('version', '')
             final_tags = mod_details.get('tags', [])
-            final_image = mod_details.get('image_url', None)
+            final_image = mod_details.get('image_url') or mod_details.get('thumbnail_url')
+            creator_avatar = creator_avatar or mod_details.get('author_avatar') or mod_details.get('artistProfilePicture')
 
-            view = None
+            is_divineskins = platform == 'divineskins'
+            platform_name = "DivineSkins" if is_divineskins else "RuneForge"
+            game_label = "League of Legends · New mod"
+            if is_update:
+                game_label = f"League of Legends · {platform_name} update"
 
-            if platform == 'divineskins':
-                # Clean DivineSkins new-release embed
-                embed = discord.Embed(
-                    title=f"New Skin Released: {final_name}",
-                    color=0x9B59B6,
-                    url=mod_url,
-                    timestamp=datetime.now(),
+            # Keep embeds consistent across platforms and only show metadata actually available.
+            embed = discord.Embed(
+                title=final_name,
+                description=f"by **{mod_details.get('author') or username}**",
+                color=0x8B3DCE if is_divineskins else color,
+                url=mod_url,
+                timestamp=datetime.now(),
+            )
+            embed.set_author(name=game_label)
+            if creator_avatar:
+                embed.set_thumbnail(url=creator_avatar)
+            if final_image:
+                embed.set_image(url=final_image)
+
+            metadata_lines = []
+            final_description = mod_details.get('description') or ''
+            champion = mod_details.get('champion') or ''
+            if not champion and final_description:
+                champion_match = re.search(
+                    r"\b(?:replaces|replacement for)\s+([A-Z][A-Za-z' -]{1,30})",
+                    final_description,
+                    re.IGNORECASE,
                 )
-                embed.set_author(name=f"By {username}")
-                if final_image:
-                    embed.set_image(url=final_image)
-                if creator_avatar:
-                    embed.set_thumbnail(url=creator_avatar)
-                embed.add_field(name="✨ Platform", value="DivineSkins", inline=True)
-                embed.set_footer(text="Posted on DivineSkins")
+                if champion_match:
+                    champion = champion_match.group(1).strip().rstrip(' .,:;')
+            category = mod_details.get('category') or ''
+            if category:
+                category = str(category).replace('_', ' ').title()
+            features = mod_details.get('features') or mod_details.get('tags') or final_tags
+            if not features and platform == 'runeforge' and final_description:
+                feature_match = re.search(
+                    r"(?:features|includes)\s*[:\-]\s*([^\n#]{1,500})",
+                    final_description,
+                    re.IGNORECASE,
+                )
+                if feature_match:
+                    features = [part.strip(' *•-') for part in re.split(r"[,|•]", feature_match.group(1)) if part.strip(' *•-')]
+            works_on = mod_details.get('works_on') or ''
+            if champion:
+                metadata_lines.append(f"🔹 **Champion** · {champion}")
+            if category:
+                metadata_lines.append(f"🔹 **Category** · {category}")
+            if features:
+                if isinstance(features, (list, tuple)):
+                    feature_text = ", ".join(str(feature) for feature in features[:8])
+                else:
+                    feature_text = str(features)
+                if feature_text:
+                    metadata_lines.append(f"🔹 **Features** · {feature_text[:700]}")
+            if works_on:
+                metadata_lines.append(f"🔹 **All Use** · {works_on}")
 
-                class _DownloadView(discord.ui.View):
-                    def __init__(self, url):
-                        super().__init__()
-                        self.add_item(discord.ui.Button(
-                            label="Download Skin",
-                            url=url,
-                            style=discord.ButtonStyle.link,
-                            emoji="🔗",
-                        ))
+            ai_usage = mod_details.get('ai_usage') or {}
+            ai_areas = ai_usage.get('areas', []) if isinstance(ai_usage, dict) else []
+            mostly_ai = [str(area.get('area', '')).replace('_', ' ').title()
+                         for area in ai_areas if isinstance(area, dict) and area.get('level') == 'mostly']
+            if mostly_ai:
+                metadata_lines.append(f"🔹 **AI Use** · Mostly AI-made ({', '.join(mostly_ai)})")
+            elif mod_details.get('disclosures'):
+                disclosures = [str(value).replace('ai_', '').replace('_', ' ').title()
+                               for value in mod_details['disclosures'][:5]]
+                metadata_lines.append(f"🔹 **AI Use** · {', '.join(disclosures)}")
 
-                view = _DownloadView(mod_url)
+            if metadata_lines:
+                embed.add_field(name="\u200b", value="\n".join(metadata_lines), inline=False)
+
+            version_text = final_version
+            file_size = mod_details.get('file_size') or 0
+            if file_size:
+                size_mb = file_size / 1_000_000
+                size_text = f"{size_mb:.0f} MB" if size_mb >= 10 else f"{size_mb:.1f} MB"
+                version_text = f"{version_text} · {size_text}" if version_text else size_text
+            if version_text:
+                embed.set_footer(text=f"Version {version_text}")
             else:
-                # RuneForge new-release embed
-                final_description = mod_details.get('description', '')
-                embed = discord.Embed(
-                    title=f"{status_emoji} New Mod Released: {final_name}",
-                    description=final_description[:300] if final_description else None,
-                    color=color,
+                embed.set_footer(text=f"Posted on {platform_name}")
+
+            view = discord.ui.View(timeout=None)
+            view.add_item(discord.ui.Button(
+                label="View Mod",
+                url=mod_url,
+                style=discord.ButtonStyle.link,
+                emoji="🔮",
+            ))
+            if is_divineskins and mod_details.get('installs_through_launcher'):
+                # DivineSkins exposes launcher installation on the official mod page.
+                view.add_item(discord.ui.Button(
+                    label="Get Celestial",
                     url=mod_url,
-                    timestamp=datetime.now(),
-                )
-                embed.set_author(name=f"By {username}")
-                if final_image:
-                    embed.set_image(url=final_image)
-                if creator_avatar:
-                    embed.set_thumbnail(url=creator_avatar)
-                if final_version:
-                    embed.add_field(name="🔖 Version", value=f"`{final_version}`", inline=True)
-                embed.add_field(name="🌐 Platform", value="RuneForge", inline=True)
-                embed.set_footer(
-                    text="Posted on RuneForge",
-                    icon_url="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f527.png"
-                )
+                    style=discord.ButtonStyle.link,
+                    emoji="📥",
+                ))
+            elif not is_divineskins:
+                view.add_item(discord.ui.Button(
+                    label="Download Mod",
+                    url=mod_url,
+                    style=discord.ButtonStyle.link,
+                    emoji="📥",
+                ))
 
-                class _DownloadModView(discord.ui.View):
-                    def __init__(self, url):
-                        super().__init__()
-                        self.add_item(discord.ui.Button(
-                            label="Download Mod",
-                            url=url,
-                            style=discord.ButtonStyle.link,
-                            emoji="🔗",
-                        ))
-
-                view = _DownloadModView(mod_url)
+            video_id = mod_details.get('video_id') if is_divineskins else None
+            if video_id:
+                view.add_item(discord.ui.Button(
+                    label="Preview",
+                    url=f"https://www.youtube.com/watch?v={video_id}",
+                    style=discord.ButtonStyle.link,
+                    emoji="▶️",
+                ))
 
             channels = []
             added_channel_ids = set()

@@ -285,7 +285,17 @@ class RuneForgeScraper:
                     'url': mod_url,
                     'updated_at': updated_at,
                     'views': views,
-                    'downloads': downloads
+                    'downloads': downloads,
+                    'description': mod.get('description', ''),
+                    'category': mod.get('category', ''),
+                    'champion': (mod.get('champions') or [None])[0],
+                    'features': mod.get('features', []) or [],
+                    'tags': mod.get('tags', []) or [],
+                    'image_url': (
+                        f"https://r2-images-prod.runeforge.dev/{mod['thumbnailKey']}"
+                        if mod.get('thumbnailKey') else None
+                    ),
+                    'author': (mod.get('publisher') or {}).get('username', ''),
                 })
             except Exception as e:
                 logger.warning("⚠️ RuneForge mod parse failed: %s", e)
@@ -457,6 +467,12 @@ class DivineSkinsScraper:
                                 'views': item.get('viewCount', 0),
                                 'likes': item.get('likeCount', 0),
                                 'image_url': f"{self.CDN_URL}/{image_path}" if image_path else None,
+                                'champion': item.get('champion', ''),
+                                'category': item.get('category', ''),
+                                'features': item.get('features', []) or [],
+                                'works_on': item.get('worksOn', ''),
+                                'disclosures': item.get('disclosures', []) or [],
+                                'ai_mostly_areas': item.get('aiMostlyAreas', 0),
                             })
                         if data.get('last', True):
                             break
@@ -492,8 +508,10 @@ class DivineSkinsScraper:
         details = {
             'name': '', 'description': '', 'author': '',
             'views': 0, 'downloads': 0, 'likes': 0,
-            'version': '', 'updated_at': '', 'created_at': '',
-            'tags': [], 'image_url': None, 'author_avatar': None, 'category': ''
+            'version': '', 'file_size': 0, 'updated_at': '', 'created_at': '',
+            'tags': [], 'features': [], 'image_url': None, 'author_avatar': None,
+            'category': '', 'champion': '', 'works_on': '', 'disclosures': [],
+            'ai_usage': {}, 'video_id': '', 'installs_through_launcher': False,
         }
         try:
             parts = mod_url.rstrip('/').split('/')
@@ -501,26 +519,64 @@ class DivineSkinsScraper:
             artist = parts[-2] if len(parts) >= 4 else ''
             if artist and slug:
                 # Search by artist username, then filter by slug
-                url = f"{self.CATALOG_API}/api/catalog/skins/search/{artist}?size=100"
+                url = f"{self.CATALOG_API}/api/catalog/skins/search/{artist}?page=0&size=100"
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, headers=self._API_HEADERS) as resp:
                         if resp.status == 200:
                             data = await resp.json()
-                            for item in data.get('content', []):
-                                if item.get('slug', '').lower() == slug.lower():
-                                    details['name'] = item.get('name', '')
-                                    details['author'] = item.get('artistUsername', artist)
-                                    details['category'] = item.get('category', '')
-                                    details['views'] = item.get('viewCount', 0)
-                                    details['downloads'] = item.get('downloadCount', 0)
-                                    details['likes'] = item.get('likeCount', 0)
-                                    details['updated_at'] = item.get('lastUpdatedDate', '')
-                                    details['created_at'] = item.get('contentUpdatedDate', '')
-                                    ip = item.get('imagePath', '')
-                                    if ip:
-                                        details['image_url'] = f"{self.CDN_URL}/{ip}"
-                                    logger.info("[DivineSkins] \u2705 Mod details from API: %s", details['name'])
-                                    return details
+                            item = next((entry for entry in data.get('content', [])
+                                         if entry.get('slug', '').lower() == slug.lower()), None)
+                            if item:
+                                details['name'] = item.get('name', '')
+                                details['author'] = item.get('artistUsername', artist)
+                                details['category'] = item.get('category', '')
+                                details['champion'] = item.get('champion', '')
+                                details['features'] = item.get('features') or []
+                                details['works_on'] = item.get('worksOn', '')
+                                details['disclosures'] = item.get('disclosures') or []
+                                details['ai_usage'] = item.get('aiUsage') or {}
+                                details['video_id'] = item.get('videoId', '') or ''
+                                details['installs_through_launcher'] = bool(item.get('installsThroughLauncher'))
+                                details['views'] = item.get('viewCount', 0)
+                                details['downloads'] = item.get('downloadCount', 0)
+                                details['likes'] = item.get('likeCount', 0)
+                                details['updated_at'] = item.get('lastUpdatedDate', '')
+                                details['created_at'] = item.get('contentUpdatedDate', '')
+                                details['author_avatar'] = item.get('artistProfilePicture')
+                                ip = item.get('imagePath', '')
+                                if ip:
+                                    details['image_url'] = f"{self.CDN_URL}/{ip}"
+
+                                skin_id = item.get('id')
+                                if skin_id:
+                                    async with session.get(
+                                        f"{self.CATALOG_API}/api/catalog/skins/{skin_id}",
+                                        headers=self._API_HEADERS,
+                                    ) as detail_response:
+                                        if detail_response.status == 200:
+                                            full = await detail_response.json()
+                                            details['description'] = full.get('description', '') or ''
+                                            details['features'] = full.get('features') or details['features']
+                                            details['works_on'] = full.get('worksOn', details['works_on'])
+                                            details['disclosures'] = full.get('disclosures') or details['disclosures']
+                                            details['ai_usage'] = full.get('aiUsage') or details['ai_usage']
+                                            details['video_id'] = full.get('videoId', details['video_id']) or ''
+                                            details['installs_through_launcher'] = bool(
+                                                full.get('installsThroughLauncher', details['installs_through_launcher'])
+                                            )
+                                            current_release = full.get('currentRelease') or {}
+                                            details['version'] = current_release.get('versionNumber', '') or ''
+                                            versions = full.get('versions') or []
+                                            if versions:
+                                                current_version = next(
+                                                    (v for v in versions if v.get('id') == current_release.get('id')),
+                                                    versions[0],
+                                                )
+                                                details['file_size'] = current_version.get('fileSize', 0) or 0
+                                            details['tags'] = full.get('themes') or []
+
+                                logger.info("[DivineSkins] \u2705 Mod details from API: %s", details['name'])
+                                return details
             # Fallback: og: meta tags
             async with aiohttp.ClientSession() as session:
                 async with session.get(mod_url, headers={'User-Agent': self._API_HEADERS['User-Agent']}) as resp:
