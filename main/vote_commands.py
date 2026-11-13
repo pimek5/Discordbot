@@ -28,6 +28,32 @@ def get_voting_champion_emoji(champion_name: str) -> str:
     key = re.sub(r"[^a-z0-9]", "", champion_name.casefold())
     return CHAMPION_EMOJIS_NORMALIZED.get(key, "")
 
+
+def format_other_champions(results: List[dict], max_lines: int = 15) -> str:
+    lines = []
+    for result in results[:max_lines]:
+        champion = result['champion_name']
+        champion_emoji = get_voting_champion_emoji(champion)
+        line = f"• **{champion}** {champion_emoji} - {result['total_points']} points ({result['vote_count']} votes)"
+        remaining = len(results) - len(lines) - 1
+        candidate = lines + [line]
+        if remaining:
+            candidate.append(f"*...and {remaining} more champions*")
+        if len("\n".join(candidate)) > 1024:
+            break
+        lines.append(line)
+
+    remaining = len(results) - len(lines)
+    if remaining:
+        summary = f"*...and {remaining} more champions*"
+        while lines and len("\n".join(lines + [summary])) > 1024:
+            lines.pop()
+            remaining = len(results) - len(lines)
+            summary = f"*...and {remaining} more champions*"
+        if len(summary) <= 1024:
+            lines.append(summary)
+    return "\n".join(lines)
+
 # Configuration
 VOTING_CHANNEL_ID = 1473497433336975573
 ADMIN_ROLE_ID = 1153030265782927501
@@ -131,18 +157,11 @@ class VoteCommands(commands.Cog):
 
         others = results[5:]
         if others:
-            others_text = []
-            for result in others[:15]:
-                champion = result['champion_name']
-                champion_emoji = get_voting_champion_emoji(champion)
-                points = result['total_points']
-                votes = result['vote_count']
-                others_text.append(f"• **{champion}** {champion_emoji} - {points} points ({votes} votes)")
-
-            if len(others) > 15:
-                others_text.append(f"*...and {len(others) - 15} more*")
-
-            embed.add_field(name="📊 Other Champions", value="\n".join(others_text), inline=False)
+            embed.add_field(
+                name="📊 Other Champions",
+                value=format_other_champions(others),
+                inline=False,
+            )
 
         unique_voters = get_db().get_unique_voter_count(session['id'])
         embed.set_footer(text=f"📊 Final: {unique_voters} user{'s' if unique_voters != 1 else ''} participated")
@@ -236,20 +255,10 @@ class VoteCommands(commands.Cog):
         # Others (below top 5)
         others = results[5:]
         if others:
-            others_text = []
-            for result in others[:15]:  # Show max 15 others
-                champion = result['champion_name']
-                champion_emoji = get_voting_champion_emoji(champion)
-                points = result['total_points']
-                votes = result['vote_count']
-                others_text.append(f"• **{champion}** {champion_emoji} - {points} points ({votes} votes)")
-            
-            if len(others) > 15:
-                others_text.append(f"*...and {len(others) - 15} more champions*")
-            
+            others_text = format_other_champions(others)
             embed.add_field(
                 name="📊 Other Champions",
-                value="\n".join(others_text),
+                value=others_text,
                 inline=False
             )
 
