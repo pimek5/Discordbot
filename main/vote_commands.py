@@ -4,6 +4,7 @@ Vote Commands Module
 """
 
 import datetime
+import re
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -13,8 +14,19 @@ import logging
 from database import get_db
 from riot_api import CHAMPION_ID_TO_NAME
 from champion_aliases import normalize_champion_name
+from emoji_dict import CHAMPION_EMOJIS
 
 logger = logging.getLogger('vote_commands')
+
+CHAMPION_EMOJIS_NORMALIZED = {
+    re.sub(r"[^a-z0-9]", "", name.casefold()): emoji
+    for name, emoji in CHAMPION_EMOJIS.items()
+}
+
+
+def get_voting_champion_emoji(champion_name: str) -> str:
+    key = re.sub(r"[^a-z0-9]", "", champion_name.casefold())
+    return CHAMPION_EMOJIS_NORMALIZED.get(key, "")
 
 # Configuration
 VOTING_CHANNEL_ID = 1473497433336975573
@@ -107,9 +119,10 @@ class VoteCommands(commands.Cog):
         for i, result in enumerate(top_5):
             emoji = podium_emojis[i]
             champion = result['champion_name']
+            champion_emoji = get_voting_champion_emoji(champion)
             points = result['total_points']
             votes = result['vote_count']
-            podium_text.append(f"{emoji} **{champion}** - {points} points ({votes} votes)")
+            podium_text.append(f"{emoji} **{champion}** {champion_emoji} - {points} points ({votes} votes)")
 
         if podium_text:
             embed.add_field(name="🏆 Results", value="\n".join(podium_text), inline=False)
@@ -121,9 +134,10 @@ class VoteCommands(commands.Cog):
             others_text = []
             for result in others[:15]:
                 champion = result['champion_name']
+                champion_emoji = get_voting_champion_emoji(champion)
                 points = result['total_points']
                 votes = result['vote_count']
-                others_text.append(f"• **{champion}** - {points} points ({votes} votes)")
+                others_text.append(f"• **{champion}** {champion_emoji} - {points} points ({votes} votes)")
 
             if len(others) > 15:
                 others_text.append(f"*...and {len(others) - 15} more*")
@@ -201,9 +215,10 @@ class VoteCommands(commands.Cog):
         for i, result in enumerate(top_5):
             emoji = podium_emojis[i]
             champion = result['champion_name']
+            champion_emoji = get_voting_champion_emoji(champion)
             points = result['total_points']
             votes = result['vote_count']
-            podium_text.append(f"{emoji} **{champion}** - {points} points ({votes} votes)")
+            podium_text.append(f"{emoji} **{champion}** {champion_emoji} - {points} points ({votes} votes)")
         
         if podium_text:
             embed.add_field(
@@ -224,9 +239,10 @@ class VoteCommands(commands.Cog):
             others_text = []
             for result in others[:15]:  # Show max 15 others
                 champion = result['champion_name']
+                champion_emoji = get_voting_champion_emoji(champion)
                 points = result['total_points']
                 votes = result['vote_count']
-                others_text.append(f"• **{champion}** - {points} points ({votes} votes)")
+                others_text.append(f"• **{champion}** {champion_emoji} - {points} points ({votes} votes)")
             
             if len(others) > 15:
                 others_text.append(f"*...and {len(others) - 15} more champions*")
