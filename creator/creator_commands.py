@@ -11,7 +11,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 import logging
 import aiohttp
 import discord
@@ -1296,6 +1296,123 @@ class CreatorCommands(commands.Cog):
                 f"{skipped_duplicates + skipped_during_send} duplicate/already reposted item(s) skipped)."
             )
         )
+
+    @creator_group.command(name="post", description="Post a mod or skin link as a new release")
+    @app_commands.describe(link="Direct RuneForge or DivineSkins mod link")
+    async def post_creator_link(self, interaction: discord.Interaction, link: str):
+        if not has_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ You need Administrator permission to use this command!",
+                ephemeral=True,
+            )
+            return
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        parsed_url = urlsplit(link.strip())
+        host = (parsed_url.hostname or "").lower()
+        path_parts = [part for part in parsed_url.path.strip("/").split("/") if part]
+        if host in {"divineskins.gg", "www.divineskins.gg"} and len(path_parts) == 2:
+            platform = "divineskins"
+            artist = path_parts[0]
+            slug = path_parts[1]
+            clean_url = f"https://divineskins.gg/{artist}/{slug}"
+        elif host in {"runeforge.dev", "www.runeforge.dev"} and len(path_parts) == 2 and path_parts[0] == "mods":
+            platform = "runeforge"
+            artist = ""
+            slug = path_parts[1]
+            clean_url = f"https://runeforge.dev/mods/{slug}"
+        else:
+            await interaction.response.send_message(
+                "❌ Use a direct mod link from `divineskins.gg/artist/slug` or `runeforge.dev/mods/slug`.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            scraper = self.divineskins_scraper if platform == "divineskins" else self.runeforge_scraper
+            details = await scraper.get_mod_details(clean_url)
+            listing = None
+            if platform == "divineskins":
+                artist = details.get("author") or artist
+                listing_items = await self.divineskins_scraper.get_user_skins(artist)
+            else:
+                author = details.get("author") or ""
+                listing_items = await self.runeforge_scraper.get_user_mods(author) if author else []
+
+            listing = next(
+                (
+                    item for item in listing_items
+                    if (item.get("url") or "").split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1].casefold()
+                    == slug.casefold()
+                ),
+                None,
+            )
+
+            mod_name = details.get("name") or (listing or {}).get("name") or slug.replace("-", " ").title()
+            author = details.get("author") or (listing or {}).get("author") or artist or "Unknown"
+            mod_id = str((listing or {}).get("id") or details.get("id") or slug)
+            metadata = {**(listing or {}), **details, "id": mod_id, "name": mod_name, "author": author}
+            db = self._get_db(interaction)
+            creator = next(
+                (
+                    item for item in db.get_creators_for_guild(interaction.guild_id)
+                    if item["platform"] == platform and item["username"].casefold() == author.casefold()
+                ),
+                None,
+            )
+            discord_user_id = creator["discord_user_id"] if creator else interaction.user.id
+
+            if creator and not db.add_mod(
+                creator["id"],
+                mod_id,
+                mod_name,
+                clean_url,
+                details.get("updated_at") or metadata.get("updated_at", ""),
+                platform,
+            ):
+                await interaction.followup.send(
+                    "❌ Could not save the item for monitoring; nothing was posted.",
+                    ephemeral=True,
+                )
+                return
+
+            delivered = await self.bot.send_notification(
+                db,
+                interaction.guild_id,
+                discord_user_id,
+                author,
+                "Posted new skin" if platform == "divineskins" else "Posted new mod",
+                mod_name,
+                clean_url,
+                platform,
+                views=details.get("views") or metadata.get("views", 0),
+                downloads=details.get("downloads") or metadata.get("downloads", 0),
+                mod_metadata=metadata,
+                mirror_new_mods=False,
+            )
+            if not delivered:
+                await interaction.followup.send(
+                    "❌ Could not post the link. Check that the new-release channel is configured.",
+                    ephemeral=True,
+                )
+                return
+
+            if creator:
+                db.log_notification(creator["id"], mod_id, "Posted manually")
+
+            await interaction.followup.send(
+                f"✅ Posted **{mod_name}** as a new {platform.title()} release.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.exception("Error manually posting creator link %s", clean_url)
+            await interaction.followup.send(f"❌ Could not post link: {e}", ephemeral=True)
 
     @creator_group.command(name="test", description="Test scraping for a creator profile")
     @app_commands.describe(

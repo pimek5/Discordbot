@@ -904,7 +904,7 @@ class CreatorBot(commands.Bot):
         except Exception as e:
             logger.error("❌ Error sending webhook notifications: %s", e)
     
-    async def send_notification(self, db, guild_id: int, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0, mod_metadata: dict | None = None, is_repost: bool = False):
+    async def send_notification(self, db, guild_id: int, discord_user_id: int, username: str, action: str, mod_name: str, mod_url: str, platform: str, views: int = 0, downloads: int = 0, mod_metadata: dict | None = None, is_repost: bool = False, mirror_new_mods: bool = True):
         try:
             if guild_id is not None:
                 guild_config = db.get_guild_config(guild_id)
@@ -1112,7 +1112,7 @@ class CreatorBot(commands.Bot):
             # Cross-guild mirror: for any new mod, broadcast to ALL guilds (across all
             # databases) that track this creator, so every server gets the notification
             # regardless of which DB detected the update first.
-            if is_new_mod and not is_update and not is_repost:
+            if is_new_mod and not is_update and not is_repost and mirror_new_mods:
                 mirrored_guilds = 0
                 for other_db in get_all_creator_dbs():
                     for cfg in other_db.get_all_guild_configs():
