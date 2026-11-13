@@ -1170,15 +1170,20 @@ class CreatorCommands(commands.Cog):
             creator = creator_posts[0]
             if creator["platform"] == "runeforge":
                 content = await self.runeforge_scraper.get_user_mods(creator["username"])
-                published_by_id = {
-                    str(item.get("id")): item.get("published_at")
-                    for item in content
-                    if item.get("id")
-                }
-                publication_dates = [
-                    (post, published_by_id.get(str(post["mod_id"])))
-                    for post in creator_posts
-                ]
+                published_by_id = {}
+                for item in content:
+                    item_url = (item.get("url") or "").split("?", 1)[0].rstrip("/")
+                    lookup_keys = (item.get("id"), item.get("slug"), item_url.rsplit("/", 1)[-1])
+                    for key in lookup_keys:
+                        if key:
+                            published_by_id[str(key)] = item.get("published_at")
+
+                publication_dates = []
+                for post in creator_posts:
+                    stored_url = (post.get("mod_url") or "").split("?", 1)[0].rstrip("/")
+                    stored_slug = stored_url.rsplit("/", 1)[-1]
+                    published_at = published_by_id.get(str(post["mod_id"])) or published_by_id.get(stored_slug)
+                    publication_dates.append((post, published_at))
             else:
                 semaphore = asyncio.Semaphore(8)
 

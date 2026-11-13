@@ -653,6 +653,14 @@ class DivineSkinsScraper:
                                 full = await detail_response.json()
 
                     if isinstance(full, dict):
+                        details['created_at'] = full.get('createdDate') or details['created_at']
+                        details['updated_at'] = full.get('lastUpdatedDate') or details['updated_at']
+                        current_release = full.get('currentRelease') or {}
+                        details['published_at'] = (
+                            full.get('createdDate')
+                            or current_release.get('publishedAt')
+                            or details['published_at']
+                        )
                         details['description'] = full.get('description', '') or ''
                         details['features'] = full.get('features') or details['features']
                         details['works_on'] = full.get('worksOn', details['works_on'])
