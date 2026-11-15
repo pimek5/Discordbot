@@ -134,6 +134,8 @@ Bot używa **yt-dlp** i obsługuje setki platform, w tym:
 - 📻 Mixcloud
 - I wiele innych...
 
+Wyszukiwanie tekstowe preferuje YouTube i przechodzi na SoundCloud, gdy YouTube blokuje ekstrakcję lub zwraca pusty wynik. Linki do pojedynczych utworów Spotify korzystają z publicznych metadanych i są wyszukiwane na YouTube; playlisty i albumy wymagają działającego dostępu do Spotify Web API.
+
 ## 🐛 Rozwiązywanie problemów
 
 ### Bot nie dołącza do kanału głosowego

@@ -209,10 +209,44 @@ async def _resolve_spotify_link_if_needed(url: str) -> str:
         return url
 
 
+async def _get_spotify_oembed_track_info(url: str):
+    normalized_url = await _resolve_spotify_link_if_needed(url)
+    entity_type, entity_id = _extract_spotify_type_and_id(normalized_url)
+    if entity_type != 'track' or not entity_id:
+        return None
+
+    try:
+        import aiohttp
+
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(
+                'https://open.spotify.com/oembed',
+                params={'url': f'https://open.spotify.com/track/{entity_id}'},
+            ) as response:
+                response.raise_for_status()
+                metadata = await response.json()
+
+        track_name = (metadata.get('title') or '').strip()
+        artist_name = (metadata.get('author_name') or '').strip()
+        if not track_name:
+            return None
+        search_query = f"{artist_name} {track_name}".strip()
+        return {
+            'type': 'track',
+            'name': f"{artist_name} - {track_name}" if artist_name else track_name,
+            'album_art': metadata.get('thumbnail_url'),
+            'search_query': search_query,
+        }
+    except Exception as error:
+        logger.warning("Spotify oEmbed lookup failed: %s", error)
+        return None
+
+
 async def get_spotify_track_info(url):
     """Fetch Spotify metadata using Spotify API for track/playlist/album URLs and URIs."""
     if not spotify_client:
-        return None
+        return await _get_spotify_oembed_track_info(url)
 
     try:
         normalized_url = await _resolve_spotify_link_if_needed(url)
@@ -308,29 +342,37 @@ async def get_spotify_track_info(url):
         return None
     except Exception as e:
         logger.warning(f"⚠️ Failed to fetch Spotify info: {e}")
-        return None
+        return await _get_spotify_oembed_track_info(url)
 
 
 async def handle_spotify_to_youtube(url):
-    """Convert Spotify URL to YouTube search if DRM error occurs"""
+    """Resolve Spotify metadata and search YouTube, with SoundCloud as playback fallback."""
     if is_spotify_input(url):
         try:
+            normalized_url = await _resolve_spotify_link_if_needed(url)
+            entity_type, entity_id = _extract_spotify_type_and_id(normalized_url)
+
             # Try Spotify API first
-            if spotify_client:
-                spotify_info = await get_spotify_track_info(url)
-                if spotify_info:
-                    if spotify_info['type'] == 'track':
-                        return {'type': 'track', 'query': f"ytsearch:{spotify_info['search_query']}"}
-                    elif spotify_info['type'] in ('playlist', 'album'):
-                        return {
-                            'type': spotify_info['type'],
-                            'name': spotify_info['name'],
-                            'queries': [f"ytsearch:{track}" for track in spotify_info['tracks']]
-                        }
+            spotify_info = await get_spotify_track_info(normalized_url)
+            if spotify_info:
+                if spotify_info['type'] == 'track':
+                    return {'type': 'track', 'query': f"ytsearch1:{spotify_info['search_query']}"}
+                if spotify_info['type'] in ('playlist', 'album'):
+                    return {
+                        'type': spotify_info['type'],
+                        'name': spotify_info['name'],
+                        'queries': [f"ytsearch1:{track}" for track in spotify_info['tracks']]
+                    }
+
+            if entity_type in ('playlist', 'album'):
+                raise ValueError(
+                    "Spotify playlist/album tracklists are unavailable because the Spotify API "
+                    "rejected this app. Spotify track links still work through public metadata."
+                )
             
             # Fallback to yt-dlp extraction
             loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(normalized_url, download=False))
             
             # Get track info
             title = data.get('title', '')
@@ -338,17 +380,22 @@ async def handle_spotify_to_youtube(url):
             
             if title:
                 # Search on YouTube
-                search_query = f"ytsearch:{artist} {title}".strip() if artist else f"ytsearch:{title}"
+                search_query = f"ytsearch1:{artist} {title}".strip() if artist else f"ytsearch1:{title}"
                 logger.info(f"🔒 Spotify DRM detected, searching YouTube: {search_query}")
                 return search_query
         except Exception as e:
+            if isinstance(e, ValueError):
+                raise
             if 'DRM' in str(e):
                 logger.warning(f"⚠️ Spotify DRM protected - will attempt YouTube search")
                 # Extract artist and track from URL if possible
                 parts = url.split('/')
                 entity_type, entity_id = _extract_spotify_type_and_id(url)
                 if entity_id:
-                    return f"ytsearch:{entity_id}"
+                    spotify_info = await _get_spotify_oembed_track_info(url)
+                    if spotify_info:
+                        return {'type': 'track', 'query': f"ytsearch1:{spotify_info['search_query']}"}
+                    return f"ytsearch1:{entity_id}"
     
     return url
 
@@ -686,9 +733,7 @@ class MusicControlView(View):
                 await ensure_voice_connected(interaction.guild, interaction.guild.voice_client.channel)
             interaction.guild.voice_client.play(
                 song.source,
-                after=lambda e: asyncio.run_coroutine_threadsafe(
-                    play_next(interaction), bot.loop
-                )
+                after=lambda error: handle_audio_after(error, interaction)
             )
             
             # Update the embed instead of sending new message
@@ -905,9 +950,7 @@ async def play(interaction: discord.Interaction, url: str):
                             await ensure_voice_connected(interaction.guild, channel)
                             interaction.guild.voice_client.play(
                                 song.source,
-                                after=lambda e: asyncio.run_coroutine_threadsafe(
-                                    play_next(interaction), bot.loop
-                                )
+                                after=lambda error: handle_audio_after(error, interaction)
                             )
                             is_first_track = False
                         except Exception as e:
@@ -1050,9 +1093,7 @@ async def play(interaction: discord.Interaction, url: str):
                         await ensure_voice_connected(interaction.guild, channel)
                         interaction.guild.voice_client.play(
                             player,
-                            after=lambda e: asyncio.run_coroutine_threadsafe(
-                                play_next(interaction), bot.loop
-                            )
+                            after=lambda error: handle_audio_after(error, interaction)
                         )
                     else:
                         queue.add(song)
@@ -1177,9 +1218,7 @@ async def play(interaction: discord.Interaction, url: str):
 
                 interaction.guild.voice_client.play(
                     player,
-                    after=lambda e: asyncio.run_coroutine_threadsafe(
-                        play_next(interaction), bot.loop
-                    )
+                    after=lambda error: handle_audio_after(error, interaction)
                 )
 
                 embed = discord.Embed(
@@ -1267,6 +1306,13 @@ def cleanup_audio_file(filename):
             logger.info(f"🧹 Cleaned up audio file: {filename}")
         except Exception as e:
             logger.error(f"⚠️ Failed to cleanup {filename}: {e}")
+
+
+def handle_audio_after(error, interaction):
+    if error:
+        guild_id = interaction.guild.id if interaction.guild else 'unknown'
+        logger.error("Audio playback failed in guild %s: %s", guild_id, error)
+    asyncio.run_coroutine_threadsafe(play_next(interaction), bot.loop)
 
 
 async def play_next(interaction: discord.Interaction):
@@ -1380,9 +1426,7 @@ async def play_next(interaction: discord.Interaction):
                 voice_client = await ensure_voice_connected(interaction.guild, target_channel)
             voice_client.play(
                 song.source,
-                after=lambda e: asyncio.run_coroutine_threadsafe(
-                    play_next(interaction), bot.loop
-                )
+                after=lambda error: handle_audio_after(error, interaction)
             )
         except Exception as e:
             logger.error(f"⚠️ Failed to play next track (voice connection issue): {e}")
@@ -2040,10 +2084,20 @@ async def search(interaction: discord.Interaction, query: str):
                 data = await loop.run_in_executor(None, lambda: ytdl.extract_info(search_query, download=False))
                 if data and 'entries' in data:
                     results = [e for e in data['entries'] if e]
+                if not results:
+                    logger.info("YouTube search returned no results, trying SoundCloud")
+                    clean_q = query.replace('ytsearch:', '').replace('ytsearch1:', '').replace('ytsearch5:', '').strip()
+                    data = await loop.run_in_executor(
+                        None,
+                        lambda: ytdl.extract_info(f"scsearch5:{clean_q}", download=False),
+                    )
+                    if data and 'entries' in data:
+                        results = [e for e in data['entries'] if e]
+                        source_label = "SoundCloud"
             except Exception as e_yt:
                 logger.warning("YouTube search failed, trying SoundCloud: %s", e_yt)
                 # Fallback to SoundCloud search
-                clean_q = query.replace('ytsearch:', '').replace('ytsearch5:', '')
+                clean_q = query.replace('ytsearch:', '').replace('ytsearch1:', '').replace('ytsearch5:', '')
                 data = await loop.run_in_executor(None, lambda: ytdl.extract_info(f"scsearch5:{clean_q}", download=False))
                 if data and 'entries' in data:
                     results = [e for e in data['entries'] if e]

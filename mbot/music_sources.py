@@ -127,6 +127,11 @@ FFMPEG_OPTIONS = {'options': '-vn -loglevel warning'}
 ytdl = yt_dlp.YoutubeDL(apply_cookies_to_ytdl_options(YTDL_FORMAT_OPTIONS))
 
 
+def _is_youtube_auth_challenge(error: Exception) -> bool:
+    message = str(error).casefold()
+    return "sign in to confirm" in message or "not a bot" in message
+
+
 class YTDLSource(discord.PCMVolumeTransformer):
     """Audio source backed by yt-dlp with multi-source fallback."""
 
@@ -206,6 +211,9 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 except Exception as error:
                     last_error = error
                     logger.warning("YouTube client fallback (%s) failed: %s", client_list, error)
+                    if _is_youtube_auth_challenge(error):
+                        logger.warning("YouTube requires valid cookies; skipping remaining clients and trying SoundCloud")
+                        break
                     time.sleep(0.4)
 
         search_term = raw
