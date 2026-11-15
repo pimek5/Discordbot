@@ -156,21 +156,23 @@ Bot używa **yt-dlp** i obsługuje setki platform, w tym:
 
 ```
 mbot/
-├── mbot.py              # Główny plik bota
+├── mbot.py              # Rejestracja i obsługa komend Discord
+├── music_queue.py       # Utwory, historia i kolejka per serwer
+├── music_database.py    # Historia, ulubione, statystyki i ustawienia
+├── music_sources.py     # yt-dlp, cookies i fallbacki źródeł audio
 ├── requirements.txt     # Zależności Python
-├── .env.example         # Przykładowy plik konfiguracji
-├── .gitignore          # Ignorowane pliki
-├── Procfile            # Konfiguracja dla Railway/Heroku
-├── railway.toml        # Konfiguracja Railway
-└── README.md           # Ten plik
+├── Procfile             # Konfiguracja procesu Railway/Heroku
+├── railway.toml         # Konfiguracja Railway
+└── README.md            # Ten plik
 ```
 
 ### Kluczowe komponenty:
 
-- **MusicBot** - Główna klasa bota obsługująca Discord
-- **MusicQueue** - Zarządzanie kolejką utworów dla każdego serwera
-- **YTDLSource** - Wrapper dla yt-dlp do pobierania audio
-- **Slash Commands** - Wszystkie komendy używają Discord Slash Commands
+- **MusicBot** - lifecycle klienta Discord i stan serwerów
+- **MusicQueue / Song** - kolejka, historia, tryby pętli i metadane utworu
+- **MusicDatabase** - trwałe dane muzyczne w SQLite
+- **YTDLSource** - pobieranie audio przez yt-dlp i fallbacki źródeł
+- **Slash commands** - pozostają w `mbot.py` i zachowują swoje nazwy
 
 ## 🔄 Aktualizacje
 

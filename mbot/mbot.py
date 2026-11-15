@@ -1,7 +1,6 @@
 """
 DJSona - Discord Music Bot v2.1
 Music playback from YouTube, Spotify, SoundCloud, and other sources
-+ SongQuiz Deluxe: Genre selection, Audio clips, Rankings & Stats
 """
 
 import discord
@@ -38,140 +37,17 @@ logger = logging.getLogger('DJSona')
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
-YTDL_COOKIES_FILE = os.getenv('YTDL_COOKIES_FILE')
-YTDL_COOKIES_FROM_BROWSER = os.getenv('YTDL_COOKIES_FROM_BROWSER')
-YTDL_COOKIES_PROFILE = os.getenv('YTDL_COOKIES_PROFILE')
-YTDL_COOKIES_DATA = os.getenv('YTDL_COOKIES_DATA')
-YTDL_PROXY = os.getenv('YTDL_PROXY')
+from music_queue import MusicQueue, Song
+from music_database import MusicDatabase as MusicDatabaseCore
+from music_sources import (
+    FFMPEG_OPTIONS,
+    YTDL_FORMAT_OPTIONS,
+    YTDLSource,
+    apply_cookies_to_ytdl_options,
+    ytdl,
+)
 
 
-def parse_cookies_from_browser_value(value: Optional[str], profile: Optional[str]):
-    """Parse cookies-from-browser env in forms: browser, browser:profile."""
-    if not value:
-        return None
-
-    raw = value.strip()
-    if not raw:
-        return None
-
-    if ':' in raw:
-        browser, parsed_profile = raw.split(':', 1)
-        browser = browser.strip()
-        parsed_profile = parsed_profile.strip()
-        if browser and parsed_profile:
-            return (browser, parsed_profile)
-        if browser:
-            return browser
-
-    if profile and profile.strip():
-        return (raw, profile.strip())
-
-    return raw
-
-
-def resolve_cookiefile_path(cookiefile_value: Optional[str]) -> Optional[str]:
-    """Resolve cookie file path from env, handling relative paths safely."""
-    # First, try the provided value
-    if cookiefile_value:
-        raw = cookiefile_value.strip()
-        if raw:
-            # Relative path should be relative to this file directory, not process CWD.
-            if os.path.isabs(raw):
-                candidate = raw
-            else:
-                candidate = os.path.join(os.path.dirname(__file__), raw)
-
-            if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
-                return candidate
-
-            logger.warning("⚠️ YTDL_COOKIES_FILE is set but file is missing or empty: %s", candidate)
-
-    # Fallback: check for cookies.txt in mbot directory
-    default_candidate = os.path.join(os.path.dirname(__file__), 'cookies.txt')
-    if os.path.exists(default_candidate) and os.path.getsize(default_candidate) > 0:
-        logger.info(f"📋 Using cookies from: {default_candidate}")
-        return default_candidate
-
-    return None
-
-
-def ensure_cookiefile_from_env_data(cookies_data: Optional[str]) -> Optional[str]:
-    """Create runtime cookie file from env content (plain text or base64)."""
-    if not cookies_data:
-        return None
-
-    data = cookies_data.strip()
-    if not data:
-        return None
-
-    try:
-        decoded = base64.b64decode(data, validate=True)
-        content = decoded.decode('utf-8', errors='ignore')
-    except Exception:
-        content = data
-
-    if not content.strip():
-        return None
-
-    runtime_cookie_path = os.path.join(os.path.dirname(__file__), '.runtime_cookies.txt')
-    try:
-        with open(runtime_cookie_path, 'w', encoding='utf-8') as handle:
-            handle.write(content)
-        return runtime_cookie_path
-    except Exception as e:
-        logger.warning("⚠️ Failed to create runtime cookie file from YTDL_COOKIES_DATA: %s", e)
-        return None
-
-
-RESOLVED_YTDL_COOKIEFILE = ensure_cookiefile_from_env_data(YTDL_COOKIES_DATA)
-if not RESOLVED_YTDL_COOKIEFILE:
-    RESOLVED_YTDL_COOKIEFILE = resolve_cookiefile_path(YTDL_COOKIES_FILE)
-
-if RESOLVED_YTDL_COOKIEFILE:
-    logger.info(f"✅ Cookies loaded: {RESOLVED_YTDL_COOKIEFILE}")
-else:
-    logger.warning("⚠️ No cookies found for YouTube extraction")
-
-# Konfiguracja yt-dlp
-YTDL_FORMAT_OPTIONS = {
-    'format': 'bestaudio/best/worst',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': True,  # Default: single video only (will be changed dynamically for playlists)
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'ytsearch',
-    'source_address': '0.0.0.0',
-    'force-ipv4': True,
-    'prefer_ffmpeg': True,
-    'keepvideo': False,
-    'cachedir': False,
-    'extract_flat': False,
-    'socket_timeout': 30,
-    'retries': 10,
-    'fragment_retries': 10,
-}
-
-def apply_cookies_to_ytdl_options(options: Dict) -> Dict:
-    """Apply cookie settings to yt-dlp options if configured via env."""
-    opts = options.copy()
-    if YTDL_PROXY and YTDL_PROXY.strip():
-        opts['proxy'] = YTDL_PROXY.strip()
-    if RESOLVED_YTDL_COOKIEFILE:
-        opts['cookiefile'] = RESOLVED_YTDL_COOKIEFILE
-    parsed_cookies = parse_cookies_from_browser_value(YTDL_COOKIES_FROM_BROWSER, YTDL_COOKIES_PROFILE)
-    if parsed_cookies:
-        opts['cookiesfrombrowser'] = parsed_cookies
-    return opts
-
-FFMPEG_OPTIONS = {
-    'options': '-vn -loglevel warning'
-}
-
-# Audio filters presets
 AUDIO_FILTERS = {
     'normal': '',
     'bassboost': 'bass=g=10,dynaudnorm=f=200',
@@ -182,102 +58,63 @@ AUDIO_FILTERS = {
     'vibrato': 'vibrato=f=6.5:d=0.5',
 }
 
-# Spotify API setup (optional)
 SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
 SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
 spotify_client = None
-
 if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
     try:
         auth_manager = SpotifyClientCredentials(
             client_id=SPOTIFY_CLIENT_ID,
-            client_secret=SPOTIFY_CLIENT_SECRET
+            client_secret=SPOTIFY_CLIENT_SECRET,
         )
         spotify_client = spotipy.Spotify(auth_manager=auth_manager)
-        logger.info("✅ Spotify API initialized successfully")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to initialize Spotify API: {e}")
-else:
-    logger.warning("⚠️ Spotify API credentials not configured (SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)")
+    except Exception as error:
+        logger.warning("Failed to initialize Spotify API: %s", error)
 
-# Guild settings storage
 guild_settings = {}
-
-# Track main control messages (guild_id -> message_id)
 main_control_messages = {}
-
-# Cache message objects to avoid repeated fetch_message calls (guild_id -> message_object)
 message_cache = {}
 
+
 def is_playlist_url(url):
-    """Detect if URL is intended to be a playlist or single video"""
     url_lower = url.lower()
-    
-    # Explicit playlist URLs
-    if 'youtube.com/playlist' in url_lower or 'youtu.be/playlist' in url_lower:
-        return True
-    
-    # YouTube Mix/Radio (list=RD... or start_radio=1)
-    if 'list=rd' in url_lower or 'start_radio=1' in url_lower:
-        return True
-    
-    # Any URL with list= parameter should be treated as playlist
-    if 'list=' in url_lower:
-        return True
-    
-    # Spotify playlists/albums and URI forms
-    if 'spotify.com/playlist' in url_lower or 'spotify.com/album' in url_lower:
-        return True
-    if url_lower.startswith('spotify:playlist:') or url_lower.startswith('spotify:album:'):
-        return True
-    
-    # SoundCloud sets/playlists
-    if 'soundcloud.com' in url_lower and '/sets/' in url_lower:
-        return True
-    
-    return False
+    return (
+        'youtube.com/playlist' in url_lower
+        or 'youtu.be/playlist' in url_lower
+        or 'list=rd' in url_lower
+        or 'start_radio=1' in url_lower
+        or 'list=' in url_lower
+        or 'spotify.com/playlist' in url_lower
+        or 'spotify.com/album' in url_lower
+        or url_lower.startswith(('spotify:playlist:', 'spotify:album:'))
+        or ('soundcloud.com' in url_lower and '/sets/' in url_lower)
+    )
+
 
 def get_playlist_type(url, data=None):
-    """Determine the type of playlist from URL and extracted data"""
     url_lower = url.lower()
-    
-    # YouTube Mix (algorithmic radio)
     if 'list=rd' in url_lower or (data and data.get('id', '').startswith('RD')):
         return {'type': 'mix', 'icon': '🎧', 'name': 'YouTube Mix'}
-    
-    # YouTube Radio (start_radio=1)
     if 'start_radio=1' in url_lower:
         return {'type': 'radio', 'icon': '📻', 'name': 'YouTube Radio'}
-    
-    # Standard YouTube Playlist
     if 'youtube.com/playlist' in url_lower or 'list=' in url_lower:
         return {'type': 'playlist', 'icon': '📃', 'name': 'YouTube Playlist'}
-    
-    # Spotify Playlist
     if 'spotify.com/playlist' in url_lower:
         return {'type': 'spotify_playlist', 'icon': '🎵', 'name': 'Spotify Playlist'}
-
-    # Spotify Album
     if 'spotify.com/album' in url_lower:
         return {'type': 'spotify_album', 'icon': '💿', 'name': 'Spotify Album'}
-    
-    # SoundCloud Set
     if 'soundcloud.com' in url_lower and '/sets/' in url_lower:
         return {'type': 'soundcloud_set', 'icon': '☁️', 'name': 'SoundCloud Set'}
-    
-    # Generic fallback
     return {'type': 'playlist', 'icon': '📃', 'name': 'Playlist'}
 
+
 def get_required_music_channel_id(guild_id: int) -> Optional[int]:
-    """Get per-guild required music channel id, or None when unrestricted."""
     return db.get_music_channel_id(str(guild_id))
 
 
 def get_channel_restriction_message(interaction: discord.Interaction) -> str:
-    """Build a channel restriction message based on current guild settings."""
     if not interaction.guild:
         return "⚠️ This command can only be used in a server."
-
     required_channel_id = get_required_music_channel_id(interaction.guild.id)
     if required_channel_id is None:
         return "⚠️ This command cannot be used in this channel."
@@ -285,28 +122,16 @@ def get_channel_restriction_message(interaction: discord.Interaction) -> str:
 
 
 def check_channel(interaction: discord.Interaction) -> bool:
-    """Check command channel against per-guild settings.
-
-    Default behavior is unrestricted for new guilds.
-    """
     if not interaction.guild:
         return False
-
     required_channel_id = get_required_music_channel_id(interaction.guild.id)
-    if required_channel_id is None:
-        return True
-    return interaction.channel_id == required_channel_id
+    return required_channel_id is None or interaction.channel_id == required_channel_id
 
 
 def is_spotify_input(value: str) -> bool:
-    """Check whether a command input likely refers to Spotify."""
     raw = (value or '').strip().lower()
-    if not raw:
-        return False
-    return (
-        'spotify' in raw
-        or 'spoti.fi/' in raw
-        or raw.startswith('spotify:')
+    return bool(raw) and (
+        'spotify' in raw or 'spoti.fi/' in raw or raw.startswith('spotify:')
     )
 
 async def safe_defer(interaction: discord.Interaction) -> None:
@@ -329,23 +154,18 @@ async def safe_defer(interaction: discord.Interaction) -> None:
         else:
             logger.warning("Failed to defer interaction: %s", e)
 
-ytdl = yt_dlp.YoutubeDL(apply_cookies_to_ytdl_options(YTDL_FORMAT_OPTIONS))
-
-
 # Database for statistics
 class MusicDatabase:
     def __init__(self, db_path='music_stats.db'):
         self.db_path = db_path
         self.init_db()
-    
+
     def init_db(self):
-        """Initialize database tables"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS play_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id TEXT NOT NULL,
                 user_id TEXT NOT NULL,
                 username TEXT NOT NULL,
@@ -637,7 +457,7 @@ class MusicDatabase:
         return result
 
 
-db = MusicDatabase()
+db = MusicDatabaseCore()
 
 
 async def send_temp_embed(channel, embed, delay=10):
@@ -843,7 +663,7 @@ async def handle_spotify_to_youtube(url):
     return url
 
 
-class YTDLSource(discord.PCMVolumeTransformer):
+class _LegacyYTDLSource(discord.PCMVolumeTransformer):
     """Audio source for discord.py using yt-dlp with multi-source fallback."""
     
     def __init__(self, source, *, data, volume=0.5, filename=None, platform_source='YouTube'):
@@ -1020,98 +840,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
         filename = data.get('url') if stream else used_downloader.prepare_filename(data)
         return cls(discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS), data=data, filename=filename if not stream else None, platform_source=source_name)
-
-
-class Song:
-    """Music track representation"""
-    def __init__(self, source, requester, query=None, platform_source='YouTube'):
-        self.source = source
-        self.requester = requester
-        self.query = query  # For lazy loading (Spotify)
-        self.platform_source = getattr(source, 'platform_source', platform_source) if source else platform_source
-        if source:
-            self.title = source.title
-            self.url = source.url
-            self.thumbnail = source.thumbnail
-            self.duration = source.duration
-        else:
-            # Placeholder for lazy-loaded songs
-            self.title = query or "Loading..."
-            self.url = None
-            self.thumbnail = None
-            self.duration = None
-        self.added_at = datetime.now()
-
-
-class MusicQueue:
-    """Music queue management for server"""
-    
-    def __init__(self):
-        self.queue = deque()
-        self.current = None
-        self.volume = 0.5
-        self.loop_mode = 'off'  # off, track, queue
-        self.history = deque(maxlen=20)
-        self.skip_votes = set()
-        self.autoplay = False
-        self.last_message_id = None  # For updating embed instead of sending new
-        
-    def add(self, song):
-        """Add track to queue"""
-        self.queue.append(song)
-        
-    def next(self):
-        """Get next track from queue"""
-        if self.loop_mode == 'track' and self.current:
-            return self.current
-            
-        if self.current:
-            self.history.append(self.current)
-            
-        if self.queue:
-            self.current = self.queue.popleft()
-            return self.current
-        elif self.loop_mode == 'queue' and self.history:
-            # Move history back to queue
-            self.queue.extend(self.history)
-            self.history.clear()
-            return self.next()
-            
-        return None
-    
-    def previous(self):
-        """Go back to previous track"""
-        if self.history:
-            # Put current back to queue front
-            if self.current:
-                self.queue.appendleft(self.current)
-            # Get previous from history
-            self.current = self.history.pop()
-            return self.current
-        return None
-        
-    def clear(self):
-        """Clear queue"""
-        self.queue.clear()
-        self.current = None
-        self.skip_votes.clear()
-        
-    def shuffle(self):
-        """Shuffle queue"""
-        queue_list = list(self.queue)
-        random.shuffle(queue_list)
-        self.queue = deque(queue_list)
-        
-    def remove(self, index):
-        """Remove track from queue"""
-        if 0 <= index < len(self.queue):
-            del self.queue[index]
-            return True
-        return False
-        
-    def is_empty(self):
-        """Check if queue is empty"""
-        return len(self.queue) == 0
 
 
 async def enqueue_autoplay_track(interaction: discord.Interaction, queue: MusicQueue) -> bool:
@@ -3026,11 +2754,6 @@ async def help_command(interaction: discord.Interaction):
             "`/favorites` - View your favorites",
             "`/playfav <number>` - Play from favorites",
         ]),
-        ("🎮 Games", [
-            "`/songquiz [difficulty] [questions]` - Play SongQuiz with genres and audio! 🎮",
-            "`/songquiz-ranking` - View server leaderboard 🏆",
-            "`/songquiz-stats` - Your personal SongQuiz stats 📊",
-        ]),
         ("🔎 Search & Stats", [
             "`/search <query>` - Search for music",
             "`/stats` - Bot statistics",
@@ -3698,6 +3421,10 @@ async def wrapped(interaction: discord.Interaction, scope: str = "user", year: i
         embed.set_footer(text="Thanks for listening together! | Generated on", icon_url=bot.user.display_avatar.url)
         
         await interaction.followup.send(embed=embed)
+
+
+for removed_command in ("songquiz", "songquiz-ranking", "songquiz-stats"):
+    bot.tree.remove_command(removed_command)
 
 
 if __name__ == "__main__":
