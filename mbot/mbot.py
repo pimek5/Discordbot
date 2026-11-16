@@ -1331,6 +1331,8 @@ def cleanup_audio_file(filename):
         try:
             os.remove(filename)
             logger.info(f"🧹 Cleaned up audio file: {filename}")
+        except FileNotFoundError:
+            pass
         except Exception as e:
             logger.error(f"⚠️ Failed to cleanup {filename}: {e}")
 
@@ -1690,6 +1692,49 @@ async def volume(interaction: discord.Interaction, volume: int):
         interaction.guild.voice_client.source.volume = volume / 100
     
     await interaction.response.send_message(f"🔊 Volume set to {volume}%", ephemeral=True)
+
+
+@bot.tree.command(name="testaudio", description="Play a short diagnostic tone in your voice channel")
+async def test_audio(interaction: discord.Interaction):
+    if not check_channel(interaction):
+        await interaction.response.send_message(get_channel_restriction_message(interaction), ephemeral=True)
+        return
+    if not interaction.user.voice:
+        await interaction.response.send_message("⚠️ Join a voice channel first.", ephemeral=True)
+        return
+
+    await safe_defer(interaction)
+    channel = interaction.user.voice.channel
+    try:
+        voice_client = await ensure_voice_connected(interaction.guild, channel)
+    except Exception as error:
+        await interaction.followup.send(f"⚠️ Could not connect to voice: {error}", ephemeral=True)
+        return
+
+    playback_issue = get_voice_playback_issue(interaction.guild, channel)
+    if playback_issue:
+        await interaction.followup.send(f"⚠️ {playback_issue}", ephemeral=True)
+        return
+    if voice_client.is_playing() or voice_client.is_paused():
+        await interaction.followup.send("⚠️ Stop the current track before running the audio test.", ephemeral=True)
+        return
+
+    tone = discord.PCMVolumeTransformer(
+        discord.FFmpegPCMAudio(
+            "sine=frequency=440:duration=5",
+            before_options="-f lavfi",
+            options="-vn -loglevel warning",
+        ),
+        volume=1.0,
+    )
+    voice_client.play(
+        tone,
+        after=lambda error: logger.error("Diagnostic tone playback failed: %s", error) if error else None,
+    )
+    await interaction.followup.send(
+        "Playing a 5-second test tone at 100% volume. Ask someone else in the channel if they can hear it.",
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="nowplaying", description="Show currently playing track")
