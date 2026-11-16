@@ -728,7 +728,7 @@ class MusicControlView(View):
         interaction.guild.voice_client.stop()
         
         try:
-            song.source = await YTDLSource.from_url(song.url, loop=bot.loop)
+            song.source = await YTDLSource.from_url(song.url, loop=bot.loop, stream=True)
             if not interaction.guild.voice_client.is_connected():
                 await ensure_voice_connected(interaction.guild, interaction.guild.voice_client.channel)
             interaction.guild.voice_client.play(
@@ -938,7 +938,7 @@ async def play(interaction: discord.Interaction, url: str):
                     if is_first_track:
                         # Load first track immediately
                         try:
-                            player = await YTDLSource.from_url(query, loop=bot.loop, stream=False)
+                            player = await YTDLSource.from_url(query, loop=bot.loop, stream=True)
                             song.source = player
                             song.title = player.title
                             song.url = player.url
@@ -1069,7 +1069,7 @@ async def play(interaction: discord.Interaction, url: str):
             for i, entry in enumerate(entries[:2]):
                 try:
                     video_url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
-                    player = await YTDLSource.from_url(video_url, loop=bot.loop, stream=False)
+                    player = await YTDLSource.from_url(video_url, loop=bot.loop, stream=True)
                     player.requester = interaction.user
                     song = Song(player, interaction.user)
                     
@@ -1193,7 +1193,7 @@ async def play(interaction: discord.Interaction, url: str):
             
         else:
             # Single track
-            player = await YTDLSource.from_url(url, loop=bot.loop, stream=False)
+            player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
             player.requester = interaction.user
             song = Song(player, interaction.user)
             track_url = url if url.lower().startswith(('http://', 'https://')) else (player.url or url)
@@ -1367,7 +1367,7 @@ async def play_next(interaction: discord.Interaction):
         # Load lazy-loaded song if needed
         if song.query and not song.source:
             try:
-                player = await YTDLSource.from_url(song.query, loop=bot.loop, stream=False)
+                player = await YTDLSource.from_url(song.query, loop=bot.loop, stream=True)
                 song.source = player
                 song.title = player.title
                 song.url = player.url
@@ -1389,7 +1389,7 @@ async def play_next(interaction: discord.Interaction):
                     # Load in background (fire and forget)
                     async def load_track_background(track):
                         try:
-                            player = await YTDLSource.from_url(track.query, loop=bot.loop, stream=False)
+                            player = await YTDLSource.from_url(track.query, loop=bot.loop, stream=True)
                             track.source = player
                             track.title = player.title
                             track.url = player.url

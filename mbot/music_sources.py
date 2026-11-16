@@ -5,6 +5,7 @@ import base64
 import logging
 import os
 import re
+import shlex
 import time
 from typing import Dict, Optional
 
@@ -292,5 +293,19 @@ class YTDLSource(discord.PCMVolumeTransformer):
             raise ValueError(f"Could not find playable content for: {url}")
 
         filename = data.get('url') if stream else downloader.prepare_filename(data)
-        audio = discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS)
+        ffmpeg_options = FFMPEG_OPTIONS.copy()
+        if stream and filename.startswith(('http://', 'https://')):
+            before_options = [
+                '-reconnect', '1',
+                '-reconnect_streamed', '1',
+                '-reconnect_delay_max', '5',
+            ]
+            headers = data.get('http_headers') or {}
+            if headers:
+                header_block = ''.join(f'{key}: {value}\r\n' for key, value in headers.items())
+                before_options.extend(['-headers', header_block])
+            ffmpeg_options['before_options'] = shlex.join(before_options)
+            logger.info("Starting direct audio stream from %s", source_name)
+
+        audio = discord.FFmpegPCMAudio(filename, **ffmpeg_options)
         return cls(audio, data=data, filename=filename if not stream else None, platform_source=source_name)
