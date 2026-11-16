@@ -1722,7 +1722,6 @@ async def test_audio(interaction: discord.Interaction):
     tone = discord.FFmpegOpusAudio(
         "sine=frequency=440:duration=5",
         bitrate=96,
-        codec='libopus',
         before_options="-f lavfi",
     )
     voice_client.play(
