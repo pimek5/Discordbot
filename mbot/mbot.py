@@ -34,7 +34,6 @@ from music_queue import MusicQueue, Song
 from music_database import MusicDatabase as MusicDatabaseCore
 from music_sources import (
     FFMPEG_OPTIONS,
-    MeteredPCMVolumeTransformer,
     YTDL_FORMAT_OPTIONS,
     YTDLSource,
     apply_cookies_to_ytdl_options,
@@ -1720,21 +1719,18 @@ async def test_audio(interaction: discord.Interaction):
         await interaction.followup.send("⚠️ Stop the current track before running the audio test.", ephemeral=True)
         return
 
-    tone = MeteredPCMVolumeTransformer(
-        discord.FFmpegPCMAudio(
-            "sine=frequency=440:duration=5",
-            before_options="-f lavfi",
-            options="-vn -loglevel warning",
-        ),
-        volume=1.0,
-        label='diagnostic-tone',
+    tone = discord.FFmpegOpusAudio(
+        "sine=frequency=440:duration=5",
+        bitrate=96,
+        codec='libopus',
+        before_options="-f lavfi",
     )
     voice_client.play(
         tone,
-        after=lambda error: logger.error("Diagnostic tone playback failed: %s", error) if error else None,
+        after=lambda error: logger.error("Direct Opus diagnostic playback failed: %s", error) if error else None,
     )
     await interaction.followup.send(
-        "Playing a 5-second test tone at 100% volume. Ask someone else in the channel if they can hear it.",
+        "Playing a 5-second direct Opus test tone. This bypasses the Python PCM encoder.",
         ephemeral=True,
     )
 
