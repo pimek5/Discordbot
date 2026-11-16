@@ -7,7 +7,9 @@ import os
 import re
 import shutil
 import tempfile
+import sys
 import time
+from array import array
 from typing import Dict, Optional
 
 import discord
@@ -134,11 +136,44 @@ def _is_youtube_auth_challenge(error: Exception) -> bool:
     return "sign in to confirm" in message or "not a bot" in message
 
 
-class YTDLSource(discord.PCMVolumeTransformer):
+class MeteredPCMVolumeTransformer(discord.PCMVolumeTransformer):
+    def __init__(self, source, volume=0.5, label='audio'):
+        super().__init__(source, volume)
+        self.label = label
+        self.pcm_frames = 0
+        self.nonzero_frames = 0
+        self.pcm_peak = 0
+
+    def read(self):
+        pcm = super().read()
+        if not pcm:
+            return pcm
+
+        samples = array('h')
+        samples.frombytes(pcm[:len(pcm) - len(pcm) % samples.itemsize])
+        if sys.byteorder != 'little':
+            samples.byteswap()
+        frame_peak = max((abs(sample) for sample in samples), default=0)
+        self.pcm_frames += 1
+        self.nonzero_frames += frame_peak > 0
+        self.pcm_peak = max(self.pcm_peak, frame_peak)
+        if self.pcm_frames == 1 or self.pcm_frames % 250 == 0:
+            logger.info(
+                "PCM signal %s: frames=%s nonzero_frames=%s peak=%s volume=%.2f",
+                self.label,
+                self.pcm_frames,
+                self.nonzero_frames,
+                self.pcm_peak,
+                self.volume,
+            )
+        return pcm
+
+
+class YTDLSource(MeteredPCMVolumeTransformer):
     """Audio source backed by yt-dlp with multi-source fallback."""
 
     def __init__(self, source, *, data, volume=0.5, filename=None, temp_dir=None, platform_source='YouTube'):
-        super().__init__(source, volume)
+        super().__init__(source, volume, label=platform_source)
         self.data = data
         self.title = data.get('title')
         self.url = data.get('webpage_url') or data.get('url')

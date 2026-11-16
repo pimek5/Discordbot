@@ -34,6 +34,7 @@ from music_queue import MusicQueue, Song
 from music_database import MusicDatabase as MusicDatabaseCore
 from music_sources import (
     FFMPEG_OPTIONS,
+    MeteredPCMVolumeTransformer,
     YTDL_FORMAT_OPTIONS,
     YTDLSource,
     apply_cookies_to_ytdl_options,
@@ -1719,13 +1720,14 @@ async def test_audio(interaction: discord.Interaction):
         await interaction.followup.send("⚠️ Stop the current track before running the audio test.", ephemeral=True)
         return
 
-    tone = discord.PCMVolumeTransformer(
+    tone = MeteredPCMVolumeTransformer(
         discord.FFmpegPCMAudio(
             "sine=frequency=440:duration=5",
             before_options="-f lavfi",
             options="-vn -loglevel warning",
         ),
         volume=1.0,
+        label='diagnostic-tone',
     )
     voice_client.play(
         tone,
