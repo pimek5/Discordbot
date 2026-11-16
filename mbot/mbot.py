@@ -807,6 +807,26 @@ class MusicControlView(View):
 bot = MusicBot()
 
 
+def get_voice_playback_issue(guild: discord.Guild, channel: discord.VoiceChannel) -> Optional[str]:
+    bot_member = guild.me
+    if not bot_member:
+        return "Discord could not resolve the bot's server member state."
+
+    permissions = channel.permissions_for(bot_member)
+    if not permissions.speak:
+        return "The bot is missing the effective Speak permission in this voice channel."
+
+    voice_state = bot_member.voice
+    if voice_state and voice_state.mute:
+        return "The bot is server-muted. Unmute it in the voice channel."
+    if voice_state and voice_state.self_mute:
+        return "The bot is self-muted."
+    if isinstance(channel, discord.StageChannel) and voice_state and voice_state.suppress:
+        return "The bot is suppressed in this Stage channel; a Stage moderator must invite it to speak."
+
+    return None
+
+
 async def ensure_voice_connected(guild: discord.Guild, channel: discord.VoiceChannel, retries: int = 4) -> discord.VoiceClient:
     """Ensure a healthy, connected voice client for the given channel, reconnecting if needed."""
     vc = guild.voice_client
@@ -904,6 +924,12 @@ async def play(interaction: discord.Interaction, url: str):
     except Exception as e:
         logger.error(f"Failed to establish voice connection: {e}")
         await interaction.followup.send(f"⚠️ Could not connect to voice channel: {str(e)}")
+        return
+
+    playback_issue = get_voice_playback_issue(interaction.guild, channel)
+    if playback_issue:
+        logger.error("Voice playback blocked in guild %s: %s", interaction.guild.id, playback_issue)
+        await interaction.followup.send(f"⚠️ {playback_issue}")
         return
     
     try:
@@ -1196,6 +1222,7 @@ async def play(interaction: discord.Interaction, url: str):
             player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
             player.requester = interaction.user
             song = Song(player, interaction.user)
+            player.volume = queue.volume
             track_url = url if url.lower().startswith(('http://', 'https://')) else (player.url or url)
             
             # Re-verify the voice connection: extraction can take a while and the
