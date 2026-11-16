@@ -292,6 +292,17 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if not data or not data.get('url'):
             raise ValueError(f"Could not find playable content for: {url}")
 
+        if stream and source_name == 'YouTube':
+            logger.warning("YouTube direct stream URLs can return 403; downloading audio before playback")
+            data, downloader, source_name = await loop.run_in_executor(
+                None, lambda: cls._extract_with_fallback(url, download=True)
+            )
+            if 'entries' in data:
+                data = next((entry for entry in data['entries'] if entry), None)
+            if not data or not data.get('url'):
+                raise ValueError(f"Could not download playable audio for: {url}")
+            stream = False
+
         filename = data.get('url') if stream else downloader.prepare_filename(data)
         ffmpeg_options = FFMPEG_OPTIONS.copy()
         if stream and filename.startswith(('http://', 'https://')):
