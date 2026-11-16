@@ -415,7 +415,7 @@ async def enqueue_autoplay_track(interaction: discord.Interaction, queue: MusicQ
     search_query = f"ytsearch1:{cleaned or base_title}"
 
     try:
-        player = await YTDLSource.from_url(search_query, loop=bot.loop, stream=True)
+        player = await YTDLSource.from_url(search_query, loop=bot.loop)
     except Exception as e:
         logger.warning("Autoplay failed to load related track for '%s': %s", base_title, e)
         return False
@@ -728,7 +728,7 @@ class MusicControlView(View):
         interaction.guild.voice_client.stop()
         
         try:
-            song.source = await YTDLSource.from_url(song.url, loop=bot.loop, stream=True)
+            song.source = await YTDLSource.from_url(song.url, loop=bot.loop)
             if not interaction.guild.voice_client.is_connected():
                 await ensure_voice_connected(interaction.guild, interaction.guild.voice_client.channel)
             interaction.guild.voice_client.play(
@@ -964,7 +964,7 @@ async def play(interaction: discord.Interaction, url: str):
                     if is_first_track:
                         # Load first track immediately
                         try:
-                            player = await YTDLSource.from_url(query, loop=bot.loop, stream=True)
+                            player = await YTDLSource.from_url(query, loop=bot.loop)
                             song.source = player
                             song.title = player.title
                             song.url = player.url
@@ -1095,7 +1095,7 @@ async def play(interaction: discord.Interaction, url: str):
             for i, entry in enumerate(entries[:2]):
                 try:
                     video_url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
-                    player = await YTDLSource.from_url(video_url, loop=bot.loop, stream=True)
+                    player = await YTDLSource.from_url(video_url, loop=bot.loop)
                     player.requester = interaction.user
                     song = Song(player, interaction.user)
                     
@@ -1219,7 +1219,7 @@ async def play(interaction: discord.Interaction, url: str):
             
         else:
             # Single track
-            player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
+            player = await YTDLSource.from_url(url, loop=bot.loop)
             player.requester = interaction.user
             song = Song(player, interaction.user)
             player.volume = queue.volume
@@ -1392,9 +1392,18 @@ async def play_next(interaction: discord.Interaction):
     
     if song and interaction.guild.voice_client:
         # Load lazy-loaded song if needed
-        if song.query and not song.source:
+        source_file_missing = bool(
+            song.source
+            and song.source.filename
+            and not os.path.isfile(song.source.filename)
+        )
+        if (
+            (song.query and not song.source)
+            or getattr(song.source, 'cleaned', False)
+            or source_file_missing
+        ):
             try:
-                player = await YTDLSource.from_url(song.query, loop=bot.loop, stream=True)
+                player = await YTDLSource.from_url(song.query or song.url, loop=bot.loop)
                 song.source = player
                 song.title = player.title
                 song.url = player.url
@@ -1416,7 +1425,7 @@ async def play_next(interaction: discord.Interaction):
                     # Load in background (fire and forget)
                     async def load_track_background(track):
                         try:
-                            player = await YTDLSource.from_url(track.query, loop=bot.loop, stream=True)
+                            player = await YTDLSource.from_url(track.query, loop=bot.loop)
                             track.source = player
                             track.title = player.title
                             track.url = player.url

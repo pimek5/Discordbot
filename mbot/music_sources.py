@@ -5,7 +5,8 @@ import base64
 import logging
 import os
 import re
-import shlex
+import shutil
+import tempfile
 import time
 from typing import Dict, Optional
 
@@ -136,7 +137,7 @@ def _is_youtube_auth_challenge(error: Exception) -> bool:
 class YTDLSource(discord.PCMVolumeTransformer):
     """Audio source backed by yt-dlp with multi-source fallback."""
 
-    def __init__(self, source, *, data, volume=0.5, filename=None, platform_source='YouTube'):
+    def __init__(self, source, *, data, volume=0.5, filename=None, temp_dir=None, platform_source='YouTube'):
         super().__init__(source, volume)
         self.data = data
         self.title = data.get('title')
@@ -145,10 +146,28 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.thumbnail = data.get('thumbnail')
         self.requester = None
         self.filename = filename
+        self.temp_dir = temp_dir
         self.platform_source = platform_source
+        self.cleaned = False
+
+    def cleanup(self):
+        try:
+            super().cleanup()
+        finally:
+            self.cleaned = True
+            if self.temp_dir:
+                shutil.rmtree(self.temp_dir, ignore_errors=True)
+                self.temp_dir = None
+                self.filename = None
 
     @classmethod
-    def _extract_with_fallback(cls, target_query: str, download: bool, is_playlist: bool = False) -> tuple[dict, yt_dlp.YoutubeDL, str]:
+    def _extract_with_fallback(
+        cls,
+        target_query: str,
+        download: bool,
+        is_playlist: bool = False,
+        download_dir: Optional[str] = None,
+    ) -> tuple[dict, yt_dlp.YoutubeDL, str]:
         raw = target_query.strip()
         if not re.match(r'^(https?://|ytsearch|scsearch|sc:|soundcloud:|yt:|youtube:)', raw, re.IGNORECASE):
             raw = f"ytsearch1:{raw}"
@@ -164,6 +183,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
         else:
             options['noplaylist'] = True
             options['extract_flat'] = False
+        if download_dir:
+            options['outtmpl'] = os.path.join(
+                download_dir, '%(extractor)s-%(id)s-%(title)s.%(ext)s'
+            )
         options_with_cookies = apply_cookies_to_ytdl_options(options)
 
         if raw.startswith(('sc:', 'soundcloud:')):
@@ -269,54 +292,44 @@ class YTDLSource(discord.PCMVolumeTransformer):
         raise Exception(f"Unable to extract audio for '{raw}' across all audio sources.")
 
     @classmethod
-    async def from_url(cls, url, *, loop=None, stream=False):
+    async def from_url(cls, url, *, loop=None):
         loop = loop or asyncio.get_event_loop()
-        data, downloader, source_name = await loop.run_in_executor(
-            None, lambda: cls._extract_with_fallback(url, download=not stream)
-        )
+        download_dir = tempfile.mkdtemp(prefix='mbot-audio-')
+        try:
+            data, _, source_name = await loop.run_in_executor(
+                None, lambda: cls._extract_with_fallback(url, download=False)
+            )
+            if 'entries' in data:
+                data = next((entry for entry in data['entries'] if entry), None)
 
-        if 'entries' in data and data['entries']:
-            data = data['entries'][0]
-        elif 'entries' in data and not data['entries']:
-            logger.info("YouTube returned no results for '%s', trying SoundCloud", url)
-            try:
-                data, downloader, source_name = await loop.run_in_executor(
-                    None,
-                    lambda: cls._extract_with_fallback(f"scsearch1:{url}", download=not stream),
-                )
-                if 'entries' in data and data['entries']:
-                    data = data['entries'][0]
-            except Exception as error:
-                logger.warning("SoundCloud fallback failed: %s", error)
+            if not data:
+                raise ValueError(f"Could not find playable content for: {url}")
 
-        if not data or not data.get('url'):
-            raise ValueError(f"Could not find playable content for: {url}")
-
-        if stream and source_name == 'YouTube':
-            logger.warning("YouTube direct stream URLs can return 403; downloading audio before playback")
+            download_url = data.get('webpage_url') or data.get('original_url') or url
             data, downloader, source_name = await loop.run_in_executor(
-                None, lambda: cls._extract_with_fallback(url, download=True)
+                None,
+                lambda: cls._extract_with_fallback(
+                    download_url, download=True, download_dir=download_dir
+                ),
             )
             if 'entries' in data:
                 data = next((entry for entry in data['entries'] if entry), None)
             if not data or not data.get('url'):
-                raise ValueError(f"Could not download playable audio for: {url}")
-            stream = False
+                raise ValueError(f"Could not download playable audio for: {download_url}")
 
-        filename = data.get('url') if stream else downloader.prepare_filename(data)
-        ffmpeg_options = FFMPEG_OPTIONS.copy()
-        if stream and filename.startswith(('http://', 'https://')):
-            before_options = [
-                '-reconnect', '1',
-                '-reconnect_streamed', '1',
-                '-reconnect_delay_max', '5',
-            ]
-            headers = data.get('http_headers') or {}
-            if headers:
-                header_block = ''.join(f'{key}: {value}\r\n' for key, value in headers.items())
-                before_options.extend(['-headers', header_block])
-            ffmpeg_options['before_options'] = shlex.join(before_options)
-            logger.info("Starting direct audio stream from %s", source_name)
+            filename = os.path.abspath(data.get('filepath') or downloader.prepare_filename(data))
+            if not os.path.isfile(filename) or os.path.getsize(filename) == 0:
+                raise FileNotFoundError(f"yt-dlp did not create an audio file for: {download_url}")
 
-        audio = discord.FFmpegPCMAudio(filename, **ffmpeg_options)
-        return cls(audio, data=data, filename=filename if not stream else None, platform_source=source_name)
+            audio = discord.FFmpegPCMAudio(filename, **FFMPEG_OPTIONS)
+            logger.info("Downloaded %s audio to a temporary file", source_name)
+            return cls(
+                audio,
+                data=data,
+                filename=filename,
+                temp_dir=download_dir,
+                platform_source=source_name,
+            )
+        except BaseException:
+            shutil.rmtree(download_dir, ignore_errors=True)
+            raise
